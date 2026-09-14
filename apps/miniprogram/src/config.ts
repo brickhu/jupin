@@ -21,3 +21,14 @@ const PROD_BASE_URL = ''
 const IS_DEV = true
 
 export const BASE_URL = IS_DEV ? DEV_BASE_URL : PROD_BASE_URL
+
+/**
+ * 微信云开发 / 云托管的环境 ID。
+ *
+ * ⚠️ 开通云托管后把环境 ID 填到这里（控制台「环境」页可见）。
+ *    留空则 wx.cloud.init() 走默认环境；若一个环境都没有会抛异常
+ *    （app.ts 已 try/catch，不会影响接口联调）。
+ *
+ * 用途：音频直传对象存储（wx.cloud.uploadFile）依赖它。
+ */
+export const CLOUD_ENV_ID = ''
