@@ -1,4 +1,4 @@
-import type { ApiResult } from '@jushuo/shared'
+import type { ApiResult, SubmitResponse } from '@jushuo/shared'
 
 /**
  * 后端基址。
@@ -70,4 +70,17 @@ export async function login(): Promise<void> {
 /** 健康检查（脚手架自检用） */
 export function health(): Promise<{ status: string; engine: string }> {
   return request<{ status: string; engine: string }>('/health')
+}
+
+/**
+ * 提交检测。
+ *
+ * ⭐ 传的是 fileID 而不是音频本身 —— 音频已由 uploadAudio 直传对象存储。
+ *    这样请求体极小，避开云托管服务的大小限制（大请求会报 413）。
+ */
+export function submitReading(arenaId: number, fileID: string): Promise<SubmitResponse> {
+  return request<SubmitResponse>('/api/submissions', {
+    method: 'POST',
+    data: { arenaId, fileID },
+  })
 }

@@ -13,6 +13,14 @@ App({
 
   async onLaunch() {
     try {
+      // ⭐ 初始化云能力 —— 对象存储直传（wx.cloud.uploadFile）依赖它。
+      //    免域名、免备案，且不受云托管服务请求体大小限制。
+      if (wx.cloud) {
+        wx.cloud.init({ traceUser: true })
+      } else {
+        console.warn('[app] 当前基础库不支持 wx.cloud，音频直传不可用')
+      }
+
       await login()
       this.globalData.ready = true
       console.log('[app] 登录完成')

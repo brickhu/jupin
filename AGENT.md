@@ -369,6 +369,31 @@ Docker 端口映射到宿主机后，**局域网设备可正常访问**（macOS 
 
 # 四、部署与 CI/CD
 
+## 4.0 ⚠️ 部署目标：微信云托管（当前状态：**未部署**）
+
+**方案已定，但尚未落地**——只有 `apps/server/Dockerfile` 就绪，云环境/CI 都还没建。
+
+### 三条硬约束（先读，否则会返工）
+
+| # | 约束 | 后果 |
+|---|---|---|
+| **1** | ⚠️ **小程序 → 云托管服务的请求体有大小限制**（大请求报 nginx 413） | **音频不能走请求体**——20 秒音频 640KB 必被拒 |
+| **2** | ⭐ **CallContainer 免域名、免备案**，且 openid 直接从 header 拿 | 自建服务器要买域名+备案+配白名单，云托管全免 |
+| **3** | **容器不支持持久化存储** | 音频/内容必须走对象存储 |
+
+### 因此的架构决策
+
+```
+① 小程序 wx.cloud.uploadFile → 对象存储直传（无大小限制，有进度回调）
+② CallContainer 提交 { arenaId, fileID }  ← 极小请求
+③ 后端按 fileID 取回音频 → 调讯飞 → 返回
+④ 评完分删除音频（隐私策略）
+```
+
+**对象存储已做成可替换接口**（`apps/server/src/storage/`）：本地用 `LocalStorage`（落盘 `.uploads/`），生产用 `WxCloudStorage`（**待云环境就绪后实现**）。
+
+> 完整约束见 [docs/research/cloud-hosting-constraints.md](docs/research/cloud-hosting-constraints.md)。
+
 ## 4.1 ✅ 可以完全 git 驱动
 
 **微信云托管有三条部署路径：**

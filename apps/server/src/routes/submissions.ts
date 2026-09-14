@@ -4,7 +4,9 @@ import { CONQUEST_THRESHOLD } from '@jushuo/shared'
 import type { SubmitResponse } from '@jushuo/shared'
 import { db } from '../db'
 import { arenaEntries, arenas, users } from '../db/schema'
+import { env } from '../env'
 import { getEngine } from '../engines'
+import { getStorage } from '../storage'
 import { canSubmitFree, nextFreeAtFrom, trackInvalid } from '../services/cooldown'
 import { getLeaderboardAround, getMyScore, getRank } from '../services/leaderboard'
 import type { Variables } from '../middleware/auth'
@@ -24,12 +26,36 @@ submissionsRoutes.post('/', async (c) => {
   const userId = c.get('userId')
   const user = c.get('user')
 
-  const form = await c.req.formData()
-  const arenaId = Number(form.get('arenaId'))
-  const audioFile = form.get('audio')
+  // ⭐ 音频不走请求体 —— 小程序→云托管的请求体有大小限制（大请求报 nginx 413），
+  //    而 20 秒 16k 音频约 640KB 远超限制。
+  //    正确路径：小程序 wx.cloud.uploadFile 直传对象存储 → 这里只收 fileID。
+  //
+  //    兼容分支：multipart 直传仅供本地联调（无云环境时也能跑通链路）。
+  const contentType = c.req.header('Content-Type') ?? ''
+  let arenaId: number
+  let audio: Uint8Array
+  let audioKey: string | null = null
 
-  if (!arenaId || !(audioFile instanceof File)) {
-    return c.json({ ok: false, error: '缺少 arenaId 或 audio' }, 400)
+  if (contentType.includes('multipart/form-data')) {
+    const form = await c.req.formData()
+    arenaId = Number(form.get('arenaId'))
+    const audioFile = form.get('audio')
+    if (!arenaId || !(audioFile instanceof File)) {
+      return c.json({ ok: false, error: '缺少 arenaId 或 audio' }, 400)
+    }
+    audio = new Uint8Array(await audioFile.arrayBuffer())
+  } else {
+    const body = await c.req.json<{ arenaId?: number; fileID?: string }>()
+    arenaId = Number(body.arenaId)
+    if (!arenaId || !body.fileID) {
+      return c.json({ ok: false, error: '缺少 arenaId 或 fileID' }, 400)
+    }
+    audioKey = body.fileID
+    try {
+      audio = await getStorage().get(body.fileID)
+    } catch (err) {
+      return c.json({ ok: false, error: `读取音频失败: ${(err as Error).message}` }, 400)
+    }
   }
 
   // ---- 1. 冷却检查 ----
@@ -46,7 +72,7 @@ submissionsRoutes.post('/', async (c) => {
 
   // ---- 2. 评分 ----
   // ⚠️ 音频必须是裸 PCM（16k/16bit/单声道），WAV 要去掉头部，否则引擎会判「乱读」
-  const raw = new Uint8Array(await audioFile.arrayBuffer())
+  const raw = audio
 
   let result
   try {
@@ -116,6 +142,19 @@ submissionsRoutes.post('/', async (c) => {
     nextFreeAt: nextFreeAt.toISOString(),
     leaderboard,
     words: result.words,
+  }
+
+  // ---- 6. 隐私：评完分删除音频 ----
+  // ⚠️ 用户录音属于个人信息。默认「用完即删」，不留存。
+  //    若将来要做「点词回放」的云端留存，必须：
+  //      ① 在隐私协议中声明  ② 设定生命周期（如 N 天自动清理）③ 提供删除入口
+  if (env.DELETE_AUDIO_AFTER_SCORE && audioKey) {
+    try {
+      await getStorage().remove(audioKey)
+    } catch (err) {
+      // 删除失败不影响本次评分结果，但要留痕
+      console.warn(`[submissions] 音频删除失败 key=${audioKey}:`, (err as Error).message)
+    }
   }
 
   return c.json({ ok: true, data: payload })
