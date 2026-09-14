@@ -6,6 +6,8 @@
  *      同时讯飞 ISE 要求"如果用 wav 格式音频，需要去掉头部"。
  */
 
+import { AUDIO_SPEC } from '../constants/index'
+
 /** 给裸 PCM 加上 44 字节 WAV 头（用于本地回放） */
 export function pcmToWav(
   pcm: ArrayBuffer | Uint8Array,
@@ -79,8 +81,11 @@ export function float32ToPcmInt16(samples: Float32Array): Uint8Array {
   return out
 }
 
-/** 按固定帧长切分（默认 640 采样 = 40ms @16k） */
-export function frameAudio(samples: Float32Array, frameSamples = 640): Float32Array[] {
+/** 按固定帧长切分（默认取 AUDIO_SPEC.frameSamples） */
+export function frameAudio(
+  samples: Float32Array,
+  frameSamples: number = AUDIO_SPEC.frameSamples,
+): Float32Array[] {
   const frames: Float32Array[] = []
   for (let i = 0; i + frameSamples <= samples.length; i += frameSamples) {
     frames.push(samples.subarray(i, i + frameSamples))

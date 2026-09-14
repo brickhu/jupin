@@ -48,12 +48,18 @@ export class Recorder {
     this.chunks = []
     this.startedAt = Date.now()
     this.manager.start({
+      // ⚠️ 官方限制：duration 最大 600000（10 分钟）
       duration: 60_000,
+      // ⚠️ sampleRate 在 PC 上不支持 —— 开发者工具里此参数无效，**必须真机测**
       sampleRate: AUDIO_SPEC.sampleRate,
+      // ⚠️ 默认值是 2（双声道）！不显式传 1 会拿到立体声，与引擎要求不符
       numberOfChannels: AUDIO_SPEC.channels,
+      // ⚠️ 必须落在 sampleRate 对应的合法区间：16000Hz → 24000 ~ 96000
       encodeBitRate: 48_000,
-      format: 'PCM',                            // ⭐ 直出裸 PCM，与引擎零转码
-      frameSize: AUDIO_SPEC.frameBytes / 1024,  // 单位 KB
+      // ⭐ 直出裸 PCM，与引擎零转码
+      // ⚠️ frameSize 单位是 KB 且必须是整数；官方限定「暂仅支持 mp3、pcm 格式」
+      format: 'PCM',
+      frameSize: AUDIO_SPEC.frameSizeKb,
     })
   }
 

@@ -35,10 +35,22 @@ export const AUDIO_SPEC = {
   sampleRate: 16_000,
   bitDepth: 16,
   channels: 1,
-  /** 每帧采样数（40ms @16k） */
-  frameSamples: 640,
-  /** 每帧字节数（1280B = 640 samples × 2 bytes） */
-  frameBytes: 1280,
+  /**
+   * ⚠️ 传给 `RecorderManager.start({ frameSize })` 的值，**单位 KB，必须是整数**。
+   *    官方限制：frameSize「暂仅支持 mp3、pcm 格式」，我们用的是 PCM。
+   *
+   * 选 2 KB 而非 1 KB 的原因：
+   *   - 2 KB = 2048 字节 = 1024 采样 = 64ms @16k
+   *   - YIN 基频检测在 70Hz 下限需要 ≥2 个周期（≈457 采样），512 采样太勉强
+   *   - 64ms 对 VAD 与进度追踪仍足够细
+   */
+  frameSizeKb: 2,
+  /** 每帧字节数（2 KB = 2048） */
+  frameBytes: 2048,
+  /** 每帧采样数（1024 = 2048 字节 ÷ 2） */
+  frameSamples: 1024,
+  /** 每帧时长（毫秒）= 1024 / 16000 × 1000 */
+  frameMs: 64,
 } as const
 
 /** 计费与定价 */

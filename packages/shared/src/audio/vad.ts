@@ -5,6 +5,8 @@
  * ⚠️ 必须在端侧做——依赖云端等于音频已经上云，省不下成本。
  */
 
+import { AUDIO_SPEC } from '../constants/index'
+
 export interface VadOptions {
   /** 能量阈值倍率（相对噪声底），默认 3 */
   energyFactor?: number
@@ -49,7 +51,7 @@ export function zeroCrossingRate(frame: Float32Array): number {
  */
 export function detectVad(
   frames: Float32Array[],
-  frameMs = 40,
+  frameMs: number = AUDIO_SPEC.frameMs,
   opts: VadOptions = {},
 ): VadResult {
   const energyFactor = opts.energyFactor ?? 3
@@ -116,7 +118,7 @@ export function detectVad(
 /** 从语音段推导停顿位置（用于流利度反馈） */
 export function detectPauses(
   vad: VadResult,
-  frameMs = 40,
+  frameMs: number = AUDIO_SPEC.frameMs,
   minPauseMs = 300,
 ): Array<{ startMs: number; durationMs: number }> {
   const pauses: Array<{ startMs: number; durationMs: number }> = []

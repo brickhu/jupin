@@ -17,6 +17,7 @@
 | [on-device-capability.md](research/on-device-capability.md) | 端侧能力评估（iOS 原生 / 小程序 / 开源模型） | 小程序必需能力全都能做 |
 | [content-production-research.md](research/content-production-research.md) | 内容生产调研（fish-audio 时间戳 / ECDICT / 难度定级 / 技巧生成） | fish-audio 原生支持词级时间戳 |
 | [platform-decision.md](research/platform-decision.md) | 平台选型论证（小程序 vs 原生客户端） | ⭐ 做小程序 |
+| [miniprogram-api-constraints.md](research/miniprogram-api-constraints.md) | **微信小程序 API 硬约束（官方文档核实）** | ⚠️ frameSize 单位 KB 且须整数 · sampleRate PC 不支持 · Worker 最大并发 1 |
 
 ### experiments/ —— 待执行的实验
 
