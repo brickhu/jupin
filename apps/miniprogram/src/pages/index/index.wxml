@@ -1,0 +1,28 @@
+<view class="page">
+  <view class="hero">
+    <text class="hero-title">句说</text>
+    <text class="hero-sub">英语朗读竞技场</text>
+  </view>
+
+  <view class="card">
+    <view class="status-row">
+      <text class="label">服务状态</text>
+      <text class="value {{health.ok ? 'ok' : 'bad'}}">{{health.text}}</text>
+    </view>
+    <view class="status-row">
+      <text class="label">评分引擎</text>
+      <text class="value">{{health.engine}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="section-title">脚手架自检</text>
+    <view class="check" wx:for="{{checks}}" wx:key="name">
+      <text class="check-icon">{{item.pass ? '✅' : '⬜️'}}</text>
+      <text class="check-name">{{item.name}}</text>
+      <text class="check-detail muted">{{item.detail}}</text>
+    </view>
+  </view>
+
+  <view class="btn-primary" bindtap="onRunAudioSelfTest">跑一次音频算法自检</view>
+</view>

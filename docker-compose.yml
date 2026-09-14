@@ -1,0 +1,46 @@
+# 本地开发环境：PostgreSQL（+ 可选 API 容器）
+#   pnpm db:up                      只起数据库
+#   docker compose --profile full up  起数据库 + API
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: jushuo-db
+    environment:
+      POSTGRES_DB: jushuo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+    ports:
+      # ⭐ 宿主机端口可配置：本机已有 Postgres 时用 DB_PORT=5544 避开冲突
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile.development
+    container_name: jushuo-api
+    profiles: ['full']
+    ports:
+      # ⭐ 必须映射到宿主机，小程序真机才能通过局域网 IP 访问
+      - '${API_PORT:-3000}:3000'
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/apps/server/node_modules
+      - /app/packages/shared/node_modules
+    environment:
+      DATABASE_URL: postgres://postgres:dev@db:5432/jushuo
+      ENGINE: mock
+      NODE_ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

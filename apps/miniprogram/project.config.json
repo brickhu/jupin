@@ -1,0 +1,17 @@
+{
+  "appid": "touristappid",
+  "projectname": "jushuo",
+  "description": "句说 —— 英语朗读竞技场",
+  "miniprogramRoot": "dist/",
+  "compileType": "miniprogram",
+  "libVersion": "3.0.0",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "postcss": false,
+    "minified": false,
+    "packNpmManually": false,
+    "ignoreDevUnusedFiles": false
+  }
+}

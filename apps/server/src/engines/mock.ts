@@ -1,0 +1,58 @@
+import type { ScoreEngine, ScoreOptions, ScoreResult } from './types'
+
+/**
+ * Mock 引擎 —— 本地开发用。
+ *
+ * 价值：
+ *  1. 调 UI / 交互时不用烧额度
+ *  2. 自动化测试可复现（固定 seed 时结果确定）
+ *  3. Docker 环境默认用它，避免误打真实 API
+ *
+ * ⚠️ 生成的是**确定性伪随机分**（由音频长度 + 参考文本 hash 决定），
+ *    这样同一个输入反复提交得到相同分数，便于调试排名逻辑。
+ */
+export class MockEngine implements ScoreEngine {
+  readonly name = 'mock'
+
+  constructor(private readonly opts: { baseScore?: number; jitter?: number } = {}) {}
+
+  async score({ refText, audio }: ScoreOptions): Promise<ScoreResult> {
+    const base = this.opts.baseScore ?? 78
+    const jitter = this.opts.jitter ?? 18
+
+    // 确定性哈希：同一 (文本, 音频长度) 永远得到同一分数
+    const seed = hash(`${refText}:${audio.length}`)
+    const total = clamp(base + ((seed % 1000) / 1000 - 0.5) * 2 * jitter, 0, 100)
+
+    const words = refText
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word, i) => {
+        const wSeed = hash(`${word}:${i}:${audio.length}`)
+        const score = clamp(total + ((wSeed % 1000) / 1000 - 0.5) * 30, 0, 100)
+        const startMs = i * 380
+        return {
+          word,
+          score: Math.round(score * 100) / 100,
+          dp: (score < 45 ? 'mispronunciation' : 'normal') as 'normal' | 'mispronunciation',
+          startMs,
+          endMs: startMs + 340,
+        }
+      })
+
+    return { total: Math.round(total * 100) / 100, words }
+  }
+}
+
+function hash(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.abs(h)
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v))
+}

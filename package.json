@@ -1,13 +1,26 @@
 {
   "name": "jushuo",
   "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "dev:frontend": "pnpm --filter frontend dev",
-    "dev:backend": "pnpm --filter backend dev",
-    "build:frontend": "pnpm --filter frontend build",
-    "build:backend": "pnpm --filter backend build",
-    "db:generate": "pnpm --filter backend db:generate",
-    "db:migrate": "pnpm --filter backend db:migrate",
-    "db:seed": "pnpm --filter backend db:seed"
+    "dev": "pnpm --filter @jushuo/server dev",
+    "dev:mp": "pnpm --filter @jushuo/miniprogram dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @jushuo/server db:generate",
+    "db:migrate": "pnpm --filter @jushuo/server db:migrate",
+    "seed": "pnpm --filter @jushuo/server seed",
+    "pipeline": "pnpm --filter @jushuo/pipeline start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

@@ -212,20 +212,44 @@ tools/pipeline/
 # 1. 依赖
 pnpm install
 
-# 2. 本地数据库
-docker compose up -d db
+# 2. 本地数据库（+ 首次迁移与种子）
+pnpm db:up                        # docker compose up -d db
+pnpm db:generate                  # 仅 schema 变更后需要
+pnpm db:migrate
+pnpm seed
 
-# 3. 迁移 + 种子
-pnpm --filter server db:migrate
-pnpm --filter server db:seed
+# 3. 起后端（.env 里 ENGINE=mock，不烧额度）
+pnpm dev                          # → http://localhost:3000
 
-# 4. 起后端（Mock 引擎，不烧额度）
-ENGINE=mock pnpm --filter server dev
+# 4. 小程序
+pnpm dev:mp                       # esbuild --watch
+# 然后微信开发者工具打开 apps/miniprogram（miniprogramRoot 指向 dist/）
 
-# 5. 小程序
-pnpm --filter miniprogram dev     # esbuild watch
-# 然后微信开发者工具打开 apps/miniprogram
+# 5. 验证
+pnpm -r typecheck
+pnpm -r test
 ```
+
+## ⚠️ 端口冲突（本机已有 Postgres / 其他服务时）
+
+`docker-compose.yml` 的宿主机端口是**可配置**的：
+
+```bash
+DB_PORT=5544 API_PORT=8899 docker compose up -d db
+```
+
+并把 `apps/server/.env` 的 `DATABASE_URL` 指向同一端口。
+
+**⚠️ 注意**：`API_PORT` 映射后，后端进程本身也要监听同一端口（`PORT` 环境变量）。
+
+## 已验证的脚手架能力
+
+| 项 | 命令 | 状态 |
+|---|---|---|
+| 全量类型检查 | `pnpm -r typecheck` | ✅ 4 个包通过 |
+| 音频算法单测 | `pnpm --filter @jushuo/shared test` | ✅ 15 个用例 |
+| 后端端到端 | 登录 → 提交 → 排名 → 冷却被拦 | ✅ 跑通 |
+| 小程序构建 | `pnpm --filter @jushuo/miniprogram build` | ✅ Worker 单文件、无 require 残留 |
 
 ---
 

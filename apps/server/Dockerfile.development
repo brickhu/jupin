@@ -1,0 +1,15 @@
+# 开发态 Dockerfile —— 对应微信云托管的「实时开发 / Live Coding」
+#
+# 官方定义：单阶段构建 + 把「编译命令」换成「启动命令」。
+# 这里 tsc build → tsx watch，源码由 docker-compose 挂载，改动即重启。
+FROM node:20-alpine
+WORKDIR /app
+RUN npm i -g pnpm@9 tsx
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/server/package.json ./apps/server/
+RUN pnpm install
+
+EXPOSE 3000
+CMD ["pnpm", "--filter", "@jushuo/server", "dev"]
