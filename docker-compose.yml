@@ -1,6 +1,13 @@
 # 本地开发环境：PostgreSQL（+ 可选 API 容器）
-#   pnpm db:up                      只起数据库
-#   docker compose --profile full up  起数据库 + API
+#
+#   pnpm db:up                        只起数据库
+#   docker compose --profile full up   起数据库 + API
+#
+# ⚠️ `name` 显式声明 compose 项目名：否则卷名取决于目录名，
+#    目录一改就会生成新卷、丢掉旧数据（本项目就因此踩过）。
+#    项目名 jushuo → 卷名 jushuo_pgdata。
+name: jushuo
+
 services:
   db:
     image: postgres:17-alpine
