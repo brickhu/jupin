@@ -37,3 +37,7 @@ npm-debug.log*
 
 # ---- 旧工程（v1，待清理）----
 # 保留在 git 历史中即可
+
+# Docker buildx 配置重定向（沙箱/CI 用）
+.buildx/
+.docker/

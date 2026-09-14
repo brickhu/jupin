@@ -295,14 +295,56 @@ export function dtwDistance(a: number[][], b: number[][]): number
 > **小程序里调试音频算法是地狱**——没有断点、难以复现、日志要开 vConsole。**能搬出来的全搬出来。**
 > Worker 只留一层薄适配：收帧 → 调纯函数 → 发结果。
 
-## 3.3 Docker 化（能，但要分层）
+## 3.3 ⭐ Docker 化 + OrbStack 统一管理（**已实测通过**）
 
 | 层 | Docker 化 | 说明 |
 |---|---|---|
 | **PostgreSQL** | ✅ 推荐 | 一键起、可重置 |
-| **后端服务** | ✅ 能，官方就是这条路 | 见下 |
+| **后端服务** | ✅ **已实测** | 见下 |
 | 内容流水线 | ✅ 能 | 批处理天然适合，但交互调试略麻烦 |
 | ⚠️ **小程序端** | ❌ **绝对不行** | **微信开发者工具必须跑在宿主机** |
+
+### 用法
+
+```bash
+pnpm dev:docker          # 起 db + api 容器（首次构建约 1 分钟）
+pnpm dev:docker:logs     # 跟日志
+pnpm dev:docker:ps       # 看状态
+pnpm dev:docker:down     # 停
+```
+
+在 **OrbStack** 里能直接看到 `jushuo-db` / `jushuo-api`，统一启停、看日志。
+
+### 实测结论（macOS + OrbStack）
+
+| 验证项 | 结果 |
+|---|---|
+| 容器构建 | ✅ |
+| 连数据库（走 compose 服务名 `db:5432`） | ✅ |
+| ⭐ **挂载卷热重载** | ✅ `[tsx] change in ./src/index.ts Restarting...` |
+| 端口映射到宿主机（真机可访问） | ✅ `0.0.0.0:8899->3000` |
+
+⚠️ **热重载是这个方案的分水岭** —— macOS 上挂载卷的文件监听历来不可靠，OrbStack 实测通过。
+
+### 两个已确认的细节
+
+1. **`.env` 与 compose 环境变量不冲突**
+   容器内 `process.loadEnvFile('.env')` 会加载挂载进来的 `.env`（其中 `DATABASE_URL` 指向宿主机的 `localhost:5544`，在容器里是**错的**）。
+   但实测确认：**`loadEnvFile` 不覆盖已存在的环境变量**，所以 compose `environment:` 注入的 `db:5432` 生效。
+   （这个行为单独验证过，不是推测。）
+
+2. **端口**：宿主机 `API_PORT`（本机 8899）→ 容器 3000。
+   小程序真机通过**宿主机局域网 IP + 8899** 访问。
+
+### 什么时候还是用 `pnpm dev`
+
+容器化牺牲的是**调试便利**（断点、attach）。要在 Node 里打断点调后端时，宿主机直跑更顺：
+
+```bash
+pnpm db:up && pnpm dev    # 只把数据库放容器里
+```
+
+**两种方式并存，按场景选。**
 
 **微信云托管官方方案「实时开发 / Live Coding」**（VSCode 插件 `Weixin Cloudbase`，容器右键选 Live Coding）会**自动生成 `Dockerfile.development` 和 `docker-compose.yml`**，代码变更自动重启进程。
 

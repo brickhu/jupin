@@ -37,3 +37,4 @@ serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 })
 
 export { app }
+
