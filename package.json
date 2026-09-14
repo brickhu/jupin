@@ -13,6 +13,7 @@
     "dev:docker": "docker compose --profile full up -d --build",
     "dev:docker:logs": "docker compose logs -f api",
     "dev:docker:down": "docker compose --profile full down",
+    "dev:docker:reset": "docker compose --profile full down -v && pnpm dev:docker",
     "dev:docker:ps": "docker compose --profile full ps",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",

@@ -1,11 +1,6 @@
 import type { ApiResult, SubmitResponse } from '@jushuo/shared'
 
-/**
- * 后端基址。
- * ⚠️ 真机预览时 localhost 指向手机自己，必须用**宿主机局域网 IP**，
- *    并在开发者工具勾选「不校验合法域名」。
- */
-const BASE_URL = 'http://192.168.1.5:3000'
+import { BASE_URL } from '../../config'
 
 let token = ''
 

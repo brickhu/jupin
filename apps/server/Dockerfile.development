@@ -2,6 +2,9 @@
 #
 # 官方定义：单阶段构建 + 把「编译命令」换成「启动命令」。
 # 这里 tsc build → tsx watch，源码由 docker-compose 挂载，改动即重启。
+#
+# ⚠️ 入口脚本负责「迁移 → 种子 → 起服务」，
+#    让 `pnpm dev:docker` 成为真正的一条命令。
 FROM node:20-alpine
 WORKDIR /app
 RUN npm i -g pnpm@9 tsx
@@ -11,5 +14,8 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
 RUN pnpm install
 
+COPY apps/server/docker-entrypoint.dev.sh /usr/local/bin/dev-entrypoint
+RUN chmod +x /usr/local/bin/dev-entrypoint
+
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@jushuo/server", "dev"]
+CMD ["/usr/local/bin/dev-entrypoint"]

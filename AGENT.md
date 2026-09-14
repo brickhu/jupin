@@ -208,39 +208,62 @@ tools/pipeline/
 
 # 二、环境搭建
 
+## ⭐ 推荐路径：一条命令起全套（Docker / OrbStack）
+
 ```bash
-# 1. 依赖
-pnpm install
-
-# 2. 本地数据库（+ 首次迁移与种子）
-pnpm db:up                        # docker compose up -d db
-pnpm db:generate                  # 仅 schema 变更后需要
-pnpm db:migrate
-pnpm seed
-
-# 3. 起后端（.env 里 ENGINE=mock，不烧额度）
-pnpm dev                          # → http://localhost:3000
-
-# 4. 小程序
-pnpm dev:mp                       # esbuild --watch
-# 然后微信开发者工具打开 apps/miniprogram（miniprogramRoot 指向 dist/）
-
-# 5. 验证
-pnpm -r typecheck
-pnpm -r test
+pnpm install          # 1. 装依赖
+pnpm dev:docker       # 2. 起 db + api（自动迁移 + 自动种子）
+pnpm dev:mp           # 3. 小程序 esbuild --watch
 ```
+
+第 3 步之后，用**微信开发者工具**打开 `apps/miniprogram`（`miniprogramRoot` 指向 `dist/`）。
+
+**容器会自动完成**：应用迁移 → 写种子（幂等）→ 启动服务。
+所以不需要单独跑 `db:migrate` / `seed`。
+
+```bash
+pnpm dev:docker:logs    # 跟日志
+pnpm dev:docker:ps      # 看状态
+pnpm dev:docker:down    # 停
+pnpm dev:docker:reset   # ⭐ 推倒重来（删卷 + 重建 + 重新自举）
+```
+
+## 另一条路径：宿主机直跑（调后端断点时用）
+
+```bash
+pnpm db:up && pnpm dev
+```
+
+容器化牺牲的是**调试便利**（attach debugger 麻烦）。要在 Node 里打断点就用这条。
+
+## ⚠️ 小程序连后端的两个坑
+
+### 1. 改用你机器的局域网 IP
+
+`apps/miniprogram/src/config.ts`：```ts
+const DEV_BASE_URL = 'http://192.168.31.131:8899'   // ← 改成你的
+```
+
+查法：`ipconfig getifaddr en0`（macOS）。端口取根目录 `.env` 的 `API_PORT`。
+
+**真机上 `localhost` 指向手机自己**，必须走局域网 IP。已实测局域网可访问。
+
+### 2. 开发者工具里勾选「不校验合法域名」
+
+详情 → 本地设置 → ☑ 不校验合法域名、web-view、TLS 版本以及 HTTPS 证书。
+
+> ⚠️ 开发者工具**拿不到麦克风**，音频相关一律必须真机。
 
 ## ⚠️ 端口冲突（本机已有 Postgres / 其他服务时）
 
-`docker-compose.yml` 的宿主机端口是**可配置**的：
+`docker-compose.yml` 的宿主机端口**可配置**，根目录 `.env` 里改：
 
 ```bash
-DB_PORT=5544 API_PORT=8899 docker compose up -d db
+DB_PORT=5544    # 本机 5432 被占时
+API_PORT=8899   # 本机 3000 被占时
 ```
 
-并把 `apps/server/.env` 的 `DATABASE_URL` 指向同一端口。
-
-**⚠️ 注意**：`API_PORT` 映射后，后端进程本身也要监听同一端口（`PORT` 环境变量）。
+**⚠️ 两个都改了才一致**：`API_PORT` 是容器映射到宿主机的端口，容器内服务始终监听 3000。
 
 ## 已验证的脚手架能力
 
