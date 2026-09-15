@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getConqueredByStars, getTotalConquered } from '../services/conquest'
+import { getConqueredByDifficulty, getTotalConquered } from '../services/conquest'
 import type { Variables } from '../middleware/auth'
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
@@ -9,8 +9,8 @@ userRoutes.get('/me', async (c) => {
   const user = c.get('user')
   const userId = c.get('userId')
 
-  const [byStars, total] = await Promise.all([
-    getConqueredByStars(userId),
+  const [byDifficulty, total] = await Promise.all([
+    getConqueredByDifficulty(userId),
     getTotalConquered(userId),
   ])
 
@@ -20,10 +20,11 @@ userRoutes.get('/me', async (c) => {
       id: user.id,
       nickname: user.nickname,
       avatarUrl: user.avatarUrl,
-      isMember: !!user.subscriptionEnd && user.subscriptionEnd > new Date(),
+      status: user.status,
+      isMember: !!user.memberUntil && user.memberUntil > new Date(),
       nextFreeAt: user.nextFreeAt.toISOString(),
       conqueredCount: total,
-      conqueredByStars: byStars,
+      conqueredByDifficulty: byDifficulty,
     },
   })
 })

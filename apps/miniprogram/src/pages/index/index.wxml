@@ -4,14 +4,54 @@
     <text class="hero-sub">英语朗读竞技场</text>
   </view>
 
+  <!-- ⭐ 排查第一眼：现在到底链的是哪儿 -->
   <view class="card">
-    <view class="status-row">
-      <text class="label">服务状态</text>
-      <text class="value {{health.ok ? 'ok' : 'bad'}}">{{health.text}}</text>
+    <text class="section-title">后端连接</text>
+    <view class="row">
+      <text class="label">环境</text>
+      <text class="value small strong">{{env}}</text>
     </view>
-    <view class="status-row">
+    <view class="row">
+      <text class="label">判定依据</text>
+      <text class="value small">{{platform}} / {{envVersion}}</text>
+    </view>
+    <view class="row">
+      <text class="label">去向</text>
+      <text class="value small">{{envLabel}}</text>
+    </view>
+    <view class="row">
+      <text class="label">通道</text>
+      <text class="value small">{{transport}}</text>
+    </view>
+    <view class="row">
+      <text class="label">目标</text>
+      <text class="value small">{{target}}</text>
+    </view>
+    <view class="row">
+      <text class="label">状态</text>
+      <text class="value {{health.pending ? '' : (health.ok ? 'ok' : 'bad')}}">{{health.text}}</text>
+    </view>
+    <view class="row" wx:if="{{health.ok}}">
       <text class="label">评分引擎</text>
       <text class="value">{{health.engine}}</text>
+    </view>
+    <!-- 数据库子状态：服务活着但库连不上时，问题一目了然 -->
+    <view class="row" wx:if="{{db}}">
+      <text class="label">数据库</text>
+      <text class="value {{db.ok ? 'ok' : 'bad'}}">{{db.text}}</text>
+    </view>
+    <view class="diag" wx:if="{{db && db.detail}}">
+      <text class="diag-text">{{db.detail}}</text>
+    </view>
+
+    <!-- ⚠️ 失败时展示完整原因，而不是干巴巴的「请求失败」 -->
+    <view class="diag" wx:if="{{health.detail}}">
+      <text class="diag-text">{{health.detail}}</text>
+    </view>
+
+    <view class="btn-row">
+      <view class="btn-secondary" bindtap="onRetry">重试</view>
+      <view class="btn-secondary" bindtap="onCopyDiagnostics">复制诊断信息</view>
     </view>
   </view>
 
@@ -22,7 +62,11 @@
       <text class="check-name">{{item.name}}</text>
       <text class="check-detail muted">{{item.detail}}</text>
     </view>
+    <view wx:if="{{checks.length === 0}}" class="muted">尚未运行</view>
   </view>
 
   <view class="btn-primary" bindtap="onRunAudioSelfTest">跑一次音频算法自检</view>
+
+  <!-- ⭐ T1–T6 必须真机：开发者工具拿不到麦克风，sampleRate 参数在 PC 上也无效 -->
+  <view class="btn-secondary" bindtap="onOpenSelftest">真机自检 T1–T6 →</view>
 </view>

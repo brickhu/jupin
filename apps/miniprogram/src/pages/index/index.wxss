@@ -8,17 +8,45 @@
 .hero-title { font-size: 56rpx; font-weight: 700; letter-spacing: 4rpx; }
 .hero-sub { font-size: 28rpx; color: #8a8a8e; margin-top: 12rpx; }
 
-.status-row {
+.section-title { font-size: 30rpx; font-weight: 600; display: block; margin-bottom: 20rpx; }
+
+.row {
   display: flex;
   justify-content: space-between;
-  padding: 16rpx 0;
+  align-items: flex-start;
+  padding: 14rpx 0;
+  gap: 20rpx;
 }
-.label { color: #8a8a8e; font-size: 28rpx; }
-.value { font-size: 28rpx; }
+.label { color: #8a8a8e; font-size: 28rpx; flex-shrink: 0; }
+.value { font-size: 28rpx; text-align: right; word-break: break-all; }
+.value.small { font-size: 24rpx; color: #4f46e5; }
 .value.ok { color: #16a34a; }
 .value.bad { color: #dc2626; }
 
-.section-title { font-size: 30rpx; font-weight: 600; display: block; margin-bottom: 20rpx; }
+.diag {
+  margin-top: 16rpx;
+  background: #fef2f2;
+  border-left: 6rpx solid #dc2626;
+  border-radius: 8rpx;
+  padding: 20rpx;
+}
+.diag-text {
+  font-size: 24rpx;
+  color: #991b1b;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.btn-row { display: flex; gap: 16rpx; margin-top: 24rpx; }
+.btn-secondary {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  font-size: 27rpx;
+  color: #374151;
+}
 
 .check {
   display: flex;
@@ -29,3 +57,5 @@
 .check-icon { font-size: 28rpx; }
 .check-name { font-size: 28rpx; }
 .check-detail { margin-left: auto; }
+
+.muted { color: #8a8a8e; font-size: 26rpx; }

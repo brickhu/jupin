@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "build": "tsc --noEmit && node build.mjs",
+    "start": "node dist/index.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
@@ -16,10 +16,11 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "@jushuo/shared": "workspace:*",
+    "cos-nodejs-sdk-v5": "^2",
     "drizzle-orm": "^0.38.3",
     "fast-xml-parser": "^4.5.1",
     "hono": "^4.6.14",
-    "postgres": "^3.4.5",
+    "mysql2": "^3",
     "ws": "^8.18.0",
     "zod": "^3.24.1"
   },
@@ -27,6 +28,7 @@
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
     "drizzle-kit": "^0.30.1",
+    "esbuild": "^0.24.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"

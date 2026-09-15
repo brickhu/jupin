@@ -1,6 +1,7 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/index/index",
+    "pages/selftest/selftest"
   ],
   "workers": "workers",
   "window": {

@@ -90,7 +90,7 @@ score(audio: Buffer, refText: string) → { total: number }
 └──────┬──────────────────────┬─────────────────────┘
        │                      │
 ┌──────▼──────┐      ┌────────▼────────┐
-│ 讯飞 ISE     │      │ PostgreSQL      │
+│ 讯飞 ISE     │      │ MySQL 8         │
 │ (只买分数)   │      │ 成绩/用户/榜单    │
 └─────────────┘      └─────────────────┘
 
@@ -143,10 +143,9 @@ onFrameRecorded (每 40ms, 1280B = 640 采样 @16k)
 ```
 /cdn/
   topics.json                     # 主题集
-  passages/{id}.json              # 短文 + 竞技场列表
-  arenas/{id}.json                # 竞技场 + 词级数据 + 技巧
-  audio/passage/{id}.mp3          # 整篇标准音
-  audio/arena/{id}.mp3            # 竞技场标准音
+  articles/{id}.json              # 正文：句子原文 + 词级数据  → articles.content_json
+  articles/{id}.tips.json         # 朗读技巧                 → articles.tips_json
+  audio/standard/{id}.mp3         # 标准发音                 → articles.standard_audio
   audio/word/{id}/{pos}.mp3       # ⭐ 单词音频（预切）
 ```
 
@@ -173,29 +172,56 @@ onFrameRecorded (每 40ms, 1280B = 640 采样 @16k)
 |---|---|---|
 | **运行时** | **微信云托管**（Node 容器） | 支持 WebSocket、免域名备案、免运维 |
 | **框架** | **Hono** | 轻、快、TS 友好 |
-| **数据库** | ⭐ **PostgreSQL** | 榜单需聚合/窗口函数；成绩/用户/征服是强关系型 |
-| **对象存储** | 腾讯云 COS + CDN | 标准音与内容 JSON |
-| **缓存** | **MVP 不需要 Redis** | 单竞技场榜单查询在 PG 上毫秒级 |
+| **数据库** | ⭐ **MySQL 8**（云托管内置） | 部署目标只提供 MySQL；本模型不用任何 PG 特有特性 |
+| **ORM** | **Drizzle**（`drizzle-orm/mysql2`） | 方言可换，schema 即类型 |
+| **对象存储** | 微信云开发存储 / 腾讯云 COS | 标准音与内容 JSON |
+| **缓存** | **MVP 不需要 Redis** | 单竞技场榜单查询走一条复合索引，毫秒级 |
 
-### 为什么必须 PostgreSQL
+### 为什么是 MySQL 而不是 PostgreSQL
 
-榜单核心查询：
+**原设计选的是 PostgreSQL，后来推翻了。** 决定因素不是技术偏好，是**部署目标**：
+
+- 微信云托管**只提供 MySQL 5.7/8.0**，没有 PG；
+- 官方明确「不支持用来部署数据库/Redis 等有状态服务」——也不能自己塞一个 PG 容器（容器无持久化存储）；
+- 变通路径只有「腾讯云 TDSQL-C PostgreSQL + 服务配 VPC 打通」，要多一份账单、多一套运维、跨 VPC 连接。
+
+而我们这个数据模型**不用任何 PG 特有特性**：无 jsonb、无数组、无 CTE、无窗口函数。
+既然如此，用它换「同环境 VPC 内网库 + 免运维 + 一张账单」是明显划算的。
+
+> ⚠️ 唯一损失：MySQL 没有 `INSERT ... RETURNING`。受影响的只有两处，
+> 已分别用 `INSERT IGNORE` + 回查、以及 `ON DUPLICATE KEY UPDATE` 解决
+> （见 `services/user.ts` 与 `routes/submissions.ts` 的注释）。
+
+### 榜单查询
+
+⚠️ 没有物化榜单表，全部从 `submissions` 现算。核心是一个「每人最高分」派生表：
 
 ```sql
--- 我的排名 + 参与人数
-SELECT COUNT(*) FILTER (WHERE score > $mine) + 1 AS rank,
-       COUNT(*) AS total
-FROM arena_entries WHERE arena_id = $1;
+-- 每人在该文章的最高分（所有榜单查询的基础）
+SELECT user_id, MAX(score) AS best, MIN(created_at) AS first_at
+FROM submissions
+WHERE article_id = ? AND status = 'scored'
+GROUP BY user_id
 
--- 附近排名（榜心）
-SELECT ... WHERE arena_id = $1
-ORDER BY score DESC, created_at ASC
-LIMIT 5 OFFSET GREATEST($rank - 3, 0);
+-- 我的排名 = 比我高的 + 同分但先到的 + 1
+SELECT
+  COUNT(CASE WHEN best > ? THEN 1
+             WHEN best = ? AND first_at < ? THEN 1 END) AS better,
+  COUNT(*) AS total
+FROM (上面的派生表);
 ```
 
-**一条复合索引即可覆盖**：`(arena_id, score DESC, created_at ASC)`
+**排序规则**：分数降序，同分按**最早提交时间升序**（先到者优先）——这样「刚刚超过你」的语义才准确。
 
-**排序规则**：分数降序，同分按**达成时间升序**（先到者优先）——这样"刚刚超过你"的语义才准确。
+> ⚠️ 严格说「先到」应是「**先达到该分数**」，但那是 correlated 子查询；
+> 这里用「最早提交时间」近似，对榜单语义影响可忽略。已记在 `services/leaderboard.ts` 的注释里。
+
+### ⚠️ 时间列一律用 DATETIME，不用 TIMESTAMP
+
+MySQL 的 `TIMESTAMP` 只到 **2038 年**；而 Drizzle 的 `datetime` 没有 `defaultNow()`，
+所以默认值写成显式 SQL：`.default(sql\`CURRENT_TIMESTAMP(3)\`)`。
+另外 `DATETIME` **不存时区**——全链路按 UTC 读写（连接池 `timezone: 'Z'` + 容器 `TZ=UTC`），
+否则「上次提交 + 24h」的滚动冷却会整体偏移。
 
 **榜心而非全榜**：揭晓页只返回"附近 5 条 + 人数 + 我的排名"，一次查询、数据量极小。
 
@@ -233,64 +259,114 @@ interface ScoreResult {
 
 ### 数据库表
 
+**命名原则**：**「竞技场」是抽象概念，不落到表名上。** 朗读单元就叫 `articles`，提交记录就叫 `submissions`。
+
 ```sql
 -- 用户
 users
-  id, openid, unionid, nickname, avatar_url
-  subscription_end            -- 会员到期时间
+  id, openid(UNIQUE), unionid, nickname, avatar_url
+  status                      -- normal | banned | deleted
+  member_until                -- ⭐ 冗余会员到期（热判断，不值得每次 join subscriptions）
   next_free_at                -- ⭐ 滚动冷却：上次提交时间 + 24h
   invalid_count, invalid_date -- 无效提交计数（防刷）
   created_at
 
--- 短文（内容单位，元数据在库，正文在 CDN）
-passages
-  id, title, stars_min, stars_max, topic_id
-  arena_count, is_active, published_at
+-- 朗读单元索引（文章 = 句子）。⚠️ 正文/技巧/标准音都是静态资源引用，不入库
+articles
+  id                          -- 由内容流水线分配
+  content_json                -- 正文静态 JSON 地址（句子原文 + 词级数据）
+  tips_json                   -- 朗读技巧 JSON 地址
+  standard_audio              -- 标准发音 MP3 地址
+  difficulty                  -- 难度 1–5      INDEX
+  category                    -- 分类          INDEX
+  content_status              -- draft | published | archived
+  content_hash                -- 内容指纹，流水线重跑时判断要不要重新发布
+  is_active                   -- 竞技开关（与 content_status 是两回事）
+  participant_count           -- 冗余计数，可排序
+  conquered_count             -- 征服人数（≥85）
+  created_at, updated_at
 
--- 竞技场（竞技单位）
-arenas
-  id, passage_id, position
-  content                     -- 句群文本
-  word_start, word_end        -- 在短文中的词区间
-  stars                       -- ⭐ ~ ⭐⭐⭐⭐⭐
-  word_count
-  expected_speech_ms          -- 用于预检第②层
-  participant_count           -- 冗余计数，避免每次 COUNT
-  is_active
+article_tags                  -- 独立成表才能按单个标签索引
+  article_id, tag             UNIQUE(article_id, tag)  INDEX(tag)
 
--- 成绩
-arena_entries
-  id, arena_id, user_id
-  score                       -- 云端分 0–100
-  is_conquered                -- score >= 85
+-- 提交记录：**每次提交一条，永久保留**
+submissions
+  id                          -- ⭐ hash(userId, articleId, seq)，服务端算
+  user_id, article_id, seq    -- seq = 该用户在该文章的第几次提交
+  status                      -- scored | failed
+  score, is_conquered
+  audio_key                   -- audio/{articleId}/{userId}/{ts}.pcm（永久保留）
+  audio_bytes, audio_duration_ms
+  like_count                  -- 冗余计数，可排序
+  word_scores                 -- 词级分数 JSON（讯飞的副产品）
+  engine, fail_reason
+  created_at, scored_at
+  UNIQUE(user_id, article_id, seq)   -- 序列号唯一，并发撞号兜底
+  UNIQUE(user_id, audio_key)         -- ⭐ 幂等 + 防刷：一次录音只算一次提交
+  INDEX(user_id, created_at)
+
+-- 订阅
+subscriptions
+  id, user_id, plan, status, source, payment_id, start_at, end_at, created_at
+
+-- 支付（财务凭证，独立于订阅）
+payments
+  id, user_id, out_trade_no(UNIQUE), plan, amount(分), status
+  prepay_id, transaction_id(UNIQUE)   -- 微信支付：预支付会话 + 微信订单号
+  paid_at
+  refund_no, refund_amount, refunded_at   -- 退款是独立的单
+  raw_notify                          -- ⭐ 回调原文，对账出问题时的唯一救命稻草
   created_at
 
--- 榜单查询索引
-CREATE INDEX ON arena_entries (arena_id, score DESC, created_at ASC);
-CREATE UNIQUE INDEX ON arena_entries (arena_id, user_id);  -- 一人一场一条（取最高分）
+-- 点赞
+likes
+  id, submission_id, user_id, created_at   UNIQUE(submission_id, user_id)
 
--- 支付
-payments
-  id, user_id, type, amount, out_trade_no, status, paid_at, created_at
+-- LLM 反馈（⚠️ 与讯飞的「分」是两回事）
+reviews
+  id, submission_id
+  content                     -- 可空：pending 时还没有正文
+  model
+  status                      -- pending | done | failed
+  attempts, error
+  created_at, updated_at      INDEX(status, created_at)  -- 异步 worker 捞待处理
 ```
+
+### ⚠️ 榜单是**派生**的，没有物化表
+
+`arena_entries` 已删除。榜单从 `submissions` 现算：
+
+```sql
+-- 每个用户在该文章的最高分
+SELECT user_id, MAX(score) AS best, MIN(created_at) AS first_at
+FROM submissions WHERE article_id = ? AND status = 'scored'
+GROUP BY user_id
+```
+
+好处是**不可能漂移**；代价是榜单要聚合。文章上的 `participant_count` / `conquered_count` 是冗余计数，
+由提交时维护（首次提交 +1、首次征服 +1），用于列表页排序。
 
 ### CDN 侧 JSON
 
 ```jsonc
-// arenas/{id}.json
+// articles.contentJson 指向的正文 JSON
 {
   "id": 123,
-  "passageId": 12,
-  "content": "The only way to do great work is to love what you do.",
-  "stars": 1,
-  "audioUrl": "/audio/arena/123.mp3",
-  "expectedSpeechMs": 5200,
+  "text": "The only way to do great work is to love what you do.",  // ⭐ 评分参考文本
+  "translation": "做好工作的唯一方法就是热爱你所做的事。",
+  "difficulty": 1,
   "words": [
     {
-      "pos": 0, "word": "The", "ipa": "ðə", "pos": "art.", "meaningZh": "这（定冠词）",
+      "pos": 0, "word": "The", "ipa": "ðə", "posTag": "art.", "meaningZh": "这（定冠词）",
       "startMs": 0, "endMs": 180, "audioUrl": "/audio/word/123/0.mp3"
     }
-  ],
+  ]
+}
+```
+
+```jsonc
+// articles.tipsJson 指向的技巧 JSON
+{
   "tips": [
     {
       "type": "weak_form",
@@ -301,6 +377,9 @@ payments
   ]
 }
 ```
+
+⚠️ **评分前服务端要 fetch 这份 JSON 取 `text`** —— 这是「内容不入库」的必然代价
+（多一次可缓存的 HTTPS 请求）。见 `apps/server/src/routes/submissions.ts` 的 `articleRefText()`。
 
 ---
 
@@ -318,7 +397,7 @@ payments
    ⚠️ 是「朗读难度」，不是「阅读难度」
    特征：难音密度 / 连读点数 / 弱读词数 / 词数与音节数 / 最长词音节数
    锚点：5–10 条人工已定级样本（校准标尺）
-   输出：stars + reason（可解释）
+   输出：difficulty + reason（可解释）
 
 ④ 标准音 + 词级时间戳（fish-audio /v1/tts/stream/with-timestamp）
    整篇一份 + 每个竞技场一份

@@ -1,47 +1,28 @@
-import type { Stars } from '../constants/index'
+import type { Difficulty } from '../constants/index'
 
 /**
- * CDN 静态资源结构。
+ * 内容静态资源结构。
  * ⚠️ 内容不走后端 API 查库，全部由 CDN 分发。
+ *    articles.contentJson / tipsJson / standardAudio 分别指向下面的 JSON / MP3。
  */
 
-/** 短文（内容单位） */
-export interface PassageContent {
+/** 文章正文静态 JSON —— articles.contentJson 指向它 */
+export interface ArticleContent {
   id: number
-  title: string
-  content: string
+  /** 句子原文 —— 评分的参考文本 */
+  text: string
   translation: string
-  starsMin: Stars
-  starsMax: Stars
-  fullAudioUrl: string
-  arenas: ArenaSummary[]
+  difficulty: Difficulty
+  /** 词级数据（点词回放 / 逐词 A/B 的基础设施） */
+  words: ArticleWord[],
 }
 
-export interface ArenaSummary {
-  id: number
-  content: string
-  stars: Stars
-  participantCount: number
+/** 朗读技巧静态 JSON —— articles.tipsJson 指向它 */
+export interface ArticleTips {
+  tips: ReadingTip[],
 }
 
-/** 竞技场完整内容 */
-export interface ArenaContent {
-  id: number
-  passageId: number
-  content: string
-  stars: Stars
-  audioUrl: string
-  expectedSpeechMs: number
-  words: ArenaWord[]
-  tips: ReadingTip[]
-}
-
-/**
- * 词级数据。
- * ⚠️ startMs / endMs 来自 fish-audio 的词级时间戳，
- *    是「点词回放」与「逐词 A/B 对比」的基础设施。
- */
-export interface ArenaWord {
+export interface ArticleWord {
   pos: number
   word: string
   /** 国际音标（来自 ECDICT） */
@@ -49,7 +30,7 @@ export interface ArenaWord {
   /** 词性 */
   posTag: string | null
   /** 该词在此语境下的中文释义 */
-  meaningZh: string | null
+  meaningZh: string | null,
   startMs: number
   endMs: number
   /** 预切的单词音频 ⭐ 精度优于运行时 seek() */

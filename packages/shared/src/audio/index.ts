@@ -7,6 +7,7 @@
  *
  *    Worker 只做一层薄适配：收帧 → 调这里的函数 → 发结果。
  */
+export * from './frame-stats'
 export * from './pitch'
 export * from './vad'
 export * from './dtw'

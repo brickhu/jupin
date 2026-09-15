@@ -13,11 +13,11 @@ export function nextFreeAtFrom(now: Date = new Date()): Date {
 
 export function canSubmitFree(
   nextFreeAt: Date,
-  subscriptionEnd: Date | null,
+  memberUntil: Date | null,
   now: Date = new Date(),
 ): { allowed: boolean; reason?: 'COOLDOWN'; nextFreeAt: Date } {
   // 会员不受冷却限制
-  if (subscriptionEnd && subscriptionEnd > now) {
+  if (memberUntil && memberUntil > now) {
     return { allowed: true, nextFreeAt }
   }
   if (nextFreeAt > now) {

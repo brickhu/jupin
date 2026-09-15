@@ -1,9 +1,7 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
-import { db } from '../db'
-import { users } from '../db/schema'
-import { signToken } from '../lib/token'
 import { env } from '../env'
+import { signToken } from '../lib/token'
+import { getOrCreateUserByOpenid } from '../services/user'
 
 export const authRoutes = new Hono()
 
@@ -12,6 +10,10 @@ export const authRoutes = new Hono()
  *
  * ⭐ 小程序用 openid 登录，**不需要注册、不需要密码、不需要验证码**——
  *    打开即已登录，注册转化损失归零。
+ *
+ * ⚠️ 部署到微信云托管后，走 callContainer 的请求**根本不需要走这个接口**：
+ *    微信网关直接注入 x-wx-openid，见 middleware/auth.ts 路径①。
+ *    本接口保留给「本地联调 / 公网访问」这条降级路径。
  */
 authRoutes.post('/login', async (c) => {
   const { code } = await c.req.json<{ code?: string }>()
@@ -37,11 +39,7 @@ authRoutes.post('/login', async (c) => {
     openid = data.openid
   }
 
-  let [user] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
-  if (!user) {
-    const inserted = await db.insert(users).values({ openid, nextFreeAt: new Date(0) }).returning()
-    user = inserted[0]!
-  }
+  const user = await getOrCreateUserByOpenid(openid)
 
   return c.json({
     ok: true,

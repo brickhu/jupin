@@ -43,7 +43,11 @@ export class Recorder {
     this.manager.onError((err) => this.cb.onError?.(new Error(err.errMsg)))
   }
 
-  start(): void {
+  /**
+   * @param opts.frameSizeKb 覆盖 frameSize（真机自检的扫描测试用）。
+   *        ⚠️ frameSize 只是**请求值**，设备可能不严格采纳 —— 见 AUDIO_SPEC 的注释。
+   */
+  start(opts: { frameSizeKb?: number } = {}): void {
     this.wire()
     this.chunks = []
     this.startedAt = Date.now()
@@ -59,7 +63,7 @@ export class Recorder {
       // ⭐ 直出裸 PCM，与引擎零转码
       // ⚠️ frameSize 单位是 KB 且必须是整数；官方限定「暂仅支持 mp3、pcm 格式」
       format: 'PCM',
-      frameSize: AUDIO_SPEC.frameSizeKb,
+      frameSize: opts.frameSizeKb ?? AUDIO_SPEC.frameSizeKb,
     })
   }
 

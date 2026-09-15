@@ -1,39 +1,40 @@
-import type { Stars } from '../constants/index'
+import type { Difficulty } from '../constants/index'
 
 /** 用户 */
 export interface User {
   id: number
   nickname: string | null
   avatarUrl: string | null
-  /** 会员到期时间；null 表示非会员 */
-  subscriptionEnd: string | null
+  /** 会员到期时间；null 表示非会员（冗余自 subscriptions） */
+  memberUntil: string | null
   /** ⭐ 下次免费提交时间（滚动冷却） */
   nextFreeAt: string
   createdAt: string
 }
 
-/** 成绩 —— 一次「提交检测」的产物 */
-export interface ArenaEntry {
-  id: number
-  arenaId: number
+/** 提交记录 —— 每次提交一条 */
+export interface Submission {
+  /** hash(userId, articleId, seq) */
+  id: string
   userId: number
-  /** 云端权威分 0–100 */
-  score: number
-  /** 该次是否刷新了个人记录 */
-  isPersonalBest: boolean
-  /** score >= CONQUEST_THRESHOLD */
-  isConquered: boolean
+  articleId: number
+  seq: number
+  status: 'scored' | 'failed'
+  score: number | null
+  isConquered: boolean | null
+  audioKey: string | null
   createdAt: string
 }
 
-/** 竞技场（竞技单位 = 句群） */
-export interface Arena {
+/** 朗读单元索引（文章 = 句子，正文在静态 JSON 里） */
+export interface Article {
   id: number
-  passageId: number
-  content: string
-  stars: Stars
-  wordCount: number
-  /** 预期语音时长（毫秒），用于本地预检第②层 */
-  expectedSpeechMs: number
+  contentJson: string
+  tipsJson: string | null
+  standardAudio: string | null
+  difficulty: Difficulty
+  category: string
+  isActive: boolean
   participantCount: number
+  conqueredCount: number
 }

@@ -1,14 +1,16 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
-import { CONQUEST_THRESHOLD } from '@jushuo/shared'
-import type { SubmitResponse } from '@jushuo/shared'
+import { and, count, eq, sql } from 'drizzle-orm'
+import { AUDIO_SPEC, CONQUEST_THRESHOLD } from '@jushuo/shared'
+import type { SubmitResponse, WordScore } from '@jushuo/shared'
 import { db } from '../db'
-import { arenaEntries, arenas, users } from '../db/schema'
+import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { getEngine } from '../engines'
 import { getStorage } from '../storage'
+import { assertAudioKeyOwnedBy, makeSubmissionId } from '../services/audio-key'
+import { nextSeq } from '../services/submission'
 import { canSubmitFree, nextFreeAtFrom, trackInvalid } from '../services/cooldown'
-import { getLeaderboardAround, getMyScore, getRank } from '../services/leaderboard'
+import { getLeaderboardAround, getMyBest, getRank } from '../services/leaderboard'
 import type { Variables } from '../middleware/auth'
 
 export const submissionsRoutes = new Hono<{ Variables: Variables }>()
@@ -16,50 +18,70 @@ export const submissionsRoutes = new Hono<{ Variables: Variables }>()
 /**
  * ⭐ 提交检测 —— 全产品唯一花钱的地方。
  *
- * 流程：
- *   1. 冷却检查（会员不受限）
- *   2. 调用评分引擎（薄接口，只要一个 total）
- *   3. 写成绩（同场取最高分）、更新冷却
- *   4. 返回排名 / 差距 / 击败人数 / 是否刷新 / 是否征服
+ * 顺序很讲究：
+ *   1. **校验音频路径属于当前用户**（安全边界，最便宜的拒绝放最前）
+ *   2. **幂等检查** —— 同一段音频已提交过就直接返回，**必须在冷却之前**
+ *      （否则「重试」会被自己造成的冷却挡住，得到 429）
+ *   3. 冷却检查
+ *   4. 分配序列号 → 生成 submissionId(hash(userId, articleId, seq))
+ *   5. 读音频 → 评分 → 写 submissions（每次一条，永久）
+ *   6. 失败则删除音频对象
+ *
+ * ⚠️⚠️ 服务端不接受客户端传 fileID，只接受结构化路径并校验它。
+ * ⚠️ 音频**永久保留**，只在检测失败时删除。
  */
 submissionsRoutes.post('/', async (c) => {
   const userId = c.get('userId')
   const user = c.get('user')
 
-  // ⭐ 音频不走请求体 —— 小程序→云托管的请求体有大小限制（大请求报 nginx 413），
-  //    而 20 秒 16k 音频约 640KB 远超限制。
-  //    正确路径：小程序 wx.cloud.uploadFile 直传对象存储 → 这里只收 fileID。
-  //
-  //    兼容分支：multipart 直传仅供本地联调（无云环境时也能跑通链路）。
-  const contentType = c.req.header('Content-Type') ?? ''
-  let arenaId: number
-  let audio: Uint8Array
-  let audioKey: string | null = null
-
-  if (contentType.includes('multipart/form-data')) {
-    const form = await c.req.formData()
-    arenaId = Number(form.get('arenaId'))
-    const audioFile = form.get('audio')
-    if (!arenaId || !(audioFile instanceof File)) {
-      return c.json({ ok: false, error: '缺少 arenaId 或 audio' }, 400)
-    }
-    audio = new Uint8Array(await audioFile.arrayBuffer())
-  } else {
-    const body = await c.req.json<{ arenaId?: number; fileID?: string }>()
-    arenaId = Number(body.arenaId)
-    if (!arenaId || !body.fileID) {
-      return c.json({ ok: false, error: '缺少 arenaId 或 fileID' }, 400)
-    }
-    audioKey = body.fileID
-    try {
-      audio = await getStorage().get(body.fileID)
-    } catch (err) {
-      return c.json({ ok: false, error: `读取音频失败: ${(err as Error).message}` }, 400)
-    }
+  const body = await c.req.json<{ articleId?: number; audioKey?: string }>()
+  const articleId = Number(body.articleId)
+  const audioKey = body.audioKey
+  if (!articleId || !audioKey) {
+    return c.json({ ok: false, error: '缺少 articleId 或 audioKey' }, 400)
   }
 
-  // ---- 1. 冷却检查 ----
-  const gate = canSubmitFree(user.nextFreeAt, user.subscriptionEnd)
+  // ---- 1. ⚠️ 安全边界：路径必须属于当前用户 ----
+  try {
+    assertAudioKeyOwnedBy(audioKey, userId, articleId)
+  } catch (err) {
+    console.warn(`[submissions] 拒绝非法音频路径 user=${userId} key=${audioKey}`)
+    return c.json({ ok: false, error: (err as Error).message }, 403)
+  }
+
+  // ---- 2. ⭐ 幂等：同一段录音只算一次提交 ----
+  // 网络重试 / 用户连点都会走到这里。没有它就会重复扣冷却、多插一条记录。
+  const [replay] = await db
+    .select()
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        eq(submissions.audioKey, audioKey),
+        eq(submissions.status, 'scored'),
+      ),
+    )
+    .limit(1)
+  if (replay && replay.score !== null) {
+    console.log(`[submissions] 幂等命中，重放结果 user=${userId} key=${audioKey}`)
+    return c.json({
+      ok: true,
+      data: await buildResponse({
+        articleId,
+        userId,
+        score: replay.score,
+        isConquered: replay.isConquered ?? false,
+        // 重放不是新成绩：不动冷却，也不显示进步
+        isPersonalBest: false,
+        previousBest: replay.score,
+        nextFreeAt: user.nextFreeAt,
+        words: replay.wordScores ? (JSON.parse(replay.wordScores) as WordScore[]) : undefined,
+      }),
+    })
+  }
+
+  // ---- 3. 冷却检查 ----
+  const gate = canSubmitFree(user.nextFreeAt, user.memberUntil)
   if (!gate.allowed) {
     return c.json(
       { ok: false, code: 'COOLDOWN', error: '挑战冷却中', nextFreeAt: user.nextFreeAt },
@@ -67,95 +89,173 @@ submissionsRoutes.post('/', async (c) => {
     )
   }
 
-  const [arena] = await db.select().from(arenas).where(eq(arenas.id, arenaId)).limit(1)
-  if (!arena) return c.json({ ok: false, error: '竞技场不存在' }, 404)
+  const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
+  if (!article) return c.json({ ok: false, error: '文章不存在' }, 404)
 
-  // ---- 2. 评分 ----
-  // ⚠️ 音频必须是裸 PCM（16k/16bit/单声道），WAV 要去掉头部，否则引擎会判「乱读」
-  const raw = audio
+  // ---- 4. 分配序列号 ----
+  const seq = await nextSeq(userId, articleId)
+  const submissionId = makeSubmissionId(userId, articleId, seq)
+
+  // ---- 5. 读音频 + 评分 ----
+  let audio: Uint8Array
+  try {
+    audio = await getStorage().get(audioKey)
+  } catch (err) {
+    return c.json({ ok: false, error: `读取音频失败: ${(err as Error).message}` }, 400)
+  }
+
+  const record = {
+    id: submissionId,
+    userId,
+    articleId,
+    seq,
+    audioKey,
+    engine: env.ENGINE,
+    audioBytes: audio.byteLength,
+    // 裸 PCM 16bit 单声道：字节数 ÷ 每秒字节数 = 秒数
+    audioDurationMs: Math.round(
+      (audio.byteLength / ((AUDIO_SPEC.sampleRate * AUDIO_SPEC.channels * AUDIO_SPEC.bitDepth) / 8)) *
+        1000,
+    ),
+  }
 
   let result
   try {
-    result = await getEngine().score({ refText: arena.content, audio: raw })
+    const refText = await articleRefText(article)
+    result = await getEngine().score({ refText, audio })
   } catch (err) {
-    // 引擎侧判定无效（无有效语音 / 格式不符）→ 不消耗冷却，但计数防刷
-    const today = new Date().toISOString().slice(0, 10)
-    const { count, blocked } = trackInvalid(user.invalidCount, user.invalidDate, today)
+    const reason = (err as Error).message
+
+    // 检测失败 → 记一条 failed（序列号递增），并删除音频
     await db
-      .update(users)
-      .set({ invalidCount: count, invalidDate: today })
-      .where(eq(users.id, userId))
-    return c.json(
-      { ok: false, error: (err as Error).message, blocked },
-      blocked ? 429 : 400,
-    )
+      .insert(submissions)
+      .values({ ...record, status: 'failed', failReason: reason.slice(0, 255) })
+      .catch(() => {})
+    await getStorage().remove(audioKey).catch((e) => {
+      console.warn(`[submissions] 删除无效音频失败 key=${audioKey}:`, (e as Error).message)
+    })
+
+    const today = new Date().toISOString().slice(0, 10)
+    const { count: invalidCount, blocked } = trackInvalid(user.invalidCount, user.invalidDate, today)
+    await db.update(users).set({ invalidCount, invalidDate: today }).where(eq(users.id, userId))
+    return c.json({ ok: false, error: reason, blocked }, blocked ? 429 : 400)
   }
 
   const score = Math.round(result.total)
   const isConquered = score >= CONQUEST_THRESHOLD
 
-  // ---- 3. 写成绩（同场取最高分） ----
-  const previousBest = await getMyScore(arenaId, userId)
+  // 是否第一次提交 / 第一次征服（用于更新 articles 的冗余计数）
+  const isFirstSubmission = seq === 1
+  const [priorConquer] = await db
+    .select({ n: count() })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        eq(submissions.articleId, articleId),
+        eq(submissions.isConquered, true),
+      ),
+    )
+  const isFirstConquer = isConquered && Number(priorConquer?.n ?? 0) === 0
+
+  // 本次之前的最高分（要在插入之前取）
+  const before = await getMyBest(articleId, userId)
+  const previousBest = before ? before.score : null
   const isPersonalBest = previousBest === null || score > previousBest
 
-  if (isPersonalBest) {
-    await db
-      .insert(arenaEntries)
-      .values({
-        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
-        arenaId,
-        userId,
-        score,
-        isConquered,
-        words: result.words ? JSON.stringify(result.words) : null,
-      })
-      .onConflictDoUpdate({
-        target: [arenaEntries.arenaId, arenaEntries.userId],
-        set: { score, isConquered, words: result.words ? JSON.stringify(result.words) : null },
-      })
-      .returning()
+  // ---- 6a. 写提交记录（每次一条，永久）----
+  await db.insert(submissions).values({
+    ...record,
+    status: 'scored',
+    score,
+    isConquered,
+    wordScores: result.words ? JSON.stringify(result.words) : null,
+    scoredAt: new Date(),
+  })
 
-    await db
-      .update(arenas)
-      .set({ participantCount: arena.participantCount + (previousBest === null ? 1 : 0) })
-      .where(eq(arenas.id, arenaId))
-  }
+  // ---- 6b. 更新文章的参与/征服计数 ----
+  await db
+    .update(articles)
+    .set({
+      participantCount: sql`${articles.participantCount} + ${isFirstSubmission ? 1 : 0}`,
+      conqueredCount: sql`${articles.conqueredCount} + ${isFirstConquer ? 1 : 0}`,
+    })
+    .where(eq(articles.id, articleId))
 
-  // ---- 4. 更新冷却（会员不变） ----
-  const isMember = !!user.subscriptionEnd && user.subscriptionEnd > new Date()
+  // ---- 7. 更新冷却（会员不变）----
+  const isMember = !!user.memberUntil && user.memberUntil > new Date()
   const nextFreeAt = isMember ? user.nextFreeAt : nextFreeAtFrom()
   await db.update(users).set({ nextFreeAt, invalidCount: 0 }).where(eq(users.id, userId))
 
-  // ---- 5. 组装返回 ----
-  const rankInfo = await getRank(arenaId, score)
-  const leaderboard = await getLeaderboardAround(arenaId, userId)
+  return c.json({
+    ok: true,
+    data: await buildResponse({
+      articleId,
+      userId,
+      score,
+      isConquered,
+      isPersonalBest,
+      previousBest,
+      nextFreeAt,
+      words: result.words,
+    }),
+  })
+})
 
-  const payload: SubmitResponse = {
-    score,
+/** 组装返回 —— 正常提交与幂等重放共用，避免两处逻辑漂移 */
+async function buildResponse(input: {
+  articleId: number
+  userId: number
+  score: number
+  isConquered: boolean
+  isPersonalBest: boolean
+  previousBest: number | null
+  nextFreeAt: Date
+  words?: WordScore[]
+}): Promise<SubmitResponse> {
+  const [rankInfo, leaderboard] = await Promise.all([
+    getRank(input.articleId, input.userId),
+    getLeaderboardAround(input.articleId, input.userId),
+  ])
+  return {
+    score: input.score,
     rank: rankInfo.rank,
     participantCount: rankInfo.participantCount,
     gapToPrev: rankInfo.gapToPrev,
     beatenCount: rankInfo.beatenCount,
-    isPersonalBest,
-    isConquered,
-    previousBest,
-    nextFreeAt: nextFreeAt.toISOString(),
+    isPersonalBest: input.isPersonalBest,
+    isConquered: input.isConquered,
+    previousBest: input.previousBest,
+    nextFreeAt: input.nextFreeAt.toISOString(),
     leaderboard,
-    words: result.words,
+    words: input.words,
   }
+}
 
-  // ---- 6. 隐私：评完分删除音频 ----
-  // ⚠️ 用户录音属于个人信息。默认「用完即删」，不留存。
-  //    若将来要做「点词回放」的云端留存，必须：
-  //      ① 在隐私协议中声明  ② 设定生命周期（如 N 天自动清理）③ 提供删除入口
-  if (env.DELETE_AUDIO_AFTER_SCORE && audioKey) {
+/**
+ * 取评分的参考文本。
+ *
+ * ⚠️ 正文在静态 JSON 里（articles.contentJson 是它的地址），所以这里要 fetch。
+ *    这是「内容不入库」的必然代价：评分前多一次可缓存的 HTTPS 请求。
+ *
+ * ⚠️ 内容流水线还没建（tools/pipeline 是桩），所以：
+ *    · contentJson 是 http(s) 地址 → fetch 并取 .text
+ *    · 其它情况（相对路径 / 占位）→ 返回空串，让 mock 链路能跑通；
+ *      词级数据要等真实内容接入后才有。
+ */
+async function articleRefText(article: typeof articles.$inferSelect): Promise<string> {
+  const url = article.contentJson
+  if (/^https?:\/\//.test(url)) {
     try {
-      await getStorage().remove(audioKey)
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = (await res.json()) as { text?: string }
+        if (typeof data.text === 'string' && data.text) return data.text
+      }
+      console.warn(`[submissions] 正文 JSON 无法解析：${url}`)
     } catch (err) {
-      // 删除失败不影响本次评分结果，但要留痕
-      console.warn(`[submissions] 音频删除失败 key=${audioKey}:`, (err as Error).message)
+      console.warn(`[submissions] 拉取正文失败 ${url}:`, (err as Error).message)
     }
   }
-
-  return c.json({ ok: true, data: payload })
-})
+  return ''
+}

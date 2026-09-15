@@ -1,10 +1,10 @@
-import type { Stars } from '../constants/index'
+import type { Difficulty } from '../constants/index'
 
 /**
  * 引擎输出的词级结果。
- * ⚠️ 与 CDN 的 ArenaWord 是两回事：
+ * ⚠️ 与内容的 ArticleWord 是两回事：
  *   WordScore = **运行时的评分结果**（这次这个词读得怎么样）
- *   ArenaWord = **内容侧的词级数据**（音标 / 释义 / 示范音频）
+ *   ArticleWord = **内容侧的词级数据**（音标 / 释义 / 示范音频）
  * 客户端按 position 把两者拼起来渲染。
  */
 export interface WordScore {
@@ -23,9 +23,9 @@ export type ApiResult<T> =
 /* ---------- 提交检测（核心） ---------- */
 
 export interface SubmitRequest {
-  arenaId: number
-  /** WAV 或裸 PCM，16k/16bit/单声道 */
-  audio: ArrayBuffer
+  articleId: number
+  /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.pcm */
+  audioKey: string
 }
 
 export interface SubmitResponse {
@@ -65,8 +65,8 @@ export interface TokenResponse {
 
 export interface MyStats {
   conqueredCount: number
-  /** 各星级已征服数量 */
-  conqueredByStars: Record<Stars, number>
+  /** 各难度已征服数量 */
+  conqueredByDifficulty: Record<Difficulty, number>
   nextFreeAt: string
   isMember: boolean
 }

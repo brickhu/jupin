@@ -1,31 +1,41 @@
-# 本地开发环境：PostgreSQL（+ 可选 API 容器）
+# 本地开发环境：MySQL（+ 可选 API 容器）
 #
 #   pnpm db:up                        只起数据库
 #   docker compose --profile full up   起数据库 + API
 #
-# ⚠️ `name` 显式声明 compose 项目名：否则卷名取决于目录名，
+# ⚠️ 用 MySQL 而非 PostgreSQL：部署目标是微信云托管，云托管只提供 MySQL。
+#    本地环境与线上保持同一方言，才不会出现「本地过了线上挂」。
+#
+# ⚠️ name 显式声明 compose 项目名：否则卷名取决于目录名，
 #    目录一改就会生成新卷、丢掉旧数据（本项目就因此踩过）。
-#    项目名 jushuo → 卷名 jushuo_pgdata。
+#    项目名 jushuo → 卷名 jushuo_mysqldata。
 name: jushuo
 
 services:
   db:
-    image: postgres:17-alpine
+    image: mysql:8.4
     container_name: jushuo-db
+    # ⚠️ 必须显式 utf8mb4：昵称里会有 emoji，utf8 三字节存不下会直接报错
+    command:
+      - '--character-set-server=utf8mb4'
+      - '--collation-server=utf8mb4_unicode_ci'
     environment:
-      POSTGRES_DB: jushuo
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: dev
+      MYSQL_DATABASE: jushuo
+      MYSQL_USER: jushuo
+      MYSQL_PASSWORD: dev
+      MYSQL_ROOT_PASSWORD: dev
+      # ⚠️ DATETIME 不存时区，容器统一 UTC，应用侧也按 UTC 读写
+      TZ: UTC
     ports:
-      # ⭐ 宿主机端口可配置：本机已有 Postgres 时用 DB_PORT=5544 避开冲突
-      - '${DB_PORT:-5432}:5432'
+      # ⭐ 宿主机端口可配置：本机已有 MySQL/Postgres 时用 DB_PORT=5544 避开冲突
+      - '${DB_PORT:-3306}:3306'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-pdev']
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
   api:
     build:
@@ -42,12 +52,13 @@ services:
       - /app/apps/server/node_modules
       - /app/packages/shared/node_modules
     environment:
-      DATABASE_URL: postgres://postgres:dev@db:5432/jushuo
+      DATABASE_URL: mysql://jushuo:dev@db:3306/jushuo
       ENGINE: mock
       NODE_ENV: development
+      TZ: UTC
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
-  pgdata:
+  mysqldata:

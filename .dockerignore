@@ -1,0 +1,37 @@
+# ⭐ 微信云托管会把「目标目录」整个打包上传 / 作为构建上下文。
+#    不排掉下面这些，上传量会从 ~1MB 膨胀到 300MB+
+#    （本仓库实测：.pnpm-home 176M + node_modules 139M）。
+
+node_modules
+**/node_modules
+.pnpm-home
+.pnpm-store
+.buildx
+.tmp
+.npm-cache
+
+# 版本控制与 CI
+.git
+.github
+
+# 运行时产物
+dist
+**/dist
+.uploads
+*.log
+
+# 文档与调研不参与服务端镜像
+docs
+
+# ⚠️ 刻意**不**整体排除 apps/miniprogram：
+#    Dockerfile 里 pnpm install --frozen-lockfile 需要它的 package.json，
+#    （pnpm 按 workspace glob 找项目，少一个 manifest 就和 lockfile 对不上）
+#    所以只排掉它的大块产物。
+apps/miniprogram/dist
+
+# 密钥绝不进镜像
+# ⚠️ 这里刻意**不写** `!.env.example` 这类否定规则：
+#    @wxcloud/cli 的 minimatchWithList 只要遇到一条未命中的 `!` 规则就整体返回“不忽略”，
+#    一条否定规则会让上面所有规则全部失效 —— 直接把 node_modules/.pnpm-home 全传上去。
+.env
+.env.*

@@ -38,8 +38,13 @@ App({
       this.globalData.ready = true
       console.log('[app] 登录完成')
     } catch (err) {
-      console.error('[app] 登录失败', err)
-      wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+      // ⚠️ 刻意**不弹 toast**：当前阶段后端经常没起来（尤其真机上），
+      //    弹「登录失败」会让人以为是账号问题，而其实是「后端未连接」。
+      //    首页的自检卡片会把这个错误连同原始 errMsg 一起展示，信息量更大也更准。
+      //
+      //    另外：真机自检页（T1–T6）是**纯端侧**的，后端连不上完全不影响它。
+      this.globalData.ready = false
+      console.warn('[app] 登录失败（后端未连接？）', err)
     }
   },
 })
