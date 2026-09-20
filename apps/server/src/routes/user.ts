@@ -1,16 +1,19 @@
 import { Hono } from 'hono'
-import { getConqueredByDifficulty, getTotalConquered } from '../services/conquest'
+import { getTotalConquered } from '../services/conquest'
+import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
 
-/** 个人主页：能力边界图数据 + 冷却状态 */
+/** 个人主页：Streak / 徽章 + 冷却状态 */
 userRoutes.get('/me', async (c) => {
   const user = c.get('user')
   const userId = c.get('userId')
 
-  const [byDifficulty, total] = await Promise.all([
-    getConqueredByDifficulty(userId),
+  // ⚠️ Streak 视图一律现算（它由库里四个字段纯推导），不缓存：
+  //    跨过零点之后「今天读没读」会翻面，缓存会让它停在昨天。
+  const [streak, conqueredCount] = await Promise.all([
+    readStreakView(userId),
     getTotalConquered(userId),
   ])
 
@@ -23,8 +26,8 @@ userRoutes.get('/me', async (c) => {
       status: user.status,
       isMember: !!user.memberUntil && user.memberUntil > new Date(),
       nextFreeAt: user.nextFreeAt.toISOString(),
-      conqueredCount: total,
-      conqueredByDifficulty: byDifficulty,
+      conqueredCount,
+      streak,
     },
   })
 })

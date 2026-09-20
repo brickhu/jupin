@@ -1,10 +1,11 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/selftest/selftest"
+    "pages/arena/arena",
+    "pages/reading/reading"
   ],
-  "workers": "workers",
   "window": {
+    "navigationStyle": "custom",
     "navigationBarTitleText": "句说",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",

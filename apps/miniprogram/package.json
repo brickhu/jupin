@@ -6,13 +6,18 @@
   "scripts": {
     "dev": "node build.mjs --watch",
     "build": "node build.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@jushuo/shared": "workspace:*",
     "@types/node": "^22.10.0",
     "esbuild": "^0.24.2",
     "miniprogram-api-typings": "^4.0.1",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "unocss": "^66.10.2",
+    "unocss-preset-weapp": "^66.0.2",
+    "unplugin-transform-class": "^0.7.0",
+    "vitest": "^2.1.0"
   }
 }

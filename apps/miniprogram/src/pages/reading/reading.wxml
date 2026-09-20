@@ -1,0 +1,184 @@
+<!-- ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），这里不要再写 pt-3 —— 见 lib/nav.ts -->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
+  <nav-bar id="nav" title="参与挑战" />
+
+  <!-- ── 加载中 ────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && !error}}">
+    <text class="text-28rpx text-muted">正在加载句子…</text>
+  </view>
+
+  <!-- ── 加载失败 ──────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-2.5 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onReload">重试</view>
+  </view>
+
+  <!-- ── 句子 ──────────────────────────────────────────────── -->
+  <!-- ⚠️ relative 是为了让右上角的喇叭能绝对定位到卡片角上 -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3 relative" wx:if="{{phase !== 'loading'}}">
+
+    <!-- ⭐ 整句标准音 —— 右上角。
+         ⚠️ 只在能播时才渲染（canPlayAudio）：点了没反应的图标比没有这个按钮更难排查。
+         ⚠️ catchtap 而不是 bindtap：这张卡片整体不可点，但喇叭在词的上方，
+            冒泡会让「点喇叭」顺带触发下面某个词的发音。 -->
+    <view class="absolute top-3 right-3 w-[64rpx] h-[64rpx] rounded-full bg-brand_10 flex items-center justify-center"
+          wx:if="{{canPlayAudio}}" catchtap="onPlaySentence">
+      <text class="text-30rpx">🔊</text>
+    </view>
+
+    <!-- ⚠️ px-1 mr-1 必须写在静态类上：色块只在命中的词上，
+         内边距若跟着 cls 走，着色时整行会抖 -->
+    <!-- ⚠️ pr-[76rpx] 给右上角的喇叭让出位置，否则长句会从图标底下穿过去 -->
+    <view class="flex flex-wrap {{canPlayAudio ? 'pr-[76rpx]' : ''}}">
+      <!-- ⭐ 点词听发音。data-i 带的是**下标**而不是词本身 ——
+           同一句里 "the" 会出现两次，按文本找必然指错那一个。 -->
+      <text class="text-44rpx leading-[1.5] px-1 mr-1 {{item.cls}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}"
+            wx:for="{{words}}" wx:key="i"
+            data-i="{{item.i}}" bindtap="onPlayWord">{{item.text}}</text>
+    </view>
+
+    <!-- ⚠️ 这里原来夹着一块「提示 + 分隔线」，正好卡在英文和中文中间 ——
+         它把一句话读成两截：先读英文，眼睛被一行灰字打断，再读中文。
+         而那些提示说的都是**下一屏那个按钮的名字**（试听 / 提交），
+         不写用户也不会按错。删掉之后整句和译文是连着的。 -->
+    <text class="text-26rpx text-faint mt-2 leading-[1.6] block">{{translation}}</text>
+  </view>
+
+  <!-- ── 录音 ──────────────────────────────────────────────── -->
+  <!-- ⚠️ 条件不能只写 phase !== 'loading'：那样出结果后这张卡片仍会渲染，
+       但内部所有 wx:if 都不成立 → 一个莫名其妙的空盒子 -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'ready' || phase === 'recording' || phase === 'recorded' || phase === 'submitting'}}">
+
+    <!-- 待录音 -->
+    <block wx:if="{{phase === 'ready'}}">
+      <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium" bindtap="onStartRecord">开始朗读</view>
+    </block>
+
+    <!-- 录音中 -->
+    <block wx:if="{{phase === 'recording'}}">
+      <view class="flex items-baseline justify-center gap-2 py-2.5">
+        <text class="text-36rpx text-bad">●</text>
+        <text class="text-36rpx font-semibold text-ink">{{elapsed}}s</text>
+      </view>
+      <view class="mb-2.5"></view>
+      <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
+    </block>
+
+    <!-- 录完 / 提交中 -->
+    <block wx:if="{{phase === 'recorded' || phase === 'submitting'}}">
+      <text class="text-26rpx text-faint block mb-2.5">已录 {{elapsed}} 秒</text>
+
+      <view class="flex gap-2 mb-2.5">
+        <view class="flex-1 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onReplay">▶ 试听</view>
+        <view class="flex-1 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onAgain">重录</view>
+      </view>
+
+      <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium {{phase === 'submitting' ? 'opacity-50' : ''}}" bindtap="onSubmit">
+        {{phase === 'submitting' ? (uploadPercent > 0 && uploadPercent < 100 ? '上传中 ' + uploadPercent + '%' : (scoringSeconds > 0 ? '打分中… ' + scoringSeconds + 's' : '打分中…')) : '提交检测'}}
+      </view>
+      <!-- ⭐ 等待必须可见：打分要十几秒，一句「打分中…」不动的按钮会被当成卡死 -->
+      <text class="text-22rpx text-faint block text-center mt-2" wx:if="{{phase === 'submitting' && uploadPercent >= 100}}">云端正在逐词评测，通常 10–20 秒，长句更久 —— 期间可以停留在此页</text>
+    </block>
+
+    <!-- 失败提示（冷却也走这里 —— 它不是错误，只是需要说清楚） -->
+    <view class="mt-2.5 bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5" wx:if="{{error}}">
+      <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    </view>
+  </view>
+
+  <!-- ── 结果 ──────────────────────────────────────────────── -->
+  <block wx:if="{{phase === 'done' && result}}">
+    <view class="bg-white rounded-2.5 p-3.5 mb-3">
+      <view class="flex items-baseline">
+        <text class="text-96rpx font-bold text-ink">{{result.score}}</text>
+        <text class="text-28rpx text-faint ml-1">分</text>
+        <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{result.isPersonalBest && result.previousBest !== null}}">个人最好</text>
+      </view>
+
+      <!-- ⭐ 四维得分 —— 讯飞本来就会返回，以前只是没往外取。
+           ⚠️ 完整度是**乘性因子**，所以「总分低」有两种原因：读不准，或没读完。
+              下面那行提示就是用来把这两件事分开说的。 -->
+      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{dimensions.length > 0}}">
+        <view class="flex">
+          <view class="flex-1" wx:for="{{dimensions}}" wx:key="key">
+            <text class="text-22rpx text-faint block">{{item.label}}</text>
+            <text class="text-30rpx font-semibold block {{item.textCls}}">{{item.value}}</text>
+            <view class="h-[6rpx] bg-line rounded-full mt-1">
+              <view class="h-[6rpx] rounded-full {{item.barCls}}" style="width:{{item.pct}}%"></view>
+            </view>
+          </view>
+        </view>
+        <text class="text-22rpx text-faint block mt-1.5 leading-[1.6]" wx:if="{{dimensionHint}}">{{dimensionHint}}</text>
+      </view>
+
+      <!-- ⭐ 录音公开与否 —— **提交之后**才问。
+           ⚠️ 提交前问等于让每个用户先做一个与「读好这句」无关的决定；
+              而听完自己的分数再决定，依据更足。 -->
+      <view class="flex items-center py-3 mt-2.5 border-t-[1rpx] border-t-solid border-t-line">
+        <view class="flex-1">
+          <text class="text-27rpx text-ink block">公开我的录音</text>
+          <text class="text-22rpx text-faint block mt-[6rpx]">关闭后别人看不到、也听不到这段声音，成绩照样上榜</text>
+        </view>
+        <switch checked="{{isPublic}}" bindchange="onTogglePublic" color="#4f46e5" />
+      </view>
+
+      <view class="flex mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line">
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">排名</text>
+          <text class="text-30rpx font-semibold text-ink">{{result.rank}} / {{result.participantCount}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">击败</text>
+          <text class="text-30rpx font-semibold text-ink">{{result.beatenCount}} 人</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">距上一名</text>
+          <text class="text-30rpx font-semibold text-ink">{{gapText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ⭐ Streak —— 结果页必须把「那天到底发生了什么」讲清楚：
+         同样一个数字，可能是续上了、可能只是今天已经读过、也可能是烧了冻结卡补回来的。
+         只说 +1 的话，用户根本不知道 Freeze 是干什么用的。 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{streak}}">
+      <view class="flex items-baseline">
+        <text class="text-40rpx">🔥</text>
+        <text class="text-48rpx font-bold text-ink ml-1.5">{{streak.streakDays}}</text>
+        <text class="text-26rpx text-faint ml-1">天连续</text>
+        <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{streak.counted && streak.delta > 0}}">+{{streak.delta}}</text>
+      </view>
+
+      <text class="text-24rpx text-body block mt-2 leading-[1.6]" wx:if="{{streak.counted && streak.freezeUsed === 0 && streak.delta > 0}}">今天这一句已经算上了，明天再来就接上了。</text>
+      <text class="text-24rpx text-warn block mt-2 leading-[1.6]" wx:if="{{streak.freezeUsed > 0}}">❄️ 用掉 {{streak.freezeUsed}} 张冻结卡，把断掉的那几天补上了 —— 连续天数没断。</text>
+      <text class="text-24rpx text-body block mt-2 leading-[1.6]" wx:if="{{streak.counted && streak.delta <= 0}}">中间断了几天，从今天重新开始数。历史最长 {{streak.streakBest}} 天还在。</text>
+      <text class="text-24rpx text-faint block mt-2 leading-[1.6]" wx:if="{{!streak.counted}}">今天已经读过一句了 —— 同一天多读不加天数。</text>
+      <text class="text-24rpx text-ok block mt-2 leading-[1.6]" wx:if="{{streak.freezeEarned > 0}}">❄️ 连续满 7 天，得到 {{streak.freezeEarned}} 张冻结卡（现有 {{streak.freezeCount}} 张）。</text>
+
+      <!-- ⭐ 新解锁的徽章 —— 只在这里弹一次，徽章墙在个人页 -->
+      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{streak.newBadges}}" wx:key="code">
+        <text class="text-28rpx text-ink">🎉 解锁徽章 {{item.emoji}} {{item.name}} —— {{item.blurb}}</text>
+      </view>
+      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{streak.nextBadge}}">
+        <text class="text-22rpx text-faint">下一个徽章 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}}，还差 {{streak.daysToNext}} 天</text>
+      </view>
+    </view>
+
+    <!-- 榜单 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.leaderboard.length > 0}}">
+      <text class="text-24rpx text-faint block mb-2">榜单</text>
+      <view class="flex items-center py-1.5" wx:for="{{result.leaderboard}}" wx:key="rank">
+        <text class="text-26rpx w-[60rpx] text-faint">{{item.rank}}</text>
+        <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
+        <text class="text-26rpx font-semibold text-ink">{{item.score}}</text>
+      </view>
+    </view>
+
+    <view class="flex gap-2">
+      <view class="flex-1 text-center py-[26rpx] rounded-2 bg-white text-body text-28rpx" bindtap="onAgain">再录一次</view>
+      <view class="flex-1 text-center py-[26rpx] rounded-2 bg-brand text-white text-28rpx" bindtap="onBack">返回</view>
+    </view>
+  </block>
+</view>

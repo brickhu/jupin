@@ -53,7 +53,10 @@ services:
       - /app/packages/shared/node_modules
     environment:
       DATABASE_URL: mysql://jushuo:dev@db:3306/jushuo
-      ENGINE: mock
+      # ⚠️ 刻意**不在这里设 ENGINE** —— 它由 apps/server/.env 决定。
+      #    两边都写就是两份真相：改了一处以为生效，实际被另一处盖住。
+      #    （部署工具那边也踩过同一个坑：apps/server/.env 的 ENGINE=mock
+      #      把云端部署的自动判据整个盖住了。）
       NODE_ENV: development
       TZ: UTC
     depends_on:

@@ -1,72 +1,125 @@
-<view class="page">
-  <view class="hero">
-    <text class="hero-title">句说</text>
-    <text class="hero-sub">英语朗读竞技场</text>
-  </view>
+<!-- ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），这里**不要再写 pt-3** ——
+     两者相加会多让出 12px。见 lib/nav.ts。 -->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
-  <!-- ⭐ 排查第一眼：现在到底链的是哪儿 -->
-  <view class="card">
-    <text class="section-title">后端连接</text>
-    <view class="row">
-      <text class="label">环境</text>
-      <text class="value small strong">{{env}}</text>
-    </view>
-    <view class="row">
-      <text class="label">判定依据</text>
-      <text class="value small">{{platform}} / {{envVersion}}</text>
-    </view>
-    <view class="row">
-      <text class="label">去向</text>
-      <text class="value small">{{envLabel}}</text>
-    </view>
-    <view class="row">
-      <text class="label">通道</text>
-      <text class="value small">{{transport}}</text>
-    </view>
-    <view class="row">
-      <text class="label">目标</text>
-      <text class="value small">{{target}}</text>
-    </view>
-    <view class="row">
-      <text class="label">状态</text>
-      <text class="value {{health.pending ? '' : (health.ok ? 'ok' : 'bad')}}">{{health.text}}</text>
-    </view>
-    <view class="row" wx:if="{{health.ok}}">
-      <text class="label">评分引擎</text>
-      <text class="value">{{health.engine}}</text>
-    </view>
-    <!-- 数据库子状态：服务活着但库连不上时，问题一目了然 -->
-    <view class="row" wx:if="{{db}}">
-      <text class="label">数据库</text>
-      <text class="value {{db.ok ? 'ok' : 'bad'}}">{{db.text}}</text>
-    </view>
-    <view class="diag" wx:if="{{db && db.detail}}">
-      <text class="diag-text">{{db.detail}}</text>
-    </view>
+  <!-- ⭐ 统一的自定义导航栏：左侧头像（点头像拉开全局用户面板），中间是品牌名 -->
+  <!-- ⚠️ id="nav" 是页面 onPageScroll 找到它的方式（见 lib/nav.ts），三页统一 -->
+  <nav-bar id="nav" title="{{brand.name}}" left="avatar" />
 
-    <!-- ⚠️ 失败时展示完整原因，而不是干巴巴的「请求失败」 -->
-    <view class="diag" wx:if="{{health.detail}}">
-      <text class="diag-text">{{health.detail}}</text>
-    </view>
-
-    <view class="btn-row">
-      <view class="btn-secondary" bindtap="onRetry">重试</view>
-      <view class="btn-secondary" bindtap="onCopyDiagnostics">复制诊断信息</view>
+  <!-- ── 顶部：定位 + 🔥 Streak ────────────────────────────────
+       ⚠️ 品牌名已经搬到导航栏标题上（那里才是「这一页叫什么」的位置），
+          这里不再重复写一遍 —— 同一屏里同一个词出现两次，
+          只会让人怀疑哪一个才算。 -->
+  <view class="flex items-center px-1 pb-4">
+    <text class="text-24rpx text-faint flex-1">{{brand.tagline}}</text>
+    <view class="flex items-baseline" wx:if="{{streak}}">
+      <text class="text-32rpx">🔥</text>
+      <text class="text-40rpx font-bold text-ink ml-1">{{streak.streakDays}}</text>
+      <text class="text-24rpx text-faint ml-1">天</text>
     </view>
   </view>
 
-  <view class="card">
-    <text class="section-title">脚手架自检</text>
-    <view class="check" wx:for="{{checks}}" wx:key="name">
-      <text class="check-icon">{{item.pass ? '✅' : '⬜️'}}</text>
-      <text class="check-name">{{item.name}}</text>
-      <text class="check-detail muted">{{item.detail}}</text>
-    </view>
-    <view wx:if="{{checks.length === 0}}" class="muted">尚未运行</view>
+  <!-- ── 加载中 ────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取挑战列表…</text>
   </view>
 
-  <view class="btn-primary" bindtap="onRunAudioSelfTest">跑一次音频算法自检</view>
+  <!-- ── 连不上 ────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
 
-  <!-- ⭐ T1–T6 必须真机：开发者工具拿不到麦克风，sampleRate 参数在 PC 上也无效 -->
-  <view class="btn-secondary" bindtap="onOpenSelftest">真机自检 T1–T6 →</view>
+  <block wx:else>
+    <!-- ══ 今天这一张 ═══════════════════════════════════════
+         ⚠️ 刻意**不写**「今日挑战」这种分组标题：
+            位置最上 + 字号最大 + 日期最新，本来就认不错，
+            再加一行标题只是多一层要读的东西。 -->
+    <view class="bg-white rounded-2.5 p-5">
+      <!-- ⭐ 卡片头：日期在左、箭头在右。
+           ⚠️ 日期放在卡片**内部**而不是外面的小标题行：历史和今日是同一张卡片，
+              日期在卡片里、角色一致，扫一眼就知道哪张是哪天。
+           ⚠️ 箭头是「点卡片进详情」的**唯一提示** —— 卡片底部还有一个按钮，
+              不给提示的话「点哪儿都一样」的错觉会让人以为自己点错了。 -->
+      <view class="flex items-center mb-3" data-date="{{today.date}}" bindtap="onOpenDetail">
+        <text class="text-24rpx text-faint">{{today.dateText}}</text>
+        <!-- ⭐ 竞技数据挂在箭头左侧：它和日期同属一行元信息。
+             原来单独占一行、还被一条分隔线隔开，一行只有 6 个字却占掉整行高度。
+             ⚠️ 这里**只**说「有多少人」——
+                「我参没参与」由按钮下方那行说，「我最好多少分」在详情页的榜单里。
+                同一件事说三遍，用户反而不知道哪一处才是准的。 -->
+        <text class="text-22rpx text-faint ml-auto shrink-0">{{today.stat}}</text>
+        <text class="text-36rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
+      </view>
+
+      <view class="flex items-start" data-date="{{today.date}}" bindtap="onOpenDetail">
+        <text class="text-44rpx leading-[1.5] font-semibold text-ink flex-1">{{today.text}}</text>
+      </view>
+
+      <view class="mt-3" data-date="{{today.date}}" bindtap="onOpenDetail">
+        <text class="text-26rpx text-faint leading-[1.6] block">{{today.translation}}</text>
+      </view>
+
+      <!-- ⚠️ 统计搬进卡片头之后，原来那行（连同上方的分隔线）就空了 ——
+           留着会是一条悬在句子和按钮之间、什么也没分开的横线 -->
+      <!-- ⚠️ 文案来自 startButtonLabel，与竞技场页共用同一份 —— 见 index.ts 的说明 -->
+      <view class="mt-4 text-center py-[26rpx] rounded-full bg-brand text-white text-30rpx font-medium"
+            data-id="{{today.articleId}}" data-date="{{today.date}}" bindtap="onStart">{{today.action}}</view>
+      <text class="text-22rpx text-faint block text-center mt-2.5">{{today.hint}}</text>
+    </view>
+
+    <!-- ══ 往日 ══════════════════════════════════════════════
+         ⚠️ 这一页**只有往日有分组标题**：今天那一张在最上面、字号最大、
+            日期也最新，本来就不会认错，再给它一行标题只是噪声；
+            而「往日」是一串同构卡片，需要一个词说明它们是什么。 -->
+    <view class="pt-6 pb-2 px-1" wx:if="{{history.length > 0}}">
+      <text class="text-28rpx font-semibold text-ink">往日挑战</text>
+    </view>
+
+    <!-- ⚠️ 往日卡片**不显示我参没参与**（药丸和「已挑战 N 次」都去掉了），
+         因为它们没有按钮、也就没有「按钮下方那行」来承接这个信息。
+         要看自己的成绩和名次，点进详情页 —— 那里有完整榜单。 -->
+    <!-- ⭐ 往日卡片**整张就是一个入口**，没有按钮。
+         ⚠️ 刻意不放按钮：往日是一串同构卡片，每张都挂一个实心按钮，
+            整页会变成一片按钮墙，反而看不出哪一张是今天。
+            要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
+    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="date"
+          data-date="{{item.date}}" bindtap="onOpenDetail">
+      <view class="flex items-center mb-2">
+        <text class="text-24rpx text-faint">{{item.dateText}}</text>
+        <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构 -->
+        <text class="text-22rpx text-faint ml-auto shrink-0">{{item.stat}}</text>
+        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
+      </view>
+
+      <view class="flex items-start">
+        <text class="text-32rpx leading-[1.5] text-ink flex-1">{{item.text}}</text>
+      </view>
+    </view>
+
+    <!-- ── 徽章 ────────────────────────────────────────────── -->
+    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}">
+      <view class="flex items-center">
+        <text class="text-22rpx text-faint">等级徽章</text>
+        <!-- ❄️ 冻结卡：断档时自动补上，用户必须知道它是什么、还剩几张 -->
+        <text class="text-22rpx text-faint ml-auto" wx:if="{{streak.freezeCount > 0}}">❄️ 冻结卡 ×{{streak.freezeCount}}</text>
+      </view>
+
+      <view class="flex items-center mt-3" wx:if="{{streak.badge}}">
+        <text class="text-56rpx">{{streak.badge.emoji}}</text>
+        <view class="ml-3 flex-1">
+          <text class="text-30rpx font-semibold text-ink block">{{streak.badge.name}}</text>
+          <text class="text-22rpx text-faint block mt-[4rpx]">历史最长连续 {{streak.streakBest}} 天</text>
+        </view>
+      </view>
+
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{streak.nextBadge}}">
+        <text class="text-22rpx text-faint">下一个 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}} —— 再连续 {{streak.daysToNext}} 天</text>
+        <text class="text-22rpx text-faint block mt-1">每连续 7 天得 1 张冻结卡，断档时自动补上，天数不断</text>
+      </view>
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:else>
+        <text class="text-22rpx text-faint">已经拿到最高等级徽章 {{streak.badge.emoji}} {{streak.badge.name}}</text>
+      </view>
+    </view>
+  </block>
 </view>

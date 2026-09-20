@@ -1,0 +1,75 @@
+<!--
+  全局用户面板 —— 从底部向上滑出**半屏**。
+  它挂在 nav-bar 里，所以三个页面都能从左上角那个头像拉开。
+
+  ⚠️ 面板内容全部来自两处，页面上不再有自己的副本：
+     · 战绩（streak / 徽章）来自全局 store 的 streak
+     · 头像 / 昵称 / 已征服数来自 store 的 profile（打开时向服务端刷一次）
+-->
+<!--
+  ⚠️ 遮罩和面板是**兄弟**，不是父子 —— 这不是洁癖：
+     catchtouchmove 加在遮罩上是为了挡住底下的页面跟着滚，
+     但它是**冒泡**层面的拦截，遮罩一旦把面板包在里面，
+     面板里那个 scroll-view 的滚动就一起被挡住了（徽章阶梯在小屏上滚不动）。
+     做成兄弟之后：遮罩挡滚动，面板自带滚动，互不干扰。
+-->
+<view class="us-layer" wx:if="{{mounted}}">
+  <view class="us-mask {{entered ? 'us-mask-on' : ''}}" bindtap="onClose" catchtouchmove="noop"></view>
+
+  <view class="us-panel {{entered ? 'us-panel-on' : ''}}" catchtap="noop">
+    <!-- 抓手：整条都可以点，点了就收起来（没有手势拖拽，别假装有） -->
+    <view class="us-grab" bindtap="onClose"></view>
+
+    <view class="us-head">
+      <image wx:if="{{avatarUrl}}" class="us-avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
+      <view wx:else class="us-avatar us-avatar-text">{{initial}}</view>
+      <view class="us-idcol">
+        <text class="us-name">{{nickname}}</text>
+        <text class="us-sub" wx:if="{{streak.badge}}">{{streak.badge.emoji}} {{streak.badge.name}}</text>
+        <text class="us-sub" wx:else>还没有徽章 —— 今天读一句就是第一个</text>
+      </view>
+    </view>
+
+    <view class="us-stats">
+      <view class="us-stat">
+        <text class="us-stat-v">{{streak.streakDays}}</text>
+        <text class="us-stat-k">🔥 连续</text>
+      </view>
+      <view class="us-stat">
+        <text class="us-stat-v">{{streak.streakBest}}</text>
+        <text class="us-stat-k">历史最长</text>
+      </view>
+      <view class="us-stat">
+        <text class="us-stat-v">{{streak.freezeCount}}</text>
+        <text class="us-stat-k">❄️ 冻结卡</text>
+      </view>
+      <view class="us-stat">
+        <text class="us-stat-v">{{conqueredCount}}</text>
+        <text class="us-stat-k">已征服</text>
+      </view>
+    </view>
+
+    <view class="us-sec">
+      <text class="us-sec-t">等级徽章</text>
+      <text class="us-sec-n">按历史最长连续天数</text>
+    </view>
+
+    <scroll-view class="us-scroll" scroll-y>
+      <view class="us-item {{item.earned ? '' : 'us-item-off'}}" wx:for="{{ladder}}" wx:key="code">
+        <text class="us-item-emoji">{{item.emoji}}</text>
+        <view class="us-item-col">
+          <text class="us-item-name">{{item.name}}</text>
+          <text class="us-item-note">{{item.note}}</text>
+        </view>
+        <text class="us-item-days">{{item.days}} 天</text>
+      </view>
+
+      <view class="us-foot">
+        <text class="us-foot-t" wx:if="{{streak.nextBadge}}">下一个 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}}，再连续 {{streak.daysToNext}} 天</text>
+        <text class="us-foot-t" wx:else>已经是最高等级徽章了</text>
+        <text class="us-foot-n">每连续 7 天得 1 张冻结卡，断档时自动补上</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+

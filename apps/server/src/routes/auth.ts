@@ -43,6 +43,7 @@ authRoutes.post('/login', async (c) => {
 
   return c.json({
     ok: true,
-    data: { token: signToken(user.id), user: { id: user.id, nickname: user.nickname } },
+    // ⚠️ openid 必须一起签进 token —— 见 lib/token.ts 的说明
+    data: { token: signToken(user.id, openid), user: { id: user.id, nickname: user.nickname } },
   })
 })

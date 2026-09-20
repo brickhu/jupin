@@ -1,3 +1,7 @@
+import type { ScoreDimensions } from '@jushuo/shared'
+
+export type { ScoreDimensions }
+
 /**
  * ⭐ 评分引擎接口 —— 全系统唯一与云端引擎的耦合点。
  *
@@ -15,6 +19,11 @@ export interface ScoreResult {
   words?: WordScore[]
   /** 可选副产品：分句级数据（竞技场是句群，可展示"哪句稳、哪句弱"） */
   sentences?: SentenceScore[]
+  /**
+   * 可选副产品：句级四维得分（准确度 / 流利度 / 标准度 / 完整度）。
+   * ⭐ 这四个字段 ISE 本来就返回，我们只是以前没往外取 —— 零额外成本。
+   */
+  dimensions?: ScoreDimensions
 }
 
 export interface WordScore {
@@ -32,6 +41,7 @@ export interface SentenceScore {
   total: number
   accuracy: number
   fluency: number
+  standard: number
 }
 
 export interface ScoreOptions {

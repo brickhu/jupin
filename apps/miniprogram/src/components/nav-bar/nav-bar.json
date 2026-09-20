@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "user-sheet": "/components/user-sheet/user-sheet"
+  }
+}

@@ -1,0 +1,100 @@
+/**
+ * ⚠️ 这两个组件里的样式**刻意全部写成普通类名，不用 UnoCSS 工具类** ——
+ *    和页面里的写法不一样，是有意的：
+ *
+ *    ① 这些类几乎全是「固定浮层 + 精确像素定位 + 过渡动画」，
+ *       用工具类写要靠 fixed/inset/z-/translate/transition 一串变体，
+ *       其中任何一个在 weapp 预设下没生成，表现都是**静默失效**（见 uno.config.mjs）。
+ *    ② 不依赖 app.wxss：组件样式默认就是 isolated 的，
+ *       自带一份完整定义最稳 —— 导航栏是每一页的头顶，它不能有「有时没样式」的可能。
+ *
+ *    页面里的样式照旧用工具类，这两者不冲突。
+ */
+
+.nv-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  /* ⚠️ 默认**透明**：页面底色（#f7f7f8）本身就是设计的一部分，
+     还没滚动时就压一条白带，会凭空多出一条没人要的分界线。
+     ⚠️ 用 rgba(255,255,255,0) 而不是 transparent：后者是 rgba(0,0,0,0)，
+     过渡到白色时中间会灰一下。
+     ⚠️ content-box：height 只算内容区，状态栏那一段靠 padding-top 撑出来 */
+  box-sizing: content-box;
+  background-color: rgba(255, 255, 255, 0);
+  /* ⚠️ 边框**一直占位**、只改颜色：白底出现时若边框才加上，
+     整页会往下跳 1px。 */
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0);
+  transition: background-color 0.18s ease-out, border-bottom-color 0.18s ease-out;
+}
+
+/**
+ * ⭐ 页面内容与导航栏**相交之后**才落白底。
+ *    「相交」的判定在页面那边（scrollTop >= navSolidFrom()），见 methods.applyScrollTop。
+ */
+.nv-root-solid {
+  background-color: #ffffff;
+  border-bottom-color: #f0f0f0;
+}
+
+.nv-row {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* ⚠️ 左右两侧**等宽**，标题居中才是真的居中 */
+.nv-side {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-left: 24rpx;
+  box-sizing: border-box;
+}
+
+.nv-title {
+  flex: 1;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #111;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 头像：没有真实头像时用昵称首字兜底 —— 一个空圆圈传达不了任何信息 */
+.nv-avatar {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  background: #eeecfd;
+}
+
+.nv-avatar-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #4f46e5;
+}
+
+.nv-glyph {
+  font-size: 34rpx;
+  line-height: 1;
+  color: #333;
+}
+
+/* ‹ 是个标点字形，天生比 emoji 小一圈，单独放大 */
+.nv-glyph-back {
+  font-size: 52rpx;
+  color: #666;
+  margin-top: -6rpx;
+}
+
+.nv-hover {
+  opacity: 0.55;
+}

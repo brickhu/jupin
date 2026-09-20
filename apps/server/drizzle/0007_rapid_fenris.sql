@@ -1,0 +1,1 @@
+ALTER TABLE `submissions` ADD `streak_delta` text;

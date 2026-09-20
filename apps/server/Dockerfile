@@ -28,11 +28,19 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
+# 静态内容（contentJson 写成相对路径时从这里读）
+COPY content ./content
 RUN pnpm --filter @jushuo/server build
 
 # ---- 运行阶段 ----
 FROM node:20-alpine
 WORKDIR /app
+
+# ⭐ ffmpeg —— 音频归一化用（services/audio.ts）。
+# ⚠️ 为什么服务端必须能解码：客户端传上来的**不一定是裸 PCM** ——
+#    开发者工具直出 WebM/Opus 容器，真机直出裸 PCM。设备产出什么格式，客户端说了不算。
+#    没有它，「本地录音 → 提交打分」在开发者工具里就跑不通（实测根因）。
+RUN apk add --no-cache ffmpeg
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -40,6 +48,8 @@ ENV MIGRATIONS_DIR=drizzle
 
 # 迁移 SQL —— 容器启动时 AUTO_MIGRATE=true 会用到
 COPY --from=build /app/apps/server/drizzle ./drizzle
+# 静态内容 —— services/content.ts 的 CONTENT_DIR 候选之一就是 /app/content
+COPY --from=build /app/content ./content
 COPY --from=build /app/apps/server/dist/index.mjs ./index.mjs
 COPY --from=build /app/apps/server/dist/index.mjs.map ./index.mjs.map
 

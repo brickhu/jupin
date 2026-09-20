@@ -1,0 +1,1 @@
+ALTER TABLE `submissions` ADD `audio_url` varchar(1024);

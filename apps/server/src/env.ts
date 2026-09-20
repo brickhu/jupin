@@ -93,10 +93,29 @@ const schema = z.object({
   /** 迁移 SQL 目录，相对进程工作目录。容器里是 /app/drizzle */
   MIGRATIONS_DIR: z.string().default('drizzle'),
   /**
+   * 静态资源**根目录** —— contentJson 相对它解析。
+   * ⚠️ 不是「content 目录」：contentJson 形如 `/content/articles/1.json`，
+   *    本身就带 content/ 那一段（那是它将来在 CDN 上的 URL 路径）。
+   *    留空则自动探测（容器 /app、或本机仓库根）。
+   */
+  STATIC_ROOT: z.string().optional(),
+  /**
    * 启动时自动跑迁移。
    * ⚠️ 多副本时不要开：会并发跑迁移。本项目副本数为 1。
    */
   AUTO_MIGRATE: boolEnv(false),
+  /**
+   * 启动时自动灌种子文章（幂等 upsert）。
+   *
+   * ⚠️ 为什么需要它：云上 **Dockerfile 的 CMD 只有 node index.mjs**，
+   *    不像本地开发镜像会自动 seed。没有它的话，部署完 dev 环境是**空的句库**，
+   *    真机上朗读页会直接「正文加载失败」。
+   *    而手动跑 seed:cloud 要求先在控制台打开数据库「外网地址」——
+   *    为一个 5 行的种子去开数据库公网入口，不值得。
+   *
+   * ⚠️ 只在开发环境开（deploy-cloud.mjs 只给 dev 带上）。
+   */
+  SEED_ON_START: boolEnv(false),
   /**
    * 是否开放深度自检（/health?deep=1）。
    * ⚠️ 默认关闭：深度自检会真的去调一次微信开放接口 + 一次对象存储，
@@ -136,6 +155,7 @@ const FALLBACK: Env = {
   DELETE_AUDIO_AFTER_SCORE: true,
   MIGRATIONS_DIR: 'drizzle',
   AUTO_MIGRATE: false,
+  SEED_ON_START: false,
   DIAG_ENABLED: false,
   SCHEMA_RESET: false,
 }

@@ -41,6 +41,15 @@ export const dbState = {
   migrated: false,
   migrateError: '' as string,
   existingTables: [] as string[],
+  /**
+   * articles 表里有多少行。
+   *
+   * ⚠️ 为什么值得暴露到 /health：云托管 **CLI 没有看容器日志的命令**，
+   *    而「句库是空的」恰恰是真机朗读页「正文加载失败」的头号原因。
+   *    没有这个数就只能靠猜 —— 有它就能一眼确认 SEED_ON_START 到底生效没有。
+   *    null 表示还没查（迁移失败等）。
+   */
+  articleCount: null as number | null,
 }
 
 /** 把连接串里的密码打码，方便核对环境变量解析结果 */
@@ -226,6 +235,25 @@ export async function runMigrations(): Promise<void> {
  *    探针会在监听之前狂敲端口 → connection refused → 判定部署失败 → 反复重启。
  *    （这不是假设，是本项目真实踩过的部署失败原因。）
  */
+/**
+ * 统计句库行数并写进 dbState（会出现在 /health 里）。
+ *
+ * ⚠️ 必须**独立于 AUTO_MIGRATE**：本地开发容器的 AUTO_MIGRATE 是关的，
+ *    曾经把统计写在迁移块里，于是本地永远显示 articleCount: null ——
+ *    诊断信息自己不可靠，比没有还糟。
+ */
+async function refreshArticleCount(): Promise<void> {
+  try {
+    const { count } = await import('drizzle-orm')
+    const { articles } = await import('./schema')
+    const [row] = await db.select({ n: count() }).from(articles)
+    dbState.articleCount = Number(row?.n ?? 0)
+  } catch (err) {
+    // 表还不存在（没跑过迁移）是正常情况，不该刷错误日志
+    dbState.articleCount = null
+  }
+}
+
 export async function initDatabase(): Promise<void> {
   if (envError) {
     dbState.status = 'error'
@@ -252,6 +280,7 @@ export async function initDatabase(): Promise<void> {
   // ⚠️ 这里会一直重试下去（见 waitForDatabase），所以永远走得到 ready —— 除非配置本身就是错的。
   await waitForDatabase()
   dbState.status = 'ready'
+  await refreshArticleCount()
   dbState.error = ''
 
   if (!env.AUTO_MIGRATE) {
@@ -262,6 +291,32 @@ export async function initDatabase(): Promise<void> {
   try {
     await runMigrations()
     dbState.migrated = true
+
+    // ⭐ 可选：启动时灌种子文章（幂等）。云上开发环境开着，
+    //    否则部署完是空句库，真机朗读页会「正文加载失败」。
+    if (env.SEED_ON_START) {
+      try {
+        const { seedArticles } = await import('./seed-articles')
+        const n = await seedArticles()
+        console.log(`[db] 已灌种子文章 ${n} 篇`)
+      } catch (err) {
+        // 灌种子失败不该让服务起不来 —— 服务活着 + /health 能看到问题，比直接崩好排查
+        console.error('[db] 灌种子失败：', (err as Error).message)
+      }
+
+      // ⭐ 标准音进对象存储（幂等）。
+      // ⚠️ 必须在**文章灌完之后**：它要按 contentJson 找到正文才能算出有几个词。
+      // ⚠️ 失败同样不阻断启动 —— 音频没了只是「听不到标准音」，
+      //    而句库是空的会让整个产品没法用。
+      try {
+        const { seedStandardAudio } = await import('../services/standard-audio')
+        const r = await seedStandardAudio()
+        console.log(`[db] 标准音：新灌 ${r.uploaded} 个文件，跳过 ${r.skipped} 篇`)
+      } catch (err) {
+        console.error('[db] 标准音灌入失败：', (err as Error).message)
+      }
+    }
+
   } catch (err) {
     dbState.migrateError = (err as Error).message
     console.error('[db] 迁移失败：', dbState.migrateError)

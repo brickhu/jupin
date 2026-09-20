@@ -41,10 +41,18 @@ export class LocalStorage implements ObjectStorage {
     await rm(this.pathOf(key), { force: true })
   }
 
-  /** 本地专用：模拟小程序直传（生产由对象存储直传完成） */
   async put(key: string, data: Uint8Array): Promise<void> {
     const file = this.pathOf(key)
     await mkdir(dirname(file), { recursive: true })
     await writeFile(file, data)
+  }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      await readFile(this.pathOf(key))
+      return true
+    } catch {
+      return false
+    }
   }
 }

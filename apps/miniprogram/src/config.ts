@@ -46,6 +46,14 @@ export interface EnvConfig {
   /** http 通道的基地址；container 通道为空（那条通道不拼 url） */
   httpUrl: string
   /**
+   * ⚠️ 这里**曾经**有过一个 mediaUrl（标准音的媒体域名），已经删掉。
+   *    原因是它解决错了问题：container 模式下 API 不拼 URL，
+   *    但那不代表要走「给服务端配一个域名」这条路 ——
+   *    标准音进了**云开发对象存储**，客户端用 wx.cloud.getTempFileURL 换地址即可，
+   *    连 downloadFile 合法域名都不用配。
+   *    见 apps/miniprogram/src/lib/audio/standard.ts。
+   */
+  /**
    * 云托管环境 ID。
    * ⭐ 它同时服务两件事：① callContainer 的通道 ② 对象存储（wx.cloud.init + uploadFile）。
    *    所以即使是 local 模式（API 打本机）也要有值 —— 否则音频直传不可用。
@@ -66,6 +74,7 @@ export const CLOUD_SERVICE = __MP_CLOUD_SERVICE__
 export const LAN_FALLBACK_URL = __MP_LAN_API_URL__
 
 const ENVS: Record<EnvName, EnvConfig> = {
+  // 本机 Docker。API 走 wx.request；文件仍走 dev 的对象存储。
   // 本机 Docker。API 走 wx.request；文件仍走 dev 的对象存储。
   local: { transport: 'http', httpUrl: __MP_LOCAL_API_URL__, cloudEnvId: __MP_DEV_ENV_ID__ },
 
@@ -152,6 +161,7 @@ const active = ENVS[ENV]
 export const TRANSPORT = active.transport
 export const BASE_URL = active.httpUrl
 export const CLOUD_ENV_ID = active.cloudEnvId
+
 
 // ----------------------------------------------------------------
 // 诊断信息（自检页展示，避免「到底连的哪儿」靠猜）

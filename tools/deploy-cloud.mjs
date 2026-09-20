@@ -68,17 +68,49 @@ if (!['dev', 'prod'].includes(target)) {
 }
 
 // ---- 读 .env ----
-function readEnvFile() {
-  if (!existsSync(ENV_FILE)) return {}
+function parseEnvFile(p) {
+  if (!existsSync(p)) return {}
   const out = {}
-  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+  for (const line of readFileSync(p, 'utf8').split('\n')) {
     const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
     if (m) out[m[1]] = m[2]
   }
   return out
 }
 
-const fileEnv = readEnvFile()
+/**
+ * ⚠️ 凭据分散在**两个** .env 里，必须都读：
+ *    · 根 .env            —— 部署坐标（WXCLOUD_ENV_ID / MYSQL_*_DEV），对应 .env.example
+ *    · apps/server/.env   —— 服务端本地开发用的，**讯飞密钥实际在这里**
+ *
+ *    之前只读根 .env，结果讯飞密钥明明配了却传不上云 —— 云端一直跑 mock。
+ *    ⚠️ 根 .env 优先（它是 .env.example 里记录的位置），缺的用 apps/server/.env 补。
+ */
+/** 根 .env —— **部署配置**（对应 .env.example） */
+const rootEnv = parseEnvFile(ENV_FILE)
+/** apps/server/.env —— **本地运行配置**（服务端 pnpm dev 读的那个） */
+const serverEnv = parseEnvFile(resolve(ROOT, 'apps/server/.env'))
+/** 合并视图：根优先。凭据（XFYUN_*）只在 serverEnv 里有，所以必须合并 */
+const fileEnv = { ...serverEnv, ...rootEnv }
+
+/** 讯飞凭据的三个键 —— 缺一不可，缺任何一个都不能切真引擎 */
+const XFYUN_KEYS = ['XFYUN_APP_ID', 'XFYUN_API_KEY', 'XFYUN_API_SECRET']
+
+/**
+ * ⭐ 引擎选择：**有完整凭据就用真引擎**，否则退回 mock。
+ * ⚠️ 真引擎**按调用计费**，所以这个选择必须显式可覆盖：设 `ENGINE=mock` 可强制回退。
+ *    刻意不写死 —— 写死 mock 会让「配了密钥却一直是假结果」这种问题藏很久
+ *    （本项目已经藏了一整轮）。
+ */
+function resolveEngine() {
+  // ⚠️⚠️ ENGINE **只认根 .env / 命令行**，**故意不看 apps/server/.env** ——
+  //     那里的 `ENGINE=mock` 是「本地开发别烧讯飞额度」的**本机选择**，
+  //     不该悄悄变成云端部署的选择。（这个坑刚踩到：合并两个 .env 之后，
+  //     本机的 mock 把云端的 auto-detect 整个盖住了。）
+  const forced = process.env.ENGINE ?? rootEnv.ENGINE
+  if (forced) return forced
+  return XFYUN_KEYS.every((k) => fileEnv[k]) ? 'xfyun' : 'mock'
+}
 const envId = target === 'prod' ? fileEnv.WXCLOUD_ENV_ID_PROD : fileEnv.WXCLOUD_ENV_ID
 if (!envId) {
   console.error(`❌ .env 里没有 WXCLOUD_ENV_ID${target === 'prod' ? '_PROD' : ''}`)
@@ -140,12 +172,14 @@ const params = {
   PORT: '3000',
   TZ: 'UTC',
   TOKEN_SECRET: ensureTokenSecret(),
-  // 真实引擎（讯飞 ISE）的密钥还没配，先用 mock 打通链路
-  ENGINE: 'mock',
+  // ⭐ 引擎：凭据齐全就用讯飞真引擎（见 resolveEngine）
+  ENGINE: resolveEngine(),
   STORAGE: 'wxcloud',
   WX_CLOUD_ENV_ID: envId,
   // 容器启动时跑迁移 + 自举建库。⚠️ 多副本时关掉（会并发迁移），本项目副本数为 1
   AUTO_MIGRATE: 'true',
+  // ⭐ 云上 Dockerfile 的 CMD 不 seed，不开这个 dev 环境就是空句库（真机朗读页读不到正文）
+  SEED_ON_START: target === 'dev' ? 'true' : 'false',
   // 深度自检（/health?deep=1）：只在 dev 开 —— 它会真的调微信开放接口和对象存储
   DIAG_ENABLED: target === 'dev' ? 'true' : 'false',
   // --reset 时删库重建；否则明确关掉，避免误删
@@ -158,6 +192,19 @@ const params = {
 
 // ⚠️ MYSQL_DATABASE 没配的话补一个默认库名
 if (!params.MYSQL_DATABASE) params.MYSQL_DATABASE = 'jushuo'
+
+// ⭐ 讯飞凭据 —— 从两个 .env 合并后的 fileEnv 里取
+// ⚠️ 只在**有值**时写入：显式写 undefined 会被 JSON.stringify 丢掉，
+//    反而把服务上原有的值抹掉。
+for (const k of XFYUN_KEYS) {
+  if (fileEnv[k]) params[k] = fileEnv[k]
+}
+
+if (params.ENGINE === 'xfyun' && !XFYUN_KEYS.every((k) => params[k])) {
+  console.warn('⚠️ ENGINE=xfyun 但凭据不全，容器会启动失败或全部评测报错：')
+  console.warn('   ' + XFYUN_KEYS.map((k) => k + '=' + (params[k] ? '有' : '❌缺')).join('  '))
+}
+console.log(`· 评测引擎：${params.ENGINE}` + (params.ENGINE === 'xfyun' ? '（真实调用，按次计费）' : '（假结果，仅开发用）'))
 
 /**
  * ⭐ 本地 .env 里的 MYSQL_* 覆盖服务配置里的同名变量。

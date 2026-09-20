@@ -29,6 +29,17 @@ import { normalizeKey } from './types'
 
 const COS_AUTH_URL = 'http://api.weixin.qq.com/_/cos/getauth'
 
+/**
+ * 按扩展名给 MIME。
+ * ⚠️ 不做成通用表：只覆盖我们真的会写的两种。写错 MIME 的症状是
+ *    「音频下下来了但播不出声」，而它看起来像音频文件本身的问题。
+ */
+function contentTypeOf(key: string): string {
+  if (key.endsWith('.mp3')) return 'audio/mpeg'
+  if (key.endsWith('.pcm')) return 'application/octet-stream'
+  return 'application/octet-stream'
+}
+
 interface CosAuthResponse {
   TmpSecretId: string
   TmpSecretKey: string
@@ -109,6 +120,46 @@ export class WxCloudStorage implements ObjectStorage {
     return new Uint8Array(body as Buffer)
   }
 
+  /**
+   * ⭐ 写入对象 —— 内容侧的静态资源（标准音）靠它进对象存储。
+   *
+   * ⚠️ 用的是**同一份临时密钥**（/_/cos/getauth），没有额外的长期密钥要管。
+   * ⚠️ 必须显式给 ContentType：对象存储不会猜，缺了它下下来的就是
+   *    application/octet-stream，而 InnerAudioContext 对 MIME 是挑剔的。
+   */
+  async put(fileID: string, data: Uint8Array): Promise<void> {
+    const key = normalizeKey(fileID)
+    await this.ensureAuth()
+    await this.cos().putObject({
+      Bucket: env.COS_BUCKET as string,
+      Region: env.COS_REGION as string,
+      Key: key,
+      Body: Buffer.from(data) as unknown as string,
+      ContentType: contentTypeOf(key),
+    })
+  }
+
+  /**
+   * ⚠️ 用 headObject 而不是 getObject：只想知道「在不在」，
+   *    没必要把整个文件拉下来再扔掉。
+   */
+  async exists(fileID: string): Promise<boolean> {
+    const key = normalizeKey(fileID)
+    await this.ensureAuth()
+    try {
+      await this.cos().headObject({
+        Bucket: env.COS_BUCKET as string,
+        Region: env.COS_REGION as string,
+        Key: key,
+      })
+      return true
+    } catch {
+      // 权限错误也会走到这里并当成「不存在」—— 那会导致重传一次，
+      // 而重传会因为同样的权限问题报出真正的错误。不会静默通过。
+      return false
+    }
+  }
+
   async remove(fileID: string): Promise<void> {
     const key = normalizeKey(fileID)
     await this.ensureAuth()
@@ -122,42 +173,50 @@ export class WxCloudStorage implements ObjectStorage {
 
 /**
  * 取临时密钥。
- * ⚠️ 失败时把原始报错带出来 —— 最常见的原因是控制台没开「开放接口服务」，
- *    而那个错误的原始信息才说得清问题。
+ *
+ * ⚠️⚠️ 失败时**必须把判定云调用链路的证据带出来**，否则只能瞎猜。
+ *    官方文档给了唯一判据：走通云调用时，响应头会带 `x-openapi-seqid`。
+ *      · 有 seqid   → 云调用链路是通的，问题在这个接口本身 / 权限配置
+ *      · 没有 seqid → 请求**根本没走云调用**，直接打到了真实微信服务器
+ *                     （真实服务器上当然没有 /_/ 开头的路径 → 404）
+ *
+ * ⚠️ 而「没走云调用」最常见的原因**不是开关没开**，而是官方这句原文：
+ *    「实例扩缩容时**不遵循当前的开关状态，而是遵循版本创建时的开关状态**」
+ *    —— 光开开关不重新构建版本是没用的。
  */
 export async function getAuth(): Promise<CosAuthResponse> {
   let res: Response
   try {
     res = await fetch(COS_AUTH_URL)
   } catch (err) {
-    throw new Error(`调用开放接口服务失败（网络层）：${(err as Error).message}`)
+    throw new Error('调用开放接口服务失败（网络层）：' + (err as Error).message)
   }
+
+  // ⭐ 判定依据：云调用链路走通时，平台会在响应头里加 x-openapi-seqid
+  const seqid = res.headers.get('x-openapi-seqid')
   const text = await res.text()
+
   if (!res.ok) {
-    // ⚠️ 404 是最常见的失败，而且原因不直观，所以单独解释清楚。
-    //    云托管的「开放接口服务」本质是平台在容器网络里拦截发往 api.weixin.qq.com 的请求，
-    //    把 /_/ 开头的路径转到云调用代理。**开关没打开时请求会真的打到微信服务器**，
-    //    而那里根本没有 /_/cos/getauth 这个路径，于是返回 404。
-    const hint =
-      res.status === 404
-        ? '—— 几乎可以确定是「开放接口服务」没开启：' +
-          '云托管控制台 → 服务管理 → 云调用 → 打开「开放接口服务」开关。' +
-          '（未开启时请求会打到真实的微信服务器，而那里没有 /_/ 开头的路径）'
-        : ''
+    const diagnosis = seqid
+      ? ' 【诊断】响应头里【有】x-openapi-seqid —— 云调用链路是通的，问题在这个接口或「云调用-微信令牌配置」的白名单。'
+      : ' 【诊断】响应头里【没有】x-openapi-seqid —— 这个请求根本没走云调用，而是打到了真实微信服务器。' +
+        '按官方《开放接口服务》的四步逐条核对（前三步缺一不可）：' +
+        '① 接口白名单：控制台-云调用-微信令牌权限配置里，按**路径**格式加入 /_/cos/getauth；' +
+        '② 开关：控制台-云调用里「开放接口服务」为开启（且是**本环境**，本项目有 dev/prod 两个环境）；' +
+        '③ 重新构建版本：官方明确「实例遵循**版本创建时**的开关状态」，开完开关必须再部署一次；' +
+        '④ 镜像要有 shell —— 官方「开放接口服务依赖 shell，镜像内无 sh/bash 将无法正常部署容器」。'
     throw new Error(
-      `调用开放接口服务失败：HTTP ${res.status} ${text.slice(0, 200)} ${hint}`.trim(),
+      '调用开放接口服务失败：HTTP ' + res.status + ' body=' + JSON.stringify(text.slice(0, 160)) + diagnosis,
     )
   }
+
   let info: CosAuthResponse
   try {
     info = JSON.parse(text) as CosAuthResponse
   } catch {
-    throw new Error(`开放接口服务返回的不是 JSON：${text.slice(0, 200)}`)
-  }
-  if (!info.TmpSecretId || !info.TmpSecretKey) {
     throw new Error(
-      `开放接口服务未返回临时密钥：${text.slice(0, 200)}。` +
-        '最常见原因：云托管控制台未开启「开放接口服务」。',
+      '开放接口服务返回的不是 JSON（前 160 字符）：' + JSON.stringify(text.slice(0, 160)) +
+        (seqid ? ' 【已走云调用】' : ' 【未走云调用】'),
     )
   }
   return info

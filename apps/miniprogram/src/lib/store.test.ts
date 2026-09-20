@@ -1,0 +1,180 @@
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+/**
+ * store 的单测。
+ *
+ * ⚠️⚠️ 这一版守的核心是**键必须是句子，不是日期**。
+ *
+ *    竞技数据跟着句子走，与日期无关（见 services/leaderboard.ts）。
+ *    按日期存会坏在两个地方，两个都真实发生过：
+ *      · 同一句排在多天 → 同一份战绩被复制成好几份，写一份其余几份不对
+ *      · 客户端的日期来自 URL、服务端来自自己的时钟 → 差一个字符就永远匹配不上
+ *    两者的表现都是「提交完，参与状态不刷新」。
+ */
+
+const memory = new Map<string, unknown>()
+vi.stubGlobal('wx', {
+  setStorageSync: (k: string, v: unknown) => memory.set(k, v),
+  getStorageSync: (k: string) => memory.get(k) ?? '',
+  removeStorageSync: (k: string) => memory.delete(k),
+})
+
+let store: typeof import('./store')
+
+beforeAll(async () => {
+  store = await import('./store')
+})
+
+const STREAK = {
+  streakDays: 3,
+  streakBest: 3,
+  freezeCount: 0,
+  badge: null,
+  nextBadge: null,
+  daysToNext: 4,
+  readToday: true,
+}
+
+/** 造一天的排期卡片 */
+function entry(date: string, articleId: number, myBest: number | null = null, myAttempts = 0) {
+  return {
+    date,
+    articleId,
+    text: 'x',
+    translation: 'x',
+    isScheduled: false,
+    isToday: false,
+    participantCount: 5,
+    topScore: 80,
+    myBest,
+    myAttempts,
+  }
+}
+
+function listResponse(today = entry('2026-09-21', 3), history: unknown[] = []) {
+  return { date: '2026-09-21', streak: STREAK, today, history } as never
+}
+
+beforeEach(() => {
+  memory.clear()
+  store.reset()
+})
+
+describe('applySchedules —— 按句子落，不按日期', () => {
+  it('把服务端的战绩写进对应句子', () => {
+    store.applySchedules(listResponse(entry('2026-09-21', 3, 72, 2)))
+    expect(store.arenaOf(3)).toEqual({ myBest: 72, myAttempts: 2 })
+    expect(store.getState().streak?.streakDays).toBe(3)
+  })
+
+  it('没参与过的句子返回「没参与」，而不是 undefined', () => {
+    expect(store.arenaOf(999)).toEqual({ myBest: null, myAttempts: 0 })
+  })
+
+  it('⭐ 同一句排在多天 → 只落一个键，所有天看到的是同一份', () => {
+    // 这是「按日期存」最典型的坏法：同一句在第 1/3/5 天，
+    // 按日期存会变成三份副本，写一份其余两份要等刷新才对。
+    store.applySchedules(
+      listResponse(entry('2026-09-21', 1, 85, 2), [entry('2026-09-19', 1), entry('2026-09-17', 1)]),
+    )
+    expect(Object.keys(store.getState().arena)).toEqual(['1'])
+    expect(store.arenaOf(1)).toEqual({ myBest: 85, myAttempts: 2 })
+  })
+})
+
+describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => {
+  it('⭐ 打分成功后，不经过任何网络请求，战绩立刻就是新的', () => {
+    store.applySchedules(listResponse())
+    expect(store.arenaOf(3).myBest).toBeNull()
+
+    store.applySubmissionResult({ articleId: 3, score: 74 })
+
+    expect(store.arenaOf(3)).toEqual({ myBest: 74, myAttempts: 1 })
+  })
+
+  it('同一句再提交一次：次数累加，最好成绩取较大值', () => {
+    store.applySchedules(listResponse(entry('2026-09-21', 3, 80, 1)))
+    store.applySubmissionResult({ articleId: 3, score: 60 })
+    expect(store.arenaOf(3)).toEqual({ myBest: 80, myAttempts: 2 })
+  })
+
+  it('⚠️ 提交到别的句子时，不能动这一句的战绩', () => {
+    store.applySchedules(listResponse())
+    store.applySubmissionResult({ articleId: 1, score: 91 })
+    expect(store.arenaOf(1).myBest).toBe(91)
+    expect(store.arenaOf(3).myBest).toBeNull()
+  })
+
+  it('streak 用服务端给的，端侧一个数都不算', () => {
+    store.applySchedules(listResponse())
+    store.applySubmissionResult({
+      articleId: 3,
+      score: 70,
+      streak: {
+        streakDays: 9,
+        streakBest: 9,
+        freezeCount: 0,
+        counted: true,
+        delta: 1,
+        freezeUsed: 0,
+        freezeEarned: 0,
+        newBadges: [],
+        badge: null,
+      },
+    })
+    expect(store.getState().streak?.streakDays).toBe(9)
+  })
+
+  it('服务端没给 streak 时保留旧值，不要清空', () => {
+    store.applySchedules(listResponse())
+    store.applySubmissionResult({ articleId: 3, score: 70 })
+    expect(store.getState().streak?.streakDays).toBe(3)
+  })
+})
+
+describe('订阅', () => {
+  it('写入时通知订阅者', () => {
+    const seen: number[] = []
+    const off = store.subscribe((s) => seen.push(s.arena[3]?.myAttempts ?? -1))
+    store.applySchedules(listResponse(entry('2026-09-21', 3, 1, 1)))
+    store.applySubmissionResult({ articleId: 3, score: 2 })
+    expect(seen).toEqual([1, 2])
+    off()
+  })
+
+  it('⚠️ 退订之后不能再回调 —— 页面销毁后回调会 setData 报错', () => {
+    const fn = vi.fn()
+    const off = store.subscribe(fn)
+    off()
+    store.applySubmissionResult({ articleId: 3, score: 1 })
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('⚠️ 一个订阅者抛异常：不影响其它订阅者，但必须**报出来**', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const good = vi.fn()
+    store.subscribe(() => {
+      throw new Error('boom')
+    })
+    store.subscribe(good)
+    store.applySubmissionResult({ articleId: 3, score: 1 })
+    expect(good).toHaveBeenCalled()
+    // ⚠️ 被吞掉的话，症状是「数据变了界面不动」，而没有任何东西看起来是坏的
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
+  })
+})
+
+describe('hydrate —— 冷启动读回上次的战绩', () => {
+  it('读回后订阅者立刻拿到数据，首帧不必等网络', async () => {
+    store.applySubmissionResult({ articleId: 3, score: 88 })
+    // ⚠️ 不能在这里调 store.reset() —— 它会 persist 一份空状态，把刚写的覆盖掉
+    vi.resetModules()
+    const fresh = await import('./store')
+    const fn = vi.fn()
+    fresh.subscribe(fn)
+    fresh.hydrate()
+    expect(fn).toHaveBeenCalled()
+    expect(fresh.arenaOf(3).myBest).toBe(88)
+  })
+})

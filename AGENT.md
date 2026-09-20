@@ -7,9 +7,17 @@
 
 ## 一句话
 
-**以句子为单位的英语朗读竞技场。**
+**句说 —— 每日英语朗读竞技场。**
+英文朗读大比拼，AI 评分冲排名。
 
-用户在短文里选一个 10–20 秒的句群朗读，与所有读过同一句群的人比排名。竞技场天然公平——所有人读同一段文本，比的是纯发音质量。
+每天一句，全站同题：读同一段文本、比同一个分数，排名天然公平。
+读完当天这一句就算一天**连续**（Streak），断了会用冻结卡自动补上。
+
+产品的全部就是三条：**AI 反馈的得分 · 排名 · Streak**（含由 Streak 推导的等级徽章）。
+难度、分类、积分、关卡都刻意不做 —— 每加一条，用户就多一个要理解的概念。
+
+> ⚠️ 定位文案的唯一来源是 [packages/shared/src/brand.ts](packages/shared/src/brand.ts)，
+> 本文件与小程序页面都从那里取，不要各抄一份。
 
 ---
 
@@ -111,11 +119,15 @@ jushuo/
 apps/miniprogram/
 ├── project.config.json          # miniprogramRoot: "dist/"
 ├── project.private.config.json  # 本地配置（gitignore）
-├── build.mjs                    # esbuild 构建脚本
+├── build.mjs                    # esbuild 构建脚本 + UnoCSS 生成
+├── uno.config.mjs               # UnoCSS 配置（→ dist/uno.wxss）
 ├── src/
 │   ├── app.ts / app.json / app.wxss
-│   ├── pages/                   # 首页 · 短文页 · 朗读页 · 揭晓页 · 我的
-│   ├── components/              # 词级上色文本 · 呼吸灯 · 榜单 · 冷却弹层
+│   ├── pages/
+│   │   ├── index/               # 环境自检 + 产品入口（诊断页）
+│   │   ├── reading/             # ⭐ 朗读页：录音 → 提交 → 打分（唯一的产品动作入口）
+│   │   └── selftest/            # 真机自检 T1–T6
+│   ├── components/              # （尚未创建）词级上色文本 · 榜单 · 冷却弹层
 │   ├── workers/
 │   │   └── audio-analysis/      # Worker：收帧 → 调纯函数 → 回结果
 │   ├── lib/
@@ -188,6 +200,27 @@ await cp('src', 'dist', { recursive: true, filter: f => !f.endsWith('.ts') })
 
 > **为什么不用 Taro/uni-app**：核心是音频处理 + 高频上色动画，跨端框架恰在这两处最易出坑；且不做多端。
 
+### 样式方案：UnoCSS（**已接入**）
+
+选型论证见 **[docs/research/styling-decision.md](docs/research/styling-decision.md)**。要点：
+
+**WXML 不能调用 JS**，所以一切「在 JS 里算类名再塞进模板」的方案（StyleX / CSS-in-JS 全家）在小程序里都要额外搭一层 `data` 桥接。UnoCSS 走「构建期扫源码 → 生成静态 WXSS」，模板里直接写类名，**运行时零开销**。
+
+```
+uno.config.mjs  配置 + downgradeColorSyntax + assertWxssSafe
+build.mjs       buildUnoCss()：扫 src/**/*.{wxml,ts} → dist/uno.wxss
+src/app.wxss    顶部 @import "./uno.wxss"
+```
+
+⚠️ **两个必知的坑**（都会静默失效，不报错）：
+
+| 坑 | 规则 |
+|---|---|
+| WXSS 不支持转义选择器 | 变体分隔符是 `__`：写 `hover__bg-gray-100`，**不是** `hover:bg-gray-100`。也因此**别用 BEM 的 `block__element` 命名** |
+| UnoCSS 66 输出 CSS Color 4 | 产物必须过 `downgradeColorSyntax()`，否则老 WebView **整条颜色声明丢弃**。`assertWxssSafe()` 会在构建期拦截 |
+
+> 间距刻度：1 单位 = 8rpx（`p-4` → `32rpx`），与现有手写 WXSS 同刻度。
+
 ## 1.2 后端 `apps/server/`
 
 ```
@@ -229,6 +262,98 @@ tools/pipeline/
 ```
 
 ⭐ **做成可重复、可断点续跑的流水线**，不是一次性脚本——内容会持续生产，改第 ⑦ 步不该重跑 ①–⑥。
+
+## 1.4 ⭐ 核心闭环：录音 → 提交 → 打分
+
+产品的**唯一动作入口**是朗读页 `pages/reading/`。用户只有两件事可做：**录音（重录）、提交检测**。
+
+```
+录音（RecorderManager，裸 PCM）
+  → onStop 拿到 tempFilePath
+  → 上传对象存储（**只传 key，不传音频本体**）
+  → POST /api/submissions { articleId, audioKey }
+  → 服务端读音频 → 评分引擎 → 写 submissions
+  → 返回 { score, rank, leaderboard, words, nextFreeAt }
+```
+
+**服务端**（`routes/submissions.ts`）的顺序不能改，理由都写在文件注释里：
+校验路径属于本人 → **幂等检查（必须在冷却之前）** → 冷却 → 分配 seq → 读音频 → 评分 → 落库 → 更新冷却。
+
+### ⚠️⚠️ 本地与线上的音频通道是**两条不同的路**
+
+| | 线上 | 本地（模拟器） |
+|---|---|---|
+| 上传 | `wx.cloud.uploadFile` → 微信对象存储 | `wx.uploadFile` → `POST /api/uploads` |
+| 取回 | `WxCloudStorage` + COS SDK | `LocalStorage`（落盘 `.uploads/`） |
+
+**为什么必须分叉**：本地 Docker **拿不到 COS 凭证** —— 临时密钥要调 `/_/cos/getauth`，
+而那是云托管**内网**接口，本机调不到。不分叉的话，小程序把音频传到了微信云、
+本地服务端却在 `.uploads/` 里找不到，提交必然 400「读取音频失败」——
+**而且看起来像是提交逻辑写错了**。
+
+`POST /api/uploads` **只在 `STORAGE=local` 时开放**（云端部署直接 404），
+落到的 `LocalStorage.put()` 本来就是为「模拟小程序直传」预留的。
+
+### 内容：`contentJson` 是**完整 URL 路径**，不是文件路径
+
+`articles.contentJson` 形如 `/content/articles/1.json`，**里面本来就含 `content/` 这一段**
+（那是它将来在 CDN 上的地址）。所以解析的基准是**仓库根**，不是 content 目录 ——
+踩过一次：当成 content 目录之后去找 `/app/content/content/articles/1.json`，正文永远读不到。
+
+服务端的两个消费方**共用** `services/content.ts` 的同一个函数
+（评分要 `text`、页面要整份数据），不共用会出现「能评分、但页面读不出句子」这种极难排查的漂移。
+
+内容文件在仓库根 `content/articles/*.json`，是**流水线建成前的占位**：
+`words` 字段留空（评分只用 `text`），词级数据要等 `tools/pipeline` 产出。
+
+### ⚠️ 实时上色能做什么、不能做什么
+
+朗读页录音时词会实时变绿，**含义必须说清楚**：
+
+| | 依据 | 含义 |
+|---|---|---|
+| **实时**（录音中） | 端侧 VAD + 语速折算 | 绿色 = **「这个时间段检测到你在读」**，**不是**读准了 |
+| **云端**（提交后） | 评分引擎的词级分数 | 绿色 = 读对（≥85），红色 = 有问题 —— 这才是权威判定 |
+
+「读准没读准」需要**音素级评测**，端侧做不到：`spec.md` 的能力表里「端侧音素模型 ❌」，
+`docs/research/vendor-ondevice-landscape.md` 实测端侧音素级 PCC 只有 0.25–0.6，
+`docs/research/ise-probe-report.md` 实测讯飞 ISE 流式版**零中间结果**。
+
+所以这是刻意的分工（`spec.md` 写的兜底路径「实时进度退回本地 VAD」）：
+**实时给「读到哪了」，云端给「读得怎么样」。**
+
+⚠️ 实时进度按 **`MS_PER_WORD`=400ms（150 词/分）** 把「有效语音时长」折算成词索引。
+读得快/慢会漂移。真正对齐要靠标准音 + DTW，或 ASR 的实时识别结果 —— 两条路都还没接。
+
+#### 噪声底估计踩过的两个坑（都记在 `audio/vad.ts` 里）
+
+| 做法 | 结果 |
+|---|---|
+| 滚动窗口的 **20% 分位** | 连续朗读时语音帧占比 >80%，那个分位数本身就是语音 → **整句 11 个词检测到 0ms** |
+| 最初几帧最小能量**播种** + 快降慢升 | 用户**开口即读**时噪声底被锁死在语音上 → 5060ms 朗读只算出 1280ms |
+| ✅ **滚动窗口最小值**（32 帧 ≈ 2 秒） | 不依赖「静音该占多大比例」的假设；真实朗读 2 秒内必有词间气口 |
+
+> 这两个坑都是**写完之后跑仿真才发现的**，不是推出来的 ——
+> 所以 `vad-stream.test.ts` 里补了两条回归测试。改动这块时别绕过它们。
+
+### 测试时被 24 小时冷却卡住 → `pnpm dev:unlock`
+
+```bash
+pnpm dev:unlock          # 解除全部本地账号的冷却
+pnpm dev:unlock:status   # 只看状态，不改
+```
+
+**做法是把账号置为会员，而不是改冷却判断** —— `services/cooldown.ts` 里本来就写了
+「会员不受冷却限制」，这是产品的真实机制（付费免冷却）。
+用一个已存在的产品路径来解锁，好过为了开发方便在生产代码里开一个 if 口子。
+
+⚠️ 工具**只动 `openid` 以 `dev_` 开头的账号**。本地联调时 openid 是
+`dev_${wx.login 的 code}`（见 `routes/auth.ts`），线上是真实微信 openid、没有这个前缀 ——
+所以它在**原理上不可能误伤真实用户**。
+
+⚠️ 每次在开发者工具里**重新登录**都可能生成**新的 dev_ 账号**
+（`wx.login` 的 code 变了 → openid 变了 → 新用户），
+所以这个脚本设计成**可反复执行、每次覆盖全部 dev_ 账号**。
 
 ---
 
@@ -577,6 +702,74 @@ Docker 端口映射到宿主机后，**局域网设备可正常访问**（macOS 
 
 一条命令部署：`pnpm deploy:dev`（= `node tools/deploy-cloud.mjs dev`）。
 
+### ⭐ 真机体验的前置清单（缺一样都会卡住）
+
+**模拟器连的是本机 Docker，真机连的是云托管 dev 环境 —— 两者是完全不同的两套东西。**
+真机跑不通时先照这张表逐项核对，别去改客户端代码：
+
+| # | 条件 | 怎么查（都从 `/health` 看，云托管没有日志可看） | 谁来做 |
+|---|---|---|---|
+| 1 | dev 服务已部署且在跑 | `curl <dev域名>/health` 返回 200 | `pnpm deploy:dev` |
+| 2 | **表结构是新版** | `existingTables` 里要有 **`articles`**；若还是 `arenas`/`arena_entries` 说明停在旧 schema | `pnpm deploy:dev --reset` |
+| 3 | **句库不为空** | `articleCount` = 5（为 0 或 null 就是没灌上） | `SEED_ON_START=true`，deploy 工具已自动带上 |
+| 4 | 正文文件在镜像里 | `/health?deep=1` 的 `content.ok` = true（会回显 `root` 和读到的第一句） | Dockerfile 已 `COPY content` |
+| 5 | ⚠️ **「开放接口服务」已开启** | `/health?deep=1` 的 `storage.auth` 为 `ok` | ⛔ **只能在控制台点** |
+
+> 3 和 4 是**两个独立**的失败点，但客户端表现**一模一样**（朗读页「正文加载失败」）——
+> 所以它们在 `/health` 里被拆成了两个独立的字段，别混。
+
+**第 5 条是唯一的纯人工步骤，而且它有三件事，不是一件。**
+官方《开放接口服务》的四步里前三步缺一不可：
+
+| 步 | 做什么 | 我们踩的坑 |
+|---|---|---|
+| ① | 控制台-云调用-**微信令牌权限配置**里加**接口白名单** | ⭐ **最容易漏**。文档把这一步排在**第一位**；格式是**路径**不是完整 URL（如 `/wxa/msg_sec_check`），我们要加的是 **`/_/cos/getauth`** |
+| ② | 控制台-云调用-**打开「开放接口服务」开关** | 注意要开在**本环境**上 —— 本项目有 dev / prod **两个**环境 |
+| ③ | **重新构建一次版本** | 官方原文：「实例扩缩容时**不遵循当前的开关状态，而是遵循版本创建时的开关状态**」 |
+| ④ | 镜像里要有 shell | 官方：「开放接口服务依赖 shell，镜像内无 `sh/bash` 将无法正常部署容器」。我们用 `node:20-alpine` ✓ |
+
+#### 怎么判断到底生效没有 —— 官方给了**两个**判据，都要看
+
+> 通过请求头返回 `x-openapi-seqid` 和**解析地址为内部地址（`10.0.0.x` / `169.254.0.x`）**判断是否使用了开放接口服务。
+
+两个判据都做进了 `/health?deep=1`：
+
+| 判据 | 从哪看 | 含义 |
+|---|---|---|
+| ① `storage.openapiDns` / `openapiActive` | `storage/index.ts` 的 `probeStorage()` | 解析到 **公网 IP** → **旁加载的 sidecar 根本不在这个实例上** |
+| ② `storage.authError` 里有没有 `x-openapi-seqid` | `storage/wxcloud.ts` 的 `getAuth()` | 没有 → 请求没被平台接管 |
+
+> ⭐ **判据 ① 比 ② 更有信息量**：它能区分「sidecar 压根不在」和「sidecar 在、但请求没匹配上」。
+> 只看 ② 的话两者都表现为「没有 seqid」。
+
+**实测记录（dev 环境，2026-09-15）** —— 两个判据都判定未生效：
+
+```
+storage.openapiDns  = 81.69.216.43      ← 公网 IP
+storage.openapiActive = false
+storage.auth        = failed
+authError           = HTTP 404 body="" 【诊断】没有 x-openapi-seqid
+```
+
+⚠️ **两个容易混淆的失败，处置完全不同**：
+
+| 现象 | 含义 |
+|---|---|
+| **404 + 空 body + 无 seqid + DNS 是公网 IP** | 请求**完全没被平台接管** —— sidecar 不在 |
+| `errcode: 85107` | 走通了云调用，但**路径不在白名单**里 |
+
+本项目遇到的是**前一种**。而且当时已经在开关打开后重建过 **6 个版本**，所以
+「实例遵循版本创建时的开关状态」这条也解释不了 —— 那就得回头确认**开关到底开在哪个环境上**
+（本项目有 dev / prod **两个**环境，只有这两个）。
+
+> `@wxcloud/cli` 的子命令只有 deploy / env / function / init / login / logout / migrate / run / service / storage / version，
+> **没有任何云调用相关命令**，这一步没有命令行途径。
+
+**为什么句库靠 `SEED_ON_START` 而不是 `pnpm seed:cloud`**：
+云上 `Dockerfile` 的 `CMD` 只有 `node index.mjs`，不像本地开发镜像会自动 seed；
+而 `seed:cloud` 走数据库**外网地址**，要先在控制台把公网入口打开 ——
+为 5 行种子开数据库公网入口不划算。`SEED_ON_START` 让容器启动时自己灌（幂等 upsert）。
+
 ### ⚠️ 六条实测踩出来的坑
 
 **① 启动顺序：必须先监听，再做数据库初始化。**
@@ -641,7 +834,10 @@ Node 无法从 node_modules 加载 `.ts`。
 ④ 评完分删除音频（隐私策略）
 ```
 
-**对象存储已做成可替换接口**（`apps/server/src/storage/`）：本地用 `LocalStorage`（落盘 `.uploads/`），生产用 `WxCloudStorage`（**读取路径待实现**）。
+**对象存储已做成可替换接口**（`apps/server/src/storage/`）：本地用 `LocalStorage`（落盘 `.uploads/`），生产用 `WxCloudStorage`。
+
+⚠️⚠️ 但**本地与线上的音频通道是两条不同的路**，见 §1.4 —— 本地没有 COS 凭证，
+必须由 `POST /api/uploads` 代劳，否则「上传 → 提交」本地永远跑不通。
 
 ### ⚠️ 冷启动 30 秒 > callContainer 超时 15 秒
 

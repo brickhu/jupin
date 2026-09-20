@@ -34,6 +34,25 @@ export async function probeStorage(): Promise<Record<string, unknown>> {
     bucket: env.COS_BUCKET ?? null,
     region: env.COS_REGION ?? null,
   }
+
+  // ⭐⭐ 官方给出的**第二个**判定依据：
+  //    「通过请求头返回 x-openapi-seqid 和**解析地址为内部地址（10.0.0.x / 169.254.0.x）**
+  //      判断是否使用了开放接口服务。」
+  //    「开放接口服务以旁加载形式部署到服务中」—— 所以它的存在与否，
+  //    直接反映在 api.weixin.qq.com 解析到什么地址上。
+  //    ⚠️ 这一条比只看 seqid 更有信息量：它能区分
+  //       「sidecar 根本不在」和「sidecar 在但请求没匹配上」。
+  try {
+    const { lookup } = await import('node:dns/promises')
+    const { address } = await lookup('api.weixin.qq.com')
+    out.openapiDns = address
+    out.openapiActive = /^(10\.|169\.254\.)/.test(address)
+    out.openapiNote = out.openapiActive
+      ? '解析到内部地址 → 开放接口服务已旁加载'
+      : '解析到公网地址 → 开放接口服务**没有**部署到这个实例（开关未生效或版本是开关打开前构建的）'
+  } catch (err) {
+    out.openapiDnsError = (err as Error).message
+  }
   if (env.STORAGE !== 'wxcloud') {
     out.note = '当前不是 wxcloud 实现，无需探测外部链路'
     return out

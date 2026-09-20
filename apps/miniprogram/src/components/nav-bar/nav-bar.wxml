@@ -1,0 +1,30 @@
+<!--
+  统一的自定义导航栏 —— 三个页面共用这一个组件。
+  左：头像 / 回首页 / 返回；中：标题。
+
+  ⚠️ 它是**固定定位的浮层**，不占文档流：页面必须自己让出 navPadTop() 那么高，
+     否则内容会被压在它下面（见 lib/nav.ts 的说明）。
+
+  ⚠️ 不要在 .nv-root 上加 transform / filter / will-change：
+     那会让它成为「包含块」，里面那个 position:fixed 的用户面板就再也盖不住整屏了。
+
+  ⚠️ 右侧那段留白不是装饰：胶囊按钮（···⊙）是微信画在我们这一层之上的，
+     我们既碰不到它也藏不掉它，只能让开同样的宽度 —— 标题才是**真正**居中的。
+-->
+<view class="nv-root {{solid ? 'nv-root-solid' : ''}}" style="padding-top:{{statusBarHeight}}px;height:{{barHeight}}px;">
+  <view class="nv-row">
+    <view class="nv-side" style="width:{{sideWidth}}px;" bindtap="onLeftTap" hover-class="nv-hover">
+      <image wx:if="{{leftMode === 'avatar' && avatarUrl}}" class="nv-avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
+      <view wx:elif="{{leftMode === 'avatar'}}" class="nv-avatar nv-avatar-text">{{initial}}</view>
+      <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph">🏠</text>
+      <text wx:else class="nv-glyph nv-glyph-back">‹</text>
+    </view>
+
+    <text class="nv-title">{{title}}</text>
+
+    <view class="nv-side" style="width:{{sideWidth}}px;"></view>
+  </view>
+</view>
+
+<!-- ⭐ 全局用户面板 —— 挂在导航栏里，于是**每一页**都能从左上角拉开它 -->
+<user-sheet show="{{sheetOpen}}" bind:close="onSheetClose" />

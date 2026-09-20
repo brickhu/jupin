@@ -40,7 +40,24 @@ export class MockEngine implements ScoreEngine {
         }
       })
 
-    return { total: Math.round(total * 100) / 100, words }
+    // ⭐ 维度也要给：否则本地开发时界面上永远是空的，
+    //    「界面没显示」和「引擎没返回」就分不清了。
+    //    ⚠️ mock 不模拟漏读，所以完整度恒为 100 —— 这也是刻意暴露 mock 的边界。
+    const dim = (tag: string): number => {
+      const dSeed = hash(`${tag}:${refText}:${audio.length}`)
+      return Math.round(clamp(total + ((dSeed % 1000) / 1000 - 0.5) * 12, 0, 100) * 10) / 10
+    }
+
+    return {
+      total: Math.round(total * 100) / 100,
+      words,
+      dimensions: {
+        accuracy: dim('accuracy'),
+        fluency: dim('fluency'),
+        standard: dim('standard'),
+        integrity: 100,
+      },
+    }
   }
 }
 

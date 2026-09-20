@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "朗读竞技场",
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/nav-bar"
+  }
+}

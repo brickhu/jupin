@@ -5,11 +5,15 @@ import { serve } from '@hono/node-server'
 import { env, envError } from './env'
 import { dbState, initDatabase, maskDatabaseUrl, pingDatabase } from './db'
 import { probeStorage } from './storage'
+import { probeContent } from './services/content'
 import { authMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
 import { submissionsRoutes } from './routes/submissions'
+import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
+import { mediaRoutes } from './routes/media'
+import { schedulesRoutes } from './routes/schedules'
 
 const app = new Hono()
 
@@ -42,7 +46,9 @@ app.get('/health', async (c) => {
   // ⚠️ 深度自检会真的调一次微信开放接口 + 一次对象存储，所以默认关闭。
   //    未鉴权的 /health 不该具备这个能力（会变成廉价的 DoS 放大面）。
   const deep = env.DIAG_ENABLED && c.req.query('deep') === '1'
-  const storage = deep ? await probeStorage() : undefined
+  const [storage, content] = deep
+    ? await Promise.all([probeStorage(), probeContent()])
+    : [undefined, undefined]
 
   return c.json({
     ok: true,
@@ -61,8 +67,11 @@ app.get('/health', async (c) => {
       migrated: dbState.migrated,
       migrateError: dbState.migrateError || undefined,
       existingTables: dbState.existingTables.length ? dbState.existingTables : undefined,
+      /** ⭐ 句库行数 —— 真机朗读页「正文加载失败」的头号原因就是它是 0 */
+      articleCount: dbState.articleCount,
       envError: envError ?? undefined,
       storage,
+      content,
     },
   })
 })
@@ -70,14 +79,28 @@ app.get('/health', async (c) => {
 // 公开路由
 app.route('/api/auth', authRoutes)
 
+/**
+ * ⭐ 标准音等静态媒体 —— **刻意放在 /api 之外，不做鉴权**。
+ *
+ * ⚠️ 理由见 routes/media.ts 开头：InnerAudioContext 不会带 Authorization 头，
+ *    也不会带 x-wx-* 头（那不是 callContainer），所以凡是「客户端按 URL 直接取」
+ *    的资源都不能要求鉴权 —— 否则在开发者工具和真机上都是 401。
+ */
+app.route('/media', mediaRoutes)
+
 // 需鉴权路由
 app.use('/api/articles/*', authMiddleware)
 app.use('/api/submissions/*', authMiddleware)
+app.use('/api/uploads/*', authMiddleware)
 app.use('/api/user/*', authMiddleware)
+app.use('/api/schedules/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
+app.route('/api/uploads', uploadsRoutes)
 app.route('/api/user', userRoutes)
+// ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak
+app.route('/api/schedules', schedulesRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

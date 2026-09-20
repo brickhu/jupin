@@ -7,6 +7,8 @@
 #    让 `pnpm dev:docker` 成为真正的一条命令。
 FROM node:20-alpine
 WORKDIR /app
+# ⭐ ffmpeg —— 音频归一化用，见 apps/server/src/services/audio.ts
+RUN apk add --no-cache ffmpeg
 RUN npm i -g pnpm@9 tsx
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

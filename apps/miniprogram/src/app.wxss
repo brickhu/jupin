@@ -1,28 +1,21 @@
+/* ⭐ UnoCSS 生成的原子类。由 build.mjs 产出到 dist/uno.wxss（构建期扫源码生成，零运行时） */
+@import "./uno.wxss";
+
+/**
+ * 这里**只保留全局基线**。
+ * 所有组件级样式（卡片、按钮、文字层级）一律用 UnoCSS 工具类写在 WXML 上 ——
+ * 见 docs/research/styling-decision.md。
+ *
+ * ⚠️ 为什么不在这里留 .card / .btn-primary 之类的语义类：
+ *    页面 WXSS 在 app.wxss 之后加载，两个页面对同名类写不同定义时会互相"意外生效"
+ *    （迁移前 selftest 页就重新定义了 .card 和 .btn-primary，和首页长得完全不一样）。
+ *    工具类写在元素上，没有这种跨页覆盖问题。
+ *
+ * ⚠️ 下面两个色值是 uno.config.mjs 里 theme.colors.page / theme.colors.ink 的**镜像** ——
+ *    手写 CSS 引用不到 UnoCSS 的 token，只能写字面量。改主题色时这里要一起改。
+ */
 page {
-  background: #f7f7f8;
+  background: #f7f7f8; /* theme.colors.page */
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
-  color: #1a1a1a;
+  color: #111; /* theme.colors.ink */
 }
-
-.card {
-  background: #fff;
-  border-radius: 24rpx;
-  padding: 32rpx;
-  margin: 24rpx;
-}
-
-.btn-primary {
-  background: #4f46e5;
-  color: #fff;
-  border-radius: 999rpx;
-  padding: 28rpx 0;
-  text-align: center;
-  font-size: 32rpx;
-  font-weight: 500;
-}
-
-.btn-primary[disabled] {
-  opacity: 0.5;
-}
-
-.muted { color: #8a8a8e; font-size: 26rpx; }
