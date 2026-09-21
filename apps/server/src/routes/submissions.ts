@@ -11,8 +11,8 @@ import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } from '../services/audio-key'
-import { challengeUsage, nextSeq } from '../services/submission'
-import { attemptLimitOf, checkChallenge } from '../services/quota'
+import { dailyChallengeUsage, nextSeq } from '../services/submission'
+import { checkChallenge } from '../services/quota'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { resolveScheduleDate } from '../services/schedule-date'
@@ -133,44 +133,29 @@ submissionsRoutes.post('/', async (c) => {
     }
   }
 
-  // ---- 3. ⭐ 挑战门禁：每句额度 + 挑战间隔 ----
+  // ---- 3. ⭐ 挑战门禁：今天还剩几次（与句子无关）----
   //
   // ⚠️ 顺序：**幂等检查在前，门禁在后**（见上面第 2 步）。
-  //    反过来的话，用户"重试"会被自己上一次提交造成的间隔挡住，
-  //    拿到一个莫名其妙的 429 —— 而他要的只是把同一段音频再发一次。
+  //    反过来的话，用户"重试"会把同一段音频又算一次挑战 —— 而他只是想再发一次。
   //
-  // ⚠️ 两条拒绝都是 **429 + 明确的 code**，不是 400：
-  //    它们是**业务规则**，不是"请求写错了"。客户端要据此给出可行动的提示。
+  // ⚠️ 拒绝是 **429 + 明确的 code**，不是 400：
+  //    它是**业务规则**，不是"请求写错了"。客户端要据此给出可行动的提示
+  //    （"今天的次数用完了，明天再来"），而不是一句"请求失败"。
   const isMember = !!user.memberUntil && user.memberUntil > new Date()
-  const usage = await challengeUsage(userId, articleId)
-  const gate = checkChallenge({
-    attempts: usage.attempts,
-    isMember,
-    lastSubmitAt: usage.lastSubmitAt,
-  })
+  const { usedToday } = await dailyChallengeUsage(userId)
+  const gate = checkChallenge({ usedToday, isMember })
   if (!gate.allowed) {
-    if (gate.code === 'QUOTA_EXHAUSTED') {
-      return c.json(
-        {
-          ok: false,
-          code: gate.code,
-          reason: gate.reason,
-          attempts: gate.attempts,
-          limit: gate.limit,
-          error:
-            gate.reason === 'free'
-              ? '这一句的免费挑战已经用过了'
-              : `这一句已经挑战满 ${gate.limit} 次了`,
-        },
-        429,
-      )
-    }
     return c.json(
       {
         ok: false,
         code: gate.code,
-        retryAfterSec: gate.retryAfterSec,
-        error: `挑战太频繁了，${gate.retryAfterSec} 秒后再试`,
+        reason: gate.reason,
+        usedToday: gate.usedToday,
+        dailyLimit: gate.dailyLimit,
+        error:
+          gate.reason === 'free'
+            ? '今天的免费挑战已经用完了，明天再来'
+            : `今天已经挑战满 ${gate.dailyLimit} 次了，明天再来`,
       },
       429,
     )

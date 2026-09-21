@@ -321,34 +321,31 @@ export interface MeResponse {
   /** 'active' / 'banned'；界面目前只区分「能不能用」 */
   status: string
   isMember: boolean
-  /** ⭐ 每句还能挑战几次（按当前身份：免费 1 次 / 付费 20 次）—— 结果页用它交代额度 */
-  attemptsPerSentence: number
+  /** ⭐ 每天能挑战几次（按当前身份：免费 1 次 / 付费 50 次，**与句子无关**） */
+  dailyLimit: number
+  /** 今天已经挑战成功几次 —— 端侧拿 dailyLimit - usedToday 说「今天还剩几次」 */
+  usedToday: number
   /** 已征服的句子数（拿到 ≥ CONQUEST_THRESHOLD 分的**去重句子**数，只增不减） */
   conqueredCount: number
   streak: StreakView
 }
 
 /**
- * ⭐ 提交被拒的两种**业务分支**（都是 429，但不是"错误"，是规则）。
+ * ⭐ 提交被拒的**业务分支**（429，但不是"错误"，是规则）。
  *
- * ⚠️ 它们和真正的失败要分开说：客户端要给出**可行动**的提示
- *    （「这句免费次数用完了」/「X 秒后再试」），而不是一句「请求失败」。
+ * ⚠️ 它和真正的失败要分开说：客户端要给出**可行动**的提示
+ *    （「今天的次数用完了，明天再来」），而不是一句「请求失败」。
  */
 export interface QuotaExhaustedError {
   code: 'QUOTA_EXHAUSTED'
-  /** free = 免费额度用完（可以付费继续）；cap = 付费用户的每句硬上限 */
+  /** free = 免费用户今天那 1 次用完了（付费可以继续）；cap = 付费用户今天也满了 */
   reason: 'free' | 'cap'
-  /** 这一句已经挑战了几次 */
-  attempts: number
-  /** 当前身份的上限（免费 1 / 付费 20） */
-  limit: number
+  /** 今天已经挑战了几次 */
+  usedToday: number
+  /** 今天的上限（免费 1 / 付费 50） */
+  dailyLimit: number
 }
 
-export interface TooFrequentError {
-  code: 'TOO_FREQUENT'
-  /** 还要等多少秒才能再提交 */
-  retryAfterSec: number
-}
-
-/** 旧的冷却错误码 —— 已经下线（改成按句额度 + 固定间隔），留个说明免得看到旧代码发懵 */
+/** 已经下线的错误码，留个说明免得看到旧代码发懵 */
+// export interface TooFrequentError { code: 'TOO_FREQUENT'; retryAfterSec: number }
 // export interface CooldownError { code: 'COOLDOWN'; nextFreeAt: string }

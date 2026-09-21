@@ -53,6 +53,19 @@ export function dayNumber(day: string): number {
   return Math.floor(Date.UTC(y, m - 1, d) / MS_PER_DAY)
 }
 
+/**
+ * 'YYYY-MM-DD'（应用时区的自然日）→ 它在 **UTC 时间轴上的起点**。
+ *
+ * ⚠️⚠️ 按天统计必须用它，不能拿自然日字符串直接去比：
+ *    库里 submissions.created_at 存的是 UTC 墙上时间，
+ *    而"今天"是北京时间切的，两者整体差 8 小时 ——
+ *    北京时间早上 7 点提交的那一次，UTC 看还在昨天。
+ *    直接用字符串边界，会让"每天的第一次挑战"偶尔算进前一天。
+ */
+export function dayStartUtc(day: string): Date {
+  return new Date(dayNumber(day) * MS_PER_DAY - APP_TZ_OFFSET_MINUTES * 60_000)
+}
+
 /** 序号 → 'YYYY-MM-DD' */
 export function dayFromNumber(n: number): string {
   const at = new Date(n * MS_PER_DAY)

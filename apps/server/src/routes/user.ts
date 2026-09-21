@@ -4,7 +4,8 @@ import { db } from '../db'
 import { users } from '../db/schema'
 import { env } from '../env'
 import { getTotalConquered } from '../services/conquest'
-import { attemptLimitOf } from '../services/quota'
+import { dailyLimitOf } from '../services/quota'
+import { dailyChallengeUsage } from '../services/submission'
 import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
 
@@ -18,9 +19,12 @@ userRoutes.get('/me', async (c) => {
   // ⚠️ Streak 视图一律现算（它由库里四个字段纯推导），不缓存：
   //    跨过零点之后「今天读没读」会翻面，缓存会让它停在昨天。
   const isMember = !!user.memberUntil && user.memberUntil > new Date()
-  const [streak, conqueredCount] = await Promise.all([
+  const [streak, conqueredCount, usage] = await Promise.all([
     readStreakView(userId),
     getTotalConquered(userId),
+    // ⭐ 今天已经挑战成功几次 —— 端侧要拿它写「今天还剩 N 次」。
+    //    不在端侧自己数：那需要端侧保存一份提交记录，两份数必然对不上。
+    dailyChallengeUsage(userId),
   ])
 
   return c.json({
@@ -31,9 +35,10 @@ userRoutes.get('/me', async (c) => {
       avatarUrl: user.avatarUrl,
       status: user.status,
       isMember: isMember,
-      // ⭐ 每句还能挑战几次由身份决定（免费 1 / 付费 20）——
-      //    客户端拿它写提示语，不在端侧再抄一份数字
-      attemptsPerSentence: attemptLimitOf(isMember),
+      // ⭐ 挑战额度**与句子无关**：每天几次由身份决定（免费 1 / 付费 50）。
+      //    上限和已用两个数都给出去，客户端只管相减，不在端侧抄一份数字。
+      dailyLimit: dailyLimitOf(isMember),
+      usedToday: usage.usedToday,
       conqueredCount,
       streak,
     },

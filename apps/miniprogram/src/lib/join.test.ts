@@ -50,7 +50,8 @@ function meResponse(nickname: string | null) {
     avatarUrl: null,
     status: 'active',
     isMember: false,
-    attemptsPerSentence: 1,
+    dailyLimit: 1,
+    usedToday: 0,
     conqueredCount: 0,
     streak: {
       streakDays: 0,

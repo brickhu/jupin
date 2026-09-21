@@ -147,7 +147,7 @@ function isEnvelope(body: unknown): boolean {
  * 带业务码的接口错误。
  *
  * ⚠️ 为什么需要：服务端有些失败**不是「出错了」，而是正常业务分支** ——
- *    最典型的是额度用完（429 + code:'QUOTA_EXHAUSTED'）与提交太频繁（429 + code:'TOO_FREQUENT'）。
+ *    最典型的是额度用完（429 + code:'QUOTA_EXHAUSTED'，今天的挑战次数用完）。
  *    只传 message 的话，页面只能显示「挑战冷却中」，
  *    却没法告诉用户「还有 6 小时 12 分」。
  */

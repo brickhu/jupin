@@ -35,7 +35,7 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  *                 ↑                              │
  *                 └────────── 重录 ──────────────┘
  *
- * ⚠️ 提交被拒**不都是错误**：额度用完（QUOTA_EXHAUSTED）与提交太频繁（TOO_FREQUENT）
+ * ⚠️ 提交被拒**不都是错误**：额度用完（QUOTA_EXHAUSTED）是业务规则，不是故障
  *    是完全正常的业务分支，必须和真错误区分开 ——
  *    否则用户看到「请求失败」会以为小程序坏了，然后反复重试（而那正是要拦的行为）。
  *
@@ -697,22 +697,22 @@ Page({
     } catch (err) {
       const e = err as ApiError
       /**
-       * ⚠️⚠️ 这两种**不是错误，是业务规则**：额度用完 / 提交太频繁。
+       * ⚠️⚠️ 额度用完**不是错误，是业务规则**。
        *    所以提示语要说「接下来怎么办」，而不是「请求失败」——
        *    后者会让用户以为小程序坏了，然后反复重试（那正是要拦的行为）。
+       *
+       * ⚠️ 提示语里必须带上**明天**：这是他会再回来的唯一理由。
+       *    只说"次数用完了"听着像封号，说"明天再来"才是可预期的。
        */
       if (e.code === 'QUOTA_EXHAUSTED') {
-        const p = e.payload as { reason?: 'free' | 'cap'; limit?: number } | undefined
+        const p = e.payload as { reason?: 'free' | 'cap'; dailyLimit?: number } | undefined
         this.setData({
           phase: 'recorded',
           error:
             p?.reason === 'cap'
-              ? `这一句已经挑战满 ${p.limit ?? 20} 次了 —— 换一句读吧`
-              : '这一句的免费挑战已经用过了（每句免费 1 次）',
+              ? `今天已经挑战满 ${p.dailyLimit ?? 50} 次了，明天再来`
+              : '今天的 1 次免费挑战已经用完了，明天再来',
         })
-      } else if (e.code === 'TOO_FREQUENT') {
-        const sec = (e.payload as { retryAfterSec?: number } | undefined)?.retryAfterSec ?? 120
-        this.setData({ phase: 'recorded', error: `挑战太频繁了，${sec} 秒后再试` })
       } else {
         this.setData({ phase: 'recorded', error: e.message })
       }

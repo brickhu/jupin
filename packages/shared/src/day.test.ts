@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, dayKey, dayNumber, daysBetween, isValidDay, today } from './day'
+import { addDays, dayKey, dayNumber, dayStartUtc, daysBetween, isValidDay, today } from './day'
 
 describe('dayKey —— 按北京时间切自然日', () => {
   it('UTC 深夜仍算作北京时间的前一天之后的那一天', () => {
@@ -73,5 +73,22 @@ describe('isValidDay', () => {
     expect(isValidDay('')).toBe(false)
     expect(isValidDay(null)).toBe(false)
     expect(isValidDay(undefined)).toBe(false)
+  })
+})
+
+describe('dayStartUtc —— 自然日在 UTC 时间轴上的起点', () => {
+  it('北京时间的 00:00 = UTC 前一天 16:00', () => {
+    expect(dayStartUtc('2026-09-21').toISOString()).toBe('2026-09-20T16:00:00.000Z')
+  })
+
+  it('⚠️ 它是"今天提交了几次"的统计窗口起点：',
+  () => {
+    // 北京时间 09-21 00:30 的那次提交（UTC 09-20T16:30）必须落在窗口里，
+    // 23:00 的那次（UTC 09-20T15:00）必须落在窗口外
+    const from = dayStartUtc('2026-09-21').getTime()
+    const to = dayStartUtc(addDays('2026-09-21', 1)).getTime()
+    expect(new Date('2026-09-20T16:30:00.000Z').getTime() >= from).toBe(true)
+    expect(new Date('2026-09-20T15:00:00.000Z').getTime() >= from).toBe(false)
+    expect(to - from).toBe(86_400_000)
   })
 })
