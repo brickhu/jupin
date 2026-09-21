@@ -23,7 +23,10 @@
   <!-- left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
   <nav-bar id="nav" title="加入句拼" />
 
-  <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">取个名字，成绩才有主 —— 它会出现在榜单上。</text>
+  <!-- ⚠️ 这行说**它做什么**，不写抒情的话：
+       "它会出现在榜单上"回答不了"我为什么要填"，
+       "成绩记在这个名字下"才说明白了这个字段的作用 -->
+  <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">头像和昵称会显示在榜单上，你的成绩都记在这个名字下。</text>
 
   <!-- ── 表单 ──────────────────────────────────────────────── -->
   <view class="bg-white rounded-2.5 overflow-hidden">
@@ -63,5 +66,5 @@
   <view class="mt-4 text-center py-[30rpx] rounded-full bg-brand text-white text-32rpx font-medium {{nickname ? '' : 'opacity-50'}}"
         bindtap="onConfirm">{{saving ? '加入中…' : '确认加入'}}</view>
 
-  <text class="text-22rpx text-faint block mt-3 text-center">名字和头像只用来在榜单上认人，不会发任何消息。</text>
+  <text class="text-22rpx text-faint block mt-3 text-center">不会给你发任何消息，也不做别的用途。</text>
 </view>

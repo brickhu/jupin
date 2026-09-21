@@ -11,10 +11,17 @@
  * ⚠️ 页面 WXSS 天然只作用于本页，不存在 app.wxss 那种跨页覆盖问题。
  */
 
-/* 头像按钮：把 button 的默认皮肤清干净，只留一个可点的圆 */
+/**
+ * 头像按钮：把 button 的默认皮肤清干净，只留一个可点的圆。
+ *
+ * ⚠️ margin-left: auto 是**必须的**，不能只靠容器上的 justify-between：
+ *    小程序给 button 的默认样式里带 margin-left/right: auto，
+ *    这里写 margin 简写时漏掉哪一边，它就会退回默认的"水平居中" ——
+ *    表现是圆圈浮在行中间，而不是贴在右边。显式写死最稳。
+ */
 .join-avatar {
   padding: 0;
-  margin: 0 0 0 24rpx;
+  margin: 0 0 0 auto;
   width: 88rpx;
   height: 88rpx;
   line-height: 1;
