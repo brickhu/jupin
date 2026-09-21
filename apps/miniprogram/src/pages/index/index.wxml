@@ -12,9 +12,7 @@
           只会让人怀疑哪一个才算。
        ⚠️ 原来这里还有一个「🔥 N 天」—— 现在连战天数在下面的状态卡里，
           同一个数字在同一屏出现两次同样会让人怀疑哪个才算。 -->
-  <view class="flex items-center px-1 pb-4">
-    <text class="text-24rpx text-faint">{{brand.tagline}}</text>
-  </view>
+  <text class="text-24rpx text-faint block px-1 pb-4 text-center">{{brand.tagline}}</text>
 
   <!-- ══ 我的状态卡 ═══════════════════════════════════════
        ⚠️ 放在「今天这一张」**上面**：先回答"我是谁、走到哪了"，
