@@ -44,6 +44,22 @@ interface WxError {
   errmsg?: string
 }
 
+/**
+ * 把错误（连同 `cause`）说清楚。
+ *
+ * ⚠️⚠️ Node 的 fetch 失败时**只给一个 `TypeError: fetch failed`**，
+ *    真正的病因（getaddrinfo ENOTFOUND / ECONNREFUSED / 证书错误 / 连接超时）
+ *    全在 `err.cause` 里。不把它带出来，线上就只剩一句
+ *    「fetch failed」—— 那等于没有信息，只能靠猜。
+ *    （这个坑真踩过：换了服务之后 /tcb/* 全挂，而 /health 只说 fetch failed。）
+ */
+function errText(err: unknown): string {
+  const e = err as Error & { cause?: unknown }
+  const cause = e?.cause
+  const detail = cause instanceof Error ? cause.message : cause ? String(cause) : ''
+  return (e?.message ?? String(err)) + (detail ? ` ← ${detail}` : '')
+}
+
 /** token 失效的三个错误码 —— 只在它们上面重试，别的错误重试没有意义 */
 const TOKEN_ERRORS = [40001, 40003, 42001]
 
@@ -248,11 +264,30 @@ export class WxCloudStorage implements ObjectStorage {
 export async function probeWxStorage(): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {}
 
+  // ⭐ 旁加载给的根证书在不在、有没有被 Node 认下来 —— 这两条决定 HTTPS 能不能通
+  try {
+    const { existsSync } = await import('node:fs')
+    out.caFile = existsSync('/app/cert/certificate.crt') ? '存在' : '不存在'
+  } catch {
+    out.caFile = '检查失败'
+  }
+  out.caEnv = process.env.NODE_EXTRA_CA_CERTS ?? '(未设置)'
+
+  // ⭐ 先量最底层的两件事：公网域名能不能解析、能不能连出去。
+  //    换服务之后 /tcb/* 全挂过，就是靠这一条定位到「这个实例没有公网出口」。
+  try {
+    const { lookup } = await import('node:dns/promises')
+    const { address } = await lookup('api.weixin.qq.com')
+    out.dns = address + (/^(10\.|169\.254\.)/.test(address) ? '（内网地址 → 旁加载在）' : '（公网地址）')
+  } catch (err) {
+    out.dns = 'failed: ' + errText(err).slice(0, 200)
+  }
+
   try {
     await accessToken()
     out.token = 'ok'
   } catch (err) {
-    out.token = `failed: ${(err as Error).message.slice(0, 200)}`
+    out.token = `failed: ${errText(err).slice(0, 300)}`
     return out
   }
 
@@ -260,7 +295,7 @@ export async function probeWxStorage(): Promise<Record<string, unknown>> {
     const ticket = await callTcb<UploadTicket>(UPLOAD_URL, { path: '__probe__/never-uploaded.bin' })
     out.uploadTicket = ticket.url ? 'ok（拿到上传票据，未真正上传）' : `异常返回：${JSON.stringify(ticket).slice(0, 200)}`
   } catch (err) {
-    out.uploadTicket = `failed: ${(err as Error).message.slice(0, 200)}`
+    out.uploadTicket = `failed: ${errText(err).slice(0, 300)}`
   }
 
   try {
@@ -270,7 +305,7 @@ export async function probeWxStorage(): Promise<Record<string, unknown>> {
       : `ok（不存在的对象没拿到链接 → 鉴权与环境都对）`
     out.downloadProbeRaw = JSON.stringify(item ?? null).slice(0, 200)
   } catch (err) {
-    out.downloadProbe = `failed: ${(err as Error).message.slice(0, 200)}`
+    out.downloadProbe = `failed: ${errText(err).slice(0, 300)}`
   }
 
   return out

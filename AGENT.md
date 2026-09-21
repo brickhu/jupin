@@ -723,7 +723,7 @@ Docker 端口映射到宿主机后，**局域网设备可正常访问**（macOS 
 |---|---|
 | AppID | `wxc0418392e9116a01` |
 | 环境 | dev = `dev-0go66cfz212d3d83` ／ prod = `prod-9gjwc01kcd98d6d1` |
-| 服务名 | **`jushuo`**（不是 `jushuo-api`，写错会报 -601031） |
+| 服务名 | **`jupin`**（`deploy-cloud.mjs` 的 `SERVICE` 常量；写错会报 -601031） |
 | 公网域名（dev） | `https://jushuo-219743-12-1258596499.sh.run.tcloudbase.com` |
 | 数据库 | 云托管 MySQL，内网 `MYSQL_ADDRESS`（形如 `10.x.x.x:3306`） |
 
@@ -866,6 +866,19 @@ Node 无法从 node_modules 加载 `.ts`。
 ⚠️⚠️ 但**本地与线上的音频通道是两条不同的路**，见 §1.4 —— 本地没有 COS 凭证，
 必须由 `POST /api/uploads` 代劳，否则「上传 → 提交」本地永远跑不通。
 
+> ⚠️⚠️ **两个只有「换服务」时才会暴露的坑**（都踩过，各花了几小时）：
+>
+> 1. **旁加载（开放接口服务）是「服务级」的，且只对创建于开关打开之后的实例生效。**
+>    旧服务 `jushuo`（建号 2026-01，早于开关）的实例里**从来没有**旁加载 ——
+>    容器内 `api.weixin.qq.com` 解析到公网、`/_/cos/getauth` 直接 301 出网。
+>    而控制台开关一直是开的。**重建服务之后立刻就好了。**
+>    判据：容器内该域名解析到 `169.254.x.x` / `10.x`（内网）才算生效 ——
+>    `/health?deep=1` 的 `storage.dns` 直接给这个答案。
+> 2. **旁加载用的是自签证书，Node 不认** —— 必须设
+>    `NODE_EXTRA_CA_CERTS=/app/cert/certificate.crt`（官方《云调用常见问题》正是这条），
+>    否则 HTTPS 报 `fetch failed ← self-signed certificate`（这句话离「证书」很远）。
+>    该变量**只能由服务环境变量给**（Node 只在启动时读），`deploy-cloud.mjs` 已自动带上。
+
 ### ⚠️ 冷启动 30 秒 > callContainer 超时 15 秒
 
 服务 `minNum=0`（默认）时连续 30 分钟无访问即缩容到 0，
@@ -901,7 +914,7 @@ wxcloud run:deploy \
   --libraryImage ${IMAGE_TAG} \
   --containerPort=3000 \
   --envId=${WXRUN_ENVID} \
-  --serviceName=jushuo-api \
+  --serviceName=jupin \
   --releaseType FULL --detach --noConfirm
 ```
 
@@ -997,7 +1010,7 @@ jobs:
           npm i -g @wxcloud/cli
           wxcloud login --appId "$WXCLOUD_APPID" --privateKey "$WXCLOUD_CLI_SECRET"
           wxcloud run:deploy --envId="$WXCLOUD_ENVID" \
-            --serviceName=jushuo-api --containerPort=3000 \
+            --serviceName=jupin --containerPort=3000 \
             --releaseType FULL --detach --noConfirm
 ```
 

@@ -32,7 +32,7 @@ const BIN = resolve(ROOT, 'node_modules/.bin/wxcloud')
 
 // CLI 内部没有暴露对象存储命令，只有这个环境查询接口带着 Storages 字段
 const require = createRequire(resolve(ROOT, 'package.json'))
-const { DescribeWxCloudBaseRunEnvs } = require(
+const { DescribeWxCloudBaseRunEnvs, DescribeCloudBaseRunServer } = require(
   resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/cloudapiDirect'),
 )
 const { setApiCommonParameters } = require(resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/common'))
@@ -126,7 +126,7 @@ function ensureTokenSecret() {
   return secret
 }
 
-const SERVICE = 'jushuo'
+const SERVICE = 'jupin'
 
 /**
  * 调用 wxcloud。
@@ -188,6 +188,16 @@ const params = {
   MIGRATIONS_DIR: 'drizzle',
   // ⚠️ 音频改为永久保留，只在检测失败时删除 —— 见 routes/submissions.ts
   DELETE_AUDIO_AFTER_SCORE: 'false',
+  /**
+   * ⭐⭐ 旁加载（开放接口服务）用的是**自签证书**，而 Node 自带一份根证书链、不认它。
+   *     官方《云调用常见问题》给的正是这一条：
+   *       「部分自带根证书的运行时，需要手动设置证书，证书目录为 /app/cert/certificate.crt」
+   *     ⚠️ 必须在**进程启动前**由环境变量给出（Node 只在启动时读它），
+   *        所以只能放服务环境变量，不能在代码里补。
+   *     ⚠️ 没这个的话，容器里对 api.weixin.qq.com 的 HTTPS 请求会报
+   *        `fetch failed ← self-signed certificate` —— 而这句话离「证书」很远，很难查。
+   */
+  NODE_EXTRA_CA_CERTS: '/app/cert/certificate.crt',
 }
 
 // ⚠️ MYSQL_DATABASE 没配的话补一个默认库名
@@ -269,6 +279,30 @@ for (const k of Object.keys(params).sort()) {
 }
 
 // ---- 3. 部署 ----
+
+/**
+ * ⚠️⚠️ `--override` 只能用在**已有版本的**服务上。
+ *
+ *    它的语义是「缺省的参数沿用上一个版本」，而 CLI 的实现是去读
+ *    DescribeCloudBaseRunServer 的第一个版本、再拿它的 VersionName 查详情 ——
+ *    全新服务没有版本，VersionName 就是 undefined，接口直接报 MissingParameter，
+ *    整个部署失败（而报错信息离"新服务"这个原因很远）。
+ *
+ *    ⇒ 没有版本时不带它：反正也没有"上一个版本"可继承，
+ *      而其余参数（targetDir/dockerfile/port/releaseType/remark）我们都显式给了，
+ *      所以 CLI 不会弹交互式提问。
+ */
+async function serviceHasVersion() {
+  try {
+    const r = await DescribeCloudBaseRunServer({ EnvId: envId, ServerName: SERVICE, Offset: 0, Limit: 1 })
+    return (r.VersionItems ?? []).length > 0
+  } catch {
+    // 服务不存在等情况：交给 run:deploy 自己报错，别在这里抢戏
+    return false
+  }
+}
+const firstDeploy = !(await serviceHasVersion())
+
 const argv = [
   'run:deploy',
   '--envId', envId,
@@ -279,27 +313,91 @@ const argv = [
   '--containerPort', '3000',
   '--envParamsJson', JSON.stringify(params),
   '--noConfirm',
-  '--override',              // 未指定的参数（cpu/mem/副本数策略）沿用旧版本
 ]
+if (firstDeploy) {
+  console.log(`· ${SERVICE} 还没有任何版本 —— 首次部署，不带 --override`)
+} else {
+  argv.push('--override') // 未指定的参数（cpu/mem/副本数策略）沿用旧版本
+}
 if (remark) argv.push('--remark', remark)
 if (detach) argv.push('--detach')
 
 console.log(`\n· 开始部署到 ${target}（envId=${envId}）…\n`)
 
-const MAX_ATTEMPTS = 4
-for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+/** 当前服务已有的版本名 */
+async function versionNames() {
   try {
-    wxcloud(argv, { stdio: 'inherit' })
-    process.exit(0)
-  } catch (err) {
-    const msg = err.message ?? ''
-    const busy = /ResourceInUse|部署发布任务运行中/.test(msg)
-    if (busy && attempt < MAX_ATTEMPTS) {
-      console.log(`\n· 已有发布任务在跑，60 秒后重试（${attempt}/${MAX_ATTEMPTS}）…`)
-      await sleep(60_000)
-      continue
-    }
-    console.error(`\n❌ 部署失败：${msg}`)
-    process.exit(1)
+    const r = await DescribeCloudBaseRunServer({ EnvId: envId, ServerName: SERVICE, Offset: 0, Limit: 20 })
+    return new Set((r.VersionItems ?? []).map((v) => v.VersionName))
+  } catch {
+    return new Set()
   }
 }
+
+/**
+ * ⭐ 等这一次提交产生的新版本进入终态，并返回它。
+ *
+ * ⚠️⚠️ 为什么不能只靠 CLI 的返回值判断成败：
+ *    「创建实例」这一步会**间歇性地 create_failed**（构建明明成功，最后一步炸），
+ *    而这时的 CLI **既不报错也不返回，就那样挂着** —— 实测挂了 20 分钟没动静。
+ *    CI 里那就是一路占着 runner 直到 job 超时。
+ *    ⇒ 所以这里自己按版本状态判定：normal = 成功，create_failed = 可重试的失败。
+ */
+async function waitForNewVersion(before) {
+  const DEADLINE = Date.now() + 12 * 60_000
+  let last = ''
+  while (Date.now() < DEADLINE) {
+    await sleep(10_000)
+    let items = []
+    try {
+      const r = await DescribeCloudBaseRunServer({ EnvId: envId, ServerName: SERVICE, Offset: 0, Limit: 20 })
+      items = r.VersionItems ?? []
+    } catch {
+      continue
+    }
+    const fresh = items.filter((v) => !before.has(v.VersionName))
+    if (fresh.length === 0) continue
+    // 取最新提交的那个
+    const v = fresh.sort((a, b) => String(a.CreatedTime).localeCompare(String(b.CreatedTime))).at(-1)
+    if (v.Status !== last) {
+      last = v.Status
+      console.log(`· ${v.VersionName} 状态：${v.Status}`)
+    }
+    if (v.Status === 'normal') return { ok: true, name: v.VersionName }
+    if (v.Status === 'create_failed' || v.Status === 'failed') return { ok: false, name: v.VersionName }
+  }
+  return { ok: false, name: '(超时未出结果)' }
+}
+
+const MAX_ATTEMPTS = 3
+for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const before = await versionNames()
+  let cliError = ''
+  try {
+    // ⚠️ 给 CLI 一个超时：create_failed 时它会一直挂着，不设上限 CI 会等到 job 超时
+    wxcloud(argv, { stdio: 'inherit', timeout: 14 * 60_000 })
+  } catch (err) {
+    cliError = err.message ?? ''
+  }
+
+  const result = await waitForNewVersion(before)
+  if (result.ok) {
+    console.log(`\n✅ 已发布：${result.name}（${target}）`)
+    process.exit(0)
+  }
+
+  const busy = /ResourceInUse|部署发布任务运行中/.test(cliError)
+  if (attempt < MAX_ATTEMPTS) {
+    console.log(
+      `\n· 第 ${attempt} 次没成（${result.name}${busy ? ' · 有发布任务在跑' : ''}），60 秒后重试…`,
+    )
+    await sleep(60_000)
+    continue
+  }
+
+  console.error(`\n❌ 部署失败（试了 ${MAX_ATTEMPTS} 次，最后一次：${result.name}）`)
+  if (cliError) console.error(cliError)
+  process.exit(1)
+}
+// 循环正常走完说明每次都失败（最后一次已在循环内 exit）；到这里再兜一次
+process.exit(1)
