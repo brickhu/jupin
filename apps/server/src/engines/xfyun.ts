@@ -169,8 +169,14 @@ export function buildBusinessParams(category: string, refText: string) {
     ttp_skip: true,
     // ⭐ 百分制必需（配合 extra_ability）
     ise_unite: '1',
-    // ⭐ 四维得分必需
-    extra_ability: 'multi_dimension',
+    /**
+     * ⭐ 四维得分必需；后两项是**白拿的细粒度数据**（实测：同一次请求就能回，不多花钱）：
+     *    · syll_phone_err_msg —— 音节级检错（syll.serr_msg）
+     *    · pitch              —— 逐帧音高（word.pitch / pitch_beg / pitch_end）
+     * ⚠️ 实测对比：只传 multi_dimension 时，这两个字段**根本不出现**
+     *    （曾误以为是 ise_unite 的锅，见 docs/research/ise-response-fields.md 的更正）。
+     */
+    extra_ability: 'multi_dimension,syll_phone_err_msg,pitch',
     // ⚠️ read_sentence 需要带 BOM + [content] 标签
     text: category === 'read_sentence' ? `\uFEFF[content]${refText}\n` : `\uFEFF${refText}`,
   }
