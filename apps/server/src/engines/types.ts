@@ -24,6 +24,13 @@ export interface ScoreResult {
    * ⭐ 这四个字段 ISE 本来就返回，我们只是以前没往外取 —— 零额外成本。
    */
   dimensions?: ScoreDimensions
+  /**
+   * ⭐ 音节级检错率（0–1）：读过多少音节、其中多少被标了读错。
+   *
+   * ⚠️ 依赖 extra_ability 里的 syll_phone_err_msg；引擎没返回音节时是 undefined
+   *    （**不是 0** —— 0 的含义是「一个都没错」，两件事不能混）。
+   */
+  syllableErrorRate?: number
 }
 
 export interface WordScore {

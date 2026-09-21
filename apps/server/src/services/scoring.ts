@@ -1,5 +1,5 @@
 import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import { CONQUEST_THRESHOLD, dayKey, latestBadge, sentenceScore } from '@jushuo/shared'
+import { CONQUEST_THRESHOLD, dayKey, latestBadge, scoreSentence, speechGaps } from '@jushuo/shared'
 import type { StreakDelta } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
@@ -169,16 +169,27 @@ export async function runScoring(submissionId: string): Promise<void> {
     }
 
     /**
-     * ⭐ 总分**由词级分算**，不用引擎那个总分（理由见 @jushuo/shared 的 scoring.ts）。
+     * ⭐ 总分按**校准后的权重**算（见 @jushuo/shared 的 scoring.ts 与
+     *    docs/research/scoring-standard.md）—— 权重来自「母语级 TTS vs 真实录音」的实测差距，
+     *    不是拍的：韵律 0.35 / 发音短板 0.30 / 准确 0.15 / 流利 0.15 / 完整 0.05。
      *
      * ⚠️ 词级数据缺失时退回引擎总分，而不是记 0 分：
      *    「这次没拿到词级数据」和「我读了一整句全错」是两件事，
      *    后者会让用户莫名其妙丢一次机会。
      */
-    const wordScore = sentenceScore(result.words ?? [])
-    const score = wordScore ?? Math.round(result.total)
-    if (wordScore === null) {
+    const words = result.words ?? []
+    const gaps = speechGaps(words)
+    const breakdown = scoreSentence(words, {
+      ...(result.dimensions ?? {}),
+      ...(result.syllableErrorRate === undefined ? {} : { syllableErrorRate: result.syllableErrorRate }),
+      longGapCount: gaps.longGapCount,
+      longestGapMs: gaps.longestGapMs,
+    })
+    const score = breakdown?.score ?? Math.round(result.total)
+    if (!breakdown) {
       console.warn('[scoring] 这次返回没有词级数据，退回引擎总分 ' + score + ' id=' + submissionId)
+    } else if (breakdown.gates.length > 0) {
+      console.log('[scoring] id=' + submissionId + ' 触发门槛：' + breakdown.gates.join('；'))
     }
     const isConquered = score >= CONQUEST_THRESHOLD
 

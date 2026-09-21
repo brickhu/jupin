@@ -148,8 +148,14 @@ describe('buildBusinessParams —— 每个参数都对应一次踩过的坑', (
     expect(params.ise_unite).toBe('1')
   })
 
-  it('⭐ extra_ability="multi_dimension" —— 不传就没有四维得分', () => {
-    expect(params.extra_ability).toBe('multi_dimension')
+  it('⭐ extra_ability 必须带 multi_dimension —— 不传就没有四维得分', () => {
+    expect(params.extra_ability).toContain('multi_dimension')
+  })
+
+  it('⭐ 还要带 syll_phone_err_msg 与 pitch —— 实测少了它们这两个字段根本不出现', () => {
+    // 前者给 syll.serr_msg（音节检错，算分要用），后者给 word.pitch（逐帧音高）
+    expect(params.extra_ability).toContain('syll_phone_err_msg')
+    expect(params.extra_ability).toContain('pitch')
   })
 
   it('⭐ 音频格式必须是 16k 裸 PCM —— 不符会被判「乱读」且分值不可参考', () => {

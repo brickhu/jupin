@@ -234,10 +234,25 @@ export function parseIseXml(xml: string): ScoreResult {
     128: 'mispronunciation',
   }
 
+  // 音节级检错的累计器 —— 依赖 extra_ability 里的 syll_phone_err_msg
+  let syllableTotal = 0
+  let syllableErrors = 0
+
   const words: WordScore[] = rawWords
     .map((w: any) => {
       const startFrame = Number(w['@_beg_pos'] ?? 0)
       const endFrame = Number(w['@_end_pos'] ?? 0)
+      /**
+       * ⭐ 音节级检错：syll.serr_msg 非 0 就是这个音节读错了。
+       *
+       * ⚠️ 它依赖 extra_ability 带 syll_phone_err_msg；不带的话这个字段
+       *    **根本不会出现** —— 那不等于「没有错误」。所以要区分
+       *    「一个音节都没读到」和「读了 10 个音节全对」：前者让整项为 undefined，
+       *    调用方据此忽略这一项，而不是把它当成 0 错误率。
+       */
+      const sylls = Array.isArray(w.syll) ? w.syll : w.syll ? [w.syll] : []
+      syllableTotal += sylls.length
+      syllableErrors += sylls.filter((s: any) => Number(s['@_serr_msg'] ?? 0) !== 0).length
       return {
         word: String(w['@_content'] ?? ''),
         score: Number(w['@_total_score'] ?? 0),
@@ -260,7 +275,13 @@ export function parseIseXml(xml: string): ScoreResult {
     standard: Number(s['@_standard_score'] ?? 0),
   }))
 
-  return { total, words, sentences, dimensions: readDimensions(paper) }
+  /**
+   * ⭐ 音节级检错率（0–1）。
+   * ⚠️ 「一个音节都没读到」时给 undefined，而不是 0 —— 0 会被当成「全对」。
+   */
+  const syllableErrorRate = syllableTotal > 0 ? syllableErrors / syllableTotal : undefined
+
+  return { total, words, sentences, dimensions: readDimensions(paper), syllableErrorRate }
 }
 
 /** 转成有限数字；拿不到就是 NaN（不要用 0 冒充「真实得了 0 分」） */
