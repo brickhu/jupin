@@ -70,6 +70,10 @@
            ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。 -->
       <canvas type="2d" id="wave" class="w-full h-[88rpx] my-1"></canvas>
 
+      <!-- ⚠️ 只在开发者工具里显示：波形不出来的原因有好几种（帧没来 / 画布没就绪 /
+           数据是压缩字节），它们在屏幕上长得一模一样。真机上恒为空。 -->
+      <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveDebug}}">{{waveDebug}}</text>
+
       <view class="mb-2.5"></view>
       <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
     </block>

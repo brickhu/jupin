@@ -242,6 +242,11 @@ Page({
     playPath: '',
     durationMs: 0,
     elapsed: '0.0',
+    /**
+     * ⚠️ **只在开发者工具里显示**的一行诊断（真机上恒为空）。
+     *    波形不出来的原因有好几种，它们屏幕上长得一模一样，只能靠这行字区分。
+     */
+    waveDebug: '',
     uploadPercent: 0,
     /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
     scoringSeconds: 0,
@@ -273,6 +278,10 @@ Page({
   /** 画布的**设备像素**尺寸 —— 绘制坐标全部用它 */
   waveW: 0,
   waveH: 0,
+  /** 本轮收到多少帧 —— 只用于开发者工具里那行诊断 */
+  waveFrames: 0,
+  /** 「一帧都没收到」只提示一次，别每 100ms 刷一遍 */
+  waveWarned: false,
 
   /**
    * ⭐ 拿画布节点。
@@ -295,6 +304,8 @@ Page({
         const node = info?.node
         if (!node || !info?.width || !info?.height) {
           console.warn('[wave] 没拿到画布节点，这一轮不画波形')
+          // ⚠️ 这句诊断只给开发者工具看：真机上用户看到「画布没拿到」比看到一块空白更糟
+          if (IS_DEVTOOLS) this.setData({ waveDebug: '画布没拿到（' + JSON.stringify(info ?? null) + '）' })
           return
         }
         // ⚠️ getWindowInfo 要 2.20.1+，与 lib/nav.ts 一样留一条老基础库的退路
@@ -305,6 +316,14 @@ Page({
         this.waveCtx = node.getContext('2d')
         this.waveW = node.width
         this.waveH = node.height
+        this.waveFrames = 0
+        // ⭐ 先画一条极淡的中线：它让"画布在哪儿、有多大"当场可见。
+        //    没有它，一块什么都没画的 canvas 和"这个功能不存在"长得一模一样 ——
+        //    排查时会一直怀疑代码没生效（这个坑本次就踩了）。
+        this.drawBaseline()
+        this.setData({
+          waveDebug: '画布就绪 ' + node.width + '×' + node.height + '，等音频帧…',
+        })
       })
   },
 
@@ -327,6 +346,8 @@ Page({
     const view = new DataView(pcm)
     const total = pcm.byteLength >> 1
     if (total < 2) return
+
+    this.waveFrames++
 
     // 只看这一轮的第一帧一眼：如果它根本不是 PCM，画出来的是"压缩字节的噪声"。
     // ⚠️ 只记日志、**不拦绘制**：开发者工具里就该看到它在动（虽然那波动没有物理意义），
@@ -353,6 +374,7 @@ Page({
     ctx.clearRect(0, 0, w, h)
     ctx.fillStyle = WAVE_COLOR
 
+    let maxPeak = 0
     for (let i = 0; i < bars; i++) {
       const from = Math.floor(i * perBar)
       const to = Math.min(total, Math.floor((i + 1) * perBar))
@@ -365,7 +387,32 @@ Page({
       //    看起来像画布没渲染出来（与参考实现里的 Math.max(2, ...) 同理）
       const barH = Math.max(2, (peak / 32768) * h * 0.92)
       ctx.fillRect(i * step + (step - barW) / 2, mid - barH / 2, barW, barH)
+      if (peak > maxPeak) maxPeak = peak
     }
+
+    /**
+     * ⚠️ 开发者工具里把「收到几帧、多少字节、峰值多少」写在画布下方。
+     *
+     *    这一条不是装饰：波形不显示的原因有好几种（帧没来 / 画布没就绪 /
+     *    数据是压缩字节），它们在屏幕上**长得一模一样**。
+     *    没有这行字，只能靠反复猜 —— 本次就为此白跑了两轮。
+     *    真机上不显示（IS_DEVTOOLS 为假）。
+     */
+    if (IS_DEVTOOLS) {
+      const next = '第 ' + this.waveFrames + ' 帧 · ' + pcm.byteLength + ' 字节 · 峰值 ' + maxPeak
+      // 每帧都 setData 太浪费，隔几帧写一次就够看
+      if (this.waveFrames % 5 === 1) this.setData({ waveDebug: next })
+    }
+  },
+
+  /** 画一条极淡的中线 —— 让"画布在哪儿"当场可见，见 prepareWaveCanvas 的说明 */
+  drawBaseline() {
+    const ctx = this.waveCtx
+    if (!ctx) return
+    const h = this.waveH
+    ctx.clearRect(0, 0, this.waveW, h)
+    ctx.fillStyle = '#eeecfd'
+    ctx.fillRect(0, Math.round(h / 2) - 1, this.waveW, 2)
   },
 
   audio: null as WechatMiniprogram.InnerAudioContext | null,
@@ -525,14 +572,16 @@ Page({
       })
     }
 
-    // ⚠️ 每一轮录音重新判一次帧格式（放在 setData 外面：这是页面私有字段，不进渲染数据）
+    // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     this.waveChecked = false
+    this.waveWarned = false
 
     this.setData(
       {
         phase: 'recording',
         error: '',
         elapsed: '0.0',
+        waveDebug: IS_DEVTOOLS ? '准备画布…' : '',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
         audioPath: '',
@@ -551,7 +600,22 @@ Page({
     const startedAt = Date.now()
     this.startedAt = startedAt
     this.timer = setInterval(() => {
-      this.setData({ elapsed: ((Date.now() - startedAt) / 1000).toFixed(1) })
+      const sec = (Date.now() - startedAt) / 1000
+      this.setData({ elapsed: sec.toFixed(1) })
+
+      /**
+       * ⚠️ 开发者工具里：录了两秒还一帧都没收到，就**主动说出来**。
+       *
+       *    否则屏幕上是"一块空画布"，而"帧没来"和"画得不对"长得一模一样 ——
+       *    只能靠反复猜（本次就为此白跑了两轮）。
+       *    ⚠️ 复用这个 100ms 的计时器，不为一行诊断再开一个 setTimeout。
+       */
+      if (IS_DEVTOOLS && sec > 2 && this.waveFrames === 0 && !this.waveWarned) {
+        this.waveWarned = true
+        this.setData({
+          waveDebug: (this.waveCtx ? '画布就绪，但' : '画布没就绪，且') + ' 2 秒内没收到任何音频帧',
+        })
+      }
     }, 100)
 
     this.recorder.start()
