@@ -129,6 +129,20 @@ class AuthExpiredError extends Error {
 const RETRY_BUDGET_MS = 12_000
 
 /**
+ * ⭐ **启动预算** —— 只给"打开小程序时那几个请求"用，比上面那个宽。
+ *
+ * ⚠️⚠️ 为什么需要它：云托管缩容到 0 之后，**第一个请求是硬等的**，
+ *    实测 9.3 秒（早先这里记的"冷启动 6.2 秒"已经偏乐观，而且那时第一次是
+ *    快速失败 503、不占超时；现在是请求就那么挂在半路上）。
+ *    12 秒的预算会把这一次掐掉，用户看到「服务正在启动中，请再试一次」——
+ *    而他其实只需要再等两秒。
+ *
+ * ⚠️ 只给启动用：会话中（已经在读句子、在提交）再等 25 秒没有意义，
+ *    那时候失败得越快越好 —— 所以那些请求仍然走默认的 12 秒。
+ */
+const LAUNCH_BUDGET_MS = 25_000
+
+/**
  * 重试节奏（毫秒，第 0 项是「立刻试第一次」）。
  * ⚠️ 各项之和要明显小于 RETRY_BUDGET_MS —— 预算是**总量**，延迟只是其中一部分。
  */
@@ -396,7 +410,7 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
           throw new ApiError(
             scoring
               ? '打分还在进行中（长句要十几秒），再点一次「提交检测」即可拿到结果 —— 不会重复计费'
-              : '服务正在启动中（云托管冷启动约 6 秒），请再试一次',
+              : '服务正在启动中（云托管冷启动要十几秒），请再试一次',
             scoring ? 'SCORING' : 'COLD_START',
             { attempts: RETRY_DELAYS_MS.length, lastError: e.message },
           )
@@ -437,7 +451,11 @@ export async function login(): Promise<void> {
     //    所以它本身就是一个会被 401 的请求。不禁止重登的话：
     //      request(/api/user/me) 401 → relogin() → login() → request(/api/user/me) → …
     //    而 relogin() 会复用同一个 Promise，第二次等的是**自己** —— 死锁，不是报错。
-    const me = await request<{ id: number }>('/api/user/me', { noRelogin: true })
+    // ⭐ 启动请求：给冷启动留够时间（见 LAUNCH_BUDGET_MS）
+    const me = await request<{ id: number }>('/api/user/me', {
+      noRelogin: true,
+      budgetMs: LAUNCH_BUDGET_MS,
+    })
     setUserId(me.id)
     return
   }
@@ -453,6 +471,8 @@ export async function login(): Promise<void> {
     data: { code },
     // ⚠️ 必须带：不然登录失败会递归地再触发一次登录，直到栈溢出
     noRelogin: true,
+    // ⭐ 启动请求：给冷启动留够时间（见 LAUNCH_BUDGET_MS）
+    budgetMs: LAUNCH_BUDGET_MS,
   })
   setToken(data.token)
   setUserId(data.user.id)
@@ -467,7 +487,8 @@ export async function login(): Promise<void> {
  * @param days 含今天一共列几天（服务端会夹到 2–30）
  */
 export function fetchSchedules(days = 7): Promise<SchedulesResponse> {
-  return request<SchedulesResponse>('/api/schedules?days=' + days)
+  // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
+  return request<SchedulesResponse>('/api/schedules?days=' + days, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
@@ -482,7 +503,9 @@ export function fetchSchedules(days = 7): Promise<SchedulesResponse> {
  *    那一次是**必须**的（uid 拿不到就没法上传），这一次是顺带取展示数据。
  */
 export function fetchMe(): Promise<MeResponse> {
-  return request<MeResponse>('/api/user/me')
+  // ⚠️ 它也承担启动时的「我是谁」（见 lib/join.ts 的 refreshMe），同样给足预算；
+  //    用户面板里那次刷新失败只是拿旧数据，多等几秒也无害。
+  return request<MeResponse>('/api/user/me', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
