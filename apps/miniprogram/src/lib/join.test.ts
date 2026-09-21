@@ -1,14 +1,16 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * ensureJoined / openJoinPage 的单测。
+ * ensureJoined / openJoinPage / refreshMe 的单测。
  *
  * ⚠️⚠️ 这一版守的是一条产品判断，不是一个工具函数：
  *
- *    「点加入」要区分**两件事** —— 账号已经在服务端（换设备 / 清了缓存）
- *    和账号还不存在。前者必须**直接进去**，后者才谈得上跳加入页。
- *    判错的代价不是报错：老用户会被要求重新认领一次自己，
- *    然后以为成绩没了。所以四种情况逐条钉死。
+ *    「点加入」要区分**三件事**，而不是两件：
+ *      · 账号已经在服务端（换设备 / 清了缓存）→ 直接进去，什么都别问
+ *      · 账号还不存在                          → 才谈得上跳加入页
+ *      · **没问到**（网络抖了）                → 也放行，不能当"没加入"
+ *    第三种最容易被写漏，代价也最实在：老用户被推去加入页，
+ *    然后以为自己的成绩没了。所以三种情况逐条钉死。
  */
 
 const memory = new Map<string, unknown>()
@@ -97,10 +99,44 @@ describe('ensureJoined', () => {
     expect(nav).toEqual(['to:' + join.JOIN_PAGE])
   })
 
-  it('⚠️ 取资料失败 → 仍然跳加入页，而不是静默什么都不做', async () => {
+  it('⚠️⚠️ 取资料失败 → **放行**，不能把老用户当新人推去加入页', async () => {
     fetchMe.mockRejectedValue(new Error('network down'))
-    await expect(join.ensureJoined()).resolves.toBe(false)
-    expect(nav).toEqual(['to:' + join.JOIN_PAGE])
+    await expect(join.ensureJoined()).resolves.toBe(true)
+    expect(nav).toEqual([])
+  })
+})
+
+describe('refreshMe', () => {
+  it('服务端认识我 → true，并把资料写进 state', async () => {
+    fetchMe.mockResolvedValue(meResponse('老用户'))
+    await expect(join.refreshMe()).resolves.toBe(true)
+    expect(store.hasJoined()).toBe(true)
+  })
+
+  it('服务端不认识我 → false', async () => {
+    fetchMe.mockResolvedValue(meResponse(null))
+    await expect(join.refreshMe()).resolves.toBe(false)
+  })
+
+  it('⚠️ 问不到 → null（与 false 分开，调用方据此决定放不放行）', async () => {
+    fetchMe.mockRejectedValue(new Error('boom'))
+    await expect(join.refreshMe()).resolves.toBe(null)
+  })
+})
+
+describe('applyProfilePatch —— 保存接口的返回值直接定"已加入"', () => {
+  it('⭐ 昵称一写进来就立刻算已加入（不依赖再 GET 一次）', () => {
+    expect(store.hasJoined()).toBe(false)
+    store.applyProfilePatch({ nickname: '张三', avatarUrl: null })
+    expect(store.hasJoined()).toBe(true)
+    expect(store.getState().profile?.nickname).toBe('张三')
+  })
+
+  it('⚠️ 只动昵称/头像，已征服数原样留着（保存接口不返回它）', () => {
+    const withCount = { ...meResponse('旧名字'), conqueredCount: 7 }
+    store.applyProfile(withCount as never)
+    store.applyProfilePatch({ nickname: '新名字', avatarUrl: null })
+    expect(store.getState().profile?.conqueredCount).toBe(7)
   })
 })
 

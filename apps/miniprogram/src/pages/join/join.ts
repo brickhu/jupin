@@ -1,6 +1,6 @@
 import { CLOUD_ENV_ID } from '../../config'
-import { fetchMe, getUserId, saveProfile } from '../../lib/api/client'
-import { HOME_PAGE } from '../../lib/join'
+import { getUserId, saveProfile } from '../../lib/api/client'
+import { HOME_PAGE, refreshMe } from '../../lib/join'
 import { navPadTop } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -92,11 +92,28 @@ Page({
     try {
       // ① 头像先上传（没选就跳过 —— 头像是可选的）
       let fileId = ''
-      if (this.data.avatarPath) fileId = await this.uploadAvatar(this.data.avatarPath)
-      // ② 落库
-      await saveProfile({ nickname, ...(fileId ? { avatarUrl: fileId } : {}) })
-      // ③ 用**服务端返回的**资料刷新全局 store（昵称可能被净化过：长度、控制字符）
-      me.applyProfile(await fetchMe())
+      if (this.data.avatarPath) {
+        try {
+          fileId = await this.uploadAvatar(this.data.avatarPath)
+        } catch (err) {
+          /**
+           * ⚠️⚠️ 头像传不上去**不该拖住"加入"**。
+           *    它是个装饰，昵称才是这张表的主角；为了一个头像让人加不进来，
+           *    是本末倒置。传失败就当作"这次没换头像"，昵称照常落库。
+           */
+          console.warn('[join] 头像上传失败，本次不带头像：' + (err as Error).message)
+        }
+      }
+      // ② 落库，并**用它的返回值**更新全局 state（见 store 的 applyProfilePatch）
+      const saved = await saveProfile({ nickname, ...(fileId ? { avatarUrl: fileId } : {}) })
+      me.applyProfilePatch(saved)
+      /**
+       * ③ 再顺手拉一次完整的 /me（已征服数 / streak 在保存接口的返回值里没有）。
+       *
+       * ⚠️ 不 await、也不管失败：**"已加入"这件事在第 ② 步就已经定死了**，
+       *    这一步只是补数据。等它，等于让"加入成功"这个结论再赌一次网络。
+       */
+      void refreshMe()
       // ④ 回进来时那一页
       this.back()
     } catch (err) {

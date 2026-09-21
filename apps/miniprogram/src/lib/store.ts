@@ -289,6 +289,29 @@ export function applyProfile(m: MeResponse): void {
   commit({ ...state, profile, streak: m.streak })
 }
 
+/**
+ * ⭐ 只改头像 / 昵称这两格，其余（已征服数、streak）原样留着。
+ *
+ * ⚠️⚠️ 为什么不能"存完再 GET 一次 /me 才知道自己是谁"：
+ *    POST /api/user/profile 成功 = 资料**已经落库**，这时候全局 state 还停在
+ *    「没昵称」只有一种可能 —— 那次多余的 GET 失败了。
+ *    而 hasJoined() 的判据正是昵称非空，于是用户明明已经加入，
+ *    界面却坚持他是个新人：挑战还会把他往加入页推。
+ *    ⇒ 加入成功这件事必须以**保存接口自己的返回值**为准，不能靠第二次请求。
+ */
+export function applyProfilePatch(patch: { nickname: string | null; avatarUrl: string | null }): void {
+  const prev = state.profile
+  commit({
+    ...state,
+    profile: {
+      nickname: patch.nickname,
+      // ⚠️ 这次没选头像时服务端返回的是**库里存着的那张**，直接采信它
+      avatarUrl: patch.avatarUrl,
+      conqueredCount: prev?.conqueredCount ?? 0,
+    },
+  })
+}
+
 /** 换账号 / 清空重置时调用 —— 否则会把上一个人的成绩显示给下一个人 */
 export function reset(): void {
   commit(emptyState())

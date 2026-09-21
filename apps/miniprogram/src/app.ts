@@ -1,20 +1,7 @@
 import { CLOUD_ENV_ID } from './config'
-import { fetchMe, login } from './lib/api/client'
-import { applyProfile, hydrate } from './lib/store'
-
-/**
- * ⭐ 拉一次「我是谁」（头像 / 昵称 / 已征服数）并写进全局 store。
- *
- * ⚠️ 失败**只警告、不冒泡**：它供的是导航栏上那个头像和用户面板，
- *    取不到就显示兜底头像，不该让任何主流程受影响。
- */
-async function loadProfile(): Promise<void> {
-  try {
-    applyProfile(await fetchMe())
-  } catch (err) {
-    console.warn('[app] 取用户资料失败（不影响使用）：' + (err as Error).message)
-  }
-}
+import { login } from './lib/api/client'
+import { refreshMe } from './lib/join'
+import { hydrate } from './lib/store'
 
 /**
  * 小程序入口。
@@ -72,9 +59,15 @@ App({
       await login()
       this.globalData.ready = true
       console.log('[app] 登录完成')
-      // ⚠️ 不 await：首页的首屏不该为了一个头像多等一次往返。
-      //    拿到之前导航栏显示兜底头像，拿到之后 store 广播，组件自己会重画。
-      void loadProfile()
+      /**
+       * ⭐ 打开就把「我是谁」问一次 —— 加入过的人从这一刻起就是"已加入"，
+       *    不必等某个页面点下去才去问（那一下会明显地卡顿）。
+       *
+       * ⚠️ 不 await：首页的首屏不该为了一个头像多等一次往返。
+       *    拿到之前导航栏显示兜底的「加入」按钮，拿到之后 store 广播，组件自己会重画。
+       * ⚠️ refreshMe 自己吞掉失败（只警告），它供的是界面，不该连累启动流程。
+       */
+      void refreshMe()
     } catch (err) {
       // ⚠️ 刻意**不弹 toast**：当前阶段后端经常没起来（尤其真机上），
       //    弹「登录失败」会让人以为是账号问题，而其实是「后端未连接」。

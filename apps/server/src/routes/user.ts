@@ -70,7 +70,23 @@ userRoutes.post('/profile', async (c) => {
     .set({ nickname, ...(avatarUrl ? { avatarUrl } : {}) })
     .where(eq(users.id, userId))
 
-  return c.json({ ok: true, data: { nickname, avatarUrl: avatarUrl ?? null } })
+  /**
+   * ⚠️⚠️ 回**库里存着的**那一份，而不是把入参回显出去。
+   *
+   *    差别在"这次没传 avatarUrl"的时候：库里那张头像还在，
+   *    回显 null 会让客户端以为"我没有头像了"，把界面上的头像抹掉。
+   *    客户端拿这个返回值直接更新本地状态（见 store 的 applyProfilePatch），
+   *    所以它必须是**更新之后的真相**，不是这次请求的输入。
+   */
+  const [row] = await db
+    .select({ nickname: users.nickname, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, userId))
+
+  return c.json({
+    ok: true,
+    data: { nickname: row?.nickname ?? nickname, avatarUrl: row?.avatarUrl ?? null },
+  })
 })
 
 /**
