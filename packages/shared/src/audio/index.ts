@@ -20,3 +20,4 @@
 export * from './fft'
 export * from './wav'
 export * from './resample'
+export * from './level'

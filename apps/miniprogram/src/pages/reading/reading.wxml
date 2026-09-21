@@ -58,10 +58,21 @@
 
     <!-- 录音中 -->
     <block wx:if="{{phase === 'recording'}}">
-      <view class="flex items-baseline justify-center gap-2 py-2.5">
+      <view class="flex items-baseline justify-center gap-2 pt-2.5">
         <text class="text-36rpx text-bad">●</text>
         <text class="text-36rpx font-semibold text-ink">{{elapsed}}s</text>
       </view>
+
+      <!-- ⭐ 声波监测：一帧一根柱子（约 64ms），右进左出，一屏约 2 秒。
+           ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
+              没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
+           ⚠️ 高度是**行内 style**：柱子高度每帧都变，用类名表达等于每帧生成一批新类名。 -->
+      <view class="flex items-end justify-center gap-[4rpx] h-[80rpx] py-1">
+        <view wx:for="{{bars}}" wx:key="id"
+              class="w-[10rpx] rounded-full bg-brand"
+              style="height:{{item.h}}rpx"></view>
+      </view>
+
       <view class="mb-2.5"></view>
       <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
     </block>

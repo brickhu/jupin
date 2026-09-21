@@ -10,6 +10,8 @@ import {
   submitReading,
 } from '../../lib/api/client'
 import { uploadAudio } from '../../lib/api/upload'
+import { pcmLevel } from '@jushuo/shared'
+
 import { Recorder, type RecordResult } from '../../lib/audio/recorder'
 import { fetchArticleContent } from '../../lib/content'
 import { ensureJoined } from '../../lib/join'
@@ -24,6 +26,26 @@ import {
   saveLastRecording,
 } from '../../lib/audio/last-recording'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
+
+/**
+ * ⭐ 声波监测那排柱子。
+ *
+ * ⚠️ `WAVE_SLOTS` 不是随便取的：一帧 2KB（16kHz / 16bit / 单声道）
+ *    ≈ 64ms，32 根正好是**约 2 秒**的窗口 ——
+ *    短于这个数看不出"刚才那句说完了没有"，长了则反应迟钝、不像在实时监测。
+ */
+const WAVE_SLOTS = 32
+/** 静音时柱子的高度（rpx）—— 不画成 0：一根线宽的点看起来像加载失败 */
+const WAVE_MIN_RPX = 8
+/** 满量程时的高度（rpx） */
+const WAVE_MAX_RPX = 72
+
+interface WaveBar {
+  /** 自增 id，**不是下标** —— 见 data.bars 的说明 */
+  id: number
+  /** 高度（rpx） */
+  h: number
+}
 
 /**
  * 朗读页 —— 产品的**唯一动作入口**。
@@ -185,6 +207,15 @@ Page({
     playPath: '',
     durationMs: 0,
     elapsed: '0.0',
+    /**
+     * ⭐ 录音条上那排声波柱子：一帧一根，右进左出。
+     *
+     * ⚠️ 每根柱子带一个**自增的 id**，而不是用数组下标当 key：
+     *    下标当 key 时，每推进一帧所有柱子的身份都变了，
+     *    渲染层只能整排重建 —— 15 次/秒的重建会明显掉帧。
+     *    带上 id 之后，「往右挪一格」对渲染层是移动而不是重建。
+     */
+    bars: [] as WaveBar[],
     uploadPercent: 0,
     /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
     scoringSeconds: 0,
@@ -200,6 +231,41 @@ Page({
   },
 
   recorder: null as Recorder | null,
+
+  /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
+  gone: false,
+
+  /** 声波柱子的滚动窗口（与 data.bars 同源，改它才 setData） */
+  wave: [] as WaveBar[],
+  /** 柱子 id 的自增计数 —— 见 WaveBar 的说明 */
+  waveSeq: 0,
+
+  /**
+   * 把一帧的响度推进声波窗口。
+   *
+   * ⚠️ 只画到 WAVE_SLOTS 根，多出来的从左边挤掉 ——
+   *    一屏固定宽度，柱子无限增长会把它撑爆。
+   */
+  pushWave(level: number) {
+    // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
+    //    页面销毁之后一帧都不该画（见 onUnload）
+    if (this.gone || this.data.phase !== 'recording') return
+
+    const h = Math.round(WAVE_MIN_RPX + level * (WAVE_MAX_RPX - WAVE_MIN_RPX))
+    this.wave.push({ id: ++this.waveSeq, h })
+    if (this.wave.length > WAVE_SLOTS) this.wave.shift()
+    this.setData({ bars: this.wave.slice() })
+  },
+
+  /** 铺一排最矮的柱子（开始录音时用）—— 见调用处的说明 */
+  resetWave(): WaveBar[] {
+    this.wave = []
+    this.waveSeq = 0
+    const bars: WaveBar[] = []
+    for (let i = 0; i < WAVE_SLOTS; i++) bars.push({ id: ++this.waveSeq, h: WAVE_MIN_RPX })
+    this.wave = bars.slice()
+    return bars
+  },
   audio: null as WechatMiniprogram.InnerAudioContext | null,
   timer: null as ReturnType<typeof setInterval> | null,
   /** 原始词表（不带样式），渲染时再套 cls */
@@ -262,6 +328,18 @@ Page({
   msPerWord: DEFAULT_MS_PER_WORD,
 
   onUnload() {
+    /**
+     * ⭐ 先立旗子再停录音。
+     *
+     * ⚠️⚠️ 顺序反了会报错：录音一停就会回 onStop，而那条回调里有一堆 setData。
+     *    声波那条路更密 —— 它是**每 64ms 一次**，页面销毁后还会继续往一个
+     *    不存在的页面上写。
+     *
+     * ⚠️ 为什么必须真的停：不停的话它会在后台继续录到 60 秒上限，
+     *    用户以为"退出就不录了"，而麦克风其实还开着。
+     */
+    this.gone = true
+    this.recorder?.stop()
     this.stopTimer()
     if (this.stopWatchdog !== null) {
       clearTimeout(this.stopWatchdog)
@@ -334,6 +412,8 @@ Page({
 
     if (!this.recorder) {
       this.recorder = new Recorder({
+        // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接喂给响度函数
+        onFrame: (pcm) => this.pushWave(pcmLevel(pcm)),
         onStop: (r) => this.handleRecorded(r),
         onError: (e) => {
           this.stopTimer()
@@ -346,6 +426,9 @@ Page({
       phase: 'recording',
       error: '',
       elapsed: '0.0',
+      // ⭐ 先铺一排**最矮**的柱子：整排宽度不变，看着像"已经在听了"，
+      //    而不是等第一帧到了才突然冒出一排东西、把下面的按钮顶下去
+      bars: this.resetWave(),
       // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
       restored: false,
       audioPath: '',
@@ -376,6 +459,15 @@ Page({
   },
 
   handleRecorded(r: RecordResult) {
+    /**
+     * ⚠️ 页面已经销毁就什么都别做。
+     *
+     *    录音在 onUnload 里会被停掉，而停掉就会**回一次 onStop** ——
+     *    那次回调落在已经没了的页面上，里面每一句 setData 都会报
+     *    「setData on destroyed page」。守卫放在最前面，后面的逻辑不必各自提防。
+     */
+    if (this.gone) return
+
     // ⚠️ 收到回调就把看门狗撤掉，否则 3 秒后它会误报「没正常结束」
     if (this.stopWatchdog !== null) {
       clearTimeout(this.stopWatchdog)
