@@ -213,7 +213,7 @@ SuggestedScore = PronAccuracy × PronCompletion × (2 − PronCompletion)
 
 并发：免费 50，超出 **¥30/个/月**。
 
-### ⭐ 套到「句说」的竞技场（25–50 词）
+### ⭐ 套到「句拼」的竞技场（25–50 词）
 
 新版各模式文本上限（[官方 评测模式](https://cloud.tencent.com/document/product/1774/107338)）：
 
@@ -266,7 +266,7 @@ SuggestedScore = PronAccuracy × PronCompletion × (2 − PronCompletion)
 
 → **插件在宿主页面录音时仍在工作、仍在往云端送数据、仍然计费。**
 
-### 6.3 为什么这对「句说」是致命的
+### 6.3 为什么这对「句拼」是致命的
 
 看 [AGENT.md](../../AGENT.md) 的架构：
 

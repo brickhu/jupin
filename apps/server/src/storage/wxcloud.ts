@@ -1,33 +1,51 @@
-import COS from 'cos-nodejs-sdk-v5'
 import { env } from '../env'
 import type { ObjectStorage } from './types'
 import { normalizeKey } from './types'
 
 /**
- * 微信云托管对象存储实现。
+ * 微信云托管对象存储实现 —— 走**经典 HTTPS 接口**（/tcb/*）。
  *
- * ⭐ 读取路径（官方文档给的正规做法）：
- *    ① 用「开放接口服务」拿**临时密钥**：GET http://api.weixin.qq.com/_/cos/getauth
- *       —— 容器内调用，自动带当前环境身份，**不需要任何长期密钥**。
- *    ② 用临时密钥初始化 COS-SDK（通过 getAuthorization 回调，SDK 会自动续期）。
- *    ③ cos.getObject / cos.deleteObject。
+ * ══════════════════════════════════════════════════════════════════
+ * ⚠️⚠️ 为什么**不是** /_/cos/getauth + COS-SDK（官方「开放接口服务」那条路）
  *
- * 官方场景文档《如何处理用户上传的图片然后返回》描述的正是我们这条链路：
- * 小程序 uploadFile 拿 fileID → 服务端读 → 处理 → 返回。
+ *    那条路要求容器里**旁加载一个进程**，请求才会被就地接走。
+ *    没接走时，发往 api.weixin.qq.com 的请求会直接出公网打真实微信服务器，
+ *    而真实服务器上根本没有 /_/ 开头的路径 → 404。
+ *    本项目在 dev 实测就是这种状态（容器内 /_/cos/getauth 返回 301 跳 https、
+ *    响应头没有 x-openapi-seqid），而且**平台侧没有任何 API 能查这个开关的状态**
+ *    （CLI 只包了 21 个 tcb 接口，控制台那两个开关读不到）。
  *
- * ⚠️ **前置条件：控制台要开启「开放接口服务」**。
- *    没开的话 /_/cos/getauth 会失败，错误信息见 getAuth() 的报错。
+ *    ⇒ 改用官方另外三个接口：/tcb/uploadfile、/tcb/batchdownloadfile、
+ *      /tcb/batchdeletefile。官方在这三个接口的文档里都明写
+ *      「**本接口不支持云调用**」—— 也就是说它们**本来就不走旁加载**，
+ *      只需要一个 access_token。要什么走什么，比去赌一个查不到状态的开关稳。
+ * ══════════════════════════════════════════════════════════════════
  *
- * ⚠️ 为什么不用「客户端取临时链接、服务端 fetch」那条路：
- *    它把服务端变成「按客户端给的 URL 去抓取」，是个 SSRF 面，
- *    还得额外维护域名白名单。现在这条是服务端自己去可信位置取，干净得多。
+ * 凭据链：WX_APPID + WX_SECRET → access_token（两小时有效）→ /tcb/*
  *
- * ⚠️ 为什么不用 tcb/batchdownloadfile：
- *    那个接口要 access_token，等于多一层令牌生命周期管理；
- *    而 /_/cos/getauth 走的是开放接口服务，零令牌。
+ * ⚠️ access_token 是**进程级缓存**。多实例部署时每个实例各持一份，而微信侧
+ *    同一个 appid 的 token 全局唯一（新取的会让旧的失效），所以每个调用都必须
+ *    「报 40001/40003/42001 就刷新一次再重试」，不能假设手上的 token 一直有效。
  */
 
-const COS_AUTH_URL = 'http://api.weixin.qq.com/_/cos/getauth'
+const TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token'
+const UPLOAD_URL = 'https://api.weixin.qq.com/tcb/uploadfile'
+const DOWNLOAD_URL = 'https://api.weixin.qq.com/tcb/batchdownloadfile'
+const DELETE_URL = 'https://api.weixin.qq.com/tcb/batchdeletefile'
+
+/** 提前多久续期 —— 避免"签名时刚好过期" */
+const TOKEN_SKEW_MS = 5 * 60_000
+/** 临时下载链接有效期（秒）。只用来立刻把内容取回来，取完就丢，所以给短的 */
+const DOWNLOAD_MAX_AGE_SEC = 600
+
+/** 微信接口统一的错误字段 */
+interface WxError {
+  errcode?: number
+  errmsg?: string
+}
+
+/** token 失效的三个错误码 —— 只在它们上面重试，别的错误重试没有意义 */
+const TOKEN_ERRORS = [40001, 40003, 42001]
 
 /**
  * 按扩展名给 MIME。
@@ -40,184 +58,220 @@ function contentTypeOf(key: string): string {
   return 'application/octet-stream'
 }
 
-interface CosAuthResponse {
-  TmpSecretId: string
-  TmpSecretKey: string
-  Token: string
-  /** 失效时间戳（秒） */
-  ExpiredTime: string
+let tokenCache: { token: string; expiresAt: number } | null = null
+
+/** 换 access_token（带内存缓存）。force = true 时无视缓存强制刷新 */
+async function accessToken(force = false): Promise<string> {
+  if (!force && tokenCache && tokenCache.expiresAt - Date.now() > TOKEN_SKEW_MS) {
+    return tokenCache.token
+  }
+
+  const appid = env.WX_APPID
+  const secret = env.WX_SECRET
+  if (!appid || !secret) {
+    throw new Error(
+      '缺少 WX_APPID / WX_SECRET —— /tcb/* 这套接口要用它们换 access_token。' +
+        '填法：**公用**根 .env 里加这两行（两个环境共用同一个小程序），再重新部署。' +
+        `（当前：appid=${appid ? '有' : '空'} secret=${secret ? '有' : '空'}）`,
+    )
+  }
+
+  const url = new URL(TOKEN_URL)
+  url.searchParams.set('grant_type', 'client_credential')
+  url.searchParams.set('appid', appid)
+  url.searchParams.set('secret', secret)
+
+  const res = await fetch(url)
+  const data = (await res.json()) as { access_token?: string; expires_in?: number } & WxError
+  if (!data.access_token) {
+    throw new Error(`换 access_token 失败：${data.errcode ?? '?'} ${data.errmsg ?? ''}`)
+  }
+  tokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ?? 7200) * 1000,
+  }
+  return tokenCache.token
+}
+
+/**
+ * 调一个 /tcb/* 接口。
+ * ⚠️ token 失效时**强制刷新并重试一次**：access_token 是全局唯一的，
+ *    别的实例刚换过就会让手上这个作废，这是常态而不是异常。
+ */
+async function callTcb<T extends WxError>(api: string, body: Record<string, unknown>): Promise<T> {
+  let lastError = ''
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = await accessToken(attempt > 0)
+    const res = await fetch(`${api}?access_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ env: env.WX_CLOUD_ENV_ID, ...body }),
+    })
+    const data = (await res.json()) as T
+    if (data.errcode === 0) return data
+
+    lastError = `${data.errcode ?? '?'} ${data.errmsg ?? ''}`
+    if (attempt === 0 && TOKEN_ERRORS.includes(Number(data.errcode))) {
+      console.warn(`[storage] access_token 失效（${lastError}），刷新后重试`)
+      continue
+    }
+    break
+  }
+  throw new Error(`调用 ${api.split('/').pop()} 失败：${lastError}`)
+}
+
+/** /tcb/uploadfile 的返回 */
+interface UploadTicket extends WxError {
+  url?: string
+  token?: string
+  authorization?: string
+  file_id?: string
+  cos_file_id?: string
+}
+
+/** 下载列表里的一项 */
+interface DownloadFileItem {
+  fileid?: string
+  download_url?: string
+  errmsg?: string
+  code?: string
+}
+
+/** /tcb/batchdownloadfile 的返回 */
+interface DownloadResult extends WxError {
+  file_list?: DownloadFileItem[]
+}
+
+/** key → cloud://<环境>.<桶>/<key> */
+function fileIdOf(key: string): string {
+  if (!env.WX_CLOUD_ENV_ID || !env.COS_BUCKET) {
+    throw new Error(
+      '缺少 WX_CLOUD_ENV_ID / COS_BUCKET，拼不出 fileID。' +
+        '正常情况下 pnpm deploy:dev / deploy:prod 会从云托管 API 自动读出并注入，' +
+        '见 tools/deploy-cloud.mjs。' +
+        `（当前值：env=${env.WX_CLOUD_ENV_ID || '空'} bucket=${env.COS_BUCKET || '空'}）`,
+    )
+  }
+  return `cloud://${env.WX_CLOUD_ENV_ID}.${env.COS_BUCKET}/${key}`
+}
+
+/**
+ * 换某个 key 的临时下载链接（**不下载**）。
+ * ⚠️ 提到模块级而不是做成私有方法：深度自检也要用它，
+ *    而"为了探测去调私有方法"只能靠 as unknown as 强转 —— 那种代码迟早骗到自己。
+ */
+async function fetchDownloadItem(key: string): Promise<DownloadFileItem | undefined> {
+  const res = await callTcb<DownloadResult>(DOWNLOAD_URL, {
+    file_list: [{ fileid: fileIdOf(key), max_age: DOWNLOAD_MAX_AGE_SEC }],
+  })
+  return res.file_list?.[0]
 }
 
 export class WxCloudStorage implements ObjectStorage {
   readonly name = 'wxcloud'
-  private client: COS | null = null
-  private creds: { auth: CosAuthResponse; startTime: number } | null = null
-
-  /**
-   * ⚠️ 刻意**不把取密钥藏在 SDK 的 getAuthorization 回调里**。
-   *
-   *    原因：SDK 那个 callback 的签名只接受凭据、**不接受错误**
-   *    （`callback(params: Authorization | Credentials)`，不是 error-first）。
-   *    把可能失败的网络调用放进去，出错就只能吞掉或让请求干等。
-   *
-   *    所以改成：get / remove 进来先显式 ensureAuth()，
-   *    失败就在**调用点**抛出完整可读的错误；
-   *    而 getAuthorization 退化成「同步把已取到的凭据交给 SDK」。
-   */
-  private async ensureAuth(): Promise<void> {
-    // 提前 60 秒续期，避免签名时刚好过期
-    const stillValid =
-      this.creds !== null && Number(this.creds.auth.ExpiredTime) * 1000 - Date.now() > 60_000
-    if (stillValid) return
-
-    const auth = await getAuth()
-    this.creds = { auth, startTime: Math.floor(Date.now() / 1000) }
-  }
-
-  private cos(): COS {
-    if (this.client) return this.client
-
-    if (!env.COS_BUCKET || !env.COS_REGION) {
-      throw new Error(
-        '缺少 COS_BUCKET / COS_REGION。' +
-          '正常情况下 pnpm deploy:dev / deploy:prod 会从云托管 API 自动读出并注入，' +
-          '见 tools/deploy-cloud.mjs。' +
-          `（当前值：bucket=${env.COS_BUCKET || '空'} region=${env.COS_REGION || '空'}）`,
-      )
-    }
-
-    this.client = new COS({
-      getAuthorization: (_options, callback) => {
-        const c = this.creds
-        if (!c) {
-          // 正常走不到：get/remove 都先 ensureAuth()。真到了这里说明 SDK 提前要签名，
-          // 给个空凭据让它快速失败，而不是一直挂着。
-          callback({ TmpSecretId: '', TmpSecretKey: '', StartTime: 0, ExpiredTime: 0 })
-          return
-        }
-        callback({
-          TmpSecretId: c.auth.TmpSecretId,
-          TmpSecretKey: c.auth.TmpSecretKey,
-          SecurityToken: c.auth.Token,
-          StartTime: c.startTime,
-          ExpiredTime: Number(c.auth.ExpiredTime),
-        })
-      },
-    })
-    return this.client
-  }
-
-  async get(fileID: string): Promise<Uint8Array> {
-    const key = normalizeKey(fileID)
-    await this.ensureAuth()
-    const res = await this.cos().getObject({
-      Bucket: env.COS_BUCKET as string,
-      Region: env.COS_REGION as string,
-      Key: key,
-    })
-    const body = res.Body
-    if (!body) throw new Error(`对象内容为空：${key}`)
-    return new Uint8Array(body as Buffer)
-  }
 
   /**
    * ⭐ 写入对象 —— 内容侧的静态资源（标准音）靠它进对象存储。
    *
-   * ⚠️ 用的是**同一份临时密钥**（/_/cos/getauth），没有额外的长期密钥要管。
-   * ⚠️ 必须显式给 ContentType：对象存储不会猜，缺了它下下来的就是
-   *    application/octet-stream，而 InnerAudioContext 对 MIME 是挑剔的。
+   * 两步：① /tcb/uploadfile 换上传票据 ② 拿票据把字节 POST 给 COS。
+   *
+   * ⚠️⚠️ 第二步那五个表单字段**一个都不能少、file 必须最后**：
+   *    这是 COS 的 POST Object 协议 + 云开发的元数据约定。
+   *    尤其 x-cos-meta-fileid —— 漏了的话文件确实传上去了，
+   *    但**小程序端读不到**（官方文档专门警告过这一条），
+   *    而症状是「后台能看到文件、客户端 404」，极难查。
    */
   async put(fileID: string, data: Uint8Array): Promise<void> {
     const key = normalizeKey(fileID)
-    await this.ensureAuth()
-    await this.cos().putObject({
-      Bucket: env.COS_BUCKET as string,
-      Region: env.COS_REGION as string,
-      Key: key,
-      Body: Buffer.from(data) as unknown as string,
-      ContentType: contentTypeOf(key),
-    })
+    const ticket = await callTcb<UploadTicket>(UPLOAD_URL, { path: key })
+    if (!ticket.url || !ticket.token || !ticket.authorization || !ticket.cos_file_id) {
+      throw new Error(`上传票据不完整（${key}）：${JSON.stringify(ticket).slice(0, 200)}`)
+    }
+
+    const form = new FormData()
+    form.append('Signature', ticket.authorization)
+    form.append('x-cos-security-token', ticket.token)
+    form.append('x-cos-meta-fileid', ticket.cos_file_id)
+    form.append('key', key)
+    form.append('file', new Blob([data], { type: contentTypeOf(key) }), key.split('/').pop() ?? 'file')
+
+    const up = await fetch(ticket.url, { method: 'POST', body: form })
+    // COS 成功时返回 204 无内容，所以只看状态码
+    if (!up.ok) {
+      throw new Error(`上传 ${key} 失败：HTTP ${up.status} ${(await up.text()).slice(0, 200)}`)
+    }
+  }
+
+  /** 取回对象内容（先换临时下载链接，再拉字节） */
+  async get(fileID: string): Promise<Uint8Array> {
+    const key = normalizeKey(fileID)
+    const item = await fetchDownloadItem(key)
+    if (!item?.download_url) {
+      throw new Error(`取下载链接失败：${key}（${item?.errmsg ?? item?.code ?? '没有 download_url'}）`)
+    }
+    const res = await fetch(item.download_url)
+    if (!res.ok) throw new Error(`下载 ${key} 失败：HTTP ${res.status}`)
+    return new Uint8Array(await res.arrayBuffer())
   }
 
   /**
-   * ⚠️ 用 headObject 而不是 getObject：只想知道「在不在」，
-   *    没必要把整个文件拉下来再扔掉。
+   * ⚠️ 只换链接、**不下载**：判断"在不在"没必要把整个文件拉下来。
+   * ⚠️ 出错一律当"不存在"：权限问题也会走到这里，而那时重传会因为同样的权限
+   *    问题报出真正的错误 —— 不会静默通过。
    */
   async exists(fileID: string): Promise<boolean> {
-    const key = normalizeKey(fileID)
-    await this.ensureAuth()
     try {
-      await this.cos().headObject({
-        Bucket: env.COS_BUCKET as string,
-        Region: env.COS_REGION as string,
-        Key: key,
-      })
-      return true
+      const item = await fetchDownloadItem(normalizeKey(fileID))
+      return Boolean(item?.download_url)
     } catch {
-      // 权限错误也会走到这里并当成「不存在」—— 那会导致重传一次，
-      // 而重传会因为同样的权限问题报出真正的错误。不会静默通过。
       return false
     }
   }
 
   async remove(fileID: string): Promise<void> {
     const key = normalizeKey(fileID)
-    await this.ensureAuth()
-    await this.cos().deleteObject({
-      Bucket: env.COS_BUCKET as string,
-      Region: env.COS_REGION as string,
-      Key: key,
+    await callTcb<WxError & { delete_list?: unknown }>(DELETE_URL, {
+      fileid_list: [fileIdOf(key)],
     })
   }
 }
 
 /**
- * 取临时密钥。
+ * 深度自检 —— 把这条链路真跑一遍，并把每一步的结果原样带出来。
  *
- * ⚠️⚠️ 失败时**必须把判定云调用链路的证据带出来**，否则只能瞎猜。
- *    官方文档给了唯一判据：走通云调用时，响应头会带 `x-openapi-seqid`。
- *      · 有 seqid   → 云调用链路是通的，问题在这个接口本身 / 权限配置
- *      · 没有 seqid → 请求**根本没走云调用**，直接打到了真实微信服务器
- *                     （真实服务器上当然没有 /_/ 开头的路径 → 404）
- *
- * ⚠️ 而「没走云调用」最常见的原因**不是开关没开**，而是官方这句原文：
- *    「实例扩缩容时**不遵循当前的开关状态，而是遵循版本创建时的开关状态**」
- *    —— 光开开关不重新构建版本是没用的。
+ * ⚠️ 探针**不真的写**：只换上传票据（拿到就说明鉴权、环境、权限都对），
+ *    不往桶里丢垃圾对象。
+ * ⚠️ 另外拿一个**不存在的 key** 去换下载链接：期望「拿不到链接」。
+ *    拿不到恰恰证明「鉴权通过 + 环境对」—— 要真是签名错 / 环境不存在，
+ *    报出来的是另一类错误。这和本地实现里"用不存在的 key 探测"是同一个思路。
  */
-export async function getAuth(): Promise<CosAuthResponse> {
-  let res: Response
+export async function probeWxStorage(): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+
   try {
-    res = await fetch(COS_AUTH_URL)
+    await accessToken()
+    out.token = 'ok'
   } catch (err) {
-    throw new Error('调用开放接口服务失败（网络层）：' + (err as Error).message)
+    out.token = `failed: ${(err as Error).message.slice(0, 200)}`
+    return out
   }
 
-  // ⭐ 判定依据：云调用链路走通时，平台会在响应头里加 x-openapi-seqid
-  const seqid = res.headers.get('x-openapi-seqid')
-  const text = await res.text()
-
-  if (!res.ok) {
-    const diagnosis = seqid
-      ? ' 【诊断】响应头里【有】x-openapi-seqid —— 云调用链路是通的，问题在这个接口或「云调用-微信令牌配置」的白名单。'
-      : ' 【诊断】响应头里【没有】x-openapi-seqid —— 这个请求根本没走云调用，而是打到了真实微信服务器。' +
-        '按官方《开放接口服务》的四步逐条核对（前三步缺一不可）：' +
-        '① 接口白名单：控制台-云调用-微信令牌权限配置里，按**路径**格式加入 /_/cos/getauth；' +
-        '② 开关：控制台-云调用里「开放接口服务」为开启（且是**本环境**，本项目有 dev/prod 两个环境）；' +
-        '③ 重新构建版本：官方明确「实例遵循**版本创建时**的开关状态」，开完开关必须再部署一次；' +
-        '④ 镜像要有 shell —— 官方「开放接口服务依赖 shell，镜像内无 sh/bash 将无法正常部署容器」。'
-    throw new Error(
-      '调用开放接口服务失败：HTTP ' + res.status + ' body=' + JSON.stringify(text.slice(0, 160)) + diagnosis,
-    )
-  }
-
-  let info: CosAuthResponse
   try {
-    info = JSON.parse(text) as CosAuthResponse
-  } catch {
-    throw new Error(
-      '开放接口服务返回的不是 JSON（前 160 字符）：' + JSON.stringify(text.slice(0, 160)) +
-        (seqid ? ' 【已走云调用】' : ' 【未走云调用】'),
-    )
+    const ticket = await callTcb<UploadTicket>(UPLOAD_URL, { path: '__probe__/never-uploaded.bin' })
+    out.uploadTicket = ticket.url ? 'ok（拿到上传票据，未真正上传）' : `异常返回：${JSON.stringify(ticket).slice(0, 200)}`
+  } catch (err) {
+    out.uploadTicket = `failed: ${(err as Error).message.slice(0, 200)}`
   }
-  return info
+
+  try {
+    const item = await fetchDownloadItem('__probe__/never-exists.bin')
+    out.downloadProbe = item?.download_url
+      ? `异常：不存在的对象竟然拿到了链接（说明桶或环境配错了）`
+      : `ok（不存在的对象没拿到链接 → 鉴权与环境都对）`
+    out.downloadProbeRaw = JSON.stringify(item ?? null).slice(0, 200)
+  } catch (err) {
+    out.downloadProbe = `failed: ${(err as Error).message.slice(0, 200)}`
+  }
+
+  return out
 }

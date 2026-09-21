@@ -1,4 +1,4 @@
-# 句说 · 阿里云部署指南
+# 句拼 · 阿里云部署指南
 
 > SAE（Serverless 应用引擎）+ RDS PostgreSQL Serverless + OSS 静态托管
 

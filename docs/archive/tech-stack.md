@@ -1,4 +1,4 @@
-# 句说 · 技术栈参考
+# 句拼 · 技术栈参考
 
 > 详细架构方案见 `architecture.md`，科大讯飞备份方案见 `ise-integration-plan.md`。
 

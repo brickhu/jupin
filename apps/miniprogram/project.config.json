@@ -1,7 +1,7 @@
 {
   "appid": "wxc0418392e9116a01",
-  "projectname": "jushuo",
-  "description": "句说 —— 每日英语朗读竞技场：英文朗读大比拼，AI评分冲排名",
+  "projectname": "jupin",
+  "description": "句拼 —— 每日英语朗读竞技场：英文朗读大比拼，AI评分冲排名",
   "miniprogramRoot": "dist/",
   "compileType": "miniprogram",
   "libVersion": "3.0.0",

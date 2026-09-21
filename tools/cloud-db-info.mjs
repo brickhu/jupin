@@ -16,11 +16,10 @@
  * （deploy-cloud.mjs 里本地 .env 的 MYSQL_* 会覆盖服务配置）
  */
 import { createRequire } from 'node:module'
-import { readFileSync, existsSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+import { loadEnv, ROOT } from './env.mjs'
+
 const require = createRequire(resolve(ROOT, 'package.json'))
 const CLI = resolve(ROOT, 'node_modules/@wxcloud/cli/lib')
 
@@ -28,23 +27,13 @@ const { DescribeWxCloudBaseRunDBClusterDetail } = require(CLI + '/api/cloudapiDi
 const { setApiCommonParameters } = require(CLI + '/api/common')
 setApiCommonParameters({ region: 'ap-shanghai' })
 
-// ---- 读 .env 拿环境 ID ----
-function readEnvFile() {
-  const p = resolve(ROOT, '.env')
-  if (!existsSync(p)) return {}
-  const out = {}
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m) out[m[1]] = m[2]
-  }
-  return out
-}
-const fileEnv = readEnvFile()
+// ---- 读环境变量：只加载 .env + .env.<target> ----
 const target = process.argv[2] === 'prod' ? 'prod' : 'dev'
-const envId = target === 'prod' ? fileEnv.WXCLOUD_ENV_ID_PROD : fileEnv.WXCLOUD_ENV_ID
+loadEnv(target)
+const envId = process.env.WXCLOUD_ENV_ID
 
 if (!envId) {
-  console.error(`❌ .env 里没有 WXCLOUD_ENV_ID${target === 'prod' ? '_PROD' : ''}`)
+  console.error(`❌ .env.${target} 里没有 WXCLOUD_ENV_ID`)
   process.exit(1)
 }
 
@@ -76,18 +65,17 @@ console.log('  外网地址     ', DbInfo.IsOpenPubNetAccess ? NetInfo.PubNetAdd
 console.log('  VPC          ', NetInfo.Net)
 console.log('')
 
-// ⚠️ 按环境取对应的覆盖变量（dev 读 MYSQL_ADDRESS_DEV，prod 读 MYSQL_ADDRESS_PROD）
-const suffix = target === 'prod' ? '_PROD' : '_DEV'
-const current =
-  fileEnv['MYSQL_ADDRESS' + suffix] ?? (target === 'dev' ? fileEnv.MYSQL_ADDRESS : undefined)
+// ⚠️ 键名不带后缀：目标环境由**文件名**决定（.env.dev / .env.prod）
+const current = process.env.MYSQL_ADDRESS
+const file = `.env.${target}`
 if (current && current !== NetInfo.PrivateNetAddress) {
-  console.log('⚠️  .env 里的 MYSQL_ADDRESS 与真实内网地址不一致：')
-  console.log('      .env  :', current)
-  console.log('      真实  :', NetInfo.PrivateNetAddress)
-  console.log('    → 改 .env，然后 pnpm deploy:dev')
+  console.log(`⚠️  ${file} 里的 MYSQL_ADDRESS 与真实内网地址不一致：`)
+  console.log(`      ${file}  :`, current)
+  console.log('      真实      :', NetInfo.PrivateNetAddress)
+  console.log(`    → 改 ${file}，然后 pnpm deploy:${target}`)
 } else if (current) {
-  console.log('✅ .env 里的 MYSQL_ADDRESS 与真实内网地址一致')
+  console.log(`✅ ${file} 里的 MYSQL_ADDRESS 与真实内网地址一致`)
 } else {
-  console.log(`ℹ️  .env 里没有 MYSQL_ADDRESS，服务用的是自己的配置。`)
+  console.log(`ℹ️  ${file} 里没有 MYSQL_ADDRESS，服务用的是自己的配置。`)
   console.log(`    要覆盖它就写：MYSQL_ADDRESS=${NetInfo.PrivateNetAddress}`)
 }

@@ -29,6 +29,9 @@ docs
 #    所以只排掉它的大块产物。
 apps/miniprogram/dist
 
+# 部署临时包（接近 100MB，绝不能进构建上下文）
+.cloudrun_*.zip
+
 # 密钥绝不进镜像
 # ⚠️ 这里刻意**不写** `!.env.example` 这类否定规则：
 #    @wxcloud/cli 的 minimatchWithList 只要遇到一条未命中的 `!` 规则就整体返回“不忽略”，

@@ -1,11 +1,67 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 
-// 加载 .env（Node 20.12+ 内置，零依赖）
-// ⚠️ 必须在读取 process.env 之前执行
-if (existsSync('.env')) {
-  process.loadEnvFile('.env')
+/**
+ * ⭐ 加载根目录那四份 .env 里**属于本次运行**的两份。
+ *
+ *   .env         公用
+ *   .env.<mode>  mode 由 APP_ENV 决定（默认 local），可选 local / dev / prod
+ *
+ * 优先级：真实环境变量 > .env.<mode> > .env。
+ *
+ * ⚠️ 规则与 tools/env.mjs 是**同一套**（那边给 node 工具用）。这里没法直接复用：
+ *    容器镜像里没有 tools/（Dockerfile 只 COPY apps/server、packages/shared、content、drizzle），
+ *    import 会在构建期就解析不到。改动其中一处时，另一处必须一起改。
+ *
+ * ⚠️⚠️ 为什么不用 process.loadEnvFile()：它**不覆盖已有键**，
+ *    所以"先 .env 再 .env.dev"这种叠法会让第二层的同名键被第一层顶住，
+ *    分层静默失效（改了 .env.dev 却不生效）。所以这里自己解析、自己按顺序写。
+ *
+ * ⚠️ 真实环境变量优先这一条**必须保留**：
+ *    ① docker-compose 会给容器注入 DATABASE_URL=…@db:3306（容器内地址），
+ *       而 .env.local 里的那份是给宿主机用的（127.0.0.1:5544）——顺序反了就连不上库；
+ *    ② 云上根本没有这些文件（.dockerignore 把 .env* 全排除了），
+ *       环境变量全部来自服务配置 —— 找不到文件时静默跳过即可。
+ *
+ * ⚠️ 从**仓库根**加载，而不是 cwd：同一个 bundle 会在三种 cwd 下跑
+ *    （apps/server / 仓库根 / 容器里的 /app），按 cwd 找必然漏。
+ */
+function loadLayeredEnv(): void {
+  /** 向上找到带 pnpm-workspace.yaml 的那一层 —— 那就是仓库根 */
+  function findRoot(): string | null {
+    let dir = process.cwd()
+    for (let i = 0; i < 6; i++) {
+      if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    return null
+  }
+
+  const root = findRoot()
+  if (!root) return // 容器里就是这样：没有仓库根，全靠环境变量
+
+  const mode = process.env.APP_ENV ?? 'local'
+  const fromProcess = new Set(Object.keys(process.env))
+
+  for (const file of ['.env', `.env.${mode}`]) {
+    const path = resolve(root, file)
+    if (!existsSync(path)) continue
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
+      if (!m) continue
+      const [, key, value] = m as unknown as [string, string, string]
+      // ⚠️ 进程里原本就有的键优先级最高，任何文件都不能覆盖
+      if (fromProcess.has(key)) continue
+      process.env[key] = value
+    }
+  }
 }
+
+// ⚠️ 必须在读取 process.env 之前执行
+loadLayeredEnv()
 
 /**
  * 把微信云托管注入的 MySQL 变量拼成 DATABASE_URL。
@@ -76,6 +132,21 @@ const schema = z.object({
    */
   STORAGE: z.enum(['local', 'wxcloud']).default('local'),
   WX_CLOUD_ENV_ID: z.string().optional(),
+  /**
+   * ⭐ 小程序 AppID / AppSecret —— **服务端专用**。
+   *
+   * 用途两条：
+   *   ① 对象存储：换 access_token 调 /tcb/uploadfile 等经典 HTTPS 接口
+   *      （⚠️ 那三个接口官方明写「不支持云调用」，所以**不依赖开放接口服务**
+   *        —— 这正是它和 /_/cos/getauth 那条旁加载路线的本质区别）
+   *   ② 登录降级路径的 code2session（见 routes/auth.ts）
+   *
+   * ⚠️ 刻意 optional：本地 STORAGE=local 时用不到它们，
+   *    强制必填会让「只想跑本机」的人卡在启动上；
+   *    真要用到时由存储实现自己报错，报得更具体。
+   */
+  WX_APPID: z.string().optional(),
+  WX_SECRET: z.string().optional(),
   /**
    * 对象存储桶与地域（读音频要用）。
    * ⭐ 由 pnpm deploy:dev / deploy:prod 从云托管 API 自动读出并注入，

@@ -12,19 +12,23 @@
  *   所以这里先读回当前配置，把 MYSQL_* 原样保留，再合并本项目的变量。
  *
  * 前置：
- *   ① 根目录 .env 里有 WXCLOUD_CLI_SECRET 与 WXCLOUD_ENV_ID / WXCLOUD_ENV_ID_PROD
- *   ② 先 wxcloud login --appId <AppID> --privateKey <CLI密钥>
+ *   ① 根 .env 里有 WXCLOUD_APPID / WXCLOUD_CLI_SECRET（账号级，两个环境共用）
+ *   ② .env.dev / .env.prod 里有目标环境自己的 WXCLOUD_ENV_ID 与 MYSQL_*
+ *   ③ 先 wxcloud login --appId <AppID> --privateKey <CLI密钥>
+ *
+ * ⚠️ 环境变量分层见 tools/env.mjs：部署 dev 只加载 .env + .env.dev。
+ *    所以本机的 ENGINE=mock / STORAGE=local 再也盖不到云端 —— 那正是过去的坑
+ *    （两个 .env 混着读，本机的 mock 把云端的自动判据整个顶住）。
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, appendFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+import { envFileOf, loadEnv, ROOT, writeEnvVar } from './env.mjs'
+
 const BIN = resolve(ROOT, 'node_modules/.bin/wxcloud')
-const ENV_FILE = resolve(ROOT, '.env')
 
 // CLI 内部没有暴露对象存储命令，只有这个环境查询接口带着 Storages 字段
 const require = createRequire(resolve(ROOT, 'package.json'))
@@ -67,34 +71,24 @@ if (!['dev', 'prod'].includes(target)) {
   process.exit(1)
 }
 
-// ---- 读 .env ----
-function parseEnvFile(p) {
-  if (!existsSync(p)) return {}
-  const out = {}
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m) out[m[1]] = m[2]
-  }
-  return out
-}
-
-/**
- * ⚠️ 凭据分散在**两个** .env 里，必须都读：
- *    · 根 .env            —— 部署坐标（WXCLOUD_ENV_ID / MYSQL_*_DEV），对应 .env.example
- *    · apps/server/.env   —— 服务端本地开发用的，**讯飞密钥实际在这里**
- *
- *    之前只读根 .env，结果讯飞密钥明明配了却传不上云 —— 云端一直跑 mock。
- *    ⚠️ 根 .env 优先（它是 .env.example 里记录的位置），缺的用 apps/server/.env 补。
- */
-/** 根 .env —— **部署配置**（对应 .env.example） */
-const rootEnv = parseEnvFile(ENV_FILE)
-/** apps/server/.env —— **本地运行配置**（服务端 pnpm dev 读的那个） */
-const serverEnv = parseEnvFile(resolve(ROOT, 'apps/server/.env'))
-/** 合并视图：根优先。凭据（XFYUN_*）只在 serverEnv 里有，所以必须合并 */
-const fileEnv = { ...serverEnv, ...rootEnv }
+// ---- 读环境变量：**只加载属于本次目标的那两份** ----
+// ⚠️ loadEnv 会把结果写进 process.env（真实环境变量优先），所以下面一律读 process.env
+loadEnv(target)
+/** 目标环境自己的那份文件（TOKEN_SECRET 会写回这里） */
+const TARGET_ENV_FILE = envFileOf(target)
 
 /** 讯飞凭据的三个键 —— 缺一不可，缺任何一个都不能切真引擎 */
 const XFYUN_KEYS = ['XFYUN_APP_ID', 'XFYUN_API_KEY', 'XFYUN_API_SECRET']
+
+/**
+ * ⭐ 小程序凭据（AppID + AppSecret）—— **服务端要用的**，必须推到服务环境变量里。
+ *
+ * ⚠️ 为什么必须跟着部署走：容器里 process.env 是**这份 envParams 说了算**，
+ *    不推上来，服务端读到的就是空的 —— 而症状是「本地好好的，云上标准音灌不进去」。
+ * 用途：① 对象存储的经典 HTTPS 接口（/tcb/*，换 access_token）
+ *      ② code2session 登录降级路径
+ */
+const WX_KEYS = ['WX_APPID', 'WX_SECRET']
 
 /**
  * ⭐ 引擎选择：**有完整凭据就用真引擎**，否则退回 mock。
@@ -103,26 +97,32 @@ const XFYUN_KEYS = ['XFYUN_APP_ID', 'XFYUN_API_KEY', 'XFYUN_API_SECRET']
  *    （本项目已经藏了一整轮）。
  */
 function resolveEngine() {
-  // ⚠️⚠️ ENGINE **只认根 .env / 命令行**，**故意不看 apps/server/.env** ——
-  //     那里的 `ENGINE=mock` 是「本地开发别烧讯飞额度」的**本机选择**，
-  //     不该悄悄变成云端部署的选择。（这个坑刚踩到：合并两个 .env 之后，
-  //     本机的 mock 把云端的 auto-detect 整个盖住了。）
-  const forced = process.env.ENGINE ?? rootEnv.ENGINE
+  // ⚠️ ENGINE 现在天然分环境：.env.local 的 mock 根本不会被加载进来
+  //    （部署 dev 只读 .env + .env.dev）。显式值优先，没写才按凭据自动判。
+  const forced = process.env.ENGINE
   if (forced) return forced
-  return XFYUN_KEYS.every((k) => fileEnv[k]) ? 'xfyun' : 'mock'
+  return XFYUN_KEYS.every((k) => process.env[k]) ? 'xfyun' : 'mock'
 }
-const envId = target === 'prod' ? fileEnv.WXCLOUD_ENV_ID_PROD : fileEnv.WXCLOUD_ENV_ID
+// ⚠️ 两个文件里**键名相同**（都叫 WXCLOUD_ENV_ID）—— 文件名本身就是环境标识，
+//    加 _DEV / _PROD 后缀等于把「哪份文件管哪个环境」这件事写在两个地方。
+const envId = process.env.WXCLOUD_ENV_ID
 if (!envId) {
-  console.error(`❌ .env 里没有 WXCLOUD_ENV_ID${target === 'prod' ? '_PROD' : ''}`)
+  console.error(`❌ .env.${target} 里没有 WXCLOUD_ENV_ID`)
+  console.error(`   （环境变量按 tools/env.mjs 分层：部署 ${target} 只读 .env + .env.${target}）`)
   process.exit(1)
 }
 
-/** TOKEN_SECRET 生成一次就固化进 .env，避免每次部署都换密钥、把已有 token 全部作废 */
+/**
+ * TOKEN_SECRET 生成一次就固化进**该环境自己的** .env，避免每次部署都换密钥、
+ * 把已有 token 全部作废。
+ * ⚠️ 写到 .env.<target> 而不是公用 .env：dev 和 prod 不该共用一份会话密钥
+ *    （共用的话，dev 泄露就等于 prod 泄露，而它们本可以互不相干）。
+ */
 function ensureTokenSecret() {
-  if (fileEnv.TOKEN_SECRET) return fileEnv.TOKEN_SECRET
+  if (process.env.TOKEN_SECRET) return process.env.TOKEN_SECRET
   const secret = randomBytes(32).toString('hex')
-  appendFileSync(ENV_FILE, `\n# 云托管服务的 TOKEN_SECRET（由 deploy-cloud.mjs 生成）\nTOKEN_SECRET=${secret}\n`)
-  console.log('· 已在 .env 生成 TOKEN_SECRET')
+  writeEnvVar(TARGET_ENV_FILE, 'TOKEN_SECRET', secret)
+  console.log(`· 已在 .env.${target} 生成 TOKEN_SECRET`)
   return secret
 }
 
@@ -193,11 +193,16 @@ const params = {
 // ⚠️ MYSQL_DATABASE 没配的话补一个默认库名
 if (!params.MYSQL_DATABASE) params.MYSQL_DATABASE = 'jushuo'
 
-// ⭐ 讯飞凭据 —— 从两个 .env 合并后的 fileEnv 里取
+// ⭐ 讯飞凭据 —— 公用 .env 里的（两个环境共用同一个讯飞应用）
 // ⚠️ 只在**有值**时写入：显式写 undefined 会被 JSON.stringify 丢掉，
 //    反而把服务上原有的值抹掉。
 for (const k of XFYUN_KEYS) {
-  if (fileEnv[k]) params[k] = fileEnv[k]
+  if (process.env[k]) params[k] = process.env[k]
+}
+
+// ⭐ 小程序凭据同上：**只在有值时写**，否则会把服务上已有的值抹掉
+for (const k of WX_KEYS) {
+  if (process.env[k]) params[k] = process.env[k]
 }
 
 if (params.ENGINE === 'xfyun' && !XFYUN_KEYS.every((k) => params[k])) {
@@ -205,6 +210,16 @@ if (params.ENGINE === 'xfyun' && !XFYUN_KEYS.every((k) => params[k])) {
   console.warn('   ' + XFYUN_KEYS.map((k) => k + '=' + (params[k] ? '有' : '❌缺')).join('  '))
 }
 console.log(`· 评测引擎：${params.ENGINE}` + (params.ENGINE === 'xfyun' ? '（真实调用，按次计费）' : '（假结果，仅开发用）'))
+
+// ⚠️ 缺这两个键不阻断部署（本地 STORAGE=local 时用不到），
+//    但云上是 STORAGE=wxcloud：缺了就是「标准音灌不进去、登录降级路径也走不通」，
+//    而报错发生在启动之后很远的地方 —— 所以在部署这一刻就说清楚。
+const wxMissing = WX_KEYS.filter((k) => !params[k])
+if (wxMissing.length > 0) {
+  console.warn(`⚠️ 服务环境变量里缺 ${wxMissing.join(', ')}：`)
+  console.warn('   对象存储（/tcb/* 经典 HTTPS 接口）与 code2session 都会失败。')
+  console.warn('   填法：**公用** .env 里加 WX_APPID= / WX_SECRET= （两个环境共用同一个小程序），再重新部署。')
+}
 
 /**
  * ⭐ 本地 .env 里的 MYSQL_* 覆盖服务配置里的同名变量。
@@ -220,13 +235,14 @@ console.log(`· 评测引擎：${params.ENGINE}` + (params.ENGINE === 'xfyun' ? 
  *   DescribeWxCloudBaseRunDBClusterDetail → NetInfo.PrivateNetAddress
  */
 /**
- * ⚠️ 按目标环境取对应的覆盖值：dev 读 MYSQL_*_DEV，prod 读 MYSQL_*_PROD。
- *    两个环境的密码不同，用同一个变量名会互相覆盖。
- *    也兼容不带后缀的 MYSQL_*（历史写法，仅 dev 用）。
+ * ⭐ 目标环境的 MySQL 连接信息覆盖服务配置里的同名变量。
+ *
+ * ⚠️ 键名不带后缀：dev 的那份在 .env.dev、prod 的在 .env.prod，
+ *    **文件名就是环境标识**。以前是 MYSQL_*_DEV / MYSQL_*_PROD 挤在同一份文件里，
+ *    读的时候还要拼后缀 —— 那等于把「哪份配置管哪个环境」写在两个地方。
  */
-const suffix = target === 'prod' ? '_PROD' : '_DEV'
 for (const k of ['MYSQL_ADDRESS', 'MYSQL_USERNAME', 'MYSQL_PASSWORD', 'MYSQL_DATABASE']) {
-  const v = fileEnv[k + suffix] ?? (target === 'dev' ? fileEnv[k] : undefined)
+  const v = process.env[k]
   if (v) params[k] = v
 }
 

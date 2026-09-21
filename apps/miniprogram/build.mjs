@@ -12,6 +12,7 @@
  *    小程序没有运行时环境变量（没有 process.env），
  *    部署坐标必须在构建时烘进包里 —— 但绝不能硬编码在源码里。
  */
+import { loadEnv } from '../../tools/env.mjs'
 import { build, context } from 'esbuild'
 import { cp, rm, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync, readdirSync, watch, writeFileSync } from 'node:fs'
@@ -28,6 +29,14 @@ import unoConfig, {
   makeEscapeMap,
 } from './uno.config.mjs'
 
+/**
+ * ⭐ 环境变量统一从**仓库根**读（见 tools/env.mjs）。
+ *   · .env       公用   —— MP_* 全在这里（三种模式的值要一起烘进包里，config.ts 运行时选）
+ *   · .env.local 本地   —— MP_LAN_API_URL 是机器相关的逃生通道，只属于本机
+ * ⚠️ 必须在读 process.env 之前执行（下面的 define 直接取进程变量）。
+ */
+loadEnv('local')
+
 const WATCH = process.argv.includes('--watch')
 
 // ⚠️ 所有路径都从**本文件位置**推导，不用相对 cwd 的写法。
@@ -41,10 +50,9 @@ const DIST = resolve(PKG_DIR, 'dist')
 const UNO_OUT = resolve(DIST, 'uno.wxss')
 
 // ----------------------------------------------------------------
-// 读配置：根目录 .env（本地）或 CI 环境变量（已有值不会被覆盖）
+// 配置已在文件顶部由 loadEnv('local') 读进 process.env
+// （.env 公用 + .env.local 本地；真实环境变量优先，见 tools/env.mjs）
 // ----------------------------------------------------------------
-const envPath = resolve(ROOT, '.env')
-if (existsSync(envPath)) process.loadEnvFile(envPath)
 
 /**
  * 需要注入小程序的配置项。

@@ -12,16 +12,16 @@
  *    官方对这个是提醒过的：「开放数据库外网地址有安全风险，不建议开启」。
  *    开发环境临时开一下可以接受，**生产环境别开**。
  *
- * ⚠️ 凭据来自根目录 .env 的 MYSQL_*_DEV / MYSQL_*_PROD（不是服务配置），
+ * ⚠️ 凭据来自 .env.dev / .env.prod 的 MYSQL_*（不是服务配置；键名不带后缀，
+ *    文件名就是环境标识），
  *    所以重新开通数据库后要把新密码写进 .env。
  */
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { readFileSync, existsSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+import { loadEnv, ROOT } from './env.mjs'
+
 const require = createRequire(resolve(ROOT, 'package.json'))
 const { DescribeWxCloudBaseRunDBClusterDetail } = require(
   resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/cloudapiDirect'),
@@ -29,35 +29,22 @@ const { DescribeWxCloudBaseRunDBClusterDetail } = require(
 const { setApiCommonParameters } = require(resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/common'))
 setApiCommonParameters({ region: 'ap-shanghai' })
 
-function readEnvFile() {
-  const p = resolve(ROOT, '.env')
-  if (!existsSync(p)) return {}
-  const out = {}
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m) out[m[1]] = m[2]
-  }
-  return out
-}
-
 const target = process.argv[2] === 'prod' ? 'prod' : 'dev'
-const suffix = target === 'prod' ? '_PROD' : '_DEV'
-const fileEnv = readEnvFile()
+// ---- 读环境变量：只加载 .env + .env.<target>（键名不带后缀，文件名即环境）----
+loadEnv(target)
 
-const envId = target === 'prod' ? fileEnv.WXCLOUD_ENV_ID_PROD : fileEnv.WXCLOUD_ENV_ID
+const envId = process.env.WXCLOUD_ENV_ID
 if (!envId) {
-  console.error(`❌ .env 里没有 WXCLOUD_ENV_ID${target === 'prod' ? '_PROD' : ''}`)
+  console.error(`❌ .env.${target} 里没有 WXCLOUD_ENV_ID`)
   process.exit(1)
 }
 
-// ---- 凭据：按环境取 ----
-const pick = (name, fallback) => fileEnv[name + suffix] ?? (target === 'dev' ? fileEnv[name] : undefined) ?? fallback
-const user = pick('MYSQL_USERNAME', 'root')
-const password = pick('MYSQL_PASSWORD')
-const database = pick('MYSQL_DATABASE', 'jushuo')
+const user = process.env.MYSQL_USERNAME ?? 'root'
+const password = process.env.MYSQL_PASSWORD
+const database = process.env.MYSQL_DATABASE ?? 'jushuo'
 if (!password) {
-  console.error(`❌ .env 里没有 MYSQL_PASSWORD${suffix}`)
-  console.error('   （重新开通数据库后要把新密码写进 .env；服务配置里的旧密码不作数）')
+  console.error(`❌ .env.${target} 里没有 MYSQL_PASSWORD`)
+  console.error('   （重新开通数据库后要把新密码写进那份文件；服务配置里的旧密码不作数）')
   process.exit(1)
 }
 
@@ -108,7 +95,7 @@ try {
   console.error('')
   console.error('  常见原因：')
   console.error(`   · 库不存在 → 控制台执行：CREATE DATABASE ${database} CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;`)
-  console.error(`   · 密码不对 → 改 .env 的 MYSQL_PASSWORD${suffix}`)
+  console.error(`   · 密码不对 → 改 .env.${target} 的 MYSQL_PASSWORD`)
   console.error('   · 还没建表 → 先跑 pnpm deploy:' + target + '（AUTO_MIGRATE 会自动建表）')
   process.exit(1)
 }

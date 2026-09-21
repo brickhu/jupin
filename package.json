@@ -1,5 +1,5 @@
 {
-  "name": "jushuo",
+  "name": "jupin",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
@@ -22,7 +22,7 @@
     "db:generate": "pnpm --filter @jushuo/server db:generate",
     "db:migrate": "pnpm --filter @jushuo/server db:migrate",
     "seed": "pnpm --filter @jushuo/server seed",
-    "seed:arena": "DATABASE_URL=mysql://jushuo:dev@127.0.0.1:${DB_PORT:-5544}/jushuo node_modules/.bin/tsx apps/server/src/db/seed-dev-arena.ts",
+    "seed:arena": "node_modules/.bin/tsx apps/server/src/db/seed-dev-arena.ts",
     "pipeline": "pnpm --filter @jushuo/pipeline start",
     "content:audio": "node tools/build-content-audio.mjs",
     "dev:unlock": "node tools/dev-unlock.mjs",

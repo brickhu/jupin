@@ -1,4 +1,4 @@
-# 句说 · 产品设计（PRD）
+# 句拼 · 产品设计（PRD）
 
 > 技术选型与数据模型见 [spec.md](spec.md)。
 
@@ -6,7 +6,7 @@
 
 ## 一、产品内核
 
-**句说 —— 每日英语朗读竞技场。**
+**句拼 —— 每日英语朗读竞技场。**
 英文朗读大比拼，AI 评分冲排名。
 
 > ⚠️ 定位文案的唯一来源是 [packages/shared/src/brand.ts](packages/shared/src/brand.ts)。

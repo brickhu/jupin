@@ -19,6 +19,12 @@ miniprogram_npm/
 project.private.config.json
 private.key
 
+# ---- 部署临时包 ----
+# ⚠️ deploy-cloud.mjs 会在仓库根打一个 .cloudrun_<服务>_<时间戳>.zip 再上传，
+#    正常路径下它会自己删；但进程被杀/中断时就会留下 —— 而它接近 100MB，
+#    一旦被提交就永远压在历史里（本仓库踩过：GitHub 单文件上限正好是 100MB）。
+.cloudrun_*.zip
+
 # ---- 内容流水线中间产物 ----
 tools/pipeline/data/drafts/
 tools/pipeline/data/out/

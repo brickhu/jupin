@@ -1,4 +1,4 @@
-# 句说 · 项目入口
+# 句拼 · 项目入口
 
 > **每次开始任务前先读本文件。**
 > 前四节是必读；工程细节（仓库结构 / 调试 / 部署）按需查阅。
@@ -7,7 +7,7 @@
 
 ## 一句话
 
-**句说 —— 每日英语朗读竞技场。**
+**句拼 —— 每日英语朗读竞技场。**
 英文朗读大比拼，AI 评分冲排名。
 
 每天一句，全站同题：读同一段文本、比同一个分数，排名天然公平。
@@ -534,8 +534,9 @@ pnpm dev:docker:down     # 停
 ### 两个已确认的细节
 
 1. **`.env` 与 compose 环境变量不冲突**
-   容器内 `process.loadEnvFile('.env')` 会加载挂载进来的 `.env`（其中 `DATABASE_URL` 指向宿主机的 `localhost:5544`，在容器里是**错的**）。
-   但实测确认：**`loadEnvFile` 不覆盖已存在的环境变量**，所以 compose `environment:` 注入的 `db:3306` 生效。
+   容器内会加载挂载进来的 `.env` + `.env.local`（其中 `DATABASE_URL` 指向宿主机的 `localhost:5544`，在容器里是**错的**）。
+   但分层的**最内层就是真实环境变量**（见 tools/env.mjs）：进程里已有的键任何文件都盖不动，
+   所以 compose `environment:` 注入的 `db:3306` 生效。
    （这个行为单独验证过，不是推测。）
 
 2. **端口**：宿主机 `API_PORT`（本机 8899）→ 容器 3000。
@@ -1045,10 +1046,10 @@ pnpm db:info
 
 # 2. 「重新开通」，版本选 8.0，设新密码
 
-# 3. 改本地 .env（deploy 时会覆盖服务配置，不用去控制台手改）
+# 3. 改 .env.dev（deploy 时会覆盖服务配置，不用去控制台手改）
 #    MYSQL_ADDRESS=<新的内网地址:3306>
 #    MYSQL_PASSWORD=<新密码>
-pnpm db:info          # 校验 .env 与真实地址是否一致
+pnpm db:info          # 校验 .env.dev 与真实地址是否一致
 
 # 4. 部署：AUTO_MIGRATE=true 会在容器启动时自动建表
 pnpm deploy:dev

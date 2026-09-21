@@ -1,5 +1,5 @@
 ALTER TABLE `submissions` ADD `challenge_date` varchar(10);--> statement-breakpoint
-CREATE INDEX `submissions_challenge_idx` ON `submissions` (`challenge_date`,`score`);
+CREATE INDEX `submissions_challenge_idx` ON `submissions` (`challenge_date`,`score`);--> statement-breakpoint
 -- ⭐ 回填历史行：按**北京时间自然日**从 created_at 推出归属日期。
 -- ⚠️ 必须在同一次迁移里做，否则老的提交永远不进任何一天的统计 ——
 --    表现是「我明明读过，卡片上却写 0 人参与」。

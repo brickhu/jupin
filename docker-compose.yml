@@ -53,10 +53,12 @@ services:
       - /app/packages/shared/node_modules
     environment:
       DATABASE_URL: mysql://jushuo:dev@db:3306/jushuo
-      # ⚠️ 刻意**不在这里设 ENGINE** —— 它由 apps/server/.env 决定。
+      # ⚠️ 刻意**不在这里设 ENGINE / STORAGE** —— 它们由根目录 .env.local 决定
+      #    （容器里也是 .env + .env.local，见 tools/env.mjs 的分层规则）。
       #    两边都写就是两份真相：改了一处以为生效，实际被另一处盖住。
-      #    （部署工具那边也踩过同一个坑：apps/server/.env 的 ENGINE=mock
-      #      把云端部署的自动判据整个盖住了。）
+      # ⚠️ DATABASE_URL 必须在这里给：.env.local 里的那份是给**宿主机**的
+      #    （127.0.0.1:5544），容器里得走服务名 db:3306 ——
+      #    真实环境变量优先级最高，所以这里能盖住文件里的值。
       NODE_ENV: development
       TZ: UTC
     depends_on:

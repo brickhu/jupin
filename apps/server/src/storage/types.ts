@@ -24,8 +24,9 @@ export interface ObjectStorage {
    *    标准音是我们自己生成的文件，没有任何小程序会去上传它，
    *    只能由服务端写进对象存储（见 services/standard-audio.ts）。
    *
-   * ⚠️ 云托管下的写权限来自「开放接口服务」发的**临时密钥**
-   *    （和读用的是同一份，见 wxcloud.ts 的 getAuth）。
+   * ⚠️ 云托管下的写权限来自 **access_token**（WX_APPID + WX_SECRET 换来的），
+   *    经 /tcb/uploadfile 换上传票据 —— 这条链路**不依赖「开放接口服务」（旁加载）**，
+   *    原因见 wxcloud.ts 顶部的说明。
    */
   put(key: string, data: Uint8Array): Promise<void>
 

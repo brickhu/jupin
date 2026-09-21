@@ -2,7 +2,7 @@
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar"
   },
-  "navigationBarTitleText": "句说",
+  "navigationBarTitleText": "句拼",
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark"
 }

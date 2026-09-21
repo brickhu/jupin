@@ -291,10 +291,23 @@ export async function initDatabase(): Promise<void> {
   try {
     await runMigrations()
     dbState.migrated = true
+  } catch (err) {
+    dbState.migrateError = (err as Error).message
+    console.error('[db] 迁移失败：', dbState.migrateError)
+  }
 
-    // ⭐ 可选：启动时灌种子文章（幂等）。云上开发环境开着，
-    //    否则部署完是空句库，真机朗读页会「正文加载失败」。
-    if (env.SEED_ON_START) {
+  /**
+   * ⭐ 灌种子**独立于迁移**，不是「反正都在启动时干」就塞进同一个 try。
+   *
+   * ⚠️⚠️ 这两件事没有依赖关系，但曾经共用一次 try/catch ——
+   *    后果是**一条迁移写错，句库就跟着空**：
+   *    dev 环境连续几轮部署都卡在同一条语法错误的迁移上，
+   *    而灌种子排在它后面、被一起跳过，真机上打开就是空句库。
+   *    报错只落在 migrateError 里，而那句「已灌种子 N 篇」的日志压根没打印过。
+   *    ⇒ 失败要分开、要互相不连坐：迁移坏了句子还能用，句子坏了也不必回滚迁移。
+   */
+  if (env.SEED_ON_START) {
+    try {
       try {
         const { seedArticles } = await import('./seed-articles')
         const n = await seedArticles()
@@ -315,10 +328,8 @@ export async function initDatabase(): Promise<void> {
       } catch (err) {
         console.error('[db] 标准音灌入失败：', (err as Error).message)
       }
+    } catch (err) {
+      console.error('[db] 灌种子失败（不影响服务启动）：', (err as Error).message)
     }
-
-  } catch (err) {
-    dbState.migrateError = (err as Error).message
-    console.error('[db] 迁移失败：', dbState.migrateError)
   }
 }

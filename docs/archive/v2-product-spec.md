@@ -1,4 +1,4 @@
-# 句说 · 产品规格 v2
+# 句拼 · 产品规格 v2
 
 > 本文档是**重建版设计**，替代原有 `product.md` / `mvp-spec.md` / `scoring-system.md`。
 > 原项目框架（SolidJS 前端、D/Q/E/P 积分体系、能力分曲线）全部废弃。
