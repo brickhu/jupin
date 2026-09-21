@@ -16,13 +16,30 @@ export const authRoutes = new Hono()
  *    本接口保留给「本地联调 / 公网访问」这条降级路径。
  */
 authRoutes.post('/login', async (c) => {
-  const { code } = await c.req.json<{ code?: string }>()
+  const { code, as } = await c.req.json<{ code?: string; as?: string }>()
   if (!code) return c.json({ ok: false, error: '缺少 code' }, 400)
 
   let openid: string
   if (env.NODE_ENV !== 'production') {
-    // 开发环境：用 code 当伪 openid，避免必须配 WX_SECRET 才能联调
-    openid = `dev_${code}`
+    /**
+     * 开发环境：伪 openid，免得必须配 WX_SECRET 才能联调。
+     *
+     * ⚠️⚠️ 它必须是**稳定的**，不能拿 code 现算（曾经是 `dev_${code}`）。
+     *
+     *    code 每次 wx.login 都不一样，而小程序**每次启动都会调一次 login()**
+     *    （见 app.ts 的 onLaunch）—— 于是每次重新加载都换一个 openid，
+     *    也就是每次都变成"一个刚注册、还没起过名字的新用户"。
+     *    症状就是那句让人抓狂的话：「我明明加入过了，怎么又让我加入」。
+     *
+     *    ⚠️ 这个坑只在本地出现：线上身份由微信那侧的真实 openid 决定，
+     *       跟 code 换不换没有关系。
+     *
+     * ⭐ 想开第二个测试账号：请求体里带 `as`（或改 .env.local 的 DEV_OPENID 后重启）。
+     *    只放行 [A-Za-z0-9_]，且一律以 dev_ 开头 —— 本地那些"只动 dev_ 账号"的
+     *    工具（tools/dev-unlock.mjs、services/user.ts 的自动会员）才会认它。
+     */
+    const name = typeof as === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(as) ? as : (process.env.DEV_OPENID ?? 'local')
+    openid = `dev_${name}`
   } else {
     const appId = process.env.WX_APPID
     const secret = process.env.WX_SECRET
