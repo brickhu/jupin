@@ -1,0 +1,57 @@
+<!--
+  ⭐ 「加入句拼」页 —— 从底部滑出的半屏。
+
+  ⚠️ 这一步在界面上**叫「加入」，不叫「登录」**：
+     身份（openid）是 wx.login 静默拿到的，用户从来没有"没登录"过。
+     他要做的动作是认领一个名字 —— 从此榜上有他。
+     写"登录"会让人以为有一个账号要输密码，而这里一个密码字段都没有。
+
+  ⚠️ 它由**全局 store 的 joinSheet 标志**驱动，而不是靠调用方传 prop：
+     要弹它的人（首页 / 竞技场 / 朗读页）和渲染它的人（导航栏里的组件）
+     是不同页面，各自是独立的模块作用域 —— 传 prop 就得每个页面各挂一个实例，
+     而"用户在 A 页点了挑战、B 页要弹层"这种跨页场景根本传不过去。
+
+  ⚠️⚠️ 头像和昵称**读不到**，只能各点一下 —— 这是微信的规矩，不是偷懒：
+     · <button open-type="chooseAvatar"> 用户点了，微信才弹「用微信头像 / 从相册选」
+     · <input type="nickname"> 用户点进输入框，键盘上方才出现他的微信昵称
+     2022-10-25 起 wx.getUserProfile / wx.getUserInfo 一律只返回匿名数据
+     （灰头像 + "微信用户"），所以"静默读进来"这条路已经不存在了。
+     ⇒ 于是做法是：面板一滑完就**自动聚焦昵称框**，微信昵称就悬在键盘上等他一点；
+       头像那一格把"点它会怎样"直接写在脸上。
+-->
+<view class="join-layer" wx:if="{{mounted}}">
+  <view class="join-mask {{entered ? 'join-mask-on' : ''}}" bindtap="onClose" catchtouchmove="noop"></view>
+
+  <view class="join-panel {{entered ? 'join-panel-on' : ''}}" catchtap="noop">
+    <view class="join-grab" bindtap="onClose"></view>
+
+    <text class="join-title">加入句拼</text>
+    <text class="join-sub">取个名字，成绩才有主 —— 它会出现在榜单上。</text>
+
+    <!-- 头像：整块可点；微信那侧会弹「用微信头像 / 从相册选 / 拍照」 -->
+    <button class="join-avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+      <image wx:if="{{avatarPath}}" class="join-avatar" src="{{avatarPath}}" mode="aspectFill"></image>
+      <view wx:else class="join-avatar join-avatar-empty">
+        <text class="join-avatar-plus">＋</text>
+      </view>
+      <text class="join-avatar-label">{{avatarPath ? '换一张' : '用微信头像'}}</text>
+    </button>
+
+    <!-- 昵称：type="nickname" 会让微信把他的昵称挂在键盘上方，一点就填 -->
+    <view class="join-field">
+      <input class="join-input" type="nickname" maxlength="32"
+             placeholder="填写昵称" placeholder-class="join-input-ph"
+             focus="{{focusNickname}}" value="{{nickname}}"
+             bindinput="onNickname" bindblur="onNickname" />
+    </view>
+    <text class="join-hint">键盘上方会出现你的微信昵称，点一下就填好了</text>
+
+    <text class="join-error" wx:if="{{error}}">{{error}}</text>
+
+    <view class="join-submit {{saving || !nickname ? 'join-submit-off' : ''}}" bindtap="onConfirm">
+      {{saving ? '加入中…' : '加入'}}
+    </view>
+
+    <text class="join-foot">名字和头像只用来在榜单上认人，不会发任何消息。</text>
+  </view>
+</view>

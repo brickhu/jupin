@@ -20,7 +20,7 @@
     <!-- 抓手：整条都可以点，点了就收起来（没有手势拖拽，别假装有） -->
     <view class="us-grab" bindtap="onClose"></view>
 
-    <!-- ⭐ 整块可点 = 改头像 / 改昵称（复用登录层） -->
+    <!-- ⭐ 整块可点 = 改头像 / 改昵称（复用加入页） -->
     <view class="us-head" bindtap="onEditProfile" hover-class="us-head-hover">
       <image wx:if="{{avatarSrc}}" class="us-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
       <view wx:else class="us-avatar us-avatar-text">{{initial}}</view>

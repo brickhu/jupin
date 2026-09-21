@@ -2,6 +2,6 @@
   "component": true,
   "usingComponents": {
     "user-sheet": "/components/user-sheet/user-sheet",
-    "login-sheet": "/components/login-sheet/login-sheet"
+    "join-sheet": "/components/join-sheet/join-sheet"
   }
 }

@@ -1,7 +1,7 @@
 import { startButtonLabel } from '@jushuo/shared'
 import type { ScheduleDetail } from '@jushuo/shared'
 import { fetchScheduleDetail } from '../../lib/api/client'
-import { ensureLogin } from '../../lib/login'
+import { ensureJoined } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -142,8 +142,8 @@ Page({
   async onStart() {
     const { articleId, date } = this.data
     if (!articleId || !date) return
-    // 同上：先确认登录，再进朗读页（见 pages/index/index.ts 的说明）
-    if (!(await ensureLogin())) return
+    // 同上：先确认加入过，再进朗读页（见 pages/index/index.ts 的说明）
+    if (!(await ensureJoined())) return
     wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
   },
 })

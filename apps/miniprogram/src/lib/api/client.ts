@@ -491,7 +491,7 @@ export function fetchMe(): Promise<MeResponse> {
  * ⚠️ avatarUrl 传的是**云存储 fileID**（cloud://…/avatars/…），不是临时路径：
  *    临时路径（wxfile:// 或 http://tmp/…）在本机之外根本不存在，
  *    存进库里只会得到一张永远加载不出来的图。
- *    上传由调用方先做（见 components/login-sheet），这里只负责落库。
+ *    上传由调用方先做（见 components/join-sheet），这里只负责落库。
  */
 export function saveProfile(input: {
   nickname: string

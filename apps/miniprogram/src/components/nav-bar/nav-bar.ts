@@ -1,5 +1,5 @@
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { ensureLogin } from '../../lib/login'
+import { ensureJoined } from '../../lib/join'
 import { getNavMetrics, navSolidFrom } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -43,8 +43,8 @@ const priv = (ctx: unknown): Internals & AvatarHolder => {
  *    也可能就是**栈底**（开发者工具直接编译到这一页、分享卡片 / 扫码直达）。
  *    栈底画一个「返回」点了没反应，比不画更糟 —— 那时要画「回首页」。
  *
- * ⚠️ 首页那一格有**两种形态**：没登录是「登录」按钮（点了拉授权层），
- *    登录后才是头像（点了拉用户面板）。判据见 store 的 isLoggedIn。
+ * ⚠️ 首页那一格有**两种形态**：还没加入是「加入」按钮（点了走 ensureJoined），
+ *    加入之后才是头像（点了拉用户面板）。判据见 store 的 hasJoined。
  */
 Component({
   properties: {
@@ -67,8 +67,8 @@ Component({
 
     /** 'avatar' | 'home' | 'back' */
     leftMode: 'back' as 'avatar' | 'home' | 'back',
-    /** 已登录 = 有昵称（见 store 的 isLoggedIn）—— 没登录时这一格画的是「登录」按钮 */
-    loggedIn: false,
+    /** 已加入 = 有昵称（见 store 的 hasJoined）—— 还没加入时这一格画的是「加入」按钮 */
+    joined: false,
     /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
     avatarSrc: '',
     initial: '朗',
@@ -82,8 +82,8 @@ Component({
     /** 用户面板开着没有 */
     sheetOpen: false,
 
-    /** 正在判定「登录还是授权」—— 只用来挡住连点，别让两次判定各弹一个层 */
-    loginBusy: false,
+    /** 正在判定「已经加入过、还是新人」—— 只用来挡住连点，别让两次判定各弹一个层 */
+    joinBusy: false,
   },
 
   lifetimes: {
@@ -136,13 +136,13 @@ Component({
      *
      * ⚠️ 库里存的是 cloud:// fileID，不能直接塞给 <image src> ——
      *    要先换成临时地址。换址是异步的，所以分两步 setData：
-     *    先定下"登录了没有 / 显示什么字"，地址到了再补上。
+     *    先定下"加入过没有 / 显示什么字"，地址到了再补上。
      */
     syncProfile() {
       const p = me.getState().profile
-      const loggedIn = me.isLoggedIn()
+      const joined = me.hasJoined()
       this.setData({
-        loggedIn,
+        joined,
         // ⚠️ 没有头像时用**昵称首字**兜底：一个空圆圈传达不了任何信息，
         //    而一个字就够 —— 它回答的是「这是我吗」。
         initial: (p?.nickname ?? '').trim().slice(0, 1) || '朗',
@@ -161,17 +161,17 @@ Component({
     onLeftTap() {
       if (this.data.leftMode === 'avatar') {
         /**
-         * ⭐ 没登录时这一格是「登录」按钮。
+         * ⭐ 还没加入时这一格是「加入」按钮。
          *
-         * ⚠️⚠️ 点它**不是**直接弹授权层：老用户换了设备 / 清了缓存时，
+         * ⚠️⚠️ 点它**不是**直接弹加入页：老用户换了设备 / 清了缓存时，
          *    账号其实还在服务端 —— 这时候该直接进去，而不是让他重新认领一次自己。
-         *    判定顺序在 lib/login.ts 里，这里只负责挡住连点。
+         *    判定顺序在 lib/join.ts 里，这里只负责挡住连点。
          */
-        if (!this.data.loggedIn) {
-          if (this.data.loginBusy) return
-          this.setData({ loginBusy: true })
-          // 授权层由 ensureLogin 自己弹（它要先问一次服务端才知道该不该问用户）
-          void ensureLogin().finally(() => this.setData({ loginBusy: false }))
+        if (!this.data.joined) {
+          if (this.data.joinBusy) return
+          this.setData({ joinBusy: true })
+          // 授权层由 ensureJoined 自己弹（它要先问一次服务端才知道该不该问用户）
+          void ensureJoined().finally(() => this.setData({ joinBusy: false }))
           return
         }
         this.setData({ sheetOpen: true })

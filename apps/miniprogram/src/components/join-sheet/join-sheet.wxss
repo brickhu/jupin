@@ -4,7 +4,7 @@
  *    理由详见 nav-bar.wxss 顶部。
  */
 
-.ls-layer {
+.join-layer {
   position: fixed;
   top: 0;
   right: 0;
@@ -14,7 +14,7 @@
 }
 
 /* ⚠️ 不能用 inset: 0 简写 —— 老 WebView 不认，整条声明会被丢掉 */
-.ls-mask {
+.join-mask {
   position: absolute;
   top: 0;
   right: 0;
@@ -25,11 +25,11 @@
   transition: opacity 0.2s ease-out;
 }
 
-.ls-mask-on {
+.join-mask-on {
   opacity: 1;
 }
 
-.ls-panel {
+.join-panel {
   position: absolute;
   left: 0;
   right: 0;
@@ -48,11 +48,11 @@
   transition: transform 0.22s ease-out;
 }
 
-.ls-panel-on {
+.join-panel-on {
   transform: translateY(0);
 }
 
-.ls-grab {
+.join-grab {
   width: 72rpx;
   height: 8rpx;
   border-radius: 8rpx;
@@ -62,14 +62,14 @@
   background-clip: content-box;
 }
 
-.ls-title {
+.join-title {
   margin-top: 20rpx;
   font-size: 36rpx;
   font-weight: 600;
   color: #111;
 }
 
-.ls-sub {
+.join-sub {
   margin-top: 12rpx;
   font-size: 24rpx;
   line-height: 1.6;
@@ -77,70 +77,86 @@
   text-align: center;
 }
 
-/* ⚠️ button 有自己的默认样式（边框、背景、行高），必须全部清掉 */
-.ls-avatar-btn {
+/* ⚠️ button 有自己的默认样式（边框、背景、行高），必须全部清掉。
+   ⚠️ 高度**不能**写死：圆圈下面还有一行「用微信头像」，写死高度会把它裁掉。 */
+.join-avatar-btn {
   margin: 32rpx 0 0;
   padding: 0;
-  width: 160rpx;
-  height: 160rpx;
+  width: auto;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   line-height: 1;
   background: transparent;
   border: none;
-  border-radius: 50%;
+  border-radius: 0;
 }
 
-.ls-avatar-btn::after {
+.join-avatar-btn::after {
   border: none;
 }
 
-.ls-avatar {
+.join-avatar {
   width: 160rpx;
   height: 160rpx;
   border-radius: 50%;
   background: #eeecfd;
 }
 
-.ls-avatar-empty {
+.join-avatar-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.ls-avatar-plus {
+.join-avatar-plus {
   font-size: 48rpx;
   color: #4f46e5;
   line-height: 1;
 }
 
-.ls-avatar-tip {
-  margin-top: 6rpx;
-  font-size: 22rpx;
+.join-avatar-label {
+  margin-top: 14rpx;
+  font-size: 24rpx;
   color: #4f46e5;
 }
 
-.ls-field {
+.join-field {
   width: 100%;
-  margin-top: 32rpx;
+  margin-top: 36rpx;
   background: #f7f7f8;
   border-radius: 16rpx;
   padding: 0 24rpx;
 }
 
-.ls-input {
+.join-input {
   height: 88rpx;
   font-size: 30rpx;
   color: #111;
 }
 
-.ls-error {
+.join-input-ph {
+  color: #b9b9c0;
+}
+
+/* 昵称那一格下面的一行说明：告诉用户微信昵称就悬在键盘上，不用自己编 */
+.join-hint {
+  align-self: flex-start;
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #b9b9c0;
+}
+
+.join-error {
   align-self: flex-start;
   margin-top: 16rpx;
   font-size: 24rpx;
   color: #dc2626;
 }
 
-.ls-submit {
+.join-submit {
   width: 100%;
   margin-top: 40rpx;
   height: 92rpx;
@@ -153,11 +169,11 @@
   font-weight: 500;
 }
 
-.ls-submit-off {
+.join-submit-off {
   opacity: 0.5;
 }
 
-.ls-foot {
+.join-foot {
   margin-top: 24rpx;
   font-size: 22rpx;
   color: #bbb;
