@@ -5,6 +5,7 @@ import { PLATFORM } from '../../config'
 import {
   ApiError,
   fetchSubmissionStatus,
+  getUserId,
   setSubmissionVisibility,
   submitReading,
 } from '../../lib/api/client'
@@ -17,7 +18,8 @@ import { refreshPreviousPage } from '../../lib/refresh-previous'
 import {
   clearLastRecording,
   loadLastRecording,
-  REPLAY_PATH,
+  recordingKeyOf,
+  replayPathOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -206,6 +208,17 @@ Page({
    *    id 是协议层的，由受理/轮询那一步记下来更直接）。
    */
   submissionId: '',
+  /**
+   * ⭐ 这句录音的**缓存键** = hash(句子原文) + uid（见 last-recording 的边界 ①）。
+   *
+   * ⚠️ 用内容而不是 articleId：决定录音能不能用的是**参考文本**，
+   *    而 articleId 只是它在库里的编号 —— 同一段文本重新导入、或换个环境，
+   *    编号就变了，那段录音其实照样有效。
+   * ⚠️ uid 必须带上：开发者工具里多个测试账号共用同一份本地存储。
+   * ⚠️ 内容加载出来之前是空串；此时不给录音（也就不会写缓存）。
+   */
+  recordingKey: '',
+
   /** 逐词标准音的 fileID，下标与 plainWords 一一对应 */
   wordAudio: [] as (string | null)[],
   /**
@@ -268,6 +281,8 @@ Page({
       //    ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
       //       否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
       this.plainWords = content.text.split(/\s+/).filter(Boolean)
+      // ⭐ 缓存键由**句子原文 + uid** 决定（不是 articleId）—— 见字段上的说明
+      this.recordingKey = recordingKeyOf(content.text, getUserId())
       this.wordAudio = content.audio?.words ?? []
       this.setData({
         translation: content.translation,
@@ -285,7 +300,7 @@ Page({
       //    用户不必为了接个电话就重读一遍。
       //    ⚠️ 按**句子**匹配：同一句换个日期再轮到，参考文本一字不差，
       //       那段录音照样是有效的（见 last-recording 的边界 ①）。
-      const last = loadLastRecording(this.data.articleId)
+      const last = this.recordingKey ? loadLastRecording(this.recordingKey) : null
       if (last) {
         this.setData({
           phase: 'recorded',
@@ -369,12 +384,14 @@ Page({
     const playPath = this.writePlayableWav(r.pcm)
 
     // ⭐ 落盘 —— 万一片子丢了、页面退了，下次进同一天的挑战还能捡回来
-    saveLastRecording({
-      articleId: this.data.articleId,
-      tempFilePath: r.tempFilePath,
-      playPath,
-      durationMs: r.durationMs,
-    })
+    if (this.recordingKey) {
+      saveLastRecording({
+        key: this.recordingKey,
+        tempFilePath: r.tempFilePath,
+        playPath,
+        durationMs: r.durationMs,
+      })
+    }
 
     this.setData({
       phase: 'recorded',
@@ -399,10 +416,12 @@ Page({
    *    开发者工具里看不出来（它自己能"调试播放"），所以这个 bug 只在真机暴露。
    */
   writePlayableWav(pcm: ArrayBuffer): string {
-    // ⚠️ 路径来自 last-recording 的 REPLAY_PATH，别在这里再写一份字面量 ——
+    // ⚠️ 路径来自 last-recording 的 replayPathOf(key)，别在这里再写一份字面量 ——
     //    两边各写一份，改路径时必然漏一处，而症状是「试听没声音」，
     //    一个看起来像音频格式问题、其实是路径问题的故障。
-    const path = REPLAY_PATH
+    // ⚠️ 内容还没加载出来时没有键 —— 那就没有试听文件可写（也就不会有缓存）
+    if (!this.recordingKey) return ''
+    const path = replayPathOf(this.recordingKey)
     try {
       const wav = pcmToWav(pcm, AUDIO_SPEC.sampleRate, AUDIO_SPEC.channels, AUDIO_SPEC.bitDepth)
       wx.getFileSystemManager().writeFileSync(path, wav)
@@ -779,7 +798,7 @@ Page({
     //      · 提交失败 / 冷却中（catch 分支）
     //      · 轮询连续失败放弃（pollResult）
     //      那些场景用户要的正是「别让我重读一遍」，缓存就是为它们留的。
-    clearLastRecording()
+    if (this.recordingKey) clearLastRecording(this.recordingKey)
 
     this.setData({
       phase: 'done',
@@ -861,7 +880,8 @@ Page({
    *    不清的话，下次再进这一页又会被恢复回来 —— 点重录等于没点。
    */
   onAgain() {
-    clearLastRecording()
+    // ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐
+    if (this.recordingKey) clearLastRecording(this.recordingKey)
     this.setData({
       phase: 'ready',
       error: '',
