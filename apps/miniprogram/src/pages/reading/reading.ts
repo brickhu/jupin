@@ -282,6 +282,8 @@ Page({
   waveFrames: 0,
   /** 「一帧都没收到」只提示一次，别每 100ms 刷一遍 */
   waveWarned: false,
+  /** 这一轮的帧是压缩容器而非 PCM —— 用来把诊断行钉在那句话上（见 drawWave） */
+  waveContainer: false,
 
   /**
    * ⭐ 拿画布节点。
@@ -293,7 +295,7 @@ Page({
    *    这是 canvas 最常见的"看着就是不对劲"。开了之后所有绘制坐标都用设备像素，
    *    **不调 ctx.scale**（scale 会累积，重复进入录音时会越缩越小）。
    */
-  prepareWaveCanvas() {
+  prepareWaveCanvas(attempt = 0) {
     // ⚠️ 用全局的 wx.createSelectorQuery：this.createSelectorQuery 只有**组件**实例上有
     //    （类型声明也只写在 Component 上）。画布是页面自己的节点，全局查询就够。
     wx.createSelectorQuery()
@@ -302,7 +304,18 @@ Page({
       .exec((res) => {
         const info = res?.[0] as { node?: WechatMiniprogram.Canvas; width?: number; height?: number } | undefined
         const node = info?.node
+        /**
+         * ⚠️⚠️ 拿不到就**重试几次**，不要一次失败就整轮不画。
+         *
+         *    "节点在、但尺寸还是 0"是会发生的：setData 的回调保证的是**逻辑层数据已下发**，
+         *    而布局在渲染层是异步的 —— 恰好在那一瞬间量到 0 的概率不小。
+         *    一次失败就放弃的话，表现是"波形整轮都不出来"，而**不报任何错**。
+         */
         if (!node || !info?.width || !info?.height) {
+          if (attempt < 3 && this.data.phase === 'recording') {
+            setTimeout(() => this.prepareWaveCanvas(attempt + 1), 120)
+            return
+          }
           console.warn('[wave] 没拿到画布节点，这一轮不画波形')
           // ⚠️ 这句诊断只给开发者工具看：真机上用户看到「画布没拿到」比看到一块空白更糟
           if (IS_DEVTOOLS) this.setData({ waveDebug: '画布没拿到（' + JSON.stringify(info ?? null) + '）' })
@@ -360,6 +373,12 @@ Page({
             '开发者工具没有 PCM 通路，要看真实波形请用真机。' +
             '见 docs/research/recorder-output-formats.md',
         )
+        // ⭐ 这件事必须**写在屏幕上**：不然用户看到一条乱跳的波形，
+        //    会以为"波形没跟着我的声音走"，而真相是这个通路上根本没有 PCM
+        if (IS_DEVTOOLS) {
+          this.setData({ waveDebug: '模拟器给的是压缩块（不是 PCM）—— 波形只在真机上有意义' })
+        }
+        this.waveContainer = true
       }
     }
 
@@ -398,7 +417,7 @@ Page({
      *    没有这行字，只能靠反复猜 —— 本次就为此白跑了两轮。
      *    真机上不显示（IS_DEVTOOLS 为假）。
      */
-    if (IS_DEVTOOLS) {
+    if (IS_DEVTOOLS && !this.waveContainer) {
       const next = '第 ' + this.waveFrames + ' 帧 · ' + pcm.byteLength + ' 字节 · 峰值 ' + maxPeak
       // 每帧都 setData 太浪费，隔几帧写一次就够看
       if (this.waveFrames % 5 === 1) this.setData({ waveDebug: next })
@@ -575,6 +594,7 @@ Page({
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     this.waveChecked = false
     this.waveWarned = false
+    this.waveContainer = false
 
     this.setData(
       {
