@@ -60,6 +60,15 @@ export interface Profile {
   avatarUrl: string | null
   /** 已征服的句子数（服务端按去重句子算，只增不减） */
   conqueredCount: number
+  /**
+   * ⭐ 挑战过**几句**（去重句子，全时段累计）。
+   * ⚠️ 与「已征服」是两件事：读过但没到征服线（≥85 分）的也算挑战过。
+   *    两个数都得由服务端给 —— 端侧这份 arena 缓存只覆盖最近 7 天的排期，
+   *    自己数出来必然偏小，而偏小的数字比没有更糟（用户会以为记录丢了）。
+   */
+  challengedCount: number
+  /** ⭐ 一共挑战了**几回**（打分成功的提交数，全时段累计） */
+  challengedRounds: number
 }
 
 export interface MeState {
@@ -283,6 +292,8 @@ export function applyProfile(m: MeResponse): void {
     nickname: m.nickname,
     avatarUrl: m.avatarUrl,
     conqueredCount: m.conqueredCount,
+    challengedCount: m.challengedCount,
+    challengedRounds: m.challengedRounds,
   }
   // ⚠️ 改完资料后**不用**再管界面态：加入页在提交成功后自己 navigateBack
   //    （见 pages/join/join.ts）。store 里没有一个"层开着没有"的标志了。
@@ -307,7 +318,11 @@ export function applyProfilePatch(patch: { nickname: string | null; avatarUrl: s
       nickname: patch.nickname,
       // ⚠️ 这次没选头像时服务端返回的是**库里存着的那张**，直接采信它
       avatarUrl: patch.avatarUrl,
+      // ⚠️ 下面三个都是**统计值**，保存接口不返回它们 —— 原样留着，
+      //    别顺手清零（那会让首页状态卡闪一下 0）
       conqueredCount: prev?.conqueredCount ?? 0,
+      challengedCount: prev?.challengedCount ?? 0,
+      challengedRounds: prev?.challengedRounds ?? 0,
     },
   })
 }

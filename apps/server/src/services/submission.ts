@@ -1,4 +1,4 @@
-import { and, count, eq, gte, lt } from 'drizzle-orm'
+import { and, count, countDistinct, eq, gte, lt } from 'drizzle-orm'
 import { addDays, dayStartUtc, today as dayOf } from '@jushuo/shared'
 
 import { db } from '../db'
@@ -40,6 +40,34 @@ export async function dailyChallengeUsage(
       ),
     )
   return { usedToday: Number(row?.n ?? 0) }
+}
+
+/**
+ * ⭐ 首页那张「我的状态卡」上的两个数：挑战过几句、一共挑战了多少回。
+ *
+ * ⚠️ 口径与额度、榜单完全一致：**只数 status='scored'**。
+ *    读不出来的录音（音频坏了 / 引擎判无效）不该记进"我挑战过 N 句"——
+ *    用户会说"我明明没读成功，怎么算我一句"。
+ *
+ * ⚠️ 是**全时段**的累计，不是今天：今天剩几次由 dailyChallengeUsage 管，
+ *    这两个数是"我一共走过多少路"，用来回答"我是不是在坚持"。
+ */
+export async function challengeStats(
+  userId: number,
+): Promise<{ challengedCount: number; challengedRounds: number }> {
+  const [row] = await db
+    .select({
+      rounds: count(),
+      /** ⭐ 去重的是**句子**（articleId），不是日期也不是提交 —— 同一句读 5 次只算一场 */
+      sentences: countDistinct(submissions.articleId),
+    })
+    .from(submissions)
+    .where(and(eq(submissions.userId, userId), eq(submissions.status, 'scored')))
+
+  return {
+    challengedCount: Number(row?.sentences ?? 0),
+    challengedRounds: Number(row?.rounds ?? 0),
+  }
 }
 
 /**

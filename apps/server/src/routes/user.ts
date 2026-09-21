@@ -5,7 +5,7 @@ import { users } from '../db/schema'
 import { env } from '../env'
 import { getTotalConquered } from '../services/conquest'
 import { dailyLimitOf } from '../services/quota'
-import { dailyChallengeUsage } from '../services/submission'
+import { challengeStats, dailyChallengeUsage } from '../services/submission'
 import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
 
@@ -19,12 +19,15 @@ userRoutes.get('/me', async (c) => {
   // ⚠️ Streak 视图一律现算（它由库里四个字段纯推导），不缓存：
   //    跨过零点之后「今天读没读」会翻面，缓存会让它停在昨天。
   const isMember = !!user.memberUntil && user.memberUntil > new Date()
-  const [streak, conqueredCount, usage] = await Promise.all([
+  const [streak, conqueredCount, usage, stats] = await Promise.all([
     readStreakView(userId),
     getTotalConquered(userId),
     // ⭐ 今天已经挑战成功几次 —— 端侧要拿它写「今天还剩 N 次」。
     //    不在端侧自己数：那需要端侧保存一份提交记录，两份数必然对不上。
     dailyChallengeUsage(userId),
+    // ⭐ 首页状态卡上的「挑战过几句 / 一共几回」—— 同样是服务端数，
+    //    端侧那份缓存只覆盖最近 7 天的排期，数出来必然偏小。
+    challengeStats(userId),
   ])
 
   return c.json({
@@ -39,6 +42,9 @@ userRoutes.get('/me', async (c) => {
       //    上限和已用两个数都给出去，客户端只管相减，不在端侧抄一份数字。
       dailyLimit: dailyLimitOf(isMember),
       usedToday: usage.usedToday,
+      // ⭐ 首页状态卡：挑战过几句 / 一共挑战了几回（全时段累计，只数打分成功的）
+      challengedCount: stats.challengedCount,
+      challengedRounds: stats.challengedRounds,
       conqueredCount,
       streak,
     },

@@ -325,6 +325,10 @@ export interface MeResponse {
   dailyLimit: number
   /** 今天已经挑战成功几次 —— 端侧拿 dailyLimit - usedToday 说「今天还剩几次」 */
   usedToday: number
+  /** ⭐ 挑战过**几句**（去重句子数，全时段累计）—— 首页状态卡的「挑战场次」 */
+  challengedCount: number
+  /** ⭐ 一共挑战了**几回**（打分成功的提交数，全时段累计）—— 首页状态卡的「挑战回合」 */
+  challengedRounds: number
   /** 已征服的句子数（拿到 ≥ CONQUEST_THRESHOLD 分的**去重句子**数，只增不减） */
   conqueredCount: number
   streak: StreakView

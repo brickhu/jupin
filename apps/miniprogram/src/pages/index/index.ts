@@ -1,7 +1,7 @@
 import { BRAND, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
-import { ensureJoined } from '../../lib/join'
+import { ensureJoined, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
@@ -81,6 +81,36 @@ interface CardView {
  * ⚠️ 写成**纯函数**而不是页面方法：它的输入只有一个数字，
  *    与页面实例无关，这样才好单独测。
  */
+/** 状态卡上的三个数 */
+interface StatsView {
+  /** 挑战过几句（去重句子） */
+  challengedCount: number
+  /** 一共挑战了几回 */
+  challengedRounds: number
+  /** 连战天数 */
+  streakDays: number
+}
+
+/**
+ * ⭐ 拼出状态卡上的三个数。
+ *
+ * ⚠️ 三个数**要么一起出现，要么都不出现**：
+ *    「挑战场次」和「挑战回合」来自 profile（/me），「连战天数」来自 streak。
+ *    只拿到一半就渲染，会出现「0 句 · 20 次 · 1 天」这种自相矛盾的一行 ——
+ *    而用户看到的是"我的记录是不是坏了"。
+ *    ⇒ 没有 profile 就整张卡不画（见 data.stats 的说明）。
+ *
+ * ⚠️ 写成纯函数：输入只有两个对象，与页面实例无关，好单测。
+ */
+function statsOf(profile: me.Profile | null, streak: StreakView | null): StatsView | null {
+  if (!profile) return null
+  return {
+    challengedCount: profile.challengedCount,
+    challengedRounds: profile.challengedRounds,
+    streakDays: streak?.streakDays ?? 0,
+  }
+}
+
 function statText(participantCount: number): string {
   return participantCount === 0 ? '' : participantCount + ' 人参与'
 }
@@ -124,6 +154,14 @@ Page({
     error: '',
 
     streak: null as StreakView | null,
+    /**
+     * ⭐ 状态卡上的三个数。
+     *
+     * ⚠️ 拿不到时是 null（整张卡不渲染），**不是**三个 0 ——
+     *    对刚打开的老用户来说，「0 句 / 0 次」是**错的**，
+     *    而错的数字比没有数字更糟：他会以为记录丢了。
+     */
+    stats: null as StatsView | null,
     today: null as CardView | null,
     history: [] as CardView[],
   },
@@ -202,6 +240,14 @@ Page({
       const d = await fetchSchedules()
       // ⭐ 先把「我的记录」写进 store（广播给所有页面），再本地重画一次
       me.applySchedules(d)
+      /**
+       * ⭐ 顺带刷一次「我是谁」—— 状态卡上那两个累计数（挑战几句 / 一共几回）
+       *    只有 /me 有，而它们**刚在朗读页变过**。
+       *
+       * ⚠️ 不 await：列表该先出来。刷新回来后 store 会广播，卡片自己重画
+       *    （见 lib/join.ts 的 refreshMe：失败只警告，不影响这一页的加载）。
+       */
+      void refreshMe()
       this.cards = { today: d.today, history: d.history }
       this.setData({ loading: false })
       this.render()
@@ -222,8 +268,10 @@ Page({
   render() {
     const c = this.cards
     if (!c) return
+    const st = me.getState()
     this.setData({
-      streak: me.getState().streak,
+      streak: st.streak,
+      stats: statsOf(st.profile, st.streak),
       today: this.toView(c.today),
       history: c.history.map((x) => this.toView(x)),
     })

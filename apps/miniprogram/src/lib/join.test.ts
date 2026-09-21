@@ -52,6 +52,8 @@ function meResponse(nickname: string | null) {
     isMember: false,
     dailyLimit: 1,
     usedToday: 0,
+    challengedCount: 0,
+    challengedRounds: 0,
     conqueredCount: 0,
     streak: {
       streakDays: 0,

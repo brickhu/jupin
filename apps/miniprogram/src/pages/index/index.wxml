@@ -6,16 +6,47 @@
   <!-- ⚠️ id="nav" 是页面 onPageScroll 找到它的方式（见 lib/nav.ts），三页统一 -->
   <nav-bar id="nav" title="{{brand.name}}" left="avatar" />
 
-  <!-- ── 顶部：定位 + 🔥 Streak ────────────────────────────────
+  <!-- ── 顶部：定位 ─────────────────────────────────────────
        ⚠️ 品牌名已经搬到导航栏标题上（那里才是「这一页叫什么」的位置），
           这里不再重复写一遍 —— 同一屏里同一个词出现两次，
-          只会让人怀疑哪一个才算。 -->
+          只会让人怀疑哪一个才算。
+       ⚠️ 原来这里还有一个「🔥 N 天」—— 现在连战天数在下面的状态卡里，
+          同一个数字在同一屏出现两次同样会让人怀疑哪个才算。 -->
   <view class="flex items-center px-1 pb-4">
-    <text class="text-24rpx text-faint flex-1">{{brand.tagline}}</text>
-    <view class="flex items-baseline" wx:if="{{streak}}">
-      <text class="text-32rpx">🔥</text>
-      <text class="text-40rpx font-bold text-ink ml-1">{{streak.streakDays}}</text>
-      <text class="text-24rpx text-faint ml-1">天</text>
+    <text class="text-24rpx text-faint">{{brand.tagline}}</text>
+  </view>
+
+  <!-- ══ 我的状态卡 ═══════════════════════════════════════
+       ⚠️ 放在「今天这一张」**上面**：先回答"我是谁、走到哪了"，
+          再回答"今天读哪一句"——先有身份才有任务。
+       ⚠️ 三个数是**全时段累计**（服务端数的），不是今天：今天剩几次在朗读页说。 -->
+  <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center" wx:if="{{stats}}">
+    <view class="flex-1 text-center">
+      <view class="flex items-baseline justify-center">
+        <text class="text-40rpx font-bold text-ink">{{stats.challengedCount}}</text>
+        <text class="text-24rpx text-faint ml-1">句</text>
+      </view>
+      <text class="text-22rpx text-faint block mt-1.5">挑战场次</text>
+    </view>
+
+    <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+
+    <view class="flex-1 text-center">
+      <view class="flex items-baseline justify-center">
+        <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
+        <text class="text-24rpx text-faint ml-1">次</text>
+      </view>
+      <text class="text-22rpx text-faint block mt-1.5">挑战回合</text>
+    </view>
+
+    <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+
+    <view class="flex-1 text-center">
+      <view class="flex items-baseline justify-center">
+        <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
+        <text class="text-24rpx text-faint ml-1">天</text>
+      </view>
+      <text class="text-22rpx text-faint block mt-1.5">连战天数</text>
     </view>
   </view>
 
