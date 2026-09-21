@@ -48,6 +48,37 @@ interface WaveBar {
 }
 
 /**
+ * ⚠️⚠️ 这一帧看着像**音频容器**（WebM / WAV / Ogg / mp3-ID3）而不是裸 PCM 吗？
+ *
+ *    这件事必须认出来，否则声波会**看起来像坏了**：
+ *    开发者工具给的帧是 **WebM/Opus 压缩块**（本项目实测并记录在
+ *    docs/research/recorder-output-formats.md），按 16bit PCM 读出来的
+ *    恰好是"接近满量程的噪声"（RMS ≈ -4.8dB）—— 于是每根柱子都被拉满、
+ *    一动不动，用户看到的就是一整条不响应的色块。
+ *
+ *    ⚠️ 只认 magic，不认"像不像"：真机链路**没有任何 magic**（裸 PCM 就是裸的），
+ *       所以这里判不出来是正常的、也是对的 —— 判出来了才说明帧根本不是 PCM。
+ *    ⚠️ 服务端有同一件事的完整版（services/audio.ts 的 sniffAudioContainer，
+ *       认出来之后交给 ffmpeg 解码）。这里只做"要不要画柱子"这一个判断，
+ *       所以只覆盖容器头，不做任何解码。
+ */
+function looksLikeContainer(pcm: ArrayBuffer): boolean {
+  const b = new Uint8Array(pcm)
+  if (b.byteLength < 4) return false
+  const [b0, b1, b2, b3] = [b[0], b[1], b[2], b[3]]
+  return (
+    // EBML（WebM / Matroska）—— 开发者工具给的就是它
+    (b0 === 0x1a && b1 === 0x45 && b2 === 0xdf && b3 === 0xa3) ||
+    // RIFF（WAV）
+    (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46) ||
+    // OggS
+    (b0 === 0x4f && b1 === 0x67 && b2 === 0x67 && b3 === 0x53) ||
+    // ID3（mp3 带标签）
+    (b0 === 0x49 && b1 === 0x44 && b2 === 0x33)
+  )
+}
+
+/**
  * 朗读页 —— 产品的**唯一动作入口**。
  *
  * 用户在这里只有两件事可做：录音（重录）、提交检测。没有别的。
@@ -216,6 +247,12 @@ Page({
      *    带上 id 之后，「往右挪一格」对渲染层是移动而不是重建。
      */
     bars: [] as WaveBar[],
+    /**
+     * ⚠️ 这一帧不是裸 PCM（开发者工具）—— 那就不画柱子，改说一句话。
+     *    见 looksLikeContainer 的说明：画出来是一整条不响应的色块，
+     *    比不画更容易让人以为功能坏了。
+     */
+    waveUnsupported: false,
     uploadPercent: 0,
     /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
     scoringSeconds: 0,
@@ -235,6 +272,9 @@ Page({
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
   gone: false,
 
+  /** 帧的格式只看**第一帧**就够了：容器头在流的开头，设备也不会中途换格式 */
+  waveChecked: false,
+
   /** 声波柱子的滚动窗口（与 data.bars 同源，改它才 setData） */
   wave: [] as WaveBar[],
   /** 柱子 id 的自增计数 —— 见 WaveBar 的说明 */
@@ -246,11 +286,32 @@ Page({
    * ⚠️ 只画到 WAVE_SLOTS 根，多出来的从左边挤掉 ——
    *    一屏固定宽度，柱子无限增长会把它撑爆。
    */
-  pushWave(level: number) {
+  pushWave(pcm: ArrayBuffer) {
     // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
     //    页面销毁之后一帧都不该画（见 onUnload）
     if (this.gone || this.data.phase !== 'recording') return
 
+    /**
+     * ⭐ 先看一眼**这一轮的第一帧**是不是裸 PCM。
+     *
+     * ⚠️ 开发者工具给的是 WebM 压缩块，当 PCM 读出来是"接近满量程的噪声"，
+     *    柱子会被拉满且一动不动 —— 那不是"没反应"，是"认错了格式"。
+     *    与其画一条骗人的色块，不如直接说明白（见 looksLikeContainer）。
+     */
+    if (!this.waveChecked) {
+      this.waveChecked = true
+      if (looksLikeContainer(pcm)) {
+        console.warn(
+          '[wave] 这一轮录音的帧不是裸 PCM（像是压缩容器），声波监测不画 —— ' +
+            '开发者工具拿不到 PCM 帧，这个要在真机上看。见 docs/research/recorder-output-formats.md',
+        )
+        this.setData({ waveUnsupported: true })
+        return
+      }
+    }
+    if (this.data.waveUnsupported) return
+
+    const level = pcmLevel(pcm)
     const h = Math.round(WAVE_MIN_RPX + level * (WAVE_MAX_RPX - WAVE_MIN_RPX))
     this.wave.push({ id: ++this.waveSeq, h })
     if (this.wave.length > WAVE_SLOTS) this.wave.shift()
@@ -413,7 +474,7 @@ Page({
     if (!this.recorder) {
       this.recorder = new Recorder({
         // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接喂给响度函数
-        onFrame: (pcm) => this.pushWave(pcmLevel(pcm)),
+        onFrame: (pcm) => this.pushWave(pcm),
         onStop: (r) => this.handleRecorded(r),
         onError: (e) => {
           this.stopTimer()
@@ -422,10 +483,14 @@ Page({
       })
     }
 
+    // ⚠️ 每一轮录音重新判一次帧格式（放在 setData 外面：这是页面私有字段，不进渲染数据）
+    this.waveChecked = false
+
     this.setData({
       phase: 'recording',
       error: '',
       elapsed: '0.0',
+      waveUnsupported: false,
       // ⭐ 先铺一排**最矮**的柱子：整排宽度不变，看着像"已经在听了"，
       //    而不是等第一帧到了才突然冒出一排东西、把下面的按钮顶下去
       bars: this.resetWave(),

@@ -67,10 +67,17 @@
            ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
               没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
            ⚠️ 高度是**行内 style**：柱子高度每帧都变，用类名表达等于每帧生成一批新类名。 -->
-      <view class="flex items-end justify-center gap-[4rpx] h-[80rpx] py-1">
+      <view class="flex items-end justify-center gap-[4rpx] h-[80rpx] py-1" wx:if="{{!waveUnsupported}}">
         <view wx:for="{{bars}}" wx:key="id"
               class="w-[10rpx] rounded-full bg-brand"
               style="height:{{item.h}}rpx"></view>
+      </view>
+
+      <!-- ⚠️ 开发者工具给的帧是 WebM 压缩块，不是裸 PCM（见 docs/research/recorder-output-formats.md）。
+           按 PCM 读出来是"接近满量程的噪声"，柱子会一直顶格不动 —— 那不是没反应，
+           是压根读不出响度。与其画一条骗人的色块，不如直接说明白。 -->
+      <view class="h-[80rpx] flex items-center justify-center px-2" wx:else>
+        <text class="text-22rpx text-faint text-center leading-[1.6]">开发者工具里的录音不是 PCM 帧，声波要在真机上看</text>
       </view>
 
       <view class="mb-2.5"></view>
