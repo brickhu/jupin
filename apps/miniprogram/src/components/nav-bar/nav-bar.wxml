@@ -18,7 +18,7 @@
       <block wx:if="{{leftMode === 'avatar'}}">
         <image wx:if="{{loggedIn && avatarSrc}}" class="nv-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
         <view wx:elif="{{loggedIn}}" class="nv-avatar nv-avatar-text">{{initial}}</view>
-        <view wx:else class="nv-login">登录</view>
+        <view wx:else class="nv-login">{{loginBusy ? '登录中' : '登录'}}</view>
       </block>
       <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph">🏠</text>
       <text wx:else class="nv-glyph nv-glyph-back">‹</text>

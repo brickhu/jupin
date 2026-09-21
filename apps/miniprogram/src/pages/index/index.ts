@@ -1,6 +1,7 @@
 import { BRAND, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
+import { ensureLogin } from '../../lib/login'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
@@ -281,15 +282,14 @@ Page({
   },
 
   /** 开始/再次挑战 —— 必须把**这一天的日期**带过去 */
-  onStart(e: WechatMiniprogram.BaseEvent) {
+  async onStart(e: WechatMiniprogram.BaseEvent) {
     const ds = e.currentTarget.dataset as { id?: number; date?: string }
     if (!ds.id || !ds.date) return
     // ⚠️ 挑战要记成绩、要占额度，先确认这是「有人」在挑战。
     //    拦在**进门之前**：让他录完 1 分钟再告诉他没登录，比不让进更气人。
-    if (!me.isLoggedIn()) {
-      me.openLoginSheet()
-      return
-    }
+    //    ⚠️ 但**不要**直接弹授权层：账号已经在服务端的（换设备 / 清了缓存）直接放行，
+    //       该不该问用户由 ensureLogin 先问完服务端再决定（见 lib/login.ts）。
+    if (!(await ensureLogin())) return
     wx.navigateTo({
       url: '/pages/reading/reading?id=' + ds.id + '&date=' + ds.date,
     })

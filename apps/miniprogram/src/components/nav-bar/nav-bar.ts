@@ -1,4 +1,5 @@
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
+import { ensureLogin } from '../../lib/login'
 import { getNavMetrics, navSolidFrom } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -80,6 +81,9 @@ Component({
 
     /** 用户面板开着没有 */
     sheetOpen: false,
+
+    /** 正在判定「登录还是授权」—— 只用来挡住连点，别让两次判定各弹一个层 */
+    loginBusy: false,
   },
 
   lifetimes: {
@@ -156,9 +160,18 @@ Component({
 
     onLeftTap() {
       if (this.data.leftMode === 'avatar') {
-        // ⭐ 没登录时这一格是「登录」按钮：点它拉授权层，而不是开用户面板
+        /**
+         * ⭐ 没登录时这一格是「登录」按钮。
+         *
+         * ⚠️⚠️ 点它**不是**直接弹授权层：老用户换了设备 / 清了缓存时，
+         *    账号其实还在服务端 —— 这时候该直接进去，而不是让他重新认领一次自己。
+         *    判定顺序在 lib/login.ts 里，这里只负责挡住连点。
+         */
         if (!this.data.loggedIn) {
-          me.openLoginSheet()
+          if (this.data.loginBusy) return
+          this.setData({ loginBusy: true })
+          // 授权层由 ensureLogin 自己弹（它要先问一次服务端才知道该不该问用户）
+          void ensureLogin().finally(() => this.setData({ loginBusy: false }))
           return
         }
         this.setData({ sheetOpen: true })
