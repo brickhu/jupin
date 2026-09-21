@@ -65,21 +65,13 @@
   text-overflow: ellipsis;
 }
 
-/* 头像：没有真实头像时用昵称首字兜底 —— 一个空圆圈传达不了任何信息 */
+/* 头像：真头像 or 本地那张占位图（见 nav-bar.ts 的 avatarPlaceholder） */
 .nv-avatar {
   width: 60rpx;
   height: 60rpx;
   border-radius: 50%;
   background: #eeecfd;
-}
-
-.nv-avatar-text {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #4f46e5;
+  overflow: hidden;
 }
 
 /* 未登录时那一格画的是按钮而不是头像：说清楚"点这里能登录"，

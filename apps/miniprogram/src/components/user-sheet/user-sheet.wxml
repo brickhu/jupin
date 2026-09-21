@@ -22,8 +22,8 @@
 
     <!-- ⭐ 整块可点 = 改头像 / 改昵称（复用加入页） -->
     <view class="us-head" bindtap="onEditProfile" hover-class="us-head-hover">
-      <image wx:if="{{avatarSrc}}" class="us-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
-      <view wx:else class="us-avatar us-avatar-text">{{initial}}</view>
+      <!-- ⚠️ 没配过头像就画占位图，理由见 nav-bar.wxml 里那段说明 -->
+      <image class="us-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="us-idcol">
         <text class="us-name">{{nickname}}</text>
         <text class="us-sub" wx:if="{{streak.badge}}">{{streak.badge.emoji}} {{streak.badge.name}}</text>

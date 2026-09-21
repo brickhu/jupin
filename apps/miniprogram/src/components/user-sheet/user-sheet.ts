@@ -96,7 +96,8 @@ Component({
     avatarUrl: '',
     /** 头像的**可显示地址** —— 库里存的是 cloud:// fileID，要先换一次 */
     avatarSrc: '',
-    initial: '朗',
+    /** 没配头像时画的那张图 —— 与导航栏同一张（见 nav-bar.ts 的说明） */
+    avatarPlaceholder: '/assets/avatar-placeholder.png',
     conqueredCount: 0,
     streak: null as StreakView | null,
     ladder: [] as LadderRow[],
@@ -164,7 +165,6 @@ Component({
       this.setData({
         nickname: (p?.nickname ?? '').trim() || '挑战者',
         avatarUrl: p?.avatarUrl ?? '',
-        initial: (p?.nickname ?? '').trim().slice(0, 1) || '朗',
         conqueredCount: p?.conqueredCount ?? 0,
         streak: st.streak,
         ladder: ladderOf(st.streak),

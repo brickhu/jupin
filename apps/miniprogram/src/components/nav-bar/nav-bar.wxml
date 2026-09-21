@@ -14,10 +14,15 @@
 <view class="nv-root {{solid ? 'nv-root-solid' : ''}}" style="padding-top:{{statusBarHeight}}px;height:{{barHeight}}px;">
   <view class="nv-row">
     <view class="nv-side" style="width:{{sideWidth}}px;" bindtap="onLeftTap" hover-class="nv-hover">
-      <!-- ⭐ 首页这一格：还没加入时是「加入」按钮，加入之后才是头像 -->
+      <!--
+        ⭐ 首页这一格：还没加入时是「加入」按钮，加入之后是头像。
+
+        ⚠️ 头像是**真实照片**，没配过就画那张占位图 ——
+           不用「昵称首字」兜底：首字和头像承担的是同一件事（"这是我吗"），
+           而一个字母方块看起来像坏掉的图，占位图至少明确表示"这里该有张脸"。
+      -->
       <block wx:if="{{leftMode === 'avatar'}}">
-        <image wx:if="{{joined && avatarSrc}}" class="nv-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
-        <view wx:elif="{{joined}}" class="nv-avatar nv-avatar-text">{{initial}}</view>
+        <image wx:if="{{joined}}" class="nv-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill"></image>
         <view wx:else class="nv-login">{{joinBusy ? '加入中' : '加入'}}</view>
       </block>
       <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph">🏠</text>

@@ -71,7 +71,13 @@ Component({
     joined: false,
     /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
     avatarSrc: '',
-    initial: '朗',
+    /**
+     * 没配头像时画的那张图 —— 打包在本地，不走网络。
+     * ⚠️ 不用「昵称首字」兜底：首字和头像回答的是同一个问题（"这是我吗"），
+     *    而一个字母方块看起来更像"图挂了"；占位图至少明确表示这里该有张脸。
+     *    （生成脚本：tools/make-avatar-placeholder.mjs）
+     */
+    avatarPlaceholder: '/assets/avatar-placeholder.png',
 
     /**
      * 导航栏落不落白底 —— 默认**透明**，只在页面内容滚到它底下时才变白。
@@ -145,7 +151,6 @@ Component({
         joined,
         // ⚠️ 没有头像时用**昵称首字**兜底：一个空圆圈传达不了任何信息，
         //    而一个字就够 —— 它回答的是「这是我吗」。
-        initial: (p?.nickname ?? '').trim().slice(0, 1) || '朗',
       })
 
       const fileId = p?.avatarUrl ?? ''

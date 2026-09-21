@@ -95,15 +95,6 @@
   flex-shrink: 0;
 }
 
-.us-avatar-text {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 44rpx;
-  font-weight: 600;
-  color: #4f46e5;
-}
-
 .us-idcol {
   flex: 1;
   margin-left: 24rpx;
