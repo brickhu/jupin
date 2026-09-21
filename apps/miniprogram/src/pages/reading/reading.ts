@@ -1,4 +1,11 @@
-import { AUDIO_SPEC, MS_PER_WORD, PREFLIGHT, pcmToWav, today } from '@jushuo/shared'
+import {
+  AUDIO_SPEC,
+  MS_PER_WORD,
+  PREFLIGHT,
+  WORD_GREEN_LINE,
+  pcmToWav,
+  today,
+} from '@jushuo/shared'
 import type { ScoreDimensions, StreakDelta, SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
@@ -117,7 +124,12 @@ function looksLikeContainer(pcm: ArrayBuffer): boolean {
 type Phase = 'loading' | 'ready' | 'recording' | 'recorded' | 'submitting' | 'done'
 
 /** 逐词着色阈值 —— 只影响展示，不影响分数 */
-const WORD_GOOD = 85 // ≥ 标绿：读对了
+/**
+ * ⭐ 标绿的分界线直接取自共享常量：**算分用的「绿词」就是用户看到的绿字**。
+ * ⚠️ 两处各写一个 85 的话，一旦哪天只改了一边，
+ *    用户就会看到「这几个词明明是绿的，为什么没上 90」—— 解释链当场断掉。
+ */
+const WORD_GOOD = WORD_GREEN_LINE
 const WORD_BAD = 60 // < 标红：明显有问题
 
 /** 只在开发者工具里为真 */

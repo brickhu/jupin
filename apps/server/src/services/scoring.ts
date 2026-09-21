@@ -1,5 +1,5 @@
 import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import { CONQUEST_THRESHOLD, dayKey, latestBadge } from '@jushuo/shared'
+import { CONQUEST_THRESHOLD, dayKey, latestBadge, sentenceScore } from '@jushuo/shared'
 import type { StreakDelta } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
@@ -168,7 +168,18 @@ export async function runScoring(submissionId: string): Promise<void> {
       return fail(submissionId, (err as Error).message)
     }
 
-    const score = Math.round(result.total)
+    /**
+     * ⭐ 总分**由词级分算**，不用引擎那个总分（理由见 @jushuo/shared 的 scoring.ts）。
+     *
+     * ⚠️ 词级数据缺失时退回引擎总分，而不是记 0 分：
+     *    「这次没拿到词级数据」和「我读了一整句全错」是两件事，
+     *    后者会让用户莫名其妙丢一次机会。
+     */
+    const wordScore = sentenceScore(result.words ?? [])
+    const score = wordScore ?? Math.round(result.total)
+    if (wordScore === null) {
+      console.warn('[scoring] 这次返回没有词级数据，退回引擎总分 ' + score + ' id=' + submissionId)
+    }
     const isConquered = score >= CONQUEST_THRESHOLD
 
     // 是否第一次提交 / 第一次征服（用于更新 articles 的冗余计数）
