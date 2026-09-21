@@ -21,6 +21,32 @@
 
 ---
 
+## 仓库与分支（开工前第一件事）
+
+远端：<https://github.com/brickhu/jupin>（public）
+
+| 分支 | 用途 |
+|---|---|
+| **`dev`** | **日常开发都提交在这里**。开工前先 `git switch dev` |
+| **`main`** | 只从 `dev` 合并，不直接在上面提交。它是 GitHub 的默认分支 |
+
+```bash
+git switch dev                      # 开工
+# …改动…
+git add -A && git commit -m "feat: …"
+git push                            # 推到 origin/dev
+
+# 要合主线时
+git switch main && git merge dev && git push && git switch dev
+```
+
+> ⚠️⚠️ **部署取的是「当前工作区」，跟 git 完全无关。**
+> `pnpm deploy:dev` 是把仓库根目录**当场打包上传**（`run:deploy --targetDir .`），
+> 小程序上传读的是本地 `dist/`。所以「云上跑的是哪个版本」= 你此刻在哪个分支、改了没提交也会一起上去。
+> 要确保线上是某个分支的代码，先切过去、工作区干净，再部署。
+
+---
+
 ## 三条不可违背的设计原则
 
 ### 1. 云端只买「一个分数」，其余全部端侧实现
