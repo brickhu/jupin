@@ -911,9 +911,30 @@ CLI 密钥在 **云托管控制台 → 全局设置 → CLI 密钥** 生成，�
 
 | 分支 | 后端 | 小程序 | 数据库 |
 |---|---|---|---|
-| `feature/*` | 不部署 | 仅 CI 检查 | — |
-| `develop` | 测试环境 | 上传体验版 | 自动迁移（测试库） |
-| `main` | 生产环境 | 上传体验版 | ⚠️ **人工确认后迁移** |
+| `feature/*` | 不部署 | 仅构建检查 | — |
+| **`dev`** | **dev 环境**（push 即部署） | 仅构建检查 | 容器启动时自动迁移 |
+| **`main`** | **prod 环境**（合并即部署） | 仅构建检查 | 容器启动时自动迁移 |
+
+⭐ **小程序不按分支分环境。** 三种模式（本机 / dev / prod）的坐标在**构建期一起**烘进包里，
+由 config.ts 在运行时按平台与版本自动分流（模拟器→本机、开发版与体验版→dev、正式版→prod）。
+所以小程序只上传一次（体验版），跟后端分支无关 —— 只有后端需要分环境部署。
+
+### CI 需要的 Secrets
+
+| 名称 | 级别 | 从哪来 |
+|---|---|---|
+| `WXCLOUD_APPID` · `WXCLOUD_CLI_SECRET` | 账号级 | 云托管控制台 → 全局设置 → CLI 密钥 |
+| `XFYUN_APP_ID` · `XFYUN_API_KEY` · `XFYUN_API_SECRET` | 账号级 | 讯飞 ISE |
+| `WX_APPID` · `WX_SECRET` | 账号级 | 小程序 AppID / AppSecret（**服务端**用：/tcb/* 与 code2session） |
+| `WXCLOUD_ENV_ID` | **环境级** | dev / prod 各一份 |
+| `MYSQL_ADDRESS` · `MYSQL_USERNAME` · `MYSQL_PASSWORD` · `MYSQL_DATABASE` | **环境级** | 同上 |
+| `TOKEN_SECRET` | **环境级** | ⚠️ 各环境**必须不同**且不能省 —— 省了脚本会现生成一个，而 runner 是临时的，等于每次部署都换密钥、登录态全掉 |
+
+环境级那几个建议用 GitHub **Environment**（建 `dev` / `prod` 两个）承载。
+顺带可以给 `prod` 配 **Required reviewers** —— 那样「合并到 main」就变成需要你点一下确认。
+
+另有一个**变量**（Variables，不是 Secret）：`SEED_ON_START`。
+设成 `true` 时云端启动会灌种子；**prod 首次部署必须开一次**，否则 prod 句库是空的。
 
 ## 4.3 四条流水线
 
@@ -924,7 +945,23 @@ CLI 密钥在 **云托管控制台 → 全局设置 → CLI 密钥** 生成，�
 | 3 | 内容 → COS/CDN | ⭐ **手动**（审核驱动） | `workflow_dispatch` |
 | 4 | 数据库迁移 | 部署后 | ⚠️ **半自动，需人工确认** |
 
-### 后端 `.github/workflows/deploy-server.yml`
+### 后端 `.github/workflows/deploy.yml` ⭐ 已实装
+
+> 真实文件就是它，下面这段只是摘要；细节（含每个 secret 的用途）写在文件头部注释里。
+>
+> ```
+> push dev  → job deploy-dev  → environment: dev  → node tools/deploy-cloud.mjs dev
+> push main → job deploy-prod → environment: prod → node tools/deploy-cloud.mjs prod
+> ```
+>
+> ⚠️ 用的是 `tools/deploy-cloud.mjs` 而**不是**裸的 `wxcloud run:deploy`：
+> 服务环境变量是整份覆盖的，裸命令少写一个键就把数据库连接信息冲掉。
+> 脚本会先读回当前配置再合并，并自动补 COS_BUCKET / COS_REGION / TOKEN_SECRET。
+>
+> ⚠️ 路径过滤：`**.md` / `docs/**` / `apps/miniprogram/**` 的改动**不触发**后端部署
+> （后端镜像里没有小程序代码）。同一个分支的部署串行，避免云托管报 ResourceInUse。
+
+（下面这段是最初的草稿，保留作为「为什么这么设计」的参考）
 
 ```yaml
 name: Deploy Server

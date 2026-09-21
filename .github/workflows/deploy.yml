@@ -1,0 +1,190 @@
+# ============================================================
+#  CI 部署：分支 → 环境
+#
+#    dev  分支  →  云托管 dev 环境（自动）
+#    main 分支  →  云托管 prod 环境（自动；建议在 GitHub 上给 prod environment
+#                 配 Required reviewers，把它变成人工确认）
+#
+#  ⚠️ 为什么用 tools/deploy-cloud.mjs 而不是裸的 wxcloud run:deploy：
+#     云托管的**服务环境变量是整份覆盖的** —— 裸命令得自己拼 --envParamsJson，
+#     少写一个键就把数据库连接信息冲掉，服务直接连不上库。
+#     脚本会先读回当前配置再合并，并自动补 COS_BUCKET / COS_REGION / TOKEN_SECRET。
+#
+#  ⚠️ 环境变量来自 **GitHub Secrets**，不是仓库里的 .env（那些是 gitignore 的）。
+#     加载优先级是「真实环境变量 > .env.<mode> > .env」，所以 CI 里直接给进程变量即可，
+#     runner 上不需要落任何 .env 文件。
+#
+#  需要的 secrets（推荐按 **Environment** 各配一份，见 AGENT.md §4.2）：
+#    账号级（dev/prod 同值）：WXCLOUD_APPID / WXCLOUD_CLI_SECRET
+#                            XFYUN_APP_ID / XFYUN_API_KEY / XFYUN_API_SECRET
+#                            WX_APPID / WX_SECRET
+#    环境级（dev 与 prod 不同）：WXCLOUD_ENV_ID
+#                              MYSQL_ADDRESS / MYSQL_USERNAME / MYSQL_PASSWORD / MYSQL_DATABASE
+#                              TOKEN_SECRET ⚠️ 各环境必须不同且不能省 ——
+#                                          省了脚本会现生成一个，而 runner 是临时的，
+#                                          等于每次部署都换密钥，登录态全掉
+# ============================================================
+name: Deploy
+
+on:
+  push:
+    branches: [dev, main]
+    # 纯文档 / 纯小程序改动不触发后端部署（后端镜像里没有小程序代码）
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'apps/miniprogram/**'
+
+# ⚠️ 同一分支的部署串行：云托管同一服务同一时刻只允许一个发布任务，并发直接报 ResourceInUse。
+#    也不取消进行中的部署（半途中断会留下无主版本）。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ----------------------------------------------------------------
+  # dev 分支 → dev 环境
+  # ----------------------------------------------------------------
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ⭐ 检查不过就不部署 —— 云上那份是用户直接用的
+      - name: 类型检查与测试
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: 检查 secrets 是否配齐
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+          WXCLOUD_ENV_ID: ${{ secrets.WXCLOUD_ENV_ID }}
+          MYSQL_ADDRESS: ${{ secrets.MYSQL_ADDRESS }}
+          MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+        run: |
+          missing=""
+          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET; do
+            eval "v=\$"$k
+            [ -z "$v" ] && missing="$missing $k"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::缺少 secrets:$missing（配法见 AGENT.md §4.2）"
+            exit 1
+          fi
+          echo "secrets 齐全"
+
+      - name: 登录云托管
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+        run: ./node_modules/.bin/wxcloud login --appId "$WXCLOUD_APPID" --privateKey "$WXCLOUD_CLI_SECRET"
+
+      - name: 部署到 dev
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+          WXCLOUD_ENV_ID: ${{ secrets.WXCLOUD_ENV_ID }}
+          MYSQL_ADDRESS: ${{ secrets.MYSQL_ADDRESS }}
+          MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+          XFYUN_APP_ID: ${{ secrets.XFYUN_APP_ID }}
+          XFYUN_API_KEY: ${{ secrets.XFYUN_API_KEY }}
+          XFYUN_API_SECRET: ${{ secrets.XFYUN_API_SECRET }}
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_SECRET: ${{ secrets.WX_SECRET }}
+          ENGINE: xfyun
+        run: node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
+
+  # ----------------------------------------------------------------
+  # main 分支 → prod 环境
+  # ----------------------------------------------------------------
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 类型检查与测试
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: 检查 secrets 是否配齐
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+          WXCLOUD_ENV_ID: ${{ secrets.WXCLOUD_ENV_ID }}
+          MYSQL_ADDRESS: ${{ secrets.MYSQL_ADDRESS }}
+          MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+        run: |
+          missing=""
+          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET; do
+            eval "v=\$"$k
+            [ -z "$v" ] && missing="$missing $k"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::缺少 secrets:$missing（配法见 AGENT.md §4.2）"
+            exit 1
+          fi
+          echo "secrets 齐全"
+
+      - name: 登录云托管
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+        run: ./node_modules/.bin/wxcloud login --appId "$WXCLOUD_APPID" --privateKey "$WXCLOUD_CLI_SECRET"
+
+      - name: 部署到 prod
+        env:
+          WXCLOUD_APPID: ${{ secrets.WXCLOUD_APPID }}
+          WXCLOUD_CLI_SECRET: ${{ secrets.WXCLOUD_CLI_SECRET }}
+          WXCLOUD_ENV_ID: ${{ secrets.WXCLOUD_ENV_ID }}
+          MYSQL_ADDRESS: ${{ secrets.MYSQL_ADDRESS }}
+          MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+          XFYUN_APP_ID: ${{ secrets.XFYUN_APP_ID }}
+          XFYUN_API_KEY: ${{ secrets.XFYUN_API_KEY }}
+          XFYUN_API_SECRET: ${{ secrets.XFYUN_API_SECRET }}
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_SECRET: ${{ secrets.WX_SECRET }}
+          ENGINE: xfyun
+          # ⚠️ prod 默认**不灌种子**（deploy 脚本里 target 为 prod 时是 false）。
+          #    首次部署 prod 时把仓库变量 SEED_ON_START 设为 true 跑一次，
+          #    否则 prod 句库是空的 —— 朗读页读不到正文。
+          SEED_ON_START: ${{ vars.SEED_ON_START }}
+        run: node tools/deploy-cloud.mjs prod --remark "CI prod ${{ github.sha }}"
