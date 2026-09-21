@@ -109,6 +109,13 @@
         <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{result.isPersonalBest && result.previousBest !== null}}">个人最好</text>
       </view>
 
+      <!-- ⭐ AI 点评：4-8 个字，一眼看完。
+           ⚠️ 拿不到（没配大模型 / 那次调用失败）就整块不渲染 ——
+              显示一个空标签比不显示更糟（用户会以为坏了）。 -->
+      <view class="mt-2" wx:if="{{result.aiComment}}">
+        <text class="text-24rpx text-brand bg-brand_10 rounded-full px-2.5 py-1">AI 点评 · {{result.aiComment}}</text>
+      </view>
+
       <!-- ⭐ 四维得分 —— 讯飞本来就会返回，以前只是没往外取。
            ⚠️ 完整度是**乘性因子**，所以「总分低」有两种原因：读不准，或没读完。
               下面那行提示就是用来把这两件事分开说的。 -->
@@ -150,6 +157,14 @@
           <text class="text-30rpx font-semibold text-ink">{{gapText}}</text>
         </view>
       </view>
+    </view>
+
+    <!-- ⭐ AI 教练的提升建议 —— 指明到具体的词/音，给一个能马上照做的练法。
+         ⚠️ 放在分数卡**下面**、榜单**上面**：先看分，再看「我该怎么练」，
+            榜单是跟别人比，属于下一层的信息。 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.aiAdvice}}">
+      <text class="text-26rpx font-semibold text-ink block">怎么练</text>
+      <text class="text-27rpx text-body block mt-2 leading-[1.7]">{{result.aiAdvice}}</text>
     </view>
 
     <!-- ⭐ Streak —— 结果页必须把「那天到底发生了什么」讲清楚：

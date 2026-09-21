@@ -3,9 +3,11 @@ import { CONQUEST_THRESHOLD, dayKey, latestBadge, scoreSentence, speechGaps } fr
 import type { StreakDelta } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
+import { env } from '../env'
 import { getEngine } from '../engines'
 import { getStorage } from '../storage'
 import { trackInvalid } from './quota'
+import { generateCoachFeedback } from './coach'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
 import { normalizeAudio, PCM_BYTES_PER_SEC } from './audio'
@@ -191,6 +193,39 @@ export async function runScoring(submissionId: string): Promise<void> {
     } else if (breakdown.gates.length > 0) {
       console.log('[scoring] id=' + submissionId + ' 触发门槛：' + breakdown.gates.join('；'))
     }
+
+    /**
+     * ⭐ AI 教练：出「4-8 字点评」+「提升建议」。
+     *
+     * ⚠️ 放在**翻状态之前**：客户端轮询到 scored 就停了，
+     *    点评若在这之后才写库，用户在结果页上永远看不到它。
+     * ⚠️ 失败/没配密钥 → 两个字段都是 null，结果页整块不渲染；
+     *    绝不能因为一个锦上添花的点评让这条成绩变成 failed。
+     */
+    const coach = breakdown
+      ? await generateCoachFeedback(
+          {
+            score,
+            parts: breakdown,
+            refText: article.contentJson ? await loadArticleRefText(article.contentJson) : '',
+            weakWords: [...words]
+              .sort((a, b) => a.score - b.score)
+              .slice(0, 3)
+              .map((w) => ({ word: w.word, score: w.score, dp: w.dp })),
+            badPhones: words.flatMap((w) => w.badPhones ?? []),
+            ...(result.syllableErrorRate === undefined
+              ? {}
+              : { syllableErrorRate: result.syllableErrorRate }),
+            longGapCount: gaps.longGapCount,
+            gated: breakdown.gates.length > 0,
+          },
+          {
+            apiKey: env.LLM_API_KEY ?? '',
+            baseUrl: env.LLM_BASE_URL ?? 'https://api.deepseek.com',
+            model: env.LLM_MODEL ?? 'deepseek-chat',
+          },
+        )
+      : null
     const isConquered = score >= CONQUEST_THRESHOLD
 
     // 是否第一次提交 / 第一次征服（用于更新 articles 的冗余计数）
@@ -227,6 +262,9 @@ void previousBest
         audioDurationMs,
         wordScores: result.words ? JSON.stringify(result.words) : null,
         dimensions: result.dimensions ? JSON.stringify(result.dimensions) : null,
+        // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
+        aiComment: coach?.comment ?? null,
+        aiAdvice: coach?.advice ?? null,
         scoredAt: new Date(),
       })
       .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))

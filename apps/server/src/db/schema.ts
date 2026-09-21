@@ -269,6 +269,17 @@ export const submissions = mysqlTable('submissions', {
   engine: varchar('engine', { length: 16 }),
   failReason: varchar('fail_reason', { length: 255 }),
 
+  /**
+   * ⭐ AI 教练的两样输出（见 services/coach.ts）。
+   *
+   * ⚠️ 为什么落库：它们要跟着这条成绩一起被反复读取（结果页、榜单、回看），
+   *    每次现算等于每次都调一次大模型 —— 那是不必要的钱。
+   * ⚠️ 允许为空：没配 LLM_API_KEY、或模型超时/返回不合法时就是空，
+   *    前端据此**整块不渲染**（而不是显示一个空框）。
+   */
+  aiComment: varchar('ai_comment', { length: 32 }),
+  aiAdvice: text('ai_advice'),
+
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   scoredAt: datetime('scored_at', { mode: 'date', fsp: 3 }),
 }, (t) => [

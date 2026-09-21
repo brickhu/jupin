@@ -253,6 +253,19 @@ export function parseIseXml(xml: string): ScoreResult {
       const sylls = Array.isArray(w.syll) ? w.syll : w.syll ? [w.syll] : []
       syllableTotal += sylls.length
       syllableErrors += sylls.filter((s: any) => Number(s['@_serr_msg'] ?? 0) !== 0).length
+      /**
+       * ⭐ 这个词里「明显读错」的音素。
+       *
+       * ⚠️ 阈值 -4 是实测出来的：读对的音素 gwpp 多在 -0.0x ~ -0.6，
+       *    而「读成另一个词」时会掉到 -5 ~ -7（见 docs/research/ise-response-fields.md）。
+       *    ⚠️ 整句的 gwpp 中位数**没有区分度**（各样本都差不多），
+       *    所以只在**音素级、带阈值**用它 —— 它是定位器，不是打分项。
+       */
+      const badPhones = sylls
+        .flatMap((s: any) => (Array.isArray(s.phone) ? s.phone : s.phone ? [s.phone] : []))
+        .filter((p: any) => Number(p['@_gwpp']) < -4)
+        .map((p: any) => String(p['@_content'] ?? ''))
+        .filter(Boolean)
       return {
         word: String(w['@_content'] ?? ''),
         score: Number(w['@_total_score'] ?? 0),
@@ -260,6 +273,7 @@ export function parseIseXml(xml: string): ScoreResult {
         // ⚠️ beg_pos/end_pos 单位是帧，每帧 10ms
         startMs: startFrame * 10,
         endMs: endFrame * 10,
+        ...(badPhones.length ? { badPhones } : {}),
       }
     })
     // ⚠️ ISE 会给**静音段**也造一个 content="sil" 的"词"（录音里有停顿时就会出现）。

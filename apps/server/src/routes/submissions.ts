@@ -348,6 +348,9 @@ async function describe(
     previousBest: previous,
     leaderboard,
     words: row.wordScores ? (JSON.parse(row.wordScores) as WordScore[]) : undefined,
+    // ⭐ AI 教练的输出（拿不到就是 undefined —— 没配大模型 / 那次调用失败）
+    ...(row.aiComment ? { aiComment: row.aiComment } : {}),
+    ...(row.aiAdvice ? { aiAdvice: row.aiAdvice } : {}),
     // ⚠️ 维度也必须从库里读回来，否则轮询取到的结果里四维会不见
     dimensions: row.dimensions ? (JSON.parse(row.dimensions) as ScoreDimensions) : undefined,
     streak: row.streakDelta ? (JSON.parse(row.streakDelta) as StreakDelta) : undefined,

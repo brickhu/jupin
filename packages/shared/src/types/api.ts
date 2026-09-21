@@ -109,6 +109,14 @@ export interface SubmissionStatusResponse {
 export interface SubmitResponse {
   /** 云端权威分 0–100 */
   score: number
+  /**
+   * ⭐ AI 教练的 4–8 字点评（展示用）。
+   * ⚠️ 可能没有：没配大模型、或调用失败 —— 前端据此整块不渲染，
+   *    而不是显示一个空框（见 services/coach.ts）。
+   */
+  aiComment?: string
+  /** ⭐ AI 教练的提升建议（给用户自己看，会指名到具体的词/音） */
+  aiAdvice?: string
   rank: number
   participantCount: number
   /** 距上一名还差多少分；null 表示已是第一 */

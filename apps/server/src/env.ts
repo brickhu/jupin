@@ -126,6 +126,18 @@ const schema = z.object({
   XFYUN_API_SECRET: z.string().optional(),
 
   /**
+   * ⭐ AI 教练（出「点评 + 提升建议」）用的大模型。
+   *
+   * ⚠️ 三个全空 = **整个功能关掉**（不产生任何费用）—— 这是刻意的：
+   *    它每次提交都要调一次模型，属于「每个用户每次都在烧钱」的那类能力，
+   *    不该在没打算付钱的环境里悄悄跑起来。
+   * ⚠️ 走到 OpenAI 兼容的 /chat/completions（DeepSeek、通义、Kimi 都是这套）。
+   */
+  LLM_API_KEY: z.string().optional(),
+  LLM_BASE_URL: z.string().optional(),
+  LLM_MODEL: z.string().optional(),
+
+  /**
    * 对象存储实现。
    * ⚠️ 音频必须走对象存储直传 —— 小程序→云托管服务的请求体上限是 100KiB
    *   （官方文档明写，超限报业务错误码 -606001），20 秒音频约 640KB 远超限制。

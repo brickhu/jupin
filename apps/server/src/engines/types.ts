@@ -41,6 +41,14 @@ export interface WordScore {
   dp: 'normal' | 'omission' | 'insertion' | 'repetition' | 'mispronunciation'
   startMs: number
   endMs: number
+  /**
+   * ⭐ 这个词里「明显读错」的音素（音标符号，如 dh / ih）。
+   *
+   * ⚠️ 判据是音素级 gwpp < -4 —— 实测读对的音素多在 -0.0x，读错时会掉到 -5 ~ -7。
+   *    它是**定位器**：告诉用户「哪个音不行」，不参与算分。
+   *    没有读错的音素时**整个字段不出现**（不是空数组）。
+   */
+  badPhones?: string[]
 }
 
 export interface SentenceScore {

@@ -220,6 +220,17 @@ for (const k of XFYUN_KEYS) {
   if (process.env[k]) params[k] = process.env[k]
 }
 
+/**
+ * ⭐ AI 教练用的大模型（出「点评 + 提升建议」）。
+ * ⚠️ 三个都只在**有值**时写入 —— 没配 = 这个功能在云端整个关掉，
+ *    不产生任何费用（每次提交都要调一次，属于要花钱的能力）。
+ * ⚠️ 三个必须**一起**带上：只给 key 不给 baseUrl/model 会退到默认的
+ *    DeepSeek 与 deepseek-chat，可能不是你想用的那个。
+ */
+for (const k of ['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL']) {
+  if (process.env[k]) params[k] = process.env[k]
+}
+
 // ⭐ 小程序凭据同上：**只在有值时写**，否则会把服务上已有的值抹掉
 for (const k of WX_KEYS) {
   if (process.env[k]) params[k] = process.env[k]
