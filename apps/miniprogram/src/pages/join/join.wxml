@@ -16,10 +16,13 @@
   <!-- left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
   <nav-bar id="nav" title="加入句拼" />
 
-  <!-- ⚠️ 这行说**它做什么**，不写抒情的话：
-       "它会出现在榜单上"回答不了"我为什么要填"，
-       "成绩记在这个名字下"才说明白了这个字段的作用 -->
-  <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">头像和昵称会显示在榜单上，你的成绩都记在这个名字下。</text>
+  <!-- ⭐ 品牌那句话（@jushuo/shared 的 BRAND.pitch）——
+       用户在这一页做的决定是"要不要加入"，先给他一个加入的理由，
+       再谈要填什么。三句定位各有各的位置，不要在这一页另抄一份。
+       ⚠️ 下面那行说的是**这个表单做什么**，与上面那句不重复：
+          "AI 评分冲排名"回答"这是什么产品"，"成绩记在这个名字下"回答"我为什么要填"。 -->
+  <text class="text-32rpx font-semibold text-ink block px-1 mb-2 leading-[1.5] text-center">{{brand.pitch}}</text>
+  <text class="text-26rpx text-muted block px-1 mb-3 leading-[1.6] text-center">头像和昵称会显示在榜单上，你的成绩都记在这个名字下。</text>
 
   <!-- autoFocus：新人进来就把微信昵称摆到键盘上方（见组件里的说明） -->
   <profile-form submit-label="确认加入" auto-focus="{{true}}" bind:saved="onSaved" />

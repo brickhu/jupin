@@ -1,3 +1,5 @@
+import { BRAND } from '@jushuo/shared'
+
 import { HOME_PAGE } from '../../lib/join'
 import { navPadTop } from '../../lib/nav'
 
@@ -18,6 +20,8 @@ import { navPadTop } from '../../lib/nav'
  */
 Page({
   data: {
+    /** ⭐ 定位文案来自 @jushuo/shared/brand.ts —— 不要在页面里另抄一份 */
+    brand: BRAND,
     /** 导航栏让出的高度（见 lib/nav.ts） */
     navTop: 0,
   },
