@@ -19,33 +19,28 @@ authRoutes.post('/login', async (c) => {
   const { code, as } = await c.req.json<{ code?: string; as?: string }>()
   if (!code) return c.json({ ok: false, error: '缺少 code' }, 400)
 
+  const appId = process.env.WX_APPID
+  const secret = process.env.WX_SECRET
+
   let openid: string
-  if (env.NODE_ENV !== 'production') {
+  if (appId && secret) {
     /**
-     * 开发环境：伪 openid，免得必须配 WX_SECRET 才能联调。
+     * ⭐ 真实路径 —— **本地也走这条**。
      *
-     * ⚠️⚠️ 它必须是**稳定的**，不能拿 code 现算（曾经是 `dev_${code}`）。
+     * ⚠️⚠️ 「本地换不到真 openid，只能用假的」是个**误解**：
+     *    开发者工具里的 wx.login 拿到的 code 是**真的**，
+     *    换回来的就是**开发者本人微信账号的 openid**（跟真机上是同一个）。
+     *    所以判据是"配没配 appid/secret"，**不是** NODE_ENV。
      *
-     *    code 每次 wx.login 都不一样，而小程序**每次启动都会调一次 login()**
-     *    （见 app.ts 的 onLaunch）—— 于是每次重新加载都换一个 openid，
-     *    也就是每次都变成"一个刚注册、还没起过名字的新用户"。
+     *    之前按 NODE_ENV 分流、本地用 `dev_${code}` 合成 openid，代价很大：
+     *    code 每次 wx.login 都变，而小程序每次启动都登录一次（app.ts 的 onLaunch）
+     *    ⇒ 每次重新加载都换一个 openid = 每次都变成"刚注册、还没起过名字的新用户"。
      *    症状就是那句让人抓狂的话：「我明明加入过了，怎么又让我加入」。
-     *
-     *    ⚠️ 这个坑只在本地出现：线上身份由微信那侧的真实 openid 决定，
-     *       跟 code 换不换没有关系。
-     *
-     * ⭐ 想开第二个测试账号：请求体里带 `as`（或改 .env.local 的 DEV_OPENID 后重启）。
-     *    只放行 [A-Za-z0-9_]，且一律以 dev_ 开头 —— 本地那些"只动 dev_ 账号"的
-     *    工具（tools/dev-unlock.mjs、services/user.ts 的自动会员）才会认它。
+     *    ——身份本来就在，是我们自己把它丢了，不是"本地拿不到"。
      */
-    const name = typeof as === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(as) ? as : (process.env.DEV_OPENID ?? 'local')
-    openid = `dev_${name}`
-  } else {
-    const appId = process.env.WX_APPID
-    const secret = process.env.WX_SECRET
     const url = new URL('https://api.weixin.qq.com/sns/jscode2session')
-    url.searchParams.set('appid', appId ?? '')
-    url.searchParams.set('secret', secret ?? '')
+    url.searchParams.set('appid', appId)
+    url.searchParams.set('secret', secret)
     url.searchParams.set('js_code', code)
     url.searchParams.set('grant_type', 'authorization_code')
     const res = await fetch(url)
@@ -54,6 +49,20 @@ authRoutes.post('/login', async (c) => {
       return c.json({ ok: false, error: `微信登录失败: ${data.errmsg ?? 'unknown'}` }, 401)
     }
     openid = data.openid
+  } else {
+    /**
+     * 兜底：连 appid/secret 都没配（只想跑个离线 mock）→ 合成一个**稳定**的假身份。
+     *
+     * ⚠️ 它必须是稳定的，不能拿 code 现算（理由同上）。
+     * ⚠️ 而且**绝不能是生产环境**：线上没配密钥应该直接失败，而不是给每个人
+     *    发一个共享的假账号 —— 那等于把所有人的成绩混在一条记录里。
+     */
+    if (env.NODE_ENV === 'production') {
+      return c.json({ ok: false, error: '服务端未配置 WX_APPID / WX_SECRET，无法登录' }, 500)
+    }
+    const name = typeof as === 'string' && /^[A-Za-z0-9_]{1,16}$/.test(as) ? as : (process.env.DEV_OPENID ?? 'local')
+    console.warn(`[auth] 未配置 WX_APPID/WX_SECRET，使用合成的本地身份 dev_${name}`)
+    openid = `dev_${name}`
   }
 
   const user = await getOrCreateUserByOpenid(openid)

@@ -11,27 +11,26 @@ export type User = typeof users.$inferSelect
 const DEV_MEMBER_UNTIL = new Date('2099-01-01T00:00:00Z')
 
 /**
- * 判断这是不是一个「本地联调账号」。
+ * 这是不是一个「本地联调环境」—— 是的话，账号一律给会员。
  *
  * ⚠️⚠️ 为什么这件事必须做进服务端，而不是靠 `tools/dev-unlock.mjs` 手动跑一次：
- *    开发者工具**每次登录都可能创建一个全新的 `dev_*` 账号`
- *    （见 routes/auth.ts：开发环境直接拿 code 当伪 openid）。
- *    手动脚本只能覆盖「它跑的那一刻已经存在」的账号 ——
- *    之后新建的账号照样没有会员，于是测试到一半突然被告知「挑战冷却中」。
+ *    手动脚本只能覆盖「它跑的那一刻已经存在」的账号，之后新建的照样没有会员，
+ *    于是测试到一半突然被告知「今天的挑战次数用完了」。
+ *    这件事**真实发生过**，而且极难排查 —— 报错看起来像额度逻辑被改坏了，
+ *    实际上是账号刚出生。凡是「靠人工记得跑一次」的开关，迟早会忘。
  *
- *    这件事**真实发生过**，而且极难排查：报错看起来像是冷却逻辑被改坏了，
- *    实际上是账号是新的、用户根本不知道自己在用一个刚出生的账号。
- *    凡是「靠人工记得跑一次」的开关，迟早会忘 —— 所以把它变成不变量。
+ * ⚠️ 判据只有**一条**：NODE_ENV 不是 production。
  *
- * 判据是**两道**，缺一不可：
- *   ① NODE_ENV 不是 production —— 生产环境一律不认，这条是硬闸
- *   ② openid 以 `dev_` 开头 —— 只有本地登录路径（routes/auth.ts）会造出这种 openid
+ *    以前还要求"openid 以 dev_ 开头"，那是建立在"本地用合成 openid"之上的。
+ *    现在本地走的是**真实登录**（模拟器里 wx.login 给的 code 也是真的，
+ *    换回来就是开发者本人微信账号的真实 openid，见 routes/auth.ts），
+ *    真实 openid 当然没有 dev_ 前缀 —— 按前缀判断会让本地账号
+ *    全部掉回免费档（每天 1 次），本地根本没法测。
  *
- * ⚠️ 光看前缀不够：微信真实 openid 的字符集也含下划线，
- *    理论上存在以 `dev_` 开头的真实用户。加上 ① 就彻底排除了。
+ *    ⚠️ 生产环境这条永远不成立，所以它不可能泄漏到线上。
  */
-function isLocalDevAccount(openid: string): boolean {
-  return env.NODE_ENV !== 'production' && openid.startsWith('dev_')
+function isLocalDevEnv(): boolean {
+  return env.NODE_ENV !== 'production'
 }
 
 /**
@@ -43,7 +42,7 @@ function isLocalDevAccount(openid: string): boolean {
  * ⚠️ 有 already 短路，不会每个请求都写库。
  */
 async function withLocalDevPrivilege(user: User): Promise<User> {
-  if (!isLocalDevAccount(user.openid)) return user
+  if (!isLocalDevEnv()) return user
 
   const alreadyMember = user.memberUntil !== null && user.memberUntil.getTime() >= DEV_MEMBER_UNTIL.getTime()
   if (alreadyMember) return user
@@ -69,7 +68,7 @@ export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
   await db.insert(users).ignore().values({
     openid,
     // ⭐ 建号时就带上会员，省掉一次 UPDATE
-    ...(isLocalDevAccount(openid) ? { memberUntil: DEV_MEMBER_UNTIL } : {}),
+    ...(isLocalDevEnv() ? { memberUntil: DEV_MEMBER_UNTIL } : {}),
   })
 
   const [created] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
