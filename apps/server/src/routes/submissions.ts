@@ -333,8 +333,15 @@ async function describe(
     getBestExcluding(articleId, userId, submissionId),
   ])
 
+  /**
+   * ⚠️ score 这一列是 DECIMAL —— drizzle 读回来是**字符串**（见 schema 里的说明）。
+   *    对外一律换成数字：客户端要拿它排序、显示、比大小，
+   *    而 '78.3' > 9 这种字符串比较会给出"看起来对但其实错"的结果。
+   */
+  const scoreNum = Number(row.score)
+
   const result: SubmitResponse = {
-    score: row.score,
+    score: scoreNum,
     rank: rankInfo.rank,
     participantCount: rankInfo.participantCount,
     gapToPrev: rankInfo.gapToPrev,
@@ -344,7 +351,7 @@ async function describe(
     articleId: row.articleId,
     // ⚠️ 从库里读回来，不是写死 —— 用户可能在结果页改过（见 /visibility）
     isPublic: row.isPublic,
-    isPersonalBest: previous === null || row.score > previous,
+    isPersonalBest: previous === null || scoreNum > previous,
     isConquered: row.isConquered ?? false,
     previousBest: previous,
     leaderboard,

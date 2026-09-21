@@ -1,0 +1,1 @@
+ALTER TABLE `submissions` MODIFY COLUMN `score` decimal(5,1);

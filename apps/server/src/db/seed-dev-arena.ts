@@ -200,7 +200,8 @@ async function main(): Promise<void> {
         seq,
         scheduleDate: date,
         status: 'scored',
-        score,
+        // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）
+        score: Number(score).toFixed(1),
         isConquered: score >= CONQUEST_THRESHOLD,
         audioKey: makeAudioKey(articleId, userId, at.getTime()),
         audioBytes: 40000 + Math.round(rnd() * 60000),

@@ -104,7 +104,7 @@
   <block wx:if="{{phase === 'done' && result}}">
     <view class="bg-white rounded-2.5 p-3.5 mb-3">
       <view class="flex items-baseline">
-        <text class="text-96rpx font-bold text-ink">{{result.score}}</text>
+        <text class="text-96rpx font-bold text-ink">{{scoreText}}</text>
         <text class="text-28rpx text-faint ml-1">分</text>
         <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{result.isPersonalBest && result.previousBest !== null}}">个人最好</text>
       </view>
@@ -211,10 +211,10 @@
     <!-- 榜单 -->
     <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.leaderboard.length > 0}}">
       <text class="text-24rpx text-faint block mb-2">榜单</text>
-      <view class="flex items-center py-1.5" wx:for="{{result.leaderboard}}" wx:key="rank">
+      <view class="flex items-center py-1.5" wx:for="{{leaderboard}}" wx:key="rank">
         <text class="text-26rpx w-[60rpx] text-faint">{{item.rank}}</text>
         <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
-        <text class="text-26rpx font-semibold text-ink">{{item.score}}</text>
+        <text class="text-26rpx font-semibold text-ink">{{item.scoreText}}</text>
       </view>
     </view>
 

@@ -255,7 +255,8 @@ void previousBest
       .update(submissions)
       .set({
         status: 'scored',
-        score,
+        // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）；数值本身是一位小数
+        score: score.toFixed(1),
         isConquered,
         // ⚠️ 归一化后字节数/时长变了，必须一起写回来
         audioBytes,

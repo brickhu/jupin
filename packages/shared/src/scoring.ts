@@ -157,14 +157,38 @@ export function scoreSentence(words: ScorableWord[], signals: SentenceSignals = 
   }
 
   return {
-    score: Math.round(clamp100(score)),
-    prosody: Math.round(prosody),
-    weakness: Math.round(weakness),
-    accuracy: Math.round(accuracy),
-    fluency: Math.round(fluency),
-    completeness: Math.round(completeness),
+    score: round1(clamp100(score)),
+    prosody: round1(prosody),
+    weakness: round1(weakness),
+    accuracy: round1(accuracy),
+    fluency: round1(fluency),
+    completeness: round1(completeness),
     gates,
   }
+}
+
+/**
+ * ⭐ 分值一律**保留一位小数**（全站统一，展示与存储同一口径）。
+ *
+ * ⚠️⚠️ 为什么不是整数：这是个**排行**产品，整数分会让大量人卡在同一个分上 ——
+ *    名次只能靠「谁先提交」之类与朗读无关的顺序决定，而用户看到的是
+ *    「我 78 分也是第 9 名、他 78 分也是第 9 名」。一位小数把这种并列砍掉一大半。
+ * ⚠️ 只在**出口**取整一次：中间过程（加权、封顶）保持全精度，
+ *    否则多次 round 会累积偏差，总分和分项加起来对不上。
+ */
+export function round1(v: number): number {
+  return Math.round(v * 10) / 10
+}
+
+/**
+ * ⭐ 分值的**显示**格式 —— 全站统一一位小数。
+ *
+ * ⚠️ 只在展示这一层用；比较、排序、入库一律用数值本身。
+ * ⚠️ 拿不到分（null / NaN）时给一个短横线，而不是 0.0 ——
+ *    「0.0 分」和「还不知道」是两件事。
+ */
+export function formatScore(v: number | null | undefined): string {
+  return v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(1)
 }
 
 

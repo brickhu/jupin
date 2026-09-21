@@ -1,6 +1,8 @@
 import { startButtonLabel } from '@jushuo/shared'
 import type { ScheduleDetail } from '@jushuo/shared'
 import { fetchScheduleDetail } from '../../lib/api/client'
+import { formatScore } from '@jushuo/shared'
+
 import { ensureJoined } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -34,6 +36,8 @@ Page({
     topScore: null as number | null,
     participantCount: 0,
     myBest: null as number | null,
+    /** myBest 的展示形态（一位小数）—— WXML 里没法调 toFixed */
+    myBestText: '—',
     myRank: null as number | null,
     myBeatenCount: null as number | null,
     /** '立即朗读，参与挑战' / '重新朗读，再次冲榜' —— 来自 startButtonLabel，与首页共用 */
@@ -98,7 +102,8 @@ Page({
         stat: this.statText(d),
         topScore: d.topScore,
         participantCount: d.participantCount,
-        leaderboard: d.leaderboard,
+        // ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径
+        leaderboard: d.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
       })
       this.render()
     } catch (err) {
@@ -116,6 +121,7 @@ Page({
     const mine = me.arenaOf(this.data.articleId)
     this.setData({
       myBest: mine.myBest,
+      myBestText: formatScore(mine.myBest),
       myRank: this.detail.myRank,
       myBeatenCount: this.detail.myBeatenCount,
       // ⚠️ 与首页共用同一份实现（@jushuo/shared 的 startButtonLabel）——
@@ -134,7 +140,7 @@ Page({
    */
   statText(d: ScheduleDetail): string {
     if (d.participantCount === 0) return ''
-    const top = d.topScore === null ? '' : '，最高得分 ' + d.topScore
+    const top = d.topScore === null ? '' : '，最高得分 ' + formatScore(d.topScore)
     return d.participantCount + ' 人参与' + top
   },
 

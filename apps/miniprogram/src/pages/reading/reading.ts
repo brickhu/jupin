@@ -2,6 +2,8 @@ import {
   AUDIO_SPEC,
   MS_PER_WORD,
   PREFLIGHT,
+  formatScore,
+  type LeaderboardRow,
   type ScoreParts,
   WORD_GREEN_LINE,
   pcmToWav,
@@ -283,6 +285,10 @@ Page({
     streak: null as StreakDelta | null,
     gapText: '—',
     /** 四维得分（引擎没返回时为空数组，整块不渲染） */
+    /** 总分（展示用，一位小数）—— 别直接渲染 result.score，那会把 78 显示成 78 */
+    scoreText: '',
+    /** 榜单行（多带一个 scoreText，见 applyResult） */
+    leaderboard: [] as (LeaderboardRow & { scoreText: string })[],
     dimensions: [] as DimensionView[],
     /** 给四个数字配的一句「所以呢」—— 光有数字用户不知道该练什么 */
     dimensionHint: '',
@@ -523,6 +529,18 @@ Page({
   msPerWord: DEFAULT_MS_PER_WORD,
 
   onUnload() {
+    /**
+     * ⭐ 打完分、又离开了结果页 → 本地这段录音才算**真正消费掉**。
+     *
+     * ⚠️⚠️ 为什么挪到这里、而不是提交成功那一刻：
+     *    清掉会把槽位目录整个删除（录音原件 + 试听 WAV），
+     *    而结果页上那个「试听」按钮播的正是它。删早了 = 按钮点了没反应。
+     *    放在这一页的生命周期末尾，两条目的同时满足：
+     *      · 用户在结果页上还能回听自己刚读的；
+     *      · 下次进这一句不会再恢复出旧录音（防「隔天点一下提交」白拿 streak）。
+     */
+    if (this.data.phase === 'done' && this.recordingKey) clearLastRecording(this.recordingKey)
+
     /**
      * ⭐ 先立旗子再停录音。
      *
@@ -1114,19 +1132,12 @@ Page({
 
     // ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**，本地这份必须清。
     //
-    //    ① 留着没有用：结果页**没有试听入口**（试听只在「已录好」那一屏，
-    //       即 phase === 'recorded'），留着也点不到。
-    //    ② 留着有害：下次进这一句时它会被恢复成「已录好」，
-    //       于是用户能把**上一次的录音当成今天的读**再提交一遍 ——
-    //       而每次上传的 audioKey 都是新的（makeAudioKey 里带 Date.now()），
-    //       服务端按 (userId, audioKey) 幂等，认不出这是同一段声音，
-    //       于是隔天点一下「提交检测」就能白拿一天 streak。
-    //
-    //    ⚠️ 但**只在这一条路径上清**。下面这些路径都不清：
-    //      · 提交失败 / 冷却中（catch 分支）
-    //      · 轮询连续失败放弃（pollResult）
-    //      那些场景用户要的正是「别让我重读一遍」，缓存就是为它们留的。
-    if (this.recordingKey) clearLastRecording(this.recordingKey)
+    //    ⚠️⚠️ 但它**不能在这里清** —— 结果页现在有「试听我的录音」，
+    //       而 clearLastRecording 会**把槽位目录整个删掉**（录音原件 + 试听 WAV），
+    //       删在这儿等于用户点开结果页，试听按钮指向的文件已经没了。
+    //    ⇒ 改成**离开这一页时**再清（见 onUnload 的说明）：
+    //      反滥用要的是「下次进这一句时不能恢复出这段录音」，
+    //      而这一页还开着的时候，用户本来就该能把刚提交的那段听一遍。
 
     this.setData({
       phase: 'done',
@@ -1141,6 +1152,8 @@ Page({
       words: this.renderScore(this.plainWords, result.words ?? []),
       dimensions: this.renderParts(result.parts),
       dimensionHint: this.partHint(result.parts),
+      scoreText: formatScore(result.score),
+      leaderboard: result.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
     })
   },
 
@@ -1159,7 +1172,8 @@ Page({
       return {
         key,
         label,
-        value: String(v),
+        // ⚠️ 统一一位小数（formatScore）—— 和总分、榜单同一口径
+        value: formatScore(v),
         pct: Math.max(0, Math.min(100, v)),
         textCls: `text-${level}`,
         barCls: `bg-${level}`,

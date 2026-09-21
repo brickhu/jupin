@@ -1,4 +1,4 @@
-import { BRAND, startButtonLabel } from '@jushuo/shared'
+import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
 import { ensureJoined, refreshMe } from '../../lib/join'
@@ -135,7 +135,8 @@ function hintText(mine: ArenaRecord): string {
   if (mine.myAttempts <= 0) return '还未参与挑战'
   const times = '你已经参与 ' + mine.myAttempts + ' 次挑战'
   if (mine.myBest === null) return times
-  return times + ' · 最高得分 ' + mine.myBest
+  // ⚠️ 分值全站统一一位小数（formatScore）
+  return times + ' · 最高得分 ' + formatScore(mine.myBest)
 }
 
 Page({

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
-  mysqlTable, int, varchar, boolean, datetime, text, index, uniqueIndex,
+  mysqlTable, int, varchar, boolean, datetime, decimal, text, index, uniqueIndex,
 } from 'drizzle-orm/mysql-core'
 
 /**
@@ -209,8 +209,18 @@ export const submissions = mysqlTable('submissions', {
    *    但同一条音频最多重跑 MAX_SCORING_ATTEMPTS 次，之后判 failed 并让用户重录。
    */
   attempts: int('attempts').notNull().default(0),
-  /** 讯飞总分 0–100 */
-  score: int('score'),
+  /**
+   * ⭐ 总分 0–100，**保留一位小数**。
+   *
+   * ⚠️⚠️ 为什么不用整数：这是个排行产品，整数分会让大量人卡在同一个分上，
+   *    名次只能靠与朗读无关的顺序（谁先提交）决定 —— 而用户看到的是
+   *    「我 78 分第 9 名、他也 78 分第 9 名」。一位小数把并列砍掉一大半。
+   * ⚠️ 用 DECIMAL 而不是 FLOAT：分数要参与比较与并列判定，
+   *    浮点的表示误差会让"看起来相等"的两个分在某些位上不相等。
+   * ⚠️ drizzle 读 DECIMAL 回来是**字符串**，用之前必须 Number() ——
+   *    tsconfig 会逼着你处理（这也是选它的副作用，好处是不会静默当成数字用）。
+   */
+  score: decimal('score', { precision: 5, scale: 1 }),
   /** score >= CONQUEST_THRESHOLD */
   isConquered: boolean('is_conquered'),
 

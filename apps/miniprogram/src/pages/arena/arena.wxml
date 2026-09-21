@@ -37,7 +37,7 @@
       <view class="flex">
         <view class="flex-1">
           <text class="text-22rpx text-faint block">我的成绩</text>
-          <text class="text-40rpx font-bold text-ink">{{myBest}}</text>
+          <text class="text-40rpx font-bold text-ink">{{myBestText}}</text>
         </view>
         <view class="flex-1">
           <text class="text-22rpx text-faint block">我的名次</text>
@@ -65,7 +65,7 @@
             wx:for="{{leaderboard}}" wx:key="rank">
         <text class="text-26rpx w-[64rpx] text-faint">{{item.rank}}</text>
         <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
-        <text class="text-28rpx font-semibold text-ink">{{item.score}}</text>
+        <text class="text-28rpx font-semibold text-ink">{{item.scoreText}}</text>
       </view>
 
       <!-- ⚠️ 只列前 20。名次靠后的人在这里看不到自己，得明说 —— -->

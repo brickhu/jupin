@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import { WORD_GREEN_LINE } from './constants/index'
-import { GATE_INCOMPLETE, SCORE_WEIGHTS, scoreSentence, sentenceScore, speechGaps } from './scoring'
+import {
+  formatScore,
+  GATE_INCOMPLETE,
+  SCORE_WEIGHTS,
+  scoreSentence,
+  sentenceScore,
+  speechGaps,
+} from './scoring'
 
 /**
  * ⚠️ 这里的每一条都是**产品口径**，不是数值精度：
@@ -67,13 +74,33 @@ describe('scoreSentence —— 校准后的总分', () => {
     expect(r?.score).toBeGreaterThan(80)
   })
 
-  it('始终落在 0–100 的整数上', () => {
+  it('⭐ 分值一律保留一位小数（排行要靠它拉开并列）', () => {
     for (const s of [0, 1, 33.3, 66.6, 99.9, 100]) {
       const r = scoreSentence(same(s, 7), {})
-      expect(Number.isInteger(r?.score)).toBe(true)
-      expect(r?.score).toBeGreaterThanOrEqual(0)
-      expect(r?.score).toBeLessThanOrEqual(100)
+      const v = r?.score as number
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(100)
+      // 乘以 10 之后必须是整数 —— 也就是「最多一位小数」
+      expect(Math.round(v * 10)).toBeCloseTo(v * 10, 8)
+      expect(formatScore(v)).toMatch(/^\d+\.\d$/)
     }
+  })
+
+  it('分项也保留一位小数', () => {
+    const r = scoreSentence(same(77, 7), { accuracy: 77.7, fluency: 61.4, standard: 55.5, integrity: 100 })
+    for (const k of ['prosody', 'weakness', 'accuracy', 'fluency', 'completeness'] as const) {
+      const v = r?.[k] as number
+      expect(Math.round(v * 10)).toBeCloseTo(v * 10, 8)
+    }
+    expect(r?.score).toBeGreaterThan(0)
+  })
+
+  it('⚠️ formatScore：null / NaN 给短横线，不是 0.0', () => {
+    expect(formatScore(null)).toBe('—')
+    expect(formatScore(undefined)).toBe('—')
+    expect(formatScore(Number.NaN)).toBe('—')
+    expect(formatScore(78)).toBe('78.0')
+    expect(formatScore(78.34)).toBe('78.3')
   })
 
   it('分项都在 0–100 之间（展示用）', () => {
