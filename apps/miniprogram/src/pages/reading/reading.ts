@@ -2,6 +2,7 @@ import {
   AUDIO_SPEC,
   MS_PER_WORD,
   PREFLIGHT,
+  type ScoreParts,
   WORD_GREEN_LINE,
   pcmToWav,
   today,
@@ -192,11 +193,25 @@ interface DimensionView {
  * ⚠️ 前三项是「加权的分项」，第四项是**乘性的闸门** —— 顺序不能随便打乱，
  *    否则用户没法把四个数字和总分对上。
  */
-const DIMENSION_META: { key: keyof ScoreDimensions; label: string }[] = [
-  { key: 'accuracy', label: '准确度' },
-  { key: 'fluency', label: '流利度' },
-  { key: 'standard', label: '标准度' },
-  { key: 'integrity', label: '完整度' },
+/**
+ * ⭐ 「评分详情」显示的是**我们自己那套打分的分项**，不是引擎返回的四维。
+ *
+ * ⚠️⚠️ 为什么不能直接摆引擎那四维：总分已经不按它们等权算了 ——
+ *    摆在一起用户对不上（「我准确度 91，为什么总分 85」），
+ *    而且完整度对能读完的人恒为 100，摆在四位里纯属占位置。
+ *    这里五项**加起来就是那个总分**（权重见 @jushuo/shared 的 SCORE_WEIGHTS）。
+ *
+ * ⚠️ 标签用大白话：standard 在引擎文档里叫「标准度」，但那是引擎的内部叫法，
+ *    它量的其实是语调/韵律；给用户看就叫「语调」。
+ */
+type PartKey = 'prosody' | 'weakness' | 'accuracy' | 'fluency' | 'completeness'
+
+const PART_META: { key: PartKey; label: string }[] = [
+  { key: 'prosody', label: '语调' },
+  { key: 'weakness', label: '咬字' },
+  { key: 'accuracy', label: '发音' },
+  { key: 'fluency', label: '流利' },
+  { key: 'completeness', label: '完整' },
 ]
 
 Page({
@@ -1124,26 +1139,27 @@ Page({
       streak: result.streak ?? null,
       gapText: result.gapToPrev === null ? '已是第一' : result.gapToPrev + ' 分',
       words: this.renderScore(this.plainWords, result.words ?? []),
-      dimensions: this.renderDimensions(result.dimensions),
-      dimensionHint: this.dimensionHint(result.dimensions),
+      dimensions: this.renderParts(result.parts),
+      dimensionHint: this.partHint(result.parts),
     })
   },
 
   /**
-   * 四维得分 → 展示视图。
+   * 分项明细 → 展示视图。
    *
-   * ⚠️ 引擎没返回时必须返回空数组，让整块**不渲染** ——
-   *    绝不能补 0：界面上出现「完整度 0」会被理解成「我一个词都没读」。
+   * ⚠️ 拿不到时必须返回空数组，让整块**不渲染** ——
+   *    绝不能补 0：界面上出现「完整 0」会被理解成「我一个词都没读」。
+   *    （老成绩没有这个字段，正好走这条路。）
    */
-  renderDimensions(d?: ScoreDimensions): DimensionView[] {
-    if (!d) return []
-    return DIMENSION_META.map(({ key, label }) => {
-      const v = d[key]
+  renderParts(p?: ScoreParts): DimensionView[] {
+    if (!p) return []
+    return PART_META.map(({ key, label }) => {
+      const v = p[key]
       const level = v < WORD_BAD ? 'bad' : v < WORD_GOOD ? 'warn' : 'ok'
       return {
         key,
         label,
-        value: Number.isInteger(v) ? String(v) : v.toFixed(1),
+        value: String(v),
         pct: Math.max(0, Math.min(100, v)),
         textCls: `text-${level}`,
         barCls: `bg-${level}`,
@@ -1152,24 +1168,28 @@ Page({
   },
 
   /**
-   * 给四维得分配一句「所以呢」。
+   * 给分项配一句「所以呢」—— 说出**最拖后腿的那一项**。
    *
-   * ⭐ 为什么值得算这一句：讯飞总分公式里**完整度是乘性因子** ——
-   *    「总分低」有两种完全不同的原因：发音不准，或者没读完。
-   *    只丢四个数字给用户，他不知道该练哪个；差值才是可行动的信息。
+   * ⭐ 为什么值得算这一句：五个数字摆在那儿，用户不知道该练哪个。
+   *    挑出最低的那一项单独说，才是可行动的信息。
+   *
+   * ⚠️ 完整性要**优先说**：它一旦掉下来，说明句子没读完或读成了别的词 ——
+   *    那不是「某一项弱」，是这次朗读本身不成立（分数还被封了顶）。
    */
-  dimensionHint(d?: ScoreDimensions): string {
-    if (!d) return ''
-    if (d.integrity < 90) {
-      return '完整度偏低：有漏读或增读，总分会被按比例整体拉低 —— 读准 ≠ 读完'
+  partHint(p?: ScoreParts): string {
+    if (!p) return ''
+    if (p.completeness < 90) {
+      return '这次有漏读或读成了别的词 —— 先把整句读完，再谈发音'
     }
-    if (d.accuracy < d.fluency - 10) {
-      return '读得挺顺，但准确度明显偏低 —— 先纠发音，别求快'
-    }
-    if (d.standard < 85) {
-      return '标准度偏低：音节、重音与标准音还有差距'
-    }
-    return ''
+    // 剩下的四项里挑最低的那个说
+    const items: { key: PartKey; v: number; text: string }[] = [
+      { key: 'prosody', v: p.prosody, text: '语调偏平：重音和升降调还没出来，听着像在念字' },
+      { key: 'weakness', v: p.weakness, text: '咬字不匀：大部分词清楚，但有几个词明显没读准' },
+      { key: 'accuracy', v: p.accuracy, text: '发音有硬伤：有几个音素不对，跟着音标单独纠' },
+      { key: 'fluency', v: p.fluency, text: '流利度偏低：词与词之间卡顿多，先顺下来再求准' },
+    ]
+    const worst = items.reduce((a, b) => (b.v < a.v ? b : a))
+    return worst.v < WORD_GOOD ? worst.text : ''
   },
 
   renderScore(plain: string[], scored: SubmitWord[]): WordView[] {

@@ -265,6 +265,8 @@ void previousBest
         // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
         aiComment: coach?.comment ?? null,
         aiAdvice: coach?.advice ?? null,
+        // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
+        scoreParts: breakdown ? JSON.stringify(breakdown) : null,
         scoredAt: new Date(),
       })
       .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))

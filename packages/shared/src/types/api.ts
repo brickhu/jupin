@@ -1,4 +1,5 @@
 import type { BadgeDef } from '../badges'
+import type { ScoreParts } from '../scoring'
 
 /**
  * 引擎输出的词级结果。
@@ -117,6 +118,14 @@ export interface SubmitResponse {
   aiComment?: string
   /** ⭐ AI 教练的提升建议（给用户自己看，会指名到具体的词/音） */
   aiAdvice?: string
+  /**
+   * ⭐ **我们自己那套打分的分项明细** —— 结果页的「评分详情」显示的就是它。
+   *
+   * ⚠️ 不要拿引擎那四维（accuracy/fluency/standard/integrity）当详情：
+   *    总分已经不按它们等权算了，摆在一起用户对不上（「我准确度 91，为什么总分 85」）。
+   *    这里给的正是总分的五个组成部分，加起来就是那个分。
+   */
+  parts?: ScoreParts
   rank: number
   participantCount: number
   /** 距上一名还差多少分；null 表示已是第一 */

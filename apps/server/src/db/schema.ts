@@ -280,6 +280,17 @@ export const submissions = mysqlTable('submissions', {
   aiComment: varchar('ai_comment', { length: 32 }),
   aiAdvice: text('ai_advice'),
 
+  /**
+   * ⭐ 我们自己那套打分的**分项明细**（JSON：五个分项 + 触发过的门槛）。
+   *
+   * ⚠️ 为什么必须落库、不能现算：
+   *    结果页要显示「你这分是怎么来的」，而现算需要 `syllableErrorRate` 这类
+   *    只在打分那一刻存在的中间量（引擎的返回早就不在了）。
+   *    存下来还有一个好处：**分的口径改了以后，老成绩的口径不会跟着变** ——
+   *    榜单上同一个分数，不能今天和明天的解释不一样。
+   */
+  scoreParts: text('score_parts'),
+
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   scoredAt: datetime('scored_at', { mode: 'date', fsp: 3 }),
 }, (t) => [

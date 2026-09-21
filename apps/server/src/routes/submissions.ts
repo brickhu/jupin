@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import type {
   ScoreDimensions,
+  ScoreParts,
   StreakDelta,
   SubmissionStatusResponse,
   SubmitResponse,
@@ -351,6 +352,8 @@ async function describe(
     // ⭐ AI 教练的输出（拿不到就是 undefined —— 没配大模型 / 那次调用失败）
     ...(row.aiComment ? { aiComment: row.aiComment } : {}),
     ...(row.aiAdvice ? { aiAdvice: row.aiAdvice } : {}),
+    // ⭐ 分项明细 —— 结果页的「评分详情」显示它，而不是引擎那四维
+    ...(row.scoreParts ? { parts: JSON.parse(row.scoreParts) as ScoreParts } : {}),
     // ⚠️ 维度也必须从库里读回来，否则轮询取到的结果里四维会不见
     dimensions: row.dimensions ? (JSON.parse(row.dimensions) as ScoreDimensions) : undefined,
     streak: row.streakDelta ? (JSON.parse(row.streakDelta) as StreakDelta) : undefined,

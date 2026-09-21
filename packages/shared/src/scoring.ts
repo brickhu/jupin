@@ -62,6 +62,12 @@ export interface SentenceSignals {
   longestGapMs?: number
 }
 
+/**
+ * ⭐ 分项的对外形态（结果页「评分详情」用）。
+ * ⚠️ 就是 ScoreBreakdown 去掉最终分 —— 客户端不需要再传一个总分回来。
+ */
+export type ScoreParts = Omit<ScoreBreakdown, 'score'>
+
 export interface ScoreBreakdown {
   /** 最终分（0–100 整数） */
   score: number

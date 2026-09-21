@@ -116,9 +116,11 @@
         <text class="text-24rpx text-brand bg-brand_10 rounded-full px-2.5 py-1">AI 点评 · {{result.aiComment}}</text>
       </view>
 
-      <!-- ⭐ 四维得分 —— 讯飞本来就会返回，以前只是没往外取。
-           ⚠️ 完整度是**乘性因子**，所以「总分低」有两种原因：读不准，或没读完。
-              下面那行提示就是用来把这两件事分开说的。 -->
+      <!-- ⭐ 评分详情 = **我们自己那套打分的五个分项**，五项加权就是上面那个总分。
+           ⚠️⚠️ 这里**不要**摆引擎返回的四维：总分已经不按它们等权算了，
+              摆在一起用户对不上（「我准确度 91，为什么总分 85」），
+              而且完整度对能读完的人恒为 100，占着位置却不提供信息。
+           ⚠️ 拿不到（老成绩没有这个字段）时整块不渲染，绝不补 0。 -->
       <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{dimensions.length > 0}}">
         <view class="flex">
           <view class="flex-1" wx:for="{{dimensions}}" wx:key="key">
