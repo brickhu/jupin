@@ -6,6 +6,7 @@ import { env, envError } from './env'
 import { dbState, initDatabase, maskDatabaseUrl, pingDatabase } from './db'
 import { probeStorage } from './storage'
 import { probeContent } from './services/content'
+import { probeStandardAudio } from './services/standard-audio'
 import { authMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
@@ -46,9 +47,9 @@ app.get('/health', async (c) => {
   // ⚠️ 深度自检会真的调一次微信开放接口 + 一次对象存储，所以默认关闭。
   //    未鉴权的 /health 不该具备这个能力（会变成廉价的 DoS 放大面）。
   const deep = env.DIAG_ENABLED && c.req.query('deep') === '1'
-  const [storage, content] = deep
-    ? await Promise.all([probeStorage(), probeContent()])
-    : [undefined, undefined]
+  const [storage, content, audio] = deep
+    ? await Promise.all([probeStorage(), probeContent(), probeStandardAudio()])
+    : [undefined, undefined, undefined]
 
   return c.json({
     ok: true,
@@ -72,6 +73,8 @@ app.get('/health', async (c) => {
       envError: envError ?? undefined,
       storage,
       content,
+      /** ⭐ 标准音三层各查一遍：库里有没有值 / 桶里有没有文件 / 客户端会拿到什么引用 */
+      audio,
     },
   })
 })

@@ -20,7 +20,7 @@ import {
   REPLAY_PATH,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
-import { resolveAudioUrl } from '../../lib/audio/standard'
+import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
  * 朗读页 —— 产品的**唯一动作入口**。
@@ -73,6 +73,15 @@ const MS_PER_WORD_KEY = 'reading_ms_per_word'
 /** 合理区间 —— 防止一次没读完的录音把基准带跑偏 */
 const MPW_MIN = 250
 const MPW_MAX = 1600
+
+/**
+ * 预拉取逐词音的**上限**。
+ *
+ * ⚠️ 限制的不是流量（一个词才几 KB），是**并发请求数**：
+ *    长句几十个词，进页面就一次性全发出去，会挤占小程序本就不宽的请求通道 ——
+ *    而此刻用户可能正要录音或提交。
+ */
+const MAX_PREFETCH_WORDS = 24
 
 interface WordView {
   /** 稳定的 key（同一个词可能出现多次，不能用 text 当 key） */
@@ -268,6 +277,9 @@ Page({
         audioKind: content.audio?.kind ?? 'http',
         phase: 'ready',
       })
+
+      // ⭐ 内容一到就**后台**把标准音拉到本地 —— 用户点喇叭时就不用等网络了
+      this.prefetchStandardAudio()
 
       // ⭐ 这句子上次录的那段还在吗？在就**直接进入「已录好」**——
       //    用户不必为了接个电话就重读一遍。
@@ -534,11 +546,29 @@ Page({
     })
   },
 
+  /**
+   * ⭐ 进页面就**后台预拉取**这一段的标准音（整句 + 逐词）。
+   *
+   * ⚠️ 预拉取只影响"快不快"，不影响"能不能"：
+   *    失败时 ensureLocalAudio 会退回远端地址，用户照样能听，只是慢一点。
+   */
+  prefetchStandardAudio() {
+    if (!this.data.canPlayAudio || !this.data.fullAudio) return
+    const kind = this.data.audioKind
+    const items: { src: string | null | undefined; kind: 'cloud' | 'http' }[] = [
+      { src: this.data.fullAudio, kind },
+    ]
+    // ⚠️ 逐词音也一起拉：点词听发音是朗读页最常用的动作，
+    //    而每个词只有几 KB。但给它一个上限，长句不至于一次发几十个请求。
+    for (const w of this.wordAudio.slice(0, MAX_PREFETCH_WORDS)) items.push({ src: w, kind })
+    prefetchAudio(items)
+  },
+
   /** ⭐ 卡片右上角那个喇叭：播整句标准音 */
   async onPlaySentence() {
     if (!this.data.fullAudio) return
     this.setData({ playingWord: -1 })
-    const url = await resolveAudioUrl(this.data.fullAudio, this.data.audioKind)
+    const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
     if (!url) {
       this.setData({ error: '标准音取不到，请稍后再试' })
       return
@@ -558,7 +588,7 @@ Page({
     const fileId = this.wordAudio[i]
     if (!fileId) return
     this.setData({ playingWord: i })
-    const url = await resolveAudioUrl(fileId, this.data.audioKind)
+    const url = await ensureLocalAudio(fileId, this.data.audioKind)
     if (!url) {
       this.setData({ error: '单词发音取不到，请稍后再试' })
       return

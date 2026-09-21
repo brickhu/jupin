@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { eq } from 'drizzle-orm'
+import { asc, count, eq, isNotNull } from 'drizzle-orm'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
@@ -149,3 +149,49 @@ export async function seedStandardAudio(
   }
   return out
 }
+
+/**
+ * 深度自检：标准音这条链路**到底通没通**。
+ *
+ * ⭐ 为什么值得单独查：这条链路跨三层，任何一层断了客户端表现都一样 ——
+ *    「朗读页没有喇叭 / 点了没声音」，而从那个现象倒推是哪一层几乎不可能：
+ *      ① 库里的 standard_audio 有没有值   （没值 → 接口直接不给 audio，按钮都不渲染）
+ *      ② 对象存储里那个文件在不在        （不在 → 客户端拿到 fileID 也播不出来）
+ *      ③ 客户端最终会拿到什么样的引用    （cloud fileID / http 路径 / 什么都没有）
+ *    这里把三层一次列清楚。
+ */
+export async function probeStandardAudio(sample = 3): Promise<Record<string, unknown>> {
+  const rows = await db.select().from(articles).orderBy(asc(articles.id)).limit(sample)
+  const storage = getStorage()
+  const items: Record<string, unknown>[] = []
+
+  for (const row of rows) {
+    const key = audioKeyOf(row.id)
+    let exists: boolean | string = false
+    try {
+      exists = await storage.exists(key)
+    } catch (err) {
+      exists = '探测失败: ' + (err as Error).message.slice(0, 120)
+    }
+    const ref = audioRefOf(row)
+    items.push({
+      id: row.id,
+      dbColumn: row.standardAudio ?? '(空 —— 接口不会返回 audio，客户端连按钮都不渲染)',
+      fileInBucket: exists,
+      clientRef: ref ? ref.kind + (ref.kind === 'cloud' ? '（免域名，走 wx.cloud.downloadFile）' : '') : '(null)',
+    })
+  }
+
+  const [total] = await db.select({ n: count() }).from(articles)
+  const [configured] = await db
+    .select({ n: count() })
+    .from(articles)
+    .where(isNotNull(articles.standardAudio))
+
+  return {
+    articles: Number(total?.n ?? 0),
+    standardAudioConfigured: Number(configured?.n ?? 0),
+    sample: items,
+  }
+}
+
