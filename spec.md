@@ -221,7 +221,7 @@ FROM (上面的派生表);
 MySQL 的 `TIMESTAMP` 只到 **2038 年**；而 Drizzle 的 `datetime` 没有 `defaultNow()`，
 所以默认值写成显式 SQL：`.default(sql\`CURRENT_TIMESTAMP(3)\`)`。
 另外 `DATETIME` **不存时区**——全链路按 UTC 读写（连接池 `timezone: 'Z'` + 容器 `TZ=UTC`），
-否则「上次提交 + 24h」的滚动冷却会整体偏移。
+否则「上次挑战是在什么时候」会整体偏移（它决定要不要被 2 分钟间隔拦住）。
 
 **榜心而非全榜**：揭晓页只返回"附近 5 条 + 人数 + 我的排名"，一次查询、数据量极小。
 
@@ -267,8 +267,11 @@ users
   id, openid(UNIQUE), unionid, nickname, avatar_url
   status                      -- normal | banned | deleted
   member_until                -- ⭐ 冗余会员到期（热判断，不值得每次 join subscriptions）
-  next_free_at                -- ⭐ 滚动冷却：上次提交时间 + 24h
   invalid_count, invalid_date -- 无效提交计数（防刷）
+
+-- ⚠️ 这里原来有一列 next_free_at（24h 滚动冷却）。冷却已下线，改成
+--    「每句额度（免费 1 / 付费 20）+ 固定间隔 2 分钟」——
+--    额度**从 submissions 现算**，不存副本：存了就是第二份真相，必然漂移。见迁移 0012。
   created_at
 
 -- 朗读单元索引（文章 = 句子）。⚠️ 正文/技巧/标准音都是静态资源引用，不入库

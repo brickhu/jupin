@@ -149,7 +149,7 @@ async function main(): Promise<void> {
     }
     await db
       .insert(users)
-      .values({ openid, nextFreeAt: new Date(0), ...patch })
+      .values({ openid, ...patch })
       .onDuplicateKeyUpdate({ set: patch })
 
     const [row] = await db

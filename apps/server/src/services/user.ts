@@ -46,11 +46,10 @@ async function withLocalDevPrivilege(user: User): Promise<User> {
   if (!isLocalDevAccount(user.openid)) return user
 
   const alreadyMember = user.memberUntil !== null && user.memberUntil.getTime() >= DEV_MEMBER_UNTIL.getTime()
-  if (alreadyMember && user.nextFreeAt.getTime() === 0) return user
+  if (alreadyMember) return user
 
-  const nextFreeAt = new Date(0)
-  await db.update(users).set({ memberUntil: DEV_MEMBER_UNTIL, nextFreeAt }).where(eq(users.id, user.id))
-  return { ...user, memberUntil: DEV_MEMBER_UNTIL, nextFreeAt }
+  await db.update(users).set({ memberUntil: DEV_MEMBER_UNTIL }).where(eq(users.id, user.id))
+  return { ...user, memberUntil: DEV_MEMBER_UNTIL }
 }
 
 /**
@@ -69,7 +68,6 @@ export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
 
   await db.insert(users).ignore().values({
     openid,
-    nextFreeAt: new Date(0),
     // ⭐ 建号时就带上会员，省掉一次 UPDATE
     ...(isLocalDevAccount(openid) ? { memberUntil: DEV_MEMBER_UNTIL } : {}),
   })

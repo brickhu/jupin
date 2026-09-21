@@ -24,7 +24,7 @@ App({
   globalData: {
     ready: false,
     isMember: false,
-    nextFreeAt: '',
+    // ⚠️ 这里原来有 nextFreeAt（冷却时间戳）—— 冷却已下线，见 services/quota.ts
   },
 
   async onLaunch() {

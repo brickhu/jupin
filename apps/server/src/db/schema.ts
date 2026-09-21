@@ -31,8 +31,12 @@ export const users = mysqlTable('users', {
   /** ⭐ 冗余会员到期时间 —— 「是不是会员」是热判断，不值得每次 join subscriptions */
   memberUntil: datetime('member_until', { mode: 'date', fsp: 3 }),
 
-  /** ⭐ 滚动冷却：下次可免费提交（= 上次提交 + 24h，不是自然日重置） */
-  nextFreeAt: datetime('next_free_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+  // ⚠️ 这里原来有一列 next_free_at（24 小时滚动冷却的"下次可免费提交时间"）。
+  //    冷却已下线，改成「**每句额度**（免费 1 次 / 付费 20 次）+ 固定间隔 2 分钟」——
+  //    额度**从 submissions 现算**，不在 users 上存副本：
+  //    存了就是第二份真相，而它必然和 submissions 漂移
+  //    （补签、删记录、迁移，任何一次都会让两者对不上）。
+  //    见 services/quota.ts 与迁移 0012。
 
   /** 无效提交计数（防刷） */
   invalidCount: int('invalid_count').notNull().default(0),

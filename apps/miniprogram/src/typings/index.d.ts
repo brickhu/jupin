@@ -3,7 +3,8 @@ interface IAppOption {
   globalData: {
     ready: boolean
     isMember: boolean
-    nextFreeAt: string
+    // ⚠️ 原来这里还有 nextFreeAt（24 小时冷却的"下次可免费提交时间"）——
+    //    冷却已下线，改成「每句额度 + 固定间隔」，端侧不再需要记一个时间戳
   }
   onLaunch?: () => void
 }

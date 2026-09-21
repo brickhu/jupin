@@ -34,8 +34,9 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  *                 ↑                              │
  *                 └────────── 重录 ──────────────┘
  *
- * ⚠️ 提交失败**不都是错误**：冷却（COOLDOWN）是完全正常的业务分支，
- *    必须和真错误区分开，否则用户看到「请求失败」会以为小程序坏了。
+ * ⚠️ 提交被拒**不都是错误**：额度用完（QUOTA_EXHAUSTED）与提交太频繁（TOO_FREQUENT）
+ *    是完全正常的业务分支，必须和真错误区分开 ——
+ *    否则用户看到「请求失败」会以为小程序坏了，然后反复重试（而那正是要拦的行为）。
  *
  * ══════════════════════════════════════════════════════════════════
  * ⚠️⚠️ **这里曾经有一整套「实时逐词跟随」，已经作为产品决策整体摘掉。**
@@ -689,16 +690,23 @@ Page({
       await this.pollResult(task.submissionId)
     } catch (err) {
       const e = err as ApiError
-      // ⚠️ 冷却不是错误，是正常业务分支
-      if (e.code === 'COOLDOWN') {
-        const until = e.payload?.nextFreeAt
+      /**
+       * ⚠️⚠️ 这两种**不是错误，是业务规则**：额度用完 / 提交太频繁。
+       *    所以提示语要说「接下来怎么办」，而不是「请求失败」——
+       *    后者会让用户以为小程序坏了，然后反复重试（那正是要拦的行为）。
+       */
+      if (e.code === 'QUOTA_EXHAUSTED') {
+        const p = e.payload as { reason?: 'free' | 'cap'; limit?: number } | undefined
         this.setData({
           phase: 'recorded',
           error:
-            typeof until === 'string'
-              ? '挑战冷却中，' + formatUntil(until) + ' 后可再次提交'
-              : e.message,
+            p?.reason === 'cap'
+              ? `这一句已经挑战满 ${p.limit ?? 20} 次了 —— 换一句读吧`
+              : '这一句的免费挑战已经用过了（每句免费 1 次）',
         })
+      } else if (e.code === 'TOO_FREQUENT') {
+        const sec = (e.payload as { retryAfterSec?: number } | undefined)?.retryAfterSec ?? 120
+        this.setData({ phase: 'recorded', error: `挑战太频繁了，${sec} 秒后再试` })
       } else {
         this.setData({ phase: 'recorded', error: e.message })
       }
@@ -952,12 +960,7 @@ function loadMsPerWord(): number {
   return DEFAULT_MS_PER_WORD
 }
 
-/** 把 ISO 时间转成「还有 6 小时 12 分」 */
-function formatUntil(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now()
-  if (!Number.isFinite(ms) || ms <= 0) return '现在'
-  const totalMin = Math.ceil(ms / 60_000)
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分钟`
-}
+// ⚠️ 这里原来有个 formatUntil()（把 ISO 时间转成「还有 6 小时 12 分」），
+//    是给「24 小时滚动冷却」写提示语用的。
+//    冷却下线之后，服务端直接给**还有多少秒**（retryAfterSec），
+//    端侧不再需要把时间戳换算成人话 —— 少一处会算错的日期逻辑。

@@ -5,7 +5,7 @@ import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
 import { getEngine } from '../engines'
 import { getStorage } from '../storage'
-import { nextFreeAtFrom, trackInvalid } from './cooldown'
+import { trackInvalid } from './quota'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
 import { normalizeAudio, PCM_BYTES_PER_SEC } from './audio'
@@ -222,13 +222,13 @@ void previousBest
       })
       .where(eq(articles.id, articleId))
 
-    // ---- 冷却 ----
-    const [freshUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
-    if (freshUser) {
-      const isMember = !!freshUser.memberUntil && freshUser.memberUntil > new Date()
-      const nextFreeAt = isMember ? freshUser.nextFreeAt : nextFreeAtFrom()
-      await db.update(users).set({ nextFreeAt, invalidCount: 0 }).where(eq(users.id, userId))
-    }
+    // ---- 无效提交计数归零 ----
+    //
+    // ⚠️ 原来这里还顺手写 next_free_at（24 小时滚动冷却）。
+    //    冷却已经下线，改成「每句额度 + 固定间隔」—— 额度是**从 submissions 现算**的，
+    //    不需要在 users 上再存一个会漂移的副本（那正是原来那套的两个真相）。
+    //    这里只剩「这次是有效提交，把无效计数清零」。
+    await db.update(users).set({ invalidCount: 0 }).where(eq(users.id, userId))
 
     // ---- ⭐ Streak：今天读了一句 ----
     //
