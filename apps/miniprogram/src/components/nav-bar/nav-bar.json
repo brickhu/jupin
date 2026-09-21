@@ -1,7 +1,6 @@
 {
   "component": true,
   "usingComponents": {
-    "user-sheet": "/components/user-sheet/user-sheet",
-    "join-sheet": "/components/join-sheet/join-sheet"
+    "user-sheet": "/components/user-sheet/user-sheet"
   }
 }

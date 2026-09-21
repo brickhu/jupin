@@ -2,6 +2,7 @@ import { BADGES } from '@jushuo/shared'
 import type { StreakView } from '@jushuo/shared'
 
 import { fetchMe } from '../../lib/api/client'
+import { openJoinPage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import * as me from '../../lib/store'
 
@@ -203,7 +204,8 @@ Component({
      */
     onEditProfile() {
       this.triggerEvent('close')
-      me.openJoinSheet()
+      // 跳加入页（它会把现有昵称预填上，见 pages/join/join.ts）
+      openJoinPage()
     },
 
     onClose() {

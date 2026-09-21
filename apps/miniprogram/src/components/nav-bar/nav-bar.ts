@@ -170,7 +170,7 @@ Component({
         if (!this.data.joined) {
           if (this.data.joinBusy) return
           this.setData({ joinBusy: true })
-          // 授权层由 ensureJoined 自己弹（它要先问一次服务端才知道该不该问用户）
+          // 跳不跳加入页由 ensureJoined 决定（它要先问一次服务端才知道该不该问用户）
           void ensureJoined().finally(() => this.setData({ joinBusy: false }))
           return
         }

@@ -71,16 +71,6 @@ export interface MeState {
   streak: StreakView | null
   /** 我的头像 / 昵称 —— 自定义导航栏左侧那个圆形头像靠它 */
   profile: Profile | null
-  /**
-   * ⭐ 「加入句拼」页开着没有。
-   *
-   * ⚠️⚠️ 它**必须放在这个全局 store 里**，不能放在某个页面或组件自己的 data 里：
-   *    要弹它的人（首页/竞技场/朗读页）和真正渲染它的人（导航栏里的组件）
-   *    是**两个页面/模块**，而小程序里每个页面是独立的模块作用域 ——
-   *    页面自己存一个标志，导航栏那份是另一个实例，永远看不到。
-   *    这正是本项目踩过的「共享 store 被内联成多份」那个坑的同一个形状。
-   */
-  joinSheet: boolean
 }
 
 /**
@@ -91,7 +81,7 @@ export interface MeState {
 const STORAGE_KEY = 'me_state_v2'
 
 function emptyState(): MeState {
-  return { serverDate: null, arena: {}, streak: null, profile: null, joinSheet: false }
+  return { serverDate: null, arena: {}, streak: null, profile: null }
 }
 
 let state: MeState = emptyState()
@@ -122,15 +112,6 @@ export function arenaOf(articleId: number): ArenaRecord {
  */
 export function hasJoined(): boolean {
   return !!state.profile?.nickname
-}
-
-/** 让导航栏把「加入句拼」页弹出来（任何页面都可以调） */
-export function openJoinSheet(): void {
-  commit({ ...state, joinSheet: true })
-}
-
-export function closeJoinSheet(): void {
-  commit({ ...state, joinSheet: false })
 }
 
 /** 服务端的「今天」还没拿到时，退回本机时区的今天（只用于首屏占位） */
@@ -201,8 +182,6 @@ export function hydrate(): void {
         //    不会像「按日期存」→「按句子存」那次一样解出错误的数据。
         //    真正会解错的结构变更才需要换键（见 STORAGE_KEY 的说明）。
         profile: raw.profile ?? null,
-        // ⚠️ 界面态不继承：上次退出时加入页开着，不代表这次也要开着
-        joinSheet: false,
       }
       for (const fn of [...listeners]) fn(state)
     }
@@ -241,7 +220,7 @@ export function applySchedules(res: SchedulesResponse): void {
     }
   }
   // ⚠️ profile 原样带着走：它只有 /api/user/me 会写，这张列表不碰它
-  commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile, joinSheet: state.joinSheet })
+  commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile })
 }
 
 /** 用排期详情接口的返回值刷新 */
@@ -305,9 +284,9 @@ export function applyProfile(m: MeResponse): void {
     avatarUrl: m.avatarUrl,
     conqueredCount: m.conqueredCount,
   }
-  // ⚠️ 顺手把加入页收起来：拿到 profile 就意味着这次资料已经落库，
-  //    用户不该再看到一个「加入」框杵在那儿（见 /profile 路由）
-  commit({ ...state, profile, streak: m.streak, joinSheet: false })
+  // ⚠️ 改完资料后**不用**再管界面态：加入页在提交成功后自己 navigateBack
+  //    （见 pages/join/join.ts）。store 里没有一个"层开着没有"的标志了。
+  commit({ ...state, profile, streak: m.streak })
 }
 
 /** 换账号 / 清空重置时调用 —— 否则会把上一个人的成绩显示给下一个人 */

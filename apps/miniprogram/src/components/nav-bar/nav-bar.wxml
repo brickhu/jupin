@@ -33,6 +33,3 @@
 <!-- ⭐ 全局用户面板 —— 挂在导航栏里，于是**每一页**都能从左上角拉开它 -->
 <user-sheet show="{{sheetOpen}}" bind:close="onSheetClose" />
 
-<!-- ⭐ 「加入句拼」页 —— 它自己订阅 store 的 joinSheet 标志，
-     所以任何页面调 me.openJoinSheet() 都能把它弹出来（见 store.ts 的说明） -->
-<join-sheet />

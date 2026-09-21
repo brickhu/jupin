@@ -1,0 +1,56 @@
+/**
+ * 这一页只有两个类必须手写 —— 其余一律用 UnoCSS 工具类写在 WXML 上
+ * （见 docs/research/styling-decision.md）。
+ *
+ * ⚠️ 为什么这两个躲不开：
+ *    <button open-type="chooseAvatar"> 自带一套默认皮肤 —— 灰底方框、行高、
+ *    以及用 ::after 画的圆角细边框。不清掉，我们的圆形头像就被罩在一个方框里。
+ *    而 ::after 是**伪元素**，WXSS 又不支持 \[ \: 这类转义选择器，
+ *    UnoCSS 在小程序端表达不了它 —— 只能落在页面 WXSS 里。
+ *
+ * ⚠️ 页面 WXSS 天然只作用于本页，不存在 app.wxss 那种跨页覆盖问题。
+ */
+
+/* 头像按钮：把 button 的默认皮肤清干净，只留一个可点的圆 */
+.join-avatar {
+  padding: 0;
+  margin: 0;
+  width: 128rpx;
+  height: 128rpx;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.join-avatar::after {
+  border: none;
+}
+
+/* 圆本身 —— 选了头像就是那张图，没选就是一个带 ＋ 的浅紫底圆 */
+.join-avatar-img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: #eeecfd; /* = theme.colors.brand 的 10% 混白，与 nav-bar 的头像底色一致 */
+}
+
+.join-avatar-empty {
+  /* 空的圆：只有 ＋ 的那点弹性布局在 WXML 的工具类里 */
+  overflow: hidden;
+}
+
+/* 昵称输入 */
+.join-input {
+  width: 100%;
+  height: 88rpx;
+  font-size: 32rpx;
+  color: #111;
+}
+
+.join-input-ph {
+  color: #b9b9c0;
+}

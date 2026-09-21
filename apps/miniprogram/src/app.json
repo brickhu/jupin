@@ -2,7 +2,8 @@
   "pages": [
     "pages/index/index",
     "pages/arena/arena",
-    "pages/reading/reading"
+    "pages/reading/reading",
+    "pages/join/join"
   ],
   "window": {
     "navigationStyle": "custom",
