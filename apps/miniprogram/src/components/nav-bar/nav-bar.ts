@@ -1,3 +1,4 @@
+import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import { getNavMetrics, navSolidFrom } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -16,10 +17,16 @@ interface Internals {
   unsub: (() => void) | null
 }
 
+/** 组件实例上另外那个私有字段：当前已换址的 fileID（避免换址回来覆盖了新头像） */
+interface AvatarHolder {
+  avatarFileId?: string
+}
+
 /** 取私有字段（第一次访问时补上默认值，省掉满地的 ?. 与 !） */
-const priv = (ctx: unknown): Internals => {
-  const p = ctx as Internals
+const priv = (ctx: unknown): Internals & AvatarHolder => {
+  const p = ctx as Internals & AvatarHolder
   if (p.unsub === undefined) p.unsub = null
+  if (p.avatarFileId === undefined) p.avatarFileId = ''
   return p
 }
 
@@ -34,6 +41,9 @@ const priv = (ctx: unknown): Internals => {
  *    同一个页面既可能是「从首页上来的」（能返回），
  *    也可能就是**栈底**（开发者工具直接编译到这一页、分享卡片 / 扫码直达）。
  *    栈底画一个「返回」点了没反应，比不画更糟 —— 那时要画「回首页」。
+ *
+ * ⚠️ 首页那一格有**两种形态**：没登录是「登录」按钮（点了拉授权层），
+ *    登录后才是头像（点了拉用户面板）。判据见 store 的 isLoggedIn。
  */
 Component({
   properties: {
@@ -56,7 +66,10 @@ Component({
 
     /** 'avatar' | 'home' | 'back' */
     leftMode: 'back' as 'avatar' | 'home' | 'back',
-    avatarUrl: '',
+    /** 已登录 = 有昵称（见 store 的 isLoggedIn）—— 没登录时这一格画的是「登录」按钮 */
+    loggedIn: false,
+    /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
+    avatarSrc: '',
     initial: '朗',
 
     /**
@@ -114,19 +127,40 @@ Component({
       if (leftMode !== this.data.leftMode) this.setData({ leftMode })
     },
 
-    /** 头像 / 昵称变了就重画左侧那个圆（store 广播过来） */
+    /**
+     * 头像 / 昵称变了就重画左侧那一格（store 广播过来）。
+     *
+     * ⚠️ 库里存的是 cloud:// fileID，不能直接塞给 <image src> ——
+     *    要先换成临时地址。换址是异步的，所以分两步 setData：
+     *    先定下"登录了没有 / 显示什么字"，地址到了再补上。
+     */
     syncProfile() {
       const p = me.getState().profile
+      const loggedIn = me.isLoggedIn()
       this.setData({
-        avatarUrl: p?.avatarUrl ?? '',
+        loggedIn,
         // ⚠️ 没有头像时用**昵称首字**兜底：一个空圆圈传达不了任何信息，
         //    而一个字就够 —— 它回答的是「这是我吗」。
         initial: (p?.nickname ?? '').trim().slice(0, 1) || '朗',
+      })
+
+      const fileId = p?.avatarUrl ?? ''
+      const self = priv(this)
+      if (!fileId || fileId === self.avatarFileId) return
+      self.avatarFileId = fileId
+      void resolveCloudFileUrl(fileId).then((url) => {
+        // ⚠️ 换址期间用户可能又换了头像，回来的是旧地址就别覆盖了
+        if (priv(this).avatarFileId === fileId) this.setData({ avatarSrc: url })
       })
     },
 
     onLeftTap() {
       if (this.data.leftMode === 'avatar') {
+        // ⭐ 没登录时这一格是「登录」按钮：点它拉授权层，而不是开用户面板
+        if (!this.data.loggedIn) {
+          me.openLoginSheet()
+          return
+        }
         this.setData({ sheetOpen: true })
         return
       }

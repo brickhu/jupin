@@ -2,6 +2,7 @@ import { BADGES } from '@jushuo/shared'
 import type { StreakView } from '@jushuo/shared'
 
 import { fetchMe } from '../../lib/api/client'
+import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import * as me from '../../lib/store'
 
 /** 徽章阶梯里的一行 */
@@ -44,6 +45,8 @@ interface Internals {
   unsub: (() => void) | null
   openTimer: ReturnType<typeof setTimeout> | null
   closeTimer: ReturnType<typeof setTimeout> | null
+  /** 当前已换址的 fileID —— 用来丢弃"换到一半又被换掉"的旧结果 */
+  avatarFileId: string
 }
 
 const priv = (ctx: unknown): Internals => {
@@ -51,6 +54,7 @@ const priv = (ctx: unknown): Internals => {
   if (p.unsub === undefined) p.unsub = null
   if (p.openTimer === undefined) p.openTimer = null
   if (p.closeTimer === undefined) p.closeTimer = null
+  if (p.avatarFileId === undefined) p.avatarFileId = ''
   return p
 }
 
@@ -89,6 +93,8 @@ Component({
 
     nickname: '挑战者',
     avatarUrl: '',
+    /** 头像的**可显示地址** —— 库里存的是 cloud:// fileID，要先换一次 */
+    avatarSrc: '',
     initial: '朗',
     conqueredCount: 0,
     streak: null as StreakView | null,
@@ -161,6 +167,16 @@ Component({
         conqueredCount: p?.conqueredCount ?? 0,
         streak: st.streak,
         ladder: ladderOf(st.streak),
+      })
+
+      // ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。
+      //    换址期间用户可能又换了头像，回来的是旧地址就不覆盖（比 fileID）。
+      const fileId = p?.avatarUrl ?? ''
+      const self = priv(this)
+      if (!fileId || fileId === self.avatarFileId) return
+      self.avatarFileId = fileId
+      void resolveCloudFileUrl(fileId).then((url) => {
+        if (priv(this).avatarFileId === fileId) this.setData({ avatarSrc: url })
       })
     },
 

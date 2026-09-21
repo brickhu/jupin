@@ -21,7 +21,7 @@
     <view class="us-grab" bindtap="onClose"></view>
 
     <view class="us-head">
-      <image wx:if="{{avatarUrl}}" class="us-avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
+      <image wx:if="{{avatarSrc}}" class="us-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
       <view wx:else class="us-avatar us-avatar-text">{{initial}}</view>
       <view class="us-idcol">
         <text class="us-name">{{nickname}}</text>

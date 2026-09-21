@@ -1,6 +1,7 @@
 {
   "component": true,
   "usingComponents": {
-    "user-sheet": "/components/user-sheet/user-sheet"
+    "user-sheet": "/components/user-sheet/user-sheet",
+    "login-sheet": "/components/login-sheet/login-sheet"
   }
 }

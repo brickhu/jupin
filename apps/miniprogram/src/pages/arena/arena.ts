@@ -141,6 +141,11 @@ Page({
   onStart() {
     const { articleId, date } = this.data
     if (!articleId || !date) return
+    // 同上：先去登录，再进朗读页（见 pages/index/index.ts 的说明）
+    if (!me.isLoggedIn()) {
+      me.openLoginSheet()
+      return
+    }
     wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
   },
 })

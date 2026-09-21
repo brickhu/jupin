@@ -71,6 +71,16 @@ export interface MeState {
   streak: StreakView | null
   /** 我的头像 / 昵称 —— 自定义导航栏左侧那个圆形头像靠它 */
   profile: Profile | null
+  /**
+   * ⭐ 授权登录层开着没有。
+   *
+   * ⚠️⚠️ 它**必须放在这个全局 store 里**，不能放在某个页面或组件自己的 data 里：
+   *    要弹它的人（首页/竞技场/朗读页）和真正渲染它的人（导航栏里的组件）
+   *    是**两个页面/模块**，而小程序里每个页面是独立的模块作用域 ——
+   *    页面自己存一个标志，导航栏那份是另一个实例，永远看不到。
+   *    这正是本项目踩过的「共享 store 被内联成多份」那个坑的同一个形状。
+   */
+  loginSheet: boolean
 }
 
 /**
@@ -81,7 +91,7 @@ export interface MeState {
 const STORAGE_KEY = 'me_state_v2'
 
 function emptyState(): MeState {
-  return { serverDate: null, arena: {}, streak: null, profile: null }
+  return { serverDate: null, arena: {}, streak: null, profile: null, loginSheet: false }
 }
 
 let state: MeState = emptyState()
@@ -99,6 +109,27 @@ export function getState(): MeState {
 /** 我在**这一句**上的战绩；没参与过就返回「没参与」 */
 export function arenaOf(articleId: number): ArenaRecord {
   return state.arena[articleId] ?? { myBest: null, myAttempts: 0 }
+}
+
+/**
+ * ⭐ 我「登录」了没有 —— 判据是**昵称非空**。
+ *
+ * ⚠️ 为什么不是「有没有 openid」：openid 是 wx.login 静默拿到的，
+ *    用户从来就没有"没登录"这个状态。他真正能感知到的登录动作，
+ *    是**填了名字、认领了头像**（见服务端 routes/user.ts 的 /profile）。
+ * ⚠️ 所以这里也是同一个判据：没有昵称 = 界面上显示「登录」按钮 = 挑战被拦。
+ */
+export function isLoggedIn(): boolean {
+  return !!state.profile?.nickname
+}
+
+/** 让导航栏把授权登录层弹出来（任何页面都可以调） */
+export function openLoginSheet(): void {
+  commit({ ...state, loginSheet: true })
+}
+
+export function closeLoginSheet(): void {
+  commit({ ...state, loginSheet: false })
 }
 
 /** 服务端的「今天」还没拿到时，退回本机时区的今天（只用于首屏占位） */
@@ -169,6 +200,8 @@ export function hydrate(): void {
         //    不会像「按日期存」→「按句子存」那次一样解出错误的数据。
         //    真正会解错的结构变更才需要换键（见 STORAGE_KEY 的说明）。
         profile: raw.profile ?? null,
+        // ⚠️ 界面态不继承：上次退出时登录层开着，不代表这次也要开着
+        loginSheet: false,
       }
       for (const fn of [...listeners]) fn(state)
     }
@@ -207,7 +240,7 @@ export function applySchedules(res: SchedulesResponse): void {
     }
   }
   // ⚠️ profile 原样带着走：它只有 /api/user/me 会写，这张列表不碰它
-  commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile })
+  commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile, loginSheet: state.loginSheet })
 }
 
 /** 用排期详情接口的返回值刷新 */
@@ -271,7 +304,9 @@ export function applyProfile(m: MeResponse): void {
     avatarUrl: m.avatarUrl,
     conqueredCount: m.conqueredCount,
   }
-  commit({ ...state, profile, streak: m.streak })
+  // ⚠️ 顺手把授权登录层收起来：拿到 profile 就意味着这次资料已经落库，
+  //    用户不该再看到一个「登录」框杵在那儿（见 /profile 路由）
+  commit({ ...state, profile, streak: m.streak, loginSheet: false })
 }
 
 /** 退出登录 / 换账号时清空 —— 否则会把上一个人的成绩显示给下一个人 */

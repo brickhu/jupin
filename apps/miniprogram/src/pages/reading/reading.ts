@@ -652,6 +652,14 @@ Page({
     if (!audioPath) return
     if (phase === 'submitting') return // 连点会重复上传（服务端有幂等，但白烧一次上传流量）
 
+    // ⚠️ 兜底拦截：正常路径在 index/arena 进门前就拦了，但朗读页可以被直接打开
+    //    （分享、扫码）。成绩要挂到账号上，所以这里再判一次。
+    //    ⚠️ 不要清掉录音 —— 登录完回来还能接着提交，白录一次比多问一句更贵。
+    if (!me.isLoggedIn()) {
+      me.openLoginSheet()
+      return
+    }
+
     // ⭐ 本地预检 —— 刻意极度宽松：放行垃圾的成本极低，误伤用户的成本是流失。
     //    这里只拦「明显没录上」，真正的语音检测在引擎侧。
     if (durationMs < PREFLIGHT.minDurationMs) {

@@ -284,6 +284,12 @@ Page({
   onStart(e: WechatMiniprogram.BaseEvent) {
     const ds = e.currentTarget.dataset as { id?: number; date?: string }
     if (!ds.id || !ds.date) return
+    // ⚠️ 挑战要记成绩、要占额度，先确认这是「有人」在挑战。
+    //    拦在**进门之前**：让他录完 1 分钟再告诉他没登录，比不让进更气人。
+    if (!me.isLoggedIn()) {
+      me.openLoginSheet()
+      return
+    }
     wx.navigateTo({
       url: '/pages/reading/reading?id=' + ds.id + '&date=' + ds.date,
     })

@@ -82,6 +82,21 @@
   color: #4f46e5;
 }
 
+/* 未登录时那一格画的是按钮而不是头像：说清楚"点这里能登录"，
+   比画一个空圆圈再让人猜要好 */
+.nv-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60rpx;
+  padding: 0 24rpx;
+  border-radius: 999rpx;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
 .nv-glyph {
   font-size: 34rpx;
   line-height: 1;

@@ -486,6 +486,24 @@ export function fetchMe(): Promise<MeResponse> {
 }
 
 /**
+ * ⭐ 保存头像 / 昵称 —— 小程序「头像昵称填写能力」的落地口。
+ *
+ * ⚠️ avatarUrl 传的是**云存储 fileID**（cloud://…/avatars/…），不是临时路径：
+ *    临时路径（wxfile:// 或 http://tmp/…）在本机之外根本不存在，
+ *    存进库里只会得到一张永远加载不出来的图。
+ *    上传由调用方先做（见 components/login-sheet），这里只负责落库。
+ */
+export function saveProfile(input: {
+  nickname: string
+  avatarUrl?: string
+}): Promise<{ nickname: string; avatarUrl: string | null }> {
+  return request<{ nickname: string; avatarUrl: string | null }>('/api/user/profile', {
+    method: 'POST',
+    data: input,
+  })
+}
+
+/**
  * ⭐ 单个挑战的详情（完整榜单 + 我的名次）。
  * @param date 'YYYY-MM-DD' —— 由调用页面**原样带过来**，不要在客户端重算「今天」
  */

@@ -1,0 +1,164 @@
+/**
+ * ⚠️ 和 user-sheet 一样：这里全部用普通类名，不用 UnoCSS 工具类 ——
+ *    这一屏几乎全是「遮罩 + 从底部推上来」的定位与过渡，工具类在这里最容易静默失效。
+ *    理由详见 nav-bar.wxss 顶部。
+ */
+
+.ls-layer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 300;
+}
+
+/* ⚠️ 不能用 inset: 0 简写 —— 老 WebView 不认，整条声明会被丢掉 */
+.ls-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.ls-mask-on {
+  opacity: 1;
+}
+
+.ls-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 0 48rpx 40rpx;
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+  transform: translateY(100%);
+  transition: transform 0.22s ease-out;
+}
+
+.ls-panel-on {
+  transform: translateY(0);
+}
+
+.ls-grab {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 8rpx;
+  background: #e5e5e5;
+  margin: 16rpx auto 0;
+  padding: 12rpx 0;
+  background-clip: content-box;
+}
+
+.ls-title {
+  margin-top: 20rpx;
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #111;
+}
+
+.ls-sub {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #999;
+  text-align: center;
+}
+
+/* ⚠️ button 有自己的默认样式（边框、背景、行高），必须全部清掉 */
+.ls-avatar-btn {
+  margin: 32rpx 0 0;
+  padding: 0;
+  width: 160rpx;
+  height: 160rpx;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+}
+
+.ls-avatar-btn::after {
+  border: none;
+}
+
+.ls-avatar {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+  background: #eeecfd;
+}
+
+.ls-avatar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ls-avatar-plus {
+  font-size: 48rpx;
+  color: #4f46e5;
+  line-height: 1;
+}
+
+.ls-avatar-tip {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #4f46e5;
+}
+
+.ls-field {
+  width: 100%;
+  margin-top: 32rpx;
+  background: #f7f7f8;
+  border-radius: 16rpx;
+  padding: 0 24rpx;
+}
+
+.ls-input {
+  height: 88rpx;
+  font-size: 30rpx;
+  color: #111;
+}
+
+.ls-error {
+  align-self: flex-start;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: #dc2626;
+}
+
+.ls-submit {
+  width: 100%;
+  margin-top: 40rpx;
+  height: 92rpx;
+  line-height: 92rpx;
+  text-align: center;
+  border-radius: 999rpx;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 32rpx;
+  font-weight: 500;
+}
+
+.ls-submit-off {
+  opacity: 0.5;
+}
+
+.ls-foot {
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: #bbb;
+}

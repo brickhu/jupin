@@ -14,8 +14,12 @@
 <view class="nv-root {{solid ? 'nv-root-solid' : ''}}" style="padding-top:{{statusBarHeight}}px;height:{{barHeight}}px;">
   <view class="nv-row">
     <view class="nv-side" style="width:{{sideWidth}}px;" bindtap="onLeftTap" hover-class="nv-hover">
-      <image wx:if="{{leftMode === 'avatar' && avatarUrl}}" class="nv-avatar" src="{{avatarUrl}}" mode="aspectFill"></image>
-      <view wx:elif="{{leftMode === 'avatar'}}" class="nv-avatar nv-avatar-text">{{initial}}</view>
+      <!-- ⭐ 首页这一格：未登录时是「登录」按钮，登录后才是头像 -->
+      <block wx:if="{{leftMode === 'avatar'}}">
+        <image wx:if="{{loggedIn && avatarSrc}}" class="nv-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
+        <view wx:elif="{{loggedIn}}" class="nv-avatar nv-avatar-text">{{initial}}</view>
+        <view wx:else class="nv-login">登录</view>
+      </block>
       <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph">🏠</text>
       <text wx:else class="nv-glyph nv-glyph-back">‹</text>
     </view>
@@ -28,3 +32,7 @@
 
 <!-- ⭐ 全局用户面板 —— 挂在导航栏里，于是**每一页**都能从左上角拉开它 -->
 <user-sheet show="{{sheetOpen}}" bind:close="onSheetClose" />
+
+<!-- ⭐ 授权登录层 —— 它自己订阅 store 的 loginSheet 标志，
+     所以任何页面调 me.openLoginSheet() 都能把它弹出来（见 store.ts 的说明） -->
+<login-sheet />
