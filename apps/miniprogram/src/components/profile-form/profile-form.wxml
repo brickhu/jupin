@@ -1,0 +1,49 @@
+<!--
+  ⭐ 头像 + 昵称表单（加入页 / 修改资料页共用，见 profile-form.ts 的说明）。
+
+  ⚠️ 表格式排布：**一个字段一行**，字段名在左、控件在右，中间一条细线。
+     理由不是好看：这两个字段都是"点一下就会跳出系统界面"的东西
+     （选头像弹微信的浮层、点昵称弹键盘），行与行之间留足高度，
+     手指才不容易点错行。
+
+  ⚠️⚠️ 头像和昵称**读不到**，只能各点一下 —— 这是微信的规矩：
+     · <button open-type="chooseAvatar"> 用户点了，微信才弹「用微信头像 / 从相册选」
+     · <input type="nickname"> 用户点进输入框，键盘上方才出现他的微信昵称
+     2022-10-25 起 wx.getUserProfile / wx.getUserInfo 一律只返回匿名数据。
+     ⇒ 所以加入页进来就**自动聚焦昵称框**，微信昵称悬在键盘上等他一键填入。
+-->
+<view class="pf-card">
+  <!-- 头像：控件本身就是 chooseAvatar 按钮，点它微信弹「用微信头像 / 从相册选 / 拍照」 -->
+  <view class="pf-row">
+    <text class="text-30rpx text-ink pf-label">头像</text>
+    <button class="pf-avatar" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+      <image wx:if="{{avatarPath}}" class="pf-avatar-img" src="{{avatarPath}}" mode="aspectFill" />
+      <view wx:else class="pf-avatar-img">
+        <text class="text-36rpx text-brand leading-[1]">＋</text>
+      </view>
+    </button>
+  </view>
+
+  <view class="pf-line"></view>
+
+  <!-- 昵称：type="nickname" 会让微信把他的昵称挂在键盘上方，一点就填 -->
+  <view class="pf-row">
+    <text class="text-30rpx text-ink pf-label">昵称</text>
+    <input class="pf-input" type="nickname" maxlength="32"
+           placeholder="填写昵称" placeholder-class="pf-input-ph"
+           focus="{{focusNickname}}" value="{{nickname}}"
+           bindinput="onNickname" bindblur="onNickname" />
+  </view>
+</view>
+
+<text class="text-22rpx text-faint block mt-2.5 px-1">键盘上方有你的微信昵称，点一下就填好</text>
+
+<text class="text-24rpx text-bad block mt-2.5 px-1 leading-[1.6]" wx:if="{{error}}">{{error}}</text>
+
+<!--
+  ⚠️ 没填昵称时按钮是**静止**的：置灰、点了没有任何反应。
+     不做"点了弹一句提示"——按钮就在输入框下面，提示反而是噪音；
+     写清楚要填什么（placeholder 与上面那行提示）比点完再骂他更有用。
+-->
+<view class="mt-4 text-center py-[30rpx] rounded-full bg-brand text-white text-32rpx font-medium {{nickname ? '' : 'opacity-50'}}"
+      bindtap="onSubmit">{{saving ? '保存中…' : submitLabel}}</view>

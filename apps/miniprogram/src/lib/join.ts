@@ -3,8 +3,11 @@ import * as me from './store'
 
 /** 「加入句拼」页（wx.navigateTo 用的带斜杠形式） */
 export const JOIN_PAGE = '/pages/join/join'
+/** 「修改资料」页 —— 已经加入过的人换头像/改昵称走这一页 */
+export const PROFILE_PAGE = '/pages/profile/profile'
 /** 页面栈里那一页的 route 写法（无斜杠）—— 用来判断"是不是已经在这一页了" */
 const JOIN_ROUTE = 'pages/join/join'
+const PROFILE_ROUTE = 'pages/profile/profile'
 /** 兜底回首页 —— 与 lib/nav.ts 里那份保持一致 */
 export const HOME_PAGE = '/pages/index/index'
 
@@ -79,4 +82,18 @@ export function openJoinPage(): void {
   const current = stack[stack.length - 1] as { route?: string } | undefined
   if (current?.route === JOIN_ROUTE) return
   wx.navigateTo({ url: JOIN_PAGE, fail: () => wx.reLaunch({ url: JOIN_PAGE }) })
+}
+
+/**
+ * 跳到「修改资料」页 —— 用户面板里那个「修改」。
+ *
+ * ⚠️⚠️ 它**不能**复用 openJoinPage：已经加入的人再去"加入"一次，
+ *    看到的是「加入句拼 / 确认加入」—— 那一瞬间他会以为自己的账号没了。
+ *    两个页面的表单是同一个组件，但**说法**必须不同（见 pages/profile/profile.wxml）。
+ */
+export function openProfilePage(): void {
+  const stack = getCurrentPages()
+  const current = stack[stack.length - 1] as { route?: string } | undefined
+  if (current?.route === PROFILE_ROUTE) return
+  wx.navigateTo({ url: PROFILE_PAGE, fail: () => wx.reLaunch({ url: PROFILE_PAGE }) })
 }

@@ -2,7 +2,7 @@ import { BADGES } from '@jushuo/shared'
 import type { StreakView } from '@jushuo/shared'
 
 import { fetchMe } from '../../lib/api/client'
-import { openJoinPage } from '../../lib/join'
+import { openProfilePage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import * as me from '../../lib/store'
 
@@ -198,14 +198,14 @@ Component({
     /**
      * ⭐ 改头像 / 改昵称。
      *
-     * ⚠️ 复用**加入页**（它本来就会把现有昵称预填上），而不是再写一个编辑弹层：
-     *    两处的字段完全一样，多一份就多一份会走样。
+     * ⚠️ 去的是**修改资料**页，不是加入页：已经加入的人再看到"确认加入"，
+     *    那一瞬间他会以为自己的账号没了。
+     *    两个页面的表单是同一个组件，差别只在说法（见 pages/profile/profile.wxml）。
      * ⚠️ 先收面板再弹层：两层叠在一起，用户看到的是"点了没反应"。
      */
     onEditProfile() {
       this.triggerEvent('close')
-      // 跳加入页（它会把现有昵称预填上，见 pages/join/join.ts）
-      openJoinPage()
+      openProfilePage()
     },
 
     onClose() {

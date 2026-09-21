@@ -1,15 +1,34 @@
 /**
- * 这一页只有几个类必须手写 —— 其余一律用 UnoCSS 工具类写在 WXML 上
- * （见 docs/research/styling-decision.md）。
+ * 表单样式。全部留在这个组件里 —— 两个页面（加入 / 修改资料）共用同一份，
+ * 样式跟着组件走，不跟着页面走，才不会一边改了一遍没改。
  *
- * ⚠️ 为什么头像那两个躲不开：
- *    <button open-type="chooseAvatar"> 自带一套默认皮肤 —— 灰底方框、行高，
- *    以及用 ::after 画的圆角细边框。不清掉，我们的圆形头像就被罩在一个方框里。
- *    而 ::after 是**伪元素**，WXSS 又不支持 \[ \: 这类转义选择器，
- *    UnoCSS 在小程序端表达不了它 —— 只能落在页面 WXSS 里。
- *
- * ⚠️ 页面 WXSS 天然只作用于本页，不存在 app.wxss 那种跨页覆盖问题。
+ * ⚠️ 其余一律用 UnoCSS 工具类写在 WXML 上（见 docs/research/styling-decision.md）。
  */
+
+.pf-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 112rpx;
+  padding: 0 28rpx;
+}
+
+.pf-label {
+  flex-shrink: 0;
+}
+
+/* 字段之间的细线：左边缩进对齐文字，右边通到边 —— 表格式列表的常见做法 */
+.pf-line {
+  height: 1rpx;
+  background: #f0f0f0;
+  margin-left: 28rpx;
+}
 
 /**
  * 头像按钮：把 button 的默认皮肤清干净，只留一个可点的圆。
@@ -19,7 +38,7 @@
  *    这里写 margin 简写时漏掉哪一边，它就会退回默认的"水平居中" ——
  *    表现是圆圈浮在行中间，而不是贴在右边。显式写死最稳。
  */
-.join-avatar {
+.pf-avatar {
   padding: 0;
   margin: 0 0 0 auto;
   width: 88rpx;
@@ -31,23 +50,23 @@
   flex-shrink: 0;
 }
 
-.join-avatar::after {
+.pf-avatar::after {
   border: none;
 }
 
 /* 圆本身 —— 选了头像就是那张图，没选就是一个带 ＋ 的浅紫底圆 */
-.join-avatar-img {
+.pf-avatar-img {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
   border-radius: 50%;
-  background: #eeecfd; /* = 品牌色的 10% 混白，与导航栏那个头像底色一致 */
+  background: #eeecfd; /* = 品牌色 10% 混白，与导航栏那个头像底色一致 */
 }
 
 /* 昵称输入：占满标签右边的全部宽度，文字**靠右** —— 与上一行那个 ＋ 对齐成一列 */
-.join-input {
+.pf-input {
   flex: 1;
   margin-left: 24rpx;
   height: 88rpx;
@@ -56,6 +75,6 @@
   text-align: right;
 }
 
-.join-input-ph {
+.pf-input-ph {
   color: #b9b9c0;
 }

@@ -153,3 +153,17 @@ describe('openJoinPage', () => {
     expect(nav).toEqual(['to:' + join.JOIN_PAGE])
   })
 })
+
+describe('openProfilePage —— 用户面板里的「修改」', () => {
+  it('⭐ 去的是修改资料页，不是加入页', () => {
+    join.openProfilePage()
+    expect(nav).toEqual(['to:' + join.PROFILE_PAGE])
+    expect(join.PROFILE_PAGE).not.toBe(join.JOIN_PAGE)
+  })
+
+  it('⚠️ 已经在那一页上就不再压一层', () => {
+    stack = [{ route: 'pages/index/index' }, { route: 'pages/profile/profile' }]
+    join.openProfilePage()
+    expect(nav).toEqual([])
+  })
+})
