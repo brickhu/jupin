@@ -20,7 +20,8 @@
     <!-- 抓手：整条都可以点，点了就收起来（没有手势拖拽，别假装有） -->
     <view class="us-grab" bindtap="onClose"></view>
 
-    <view class="us-head">
+    <!-- ⭐ 整块可点 = 改头像 / 改昵称（复用登录层） -->
+    <view class="us-head" bindtap="onEditProfile" hover-class="us-head-hover">
       <image wx:if="{{avatarSrc}}" class="us-avatar" src="{{avatarSrc}}" mode="aspectFill"></image>
       <view wx:else class="us-avatar us-avatar-text">{{initial}}</view>
       <view class="us-idcol">
@@ -28,6 +29,7 @@
         <text class="us-sub" wx:if="{{streak.badge}}">{{streak.badge.emoji}} {{streak.badge.name}}</text>
         <text class="us-sub" wx:else>还没有徽章 —— 今天读一句就是第一个</text>
       </view>
+      <text class="us-edit">修改</text>
     </view>
 
     <view class="us-stats">

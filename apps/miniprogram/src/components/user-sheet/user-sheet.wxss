@@ -71,6 +71,22 @@
   padding: 20rpx 0 28rpx;
 }
 
+/* 整块可点 —— 加个按下反馈，不然"修改"两个字看起来像装饰 */
+.us-head-hover {
+  opacity: 0.6;
+}
+
+/* 改头像 / 改昵称的入口。放在最右边，不抢昵称的位置 */
+.us-edit {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: #f3f2ff;
+  color: #4f46e5;
+  font-size: 22rpx;
+}
+
 .us-avatar {
   width: 96rpx;
   height: 96rpx;

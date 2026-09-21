@@ -62,7 +62,17 @@ async function resolveStorageConfig(envId) {
 const args = process.argv.slice(2)
 const target = args.find((a) => !a.startsWith('--')) ?? 'dev'
 const remarkIdx = args.indexOf('--remark')
-const remark = remarkIdx >= 0 ? args[remarkIdx + 1] : undefined
+/**
+ * ⚠️⚠️ 版本备注**必须永远给一个**，哪怕是兜底的。
+ *
+ *    CLI 的参数清单里 remark 是唯一"不给就问"的一项：一旦缺省，
+ *    它会打印「请输入版本备注:」然后**读 stdin 干等**。人在终端里还能敲一行，
+ *    CI 里没有 stdin ⇒ job 一直挂到超时（表现为"部署卡住"，而不是报错）。
+ *    备注只是给人看的，所以兜底比留空强。
+ */
+const remark =
+  (remarkIdx >= 0 ? args[remarkIdx + 1] : undefined) ??
+  new Date().toISOString().slice(0, 16).replace('T', ' ')
 const detach = args.includes('--detach')
 /** ⚠️ --reset：一次性删库重建（无数据环境 schema 重构用，生产环境勿用） */
 const reset = args.includes('--reset')

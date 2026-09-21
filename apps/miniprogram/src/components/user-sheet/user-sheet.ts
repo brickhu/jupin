@@ -194,6 +194,18 @@ Component({
       }
     },
 
+    /**
+     * ⭐ 改头像 / 改昵称。
+     *
+     * ⚠️ 复用**登录层**（它本来就会把现有昵称预填上），而不是再写一个编辑弹层：
+     *    两处的字段完全一样，多一份就多一份会走样。
+     * ⚠️ 先收面板再弹层：两层叠在一起，用户看到的是"点了没反应"。
+     */
+    onEditProfile() {
+      this.triggerEvent('close')
+      me.openLoginSheet()
+    },
+
     onClose() {
       this.triggerEvent('close')
     },
