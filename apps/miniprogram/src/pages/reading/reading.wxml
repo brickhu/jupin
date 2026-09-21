@@ -132,6 +132,19 @@
         <text class="text-22rpx text-faint block mt-1.5 leading-[1.6]" wx:if="{{dimensionHint}}">{{dimensionHint}}</text>
       </view>
 
+      <!-- ⭐ 听听自己读的 —— 结果页必须能回放。
+           ⚠️ 判定「说得好不好」最终靠耳朵：没有回放，用户只能看分数和文字建议，
+              无法把「AI 说的那个词」和「我实际读成什么样」对上。
+           ⚠️ 用的是录音时那份本地文件（模拟器播文件、真机播帧拼的 WAV，见 onReplay），
+              不依赖网络，也不受服务端删音频影响。 -->
+      <view class="flex items-center py-3 mt-2.5 border-t-[1rpx] border-t-solid border-t-line">
+        <view class="flex-1">
+          <text class="text-27rpx text-ink block">听听我自己读的</text>
+          <text class="text-22rpx text-faint block mt-[6rpx]">{{elapsed}} 秒 · 对照上面的建议，重点听那几个词</text>
+        </view>
+        <view class="px-5 py-[14rpx] rounded-full bg-brand_10 text-brand text-27rpx font-medium" bindtap="onReplay">▶ 试听</view>
+      </view>
+
       <!-- ⭐ 录音公开与否 —— **提交之后**才问。
            ⚠️ 提交前问等于让每个用户先做一个与「读好这句」无关的决定；
               而听完自己的分数再决定，依据更足。 -->
