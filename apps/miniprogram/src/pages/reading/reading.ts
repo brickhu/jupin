@@ -10,8 +10,6 @@ import {
   submitReading,
 } from '../../lib/api/client'
 import { uploadAudio } from '../../lib/api/upload'
-import { pcmLevel } from '@jushuo/shared'
-
 import { Recorder, type RecordResult } from '../../lib/audio/recorder'
 import { fetchArticleContent } from '../../lib/content'
 import { ensureJoined } from '../../lib/join'
@@ -28,24 +26,30 @@ import {
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
- * ⭐ 声波监测那排柱子。
+ * ⭐ 声波监测：**以中线对称的实心柱条**，画在 canvas 上。
  *
- * ⚠️ `WAVE_SLOTS` 不是随便取的：一帧 2KB（16kHz / 16bit / 单声道）
- *    ≈ 64ms，32 根正好是**约 2 秒**的窗口 ——
- *    短于这个数看不出"刚才那句说完了没有"，长了则反应迟钝、不像在实时监测。
+ * ⚠️ 为什么是 canvas 而不是一排 <view>：
+ *    一帧 1024 个采样点，用节点画就是 1024 个节点 × 每秒 15 帧 —— 小程序扛不住，
+ *    而且柱条会糊成一条实心色块。canvas 一次 draw 搞定，且能按设备像素画，边缘不发虚。
+ *
+ * ⚠️ 小程序的 canvas 2d **没有 AnalyserNode**（那是浏览器 Web Audio 的东西，
+ *    参见 docs/research/platform-decision.md），所以波形只能从录音帧自己算 ——
+ *    数据源是 Recorder 交上来的 PCM 帧（已归一化到 16kHz 小端）。
  */
-const WAVE_SLOTS = 32
-/** 静音时柱子的高度（rpx）—— 不画成 0：一根线宽的点看起来像加载失败 */
-const WAVE_MIN_RPX = 8
-/** 满量程时的高度（rpx） */
-const WAVE_MAX_RPX = 72
-
-interface WaveBar {
-  /** 自增 id，**不是下标** —— 见 data.bars 的说明 */
-  id: number
-  /** 高度（rpx） */
-  h: number
-}
+/** canvas 的 id —— 只在「录音中」那一块里存在（wx:if） */
+const WAVE_CANVAS_ID = '#wave'
+/**
+ * 一屏最多画多少根柱条。
+ *
+ * ⚠️ 不是"越多越准"：柱条数超过画布物理像素的一半之后，相邻柱条之间的空隙
+ *    就没有渲染意义了（会糊成实心块），白白多画一倍 rect。
+ *    64 根 ≈ 每个柱子覆盖 16 个采样点，肉眼刚好能看出"起伏"。
+ * ⚠️ 取的是**峰值**而不是均值：均值会把一帧里的爆破音抹平，
+ *    看起来像音量一直很小 —— 而用户盯着这条波形就是要看"我声音够不够大"。
+ */
+const WAVE_MAX_BARS = 64
+/** 柱条填充色 —— 与 uno.config.mjs 的 theme.colors.brand 保持一致（手写 CSS 取不到那个 token） */
+const WAVE_COLOR = '#4f46e5'
 
 /**
  * ⚠️⚠️ 这一帧看着像**音频容器**（WebM / WAV / Ogg / mp3-ID3）而不是裸 PCM 吗？
@@ -238,21 +242,6 @@ Page({
     playPath: '',
     durationMs: 0,
     elapsed: '0.0',
-    /**
-     * ⭐ 录音条上那排声波柱子：一帧一根，右进左出。
-     *
-     * ⚠️ 每根柱子带一个**自增的 id**，而不是用数组下标当 key：
-     *    下标当 key 时，每推进一帧所有柱子的身份都变了，
-     *    渲染层只能整排重建 —— 15 次/秒的重建会明显掉帧。
-     *    带上 id 之后，「往右挪一格」对渲染层是移动而不是重建。
-     */
-    bars: [] as WaveBar[],
-    /**
-     * ⚠️ 这一帧不是裸 PCM（开发者工具）—— 那就不画柱子，改说一句话。
-     *    见 looksLikeContainer 的说明：画出来是一整条不响应的色块，
-     *    比不画更容易让人以为功能坏了。
-     */
-    waveUnsupported: false,
     uploadPercent: 0,
     /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
     scoringSeconds: 0,
@@ -272,61 +261,113 @@ Page({
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
   gone: false,
 
-  /** 帧的格式只看**第一帧**就够了：容器头在流的开头，设备也不会中途换格式 */
+  /** 帧的格式只看**第一帧**就够了（只为了那条日志，见 drawWave） */
   waveChecked: false,
 
-  /** 声波柱子的滚动窗口（与 data.bars 同源，改它才 setData） */
-  wave: [] as WaveBar[],
-  /** 柱子 id 的自增计数 —— 见 WaveBar 的说明 */
-  waveSeq: 0,
+  /**
+   * canvas 2d 的绘制上下文 —— 没拿到之前 drawWave 直接跳过。
+   * ⚠️ 类型来自小程序自己的命名空间：小程序的 tsconfig 不含 DOM lib，
+   *    全局的 CanvasRenderingContext2D 在这里根本不存在。
+   */
+  waveCtx: null as WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D | null,
+  /** 画布的**设备像素**尺寸 —— 绘制坐标全部用它 */
+  waveW: 0,
+  waveH: 0,
 
   /**
-   * 把一帧的响度推进声波窗口。
+   * ⭐ 拿画布节点。
    *
-   * ⚠️ 只画到 WAVE_SLOTS 根，多出来的从左边挤掉 ——
-   *    一屏固定宽度，柱子无限增长会把它撑爆。
+   * ⚠️ 必须在**画布渲染出来之后**才拿得到（它在 wx:if 里，录音开始前根本不存在），
+   *    所以这个函数从 setData 的回调里调 —— 那正是"视图已经更新完"的时刻。
+   *
+   * ⚠️ backing store 按**设备像素**开（尺寸 × dpr），否则在 2x/3x 屏上整条波形发虚 ——
+   *    这是 canvas 最常见的"看着就是不对劲"。开了之后所有绘制坐标都用设备像素，
+   *    **不调 ctx.scale**（scale 会累积，重复进入录音时会越缩越小）。
    */
-  pushWave(pcm: ArrayBuffer) {
+  prepareWaveCanvas() {
+    // ⚠️ 用全局的 wx.createSelectorQuery：this.createSelectorQuery 只有**组件**实例上有
+    //    （类型声明也只写在 Component 上）。画布是页面自己的节点，全局查询就够。
+    wx.createSelectorQuery()
+      .select(WAVE_CANVAS_ID)
+      .fields({ node: true, size: true })
+      .exec((res) => {
+        const info = res?.[0] as { node?: WechatMiniprogram.Canvas; width?: number; height?: number } | undefined
+        const node = info?.node
+        if (!node || !info?.width || !info?.height) {
+          console.warn('[wave] 没拿到画布节点，这一轮不画波形')
+          return
+        }
+        // ⚠️ getWindowInfo 要 2.20.1+，与 lib/nav.ts 一样留一条老基础库的退路
+        const info2 = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync()
+        const dpr = info2.pixelRatio || 2
+        node.width = Math.round(info.width * dpr)
+        node.height = Math.round(info.height * dpr)
+        this.waveCtx = node.getContext('2d')
+        this.waveW = node.width
+        this.waveH = node.height
+      })
+  },
+
+  /**
+   * ⭐ 把一帧 PCM 画成波形。
+   *
+   * 形状：**以中线对称的实心柱条**，左边是这一帧最早的声音、右边是最新的。
+   * 幅度取每个柱条覆盖范围内的**峰值**（理由见 WAVE_MAX_BARS）。
+   */
+  drawWave(pcm: ArrayBuffer) {
     // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
     //    页面销毁之后一帧都不该画（见 onUnload）
     if (this.gone || this.data.phase !== 'recording') return
 
-    /**
-     * ⭐ 先看一眼**这一轮的第一帧**是不是裸 PCM。
-     *
-     * ⚠️ 开发者工具给的是 WebM 压缩块，当 PCM 读出来是"接近满量程的噪声"，
-     *    柱子会被拉满且一动不动 —— 那不是"没反应"，是"认错了格式"。
-     *    与其画一条骗人的色块，不如直接说明白（见 looksLikeContainer）。
-     */
+    // ⚠️ 画布还没准备好（第一帧常常比它早到几十毫秒）→ 丢这一帧，
+    //    下一帧就画得上；**不要**在这里重试查询，那会变成每帧一次 selectorQuery
+    const ctx = this.waveCtx
+    if (!ctx) return
+
+    const view = new DataView(pcm)
+    const total = pcm.byteLength >> 1
+    if (total < 2) return
+
+    // 只看这一轮的第一帧一眼：如果它根本不是 PCM，画出来的是"压缩字节的噪声"。
+    // ⚠️ 只记日志、**不拦绘制**：开发者工具里就该看到它在动（虽然那波动没有物理意义），
+    //    拦掉只会让人以为功能坏了。真机上是裸 PCM，这条日志也不会出现。
     if (!this.waveChecked) {
       this.waveChecked = true
       if (looksLikeContainer(pcm)) {
         console.warn(
-          '[wave] 这一轮录音的帧不是裸 PCM（像是压缩容器），声波监测不画 —— ' +
-            '开发者工具拿不到 PCM 帧，这个要在真机上看。见 docs/research/recorder-output-formats.md',
+          '[wave] 这一轮的帧不是裸 PCM（像压缩容器），波形画的是压缩字节 —— ' +
+            '开发者工具没有 PCM 通路，要看真实波形请用真机。' +
+            '见 docs/research/recorder-output-formats.md',
         )
-        this.setData({ waveUnsupported: true })
-        return
       }
     }
-    if (this.data.waveUnsupported) return
 
-    const level = pcmLevel(pcm)
-    const h = Math.round(WAVE_MIN_RPX + level * (WAVE_MAX_RPX - WAVE_MIN_RPX))
-    this.wave.push({ id: ++this.waveSeq, h })
-    if (this.wave.length > WAVE_SLOTS) this.wave.shift()
-    this.setData({ bars: this.wave.slice() })
+    const w = this.waveW
+    const h = this.waveH
+    const mid = h / 2
+    const bars = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
+    const perBar = total / bars
+    const step = w / bars
+    const barW = Math.max(1, step * 0.6)
+
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = WAVE_COLOR
+
+    for (let i = 0; i < bars; i++) {
+      const from = Math.floor(i * perBar)
+      const to = Math.min(total, Math.floor((i + 1) * perBar))
+      let peak = 0
+      for (let s = from; s < to; s++) {
+        const v = Math.abs(view.getInt16(s * 2, true))
+        if (v > peak) peak = v
+      }
+      // ⚠️ 最低 2px：静音时也留一条细线，不然整条波形会"消失"，
+      //    看起来像画布没渲染出来（与参考实现里的 Math.max(2, ...) 同理）
+      const barH = Math.max(2, (peak / 32768) * h * 0.92)
+      ctx.fillRect(i * step + (step - barW) / 2, mid - barH / 2, barW, barH)
+    }
   },
 
-  /** 铺一排最矮的柱子（开始录音时用）—— 见调用处的说明 */
-  resetWave(): WaveBar[] {
-    this.wave = []
-    this.waveSeq = 0
-    const bars: WaveBar[] = []
-    for (let i = 0; i < WAVE_SLOTS; i++) bars.push({ id: ++this.waveSeq, h: WAVE_MIN_RPX })
-    this.wave = bars.slice()
-    return bars
-  },
   audio: null as WechatMiniprogram.InnerAudioContext | null,
   timer: null as ReturnType<typeof setInterval> | null,
   /** 原始词表（不带样式），渲染时再套 cls */
@@ -401,6 +442,7 @@ Page({
      */
     this.gone = true
     this.recorder?.stop()
+    this.waveCtx = null
     this.stopTimer()
     if (this.stopWatchdog !== null) {
       clearTimeout(this.stopWatchdog)
@@ -473,8 +515,8 @@ Page({
 
     if (!this.recorder) {
       this.recorder = new Recorder({
-        // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接喂给响度函数
-        onFrame: (pcm) => this.pushWave(pcm),
+        // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接画
+        onFrame: (pcm) => this.drawWave(pcm),
         onStop: (r) => this.handleRecorded(r),
         onError: (e) => {
           this.stopTimer()
@@ -486,21 +528,25 @@ Page({
     // ⚠️ 每一轮录音重新判一次帧格式（放在 setData 外面：这是页面私有字段，不进渲染数据）
     this.waveChecked = false
 
-    this.setData({
-      phase: 'recording',
-      error: '',
-      elapsed: '0.0',
-      waveUnsupported: false,
-      // ⭐ 先铺一排**最矮**的柱子：整排宽度不变，看着像"已经在听了"，
-      //    而不是等第一帧到了才突然冒出一排东西、把下面的按钮顶下去
-      bars: this.resetWave(),
-      // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
-      restored: false,
-      audioPath: '',
-      playPath: '',
-      result: null,
-      words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
-    })
+    this.setData(
+      {
+        phase: 'recording',
+        error: '',
+        elapsed: '0.0',
+        // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
+        restored: false,
+        audioPath: '',
+        playPath: '',
+        result: null,
+        words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
+      },
+      /**
+       * ⭐ 画布是跟着 phase 一起被 wx:if 创建出来的，所以只能在 setData **回调**里拿 ——
+       *    那正是"视图已经更新完"的时刻。放在 start() 之前还有个好处：
+       *    等第一批帧到达（约 64ms 后）时画布多半已经就绪了。
+       */
+      () => this.prepareWaveCanvas(),
+    )
 
     const startedAt = Date.now()
     this.startedAt = startedAt

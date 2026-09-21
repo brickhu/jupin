@@ -63,22 +63,12 @@
         <text class="text-36rpx font-semibold text-ink">{{elapsed}}s</text>
       </view>
 
-      <!-- ⭐ 声波监测：一帧一根柱子（约 64ms），右进左出，一屏约 2 秒。
+      <!-- ⭐ 声波监测：以中线对称的实心柱条，一帧画一次（见 reading.ts 的 drawWave）。
            ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
               没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
-           ⚠️ 高度是**行内 style**：柱子高度每帧都变，用类名表达等于每帧生成一批新类名。 -->
-      <view class="flex items-end justify-center gap-[4rpx] h-[80rpx] py-1" wx:if="{{!waveUnsupported}}">
-        <view wx:for="{{bars}}" wx:key="id"
-              class="w-[10rpx] rounded-full bg-brand"
-              style="height:{{item.h}}rpx"></view>
-      </view>
-
-      <!-- ⚠️ 开发者工具给的帧是 WebM 压缩块，不是裸 PCM（见 docs/research/recorder-output-formats.md）。
-           按 PCM 读出来是"接近满量程的噪声"，柱子会一直顶格不动 —— 那不是没反应，
-           是压根读不出响度。与其画一条骗人的色块，不如直接说明白。 -->
-      <view class="h-[80rpx] flex items-center justify-center px-2" wx:else>
-        <text class="text-22rpx text-faint text-center leading-[1.6]">开发者工具里的录音不是 PCM 帧，声波要在真机上看</text>
-      </view>
+           ⚠️ 用 canvas 而不是一排 <view>：一帧 1024 个采样点，节点方案既扛不住也会糊成一块。
+           ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。 -->
+      <canvas type="2d" id="wave" class="w-full h-[88rpx] my-1"></canvas>
 
       <view class="mb-2.5"></view>
       <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
