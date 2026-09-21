@@ -18,7 +18,7 @@ export const BRAND = {
   /** 名字 */
   name: '句拼',
   /** 是什么 —— 一句话定位 */
-  tagline: '每日英语朗读竞技场',
+  tagline: '英语朗读竞技场',
   /** 能干什么 —— 面向用户的价值主张 */
   pitch: '英文朗读大比拼，AI评分冲排名',
 } as const
