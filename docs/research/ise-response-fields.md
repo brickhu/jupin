@@ -37,17 +37,29 @@ xml_result.read_sentence                       lan, type, version
 | `phone.gwpp` | **音素发音质量** | ❌ |
 | `sentence[]` 分句四维 | 哪句稳、哪句弱 | ⚠️ 解析了，UI 没用 |
 
-## 二、⚠️ 有三个字段只在 `ise_unite=0` 时返回
+## 二、⭐ `extra_ability` 决定给不给细粒度数据（**不用放弃百分制**）
 
-同一段音频两次对比（其它参数完全一致）：
+同一段音频、只改 `extra_ability`，四组对比（`ise_unite=1` 全程不变）：
 
-| 参数 | 分制 | 多出来的字段 |
-|---|---|---|
-| `ise_unite=1`（生产用的） | 0–100 | — |
-| 不传 `ise_unite`（默认 0） | 0–5 | **`word.pitch`（逐帧音高）/ `pitch_beg` / `pitch_end`**、**`syll.serr_msg`（音节检错）** |
+| `extra_ability` | `syll.serr_msg` | `word.pitch` | `phone.gwpp` |
+|---|---|---|---|
+| `multi_dimension`（**我们现在传的**） | ❌ | ❌ | ✅ |
+| `multi_dimension,syll_phone_err_msg` | ✅ | ❌ | ✅ |
+| `multi_dimension,syll_phone_err_msg,pitch` | ✅ | ✅ | ✅ |
+| （`plev=1` 单独加） | ❌ | ❌ | ✅ |
 
-⭐ 也就是说：**想要语调曲线或音节级检错，就得放弃百分制再请求一次**
-（两次请求 = 两次计费）。做语调/重音维度之前先掂量这笔账。
+⭐ 结论：**要音节级检错（serr_msg）和逐帧音高（pitch），只要把它们加进 `extra_ability` 就行，
+百分制照旧、不多花一分钱。**
+
+> ### ⚠️ 更正（本文件初版写错了）
+>
+> 初版写的是「`pitch`/`serr_msg` 只在 `ise_unite=0` 时返回，想要就得放弃百分制再请求一次」。
+> **那是错的，而且错得很典型**：我拿两个**同时变了两个变量**的样本下了结论
+> （一个是生产参数，一个是探针脚本——后者既没传 `ise_unite`，`extra_ability` 里也没有
+> `syll_phone_err_msg`）。真正的原因只是 `extra_ability` 少写了一段。
+>
+> **教训**：对比实验一次只改一个变量。这个文件第三节刚写完「文档写着 ≠ 实测成立」，
+> 紧接着自己就踩了一个同类的坑。
 
 ## 三、总分是怎么算出来的（实测验算）
 
