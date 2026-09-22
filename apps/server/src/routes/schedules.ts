@@ -15,8 +15,8 @@ import type { Variables } from '../middleware/auth'
 
 export const schedulesRoutes = new Hono<{ Variables: Variables }>()
 
-/** 历史挑战默认列几条（**竞技场数**，不是天数） */
-const DEFAULT_HISTORY = 20
+/** ⭐ 历史挑战默认列几条（**竞技场数**，不是天数）—— 首页只放 5 条，够了 */
+const DEFAULT_HISTORY = 5
 /** 上限 —— 别让一个查询参数把整张表捞出来 */
 const MAX_HISTORY = 50
 

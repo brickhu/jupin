@@ -19,6 +19,7 @@ import { shareRoutes } from './routes/share'
 import { schedulesRoutes } from './routes/schedules'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
+import { leaderboardsRoutes } from './routes/leaderboards'
 import { payRoutes } from './routes/pay'
 
 const app = new Hono()
@@ -153,6 +154,7 @@ app.use('/api/user/*', authMiddleware)
 app.use('/api/schedules/*', authMiddleware)
 app.use('/api/shop/*', authMiddleware)
 app.use('/api/arenas/*', authMiddleware)
+app.use('/api/leaderboards/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
@@ -164,6 +166,8 @@ app.route('/api/schedules', schedulesRoutes)
 app.route('/api/shop', shopRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
 app.route('/api/arenas', arenasRoutes)
+// ⭐ 成长榜：三个成长指标各 TOP10（首页那三块）
+app.route('/api/leaderboards', leaderboardsRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

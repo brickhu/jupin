@@ -168,27 +168,33 @@
       </view>
     </view>
 
-    <!-- ── 连战 ──────────────────────────────────────────────
-         ⚠️ 这里原来是一整块「等级徽章」（由历史最长连续天数推导的 8 档阶梯），
-            已按产品要求**整体废除**，换成成长值（在「我的主页」里）。
-            这一块现在只回答两件事：连了几天、手上有几张解冻卡。
-         ⚠️ 解冻卡**不再自动消耗** —— 断档就是归 1，用不用卡由用户自己决定。
-            所以文案不能写「自动补上」，那是旧的（也是错的）说法。 -->
-    <!-- ⚠️ 整卡可点 → 连战记录（日历 + 领奖）：
-         这张卡回答"我连了几天"，而"怎么连起来的、还有什么没领"在那一页。 -->
-    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}" bindtap="onOpenStreak" hover-class="active__opacity-60">
-      <view class="flex items-center">
-        <text class="text-22rpx text-faint">连续朗读</text>
-        <!-- ⭐ 待领取优先显示：它是一件"还没做的事"，比"我手上有什么"更该被看见 -->
-        <text class="text-22rpx text-warn font-medium ml-auto" wx:if="{{streak.unfreezePending > 0}}">🎁 {{streak.unfreezePending}} 张待领取</text>
-        <text class="text-22rpx text-faint ml-auto" wx:elif="{{streak.unfreezeCards > 0}}">❄️ 解冻卡 ×{{streak.unfreezeCards}}</text>
+    <!--
+      ⚠️ 这里原来有一块「连续朗读 N 天 / 解冻卡」的卡（再早是等级徽章阶梯）。
+         产品要求去掉：连战天数已经在**顶部状态卡第三格**里（还能点进连战记录），
+         同一屏里同一个数再出现一次，只会让人怀疑哪个才准。
+         连战记录页（日历 + 领奖）的入口因此只留状态卡那一处。
+    -->
+
+    <!-- ══ 成长榜 ═══════════════════════════════════════════
+         ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板里那三个数**完全一致**
+            （直接读 users.growth_*，不从 submissions 现算 —— 否则会出现
+             「榜上的数和面板里的数不一样」这种没法解释的差）。
+         ⚠️ 数据单独一个接口（/api/leaderboards/growth）、**不 await**：
+            它在页面最下方，首页上半段没理由等它；拉不到就是这三块不出现。
+         ⚠️ 图标与用户面板里那三个数一致（📈 自我超越 / 🔥 孜孜不倦 / 🏔️ 鹤立鸡群）。 -->
+    <block wx:if="{{boardsLoaded}}">
+      <view class="bg-white rounded-2.5 p-4 mt-4" wx:for="{{boardList}}" wx:key="key">
+        <text class="text-28rpx font-semibold text-ink">{{item.title}}</text>
+
+        <view class="flex items-center py-2" wx:for="{{item.rows}}" wx:for-item="row" wx:key="rank">
+          <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐，一眼就能看出来 -->
+          <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
+          <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
+          <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
+        </view>
+
+        <text class="text-22rpx text-faint block py-2" wx:if="{{item.rows.length === 0}}">还没有人上榜</text>
       </view>
-      <view class="flex items-baseline mt-2">
-        <text class="text-48rpx font-bold text-ink">{{streak.streakDays}}</text>
-        <text class="text-24rpx text-faint ml-2">天 · 历史最长 {{streak.streakBest}} 天</text>
-      </view>
-      <text class="text-22rpx text-faint block mt-2">每连续 7 天得 1 张解冻卡 —— 断档后可以自己决定要不要用它补上</text>
-      <text class="text-22rpx text-faint block mt-1" wx:if="{{streak.unfreezeExpiresOn}}">最早一张 {{streak.unfreezeExpiresOn}} 到期</text>
-    </view>
+    </block>
   </block>
 </view>

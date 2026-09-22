@@ -334,6 +334,28 @@ export interface ShopOrderResponse {
   payData: VirtualPayData
 }
 
+/**
+ * ⭐ 成长榜的一行。
+ *
+ * ⚠️ 与 LeaderboardRow **故意分开**：那个的 score 是朗读分（要统一显示一位小数，
+ *    见 formatScore），而成长值是**整数** —— 套 formatScore 会显示成 12.0。
+ * ⚠️ 昵称口径与竞技场榜单一致：没起过名字是「挑战者」，自己显示「你」。
+ */
+export interface GrowthRankRow {
+  rank: number
+  nickname: string
+  /** 成长值（整数，累加值） */
+  value: number
+  isMe: boolean
+}
+
+/** 首页那三块成长榜（自我超越 / 孜孜不倦 / 鹤立鸡群，各 TOP10） */
+export interface GrowthRankResponse {
+  self: GrowthRankRow[]
+  diligence: GrowthRankRow[]
+  standout: GrowthRankRow[]
+}
+
 /** 一次提交给 streak 带来的具体变化 —— 结果页要逐条讲清楚 */
 export interface StreakDelta {
   streakDays: number

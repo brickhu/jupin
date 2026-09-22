@@ -1,6 +1,12 @@
 import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
-import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
-import { fetchSchedules } from '../../lib/api/client'
+import type {
+  GrowthRankResponse,
+  GrowthRankRow,
+  ScheduleEntry,
+  SchedulesResponse,
+  StreakView,
+} from '@jushuo/shared'
+import { fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
@@ -10,6 +16,26 @@ import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
+/** 首页那一块榜的展示视图（标题 + 行） */
+interface BoardView {
+  key: string
+  title: string
+  rows: GrowthRankRow[]
+}
+
+/**
+ * 三块榜 → WXML 能直接渲染的数组。
+ * ⚠️ 标题与顺序只在这里写一次：三块榜的图标要与用户面板里那三个数一致
+ *    （📈 自我超越 / 🔥 孜孜不倦 / 🏔️ 鹤立鸡群）。
+ */
+function boardListOf(b: GrowthRankResponse): BoardView[] {
+  return [
+    { key: 'self', title: '📈 自我超越 TOP10', rows: b.self },
+    { key: 'diligence', title: '🔥 孜孜不倦 TOP10', rows: b.diligence },
+    { key: 'standout', title: '🏔️ 鹤立鸡群 TOP10', rows: b.standout },
+  ]
+}
+
 interface CardView {
   /** 只有今日那一张有（见 toView 的说明） */
   date: string
@@ -202,7 +228,6 @@ Page({
     /** 连不上时的**可操作**提示（不是「请求失败」四个字） */
     error: '',
 
-    streak: null as StreakView | null,
     /**
      * ⭐ 状态卡上的三个数。
      *
@@ -213,6 +238,14 @@ Page({
     stats: null as StatsView | null,
     today: null as CardView | null,
     history: [] as CardView[],
+    /**
+     * ⭐ 三块成长榜（自我超越 / 孜孜不倦 / 鹤立鸡群，各 TOP10）。
+     * ⚠️ 与卡片分开存：它失败**不该**影响首页上半段（顶多这三块不出现）。
+     * ⚠️ 只在 TS 里拼成数组、**不另存一份原始响应** —— 同一份数据两种表示迟早对不上。
+     */
+    boardList: [] as BoardView[],
+    /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪三个空框） */
+    boardsLoaded: false,
     /**
      * ⭐ 正在播的是哪一句（articleId）。0 = 没在播。
      *
@@ -373,6 +406,14 @@ Page({
        *    （见 lib/join.ts 的 refreshMe：失败只警告，不影响这一页的加载）。
        */
       void refreshMe()
+      /**
+       * ⭐ 顺带拉三块成长榜 —— **不 await**：它在页面最下方，
+       *    而首页上半段没理由等它。回来了自己 setData。
+       * ⚠️ 失败只警告：榜拉不到，首页照常能用（顶多那三块不出现）。
+       */
+      void fetchGrowthBoards()
+        .then((b) => this.setData({ boardList: boardListOf(b), boardsLoaded: true }))
+        .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))
       this.cards = { today: d.today, history: d.history }
       this.setData({ loading: false })
       this.render()
@@ -395,7 +436,6 @@ Page({
     if (!c) return
     const st = me.getState()
     this.setData({
-      streak: st.streak,
       stats: statsOf(st.profile, st.streak),
       today: this.toView(c.today),
       history: c.history.map((x) => this.toView(x)),

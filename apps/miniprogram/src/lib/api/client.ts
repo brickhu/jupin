@@ -3,6 +3,7 @@ import type {
   ArenaDetail,
   ChallengesResponse,
   EnergyResponse,
+  GrowthRankResponse,
   MeResponse,
   ParticipationsResponse,
   ScheduleDetail,
@@ -627,6 +628,16 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
  *    · 这个：我看**这一句**的竞技场 —— 挑战它算**今天**（用响应里的 submissionDate）
  *    · 那个：回到**某一天**的挑战再读一次 —— 挑战它算**那一天**
  */
+/**
+ * ⭐ 成长榜 —— 三个成长指标各 TOP10（首页最下面那三块）。
+ *
+ * ⚠️ 它**不在** /api/schedules 那个包里：那是「今天读哪一句」，这是全站累计的排行，
+ *    两件事共用一个响应只会让两边都变重。首页本来就是并发拉的，多一个请求不多一次往返。
+ */
+export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
+  return request<GrowthRankResponse>('/api/leaderboards/growth', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
 export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
   return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
 }
