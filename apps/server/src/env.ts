@@ -27,6 +27,27 @@ import { z } from 'zod'
  * ⚠️ 从**仓库根**加载，而不是 cwd：同一个 bundle 会在三种 cwd 下跑
  *    （apps/server / 仓库根 / 容器里的 /app），按 cwd 找必然漏。
  */
+/**
+ * ⭐ 解析一行 KEY=VALUE。
+ *
+ * ⚠️⚠️ **必须剥掉行内注释**（`KEY=value  # 说明`）——
+ *    值会**原样**进 process.env，尾部拖上一段 `# 现网` 之后，
+ *    任何签名/校验都只会以「值不对」的形式失败，而看不出是因为注释。
+ *    （真踩过：XPAY_APP_KEY 后面跟了 `# 现网`，虚拟支付的 paySig 直接报 -15006，
+ *      而排查方向会先怀疑算法、再怀疑 AppKey 拿错环境。）
+ *
+ * ⚠️ 判据按 dotenv 的惯例：**`#` 前面有空白**才算注释 ——
+ *    所以值内部不含空白的 `#`（比如密码里的）不会被切掉。
+ * ⚠️ 与 tools/env.mjs 的 parseEnvFile 是**同一套规则**，改一处必须改另一处。
+ */
+export function parseEnvLine(line: string): [string, string] | null {
+  const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
+  if (!m) return null
+  const key = m[1] as string
+  const raw = m[2] as string
+  return [key, raw.replace(/\s+#.*$/, '').trim()]
+}
+
 function loadLayeredEnv(): void {
   /** 向上找到带 pnpm-workspace.yaml 的那一层 —— 那就是仓库根 */
   function findRoot(): string | null {
@@ -50,9 +71,9 @@ function loadLayeredEnv(): void {
     const path = resolve(root, file)
     if (!existsSync(path)) continue
     for (const line of readFileSync(path, 'utf8').split('\n')) {
-      const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-      if (!m) continue
-      const [, key, value] = m as unknown as [string, string, string]
+      const parsed = parseEnvLine(line)
+      if (!parsed) continue
+      const [key, value] = parsed
       // ⚠️ 进程里原本就有的键优先级最高，任何文件都不能覆盖
       if (fromProcess.has(key)) continue
       process.env[key] = value

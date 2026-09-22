@@ -35,6 +35,25 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const MODES = ['local', 'dev', 'prod']
 
 /**
+ * ⭐ 解析一行 KEY=VALUE。
+ *
+ * ⚠️⚠️ **必须剥掉行内注释**（`KEY=value  # 说明`）：
+ *    值会原样进 process.env（以及 GitHub Secrets），尾部拖上一段 `# 现网` 之后，
+ *    任何签名都会以「值不对」的形式失败，而看不出是因为注释。
+ *    （真踩过：XPAY_APP_KEY 后面跟了 `# 现网`，虚拟支付报 -15006，
+ *      而排查会先怀疑算法、再怀疑 AppKey 拿错环境。）
+ *
+ * ⚠️ 判据按 dotenv 惯例：**`#` 前面有空白**才算注释，
+ *    所以值内部不含空白的 `#` 不会被切掉。
+ * ⚠️ 与 apps/server/src/env.ts 的 parseEnvLine 是**同一套规则**，改一处必须改另一处。
+ */
+function parseEnvLine(line) {
+  const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
+  if (!m) return null
+  return [m[1], m[2].replace(/\s+#.*$/, '').trim()]
+}
+
+/**
  * 解析一份 .env。容忍注释、空行、值里带 = 的情况。
  * ⚠️ 刻意不支持引号包裹与多行值：这个项目的 .env 里没有那种写法，
  *    支持它们只会让"值到底是什么"变得需要推理。
@@ -43,8 +62,8 @@ export function parseEnvFile(path) {
   if (!existsSync(path)) return {}
   const out = {}
   for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m) out[m[1]] = m[2]
+    const parsed = parseEnvLine(line)
+    if (parsed) out[parsed[0]] = parsed[1]
   }
   return out
 }

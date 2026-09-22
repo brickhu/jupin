@@ -259,6 +259,16 @@ const isRealValue = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{4,}$/.test(v
 for (const k of XPAY_KEYS) {
   const v = process.env[k]
   if (isRealValue(v)) params[k] = v
+  /**
+   * ⚠️⚠️ 有值但被跳过时**必须出声**。
+   *    这个守卫曾经**静默**过滤掉两个 AppKey —— 因为 .env 里那两行尾部带了
+   *    `# 现网` 这样的行内注释，值变成了 `abc123 # 现网`。
+   *    结果：服务端 offerId 有、appKey 没有，购买页永远买不了，
+   *    而 CI 日志里一行异常都没有。（后来是 /health 的 pay 块照出来的。）
+   */
+  if (v !== undefined && v !== '' && !isRealValue(v)) {
+    console.warn('⚠️ ' + k + ' 的值不像有效凭据（长度或字符不合规），已跳过 —— 检查 .env 里是不是带了行内注释')
+  }
 }
 
 /**
