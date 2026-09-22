@@ -14,6 +14,10 @@
 #     加载优先级是「真实环境变量 > .env.<mode> > .env」，所以 CI 里直接给进程变量即可，
 #     runner 上不需要落任何 .env 文件。
 #
+#  ⭐ 这些值**本地 .env / .env.<env> 里全都有**，不用手抄：
+#       node tools/gh-secrets.mjs dev           # 先看要设哪些（默认不打印值）
+#       node tools/gh-secrets.mjs dev --apply   # gh auth login 之后一次设完
+#
 #  需要的 secrets（推荐按 **Environment** 各配一份，见 AGENT.md §4.2）：
 #    账号级（dev/prod 同值）：WXCLOUD_APPID / WXCLOUD_CLI_SECRET
 #                            XFYUN_APP_ID / XFYUN_API_KEY / XFYUN_API_SECRET
