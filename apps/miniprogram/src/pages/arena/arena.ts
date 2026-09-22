@@ -1,4 +1,4 @@
-import { startButtonLabel } from '@jushuo/shared'
+import { difficultyLabel, startButtonLabel } from '@jushuo/shared'
 import type { ArenaDetail, ScheduleDetail } from '@jushuo/shared'
 import { fetchArenaDetail, fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
@@ -38,6 +38,10 @@ Page({
     submissionDate: '',
     text: '',
     translation: '',
+    /** ⭐ 朗读难度徽标（空串 = 内容里没写 ⇒ 整行不渲染） */
+    difficultyText: '',
+    /** ⭐ 标签，拼成一行 '名言 · 长句'（空串 = 没有标签） */
+    tagsText: '',
     isToday: false,
 
     /** '23 人参与，最高得分 74' */
@@ -121,6 +125,9 @@ Page({
         submissionDate: d.submissionDate,
         text: d.text,
         translation: d.translation,
+        difficultyText: difficultyLabel(d.difficulty) ?? '',
+        // ⚠️ 用一个分隔符拼成一行：标签个数不定，换成多个药丸就要处理换行对齐
+        tagsText: d.tags.join(' · '),
         isToday: d.isToday,
         stat: this.statText(d),
         topScore: d.topScore,

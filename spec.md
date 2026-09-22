@@ -280,16 +280,21 @@ articles
   content_json                -- 正文静态 JSON 地址（句子原文 + 词级数据）
   tips_json                   -- 朗读技巧 JSON 地址
   standard_audio              -- 标准发音 MP3 地址
-  difficulty                  -- 难度 1–5      INDEX
-  category                    -- 分类          INDEX
+  -- ⚠️ difficulty / category 这两列**刻意没有**：难度与标签是**正文的属性**，
+  --    真相在 content_json 指向的那份 JSON 里（见「CDN 侧 JSON」）。
+  --    落库就是第二份真相，必然与 JSON 漂移 —— 要按它们筛选时再补列 /
+  --    用 article_tags 回填，且回填源永远是那份 JSON。
   content_status              -- draft | published | archived
   content_hash                -- 内容指纹，流水线重跑时判断要不要重新发布
   is_active                   -- 竞技开关（与 content_status 是两回事）
   participant_count           -- 冗余计数，可排序
-  conquered_count             -- 征服人数（≥85）
+  conquered_count             -- 攻克人数（拿到分数即攻克；85 分线已废除）
   created_at, updated_at
 
-article_tags                  -- 独立成表才能按单个标签索引
+-- 标签索引（表已建，但⚠️ **目前没有任何查询**）
+-- 标签的真相在正文 JSON 的 tags 里；这张表只为「按标签筛选」准备，
+-- 现在同步只会造出第二份会漂移的真相。真要做筛选时再用它回填。
+article_tags
   article_id, tag             UNIQUE(article_id, tag)  INDEX(tag)
 
 -- 提交记录：**每次提交一条，永久保留**
@@ -357,7 +362,8 @@ GROUP BY user_id
   "id": 123,
   "text": "The only way to do great work is to love what you do.",  // ⭐ 评分参考文本
   "translation": "做好工作的唯一方法就是热爱你所做的事。",
-  "difficulty": 1,
+  "difficulty": "medium",        // ⭐ 朗读难度，三档：easy | medium | hard（UI 显示 初 / 中 / 高）
+  "tags": ["名言", "长句"],       // ⭐ 主题 / 朗读特征，顺序即重要程度（≤ 8 个，单个 ≤ 12 字）
   "words": [
     {
       "pos": 0, "word": "The", "ipa": "ðə", "posTag": "art.", "meaningZh": "这（定冠词）",
@@ -400,7 +406,8 @@ GROUP BY user_id
    ⚠️ 是「朗读难度」，不是「阅读难度」
    特征：难音密度 / 连读点数 / 弱读词数 / 词数与音节数 / 最长词音节数
    锚点：5–10 条人工已定级样本（校准标尺）
-   输出：difficulty + reason（可解释）
+   输出：difficulty = 三档 easy / medium / hard（即 初 / 中 / 高）
+        + reason（写给审核看的理由；⚠️ 不进正文 JSON —— 客户端只显示档位，不显示理由）
 
 ④ 标准音 + 词级时间戳（fish-audio /v1/tts/stream/with-timestamp）
    整篇一份 + 每个竞技场一份

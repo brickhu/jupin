@@ -22,9 +22,19 @@
            用户就知道自己点的是哪一天，这里再复述一遍只是噪声。
            「是不是今天」由下方按钮那句话交代。 -->
 
+      <!-- ⭐ 难度 + 标签（内容里没写就整行不出现）。
+           ⚠️ 放在句子**上面**：先交代「这一句什么难度」，再读句子；
+              放到译文下面会被当成译文的一行补充说明。
+           ⚠️ 难度不按档位着色，理由同首页卡片。 -->
+      <view class="flex items-center mb-3" wx:if="{{difficultyText || tagsText}}">
+        <text class="text-22rpx text-faint bg-page rounded-full px-2 py-[6rpx] leading-[1]"
+              wx:if="{{difficultyText}}">{{difficultyText}}</text>
+        <text class="text-22rpx text-faint ml-2" wx:if="{{tagsText}}">{{tagsText}}</text>
+      </view>
       <!-- ⚠️ 这一页**不放**标准音的播放按钮 —— 听句子是朗读页的事（那里有喇叭和逐词发音）。
            这一页的职责是「看战绩、看榜单、决定读不读」。
            要听就先点「参与挑战」进去听，那一页的音频入口是唯一的一处。 -->
+
       <view class="flex items-start">
         <text class="text-44rpx leading-[1.5] font-semibold text-ink flex-1">{{text}}</text>
       </view>

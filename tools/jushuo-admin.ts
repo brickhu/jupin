@@ -2,7 +2,7 @@
 /**
  * 句库管理 CLI —— 「加一条句子」「安排到某日推荐」这些**运营动作**的唯一入口。
  *
- *   tsx tools/jushuo-admin.ts add-sentence --text "..." --translation "..."
+ *   tsx tools/jushuo-admin.ts add-sentence --text "..." --translation "..." --difficulty hard --tags "名言,长句"
  *   tsx tools/jushuo-admin.ts schedule-set --date tomorrow --id 6
  *   tsx tools/jushuo-admin.ts list
  *
@@ -41,6 +41,12 @@ import {
 
 import { and, asc, desc, eq, gte } from 'drizzle-orm'
 import { addDays, isValidDay, today } from '../packages/shared/src/day'
+import {
+  DIFFICULTY_LABEL,
+  DIFFICULTY_ORDER,
+  normalizeDifficulty,
+  normalizeTags,
+} from '../packages/shared/src/difficulty'
 
 // ─────────────────────────────── 参数解析 ───────────────────────────────
 
@@ -142,6 +148,20 @@ async function cmdAddSentence(args: Args): Promise<void> {
   const noAudio = args.flags['no-audio'] === true
   const force = args.flags.force === true
 
+  /**
+   * ⭐ 难度**必填**（初 / 中 / 高）。
+   *
+   * ⚠️ 刻意不给默认档位：默认成「中」等于把一句**没评过级**的句子
+   *    标成评过级，而这类错在界面上完全看不出来（就是一个徽标而已）。
+   *    宁可在这里报错 —— 反正 content-files.test.ts 也会拦下没难度的正文 JSON。
+   */
+  const difficulty = normalizeDifficulty(str(args, 'difficulty'))
+  if (!difficulty) {
+    fail(`缺少或不认识的 --difficulty。要 ${DIFFICULTY_ORDER.join(' / ')}（即 初 / 中 / 高）`)
+  }
+  /** ⭐ 标签可选，逗号分隔；去空 / 去重 / 限个数交给 shared（与服务端同一套规则） */
+  const tags = normalizeTags((str(args, 'tags') ?? '').split(','))
+
   const id = str(args, 'id') ? Number(str(args, 'id')) : await nextArticleId()
   if (!Number.isInteger(id) || id <= 0) fail(`--id 必须是正整数`)
 
@@ -155,7 +175,7 @@ async function cmdAddSentence(args: Args): Promise<void> {
   // ① 正文：先落盘。seedStandardAudio 要靠它算切片个数
   await writeFile(
     jsonPath,
-    `${JSON.stringify({ id, text, translation, words: [] }, null, 2)}\n`,
+    `${JSON.stringify({ id, text, translation, difficulty, tags, words: [] }, null, 2)}\n`,
     'utf8',
   )
 
@@ -191,12 +211,15 @@ async function cmdAddSentence(args: Args): Promise<void> {
       standardAudio: noAudio ? null : audioKeyOf(id),
       text,
       translation,
+      difficulty,
+      tags,
     },
     [
       `✓ 已加句子 #${id}（${contentStatus}）`,
       `  正文：content/articles/${id}.json`,
       `  标准音：${audioNote}`,
       `  词数：${wordCount}`,
+      `  难度：${DIFFICULTY_LABEL[difficulty]}${tags.length > 0 ? '　标签：' + tags.join(' / ') : ''}`,
       publish ? '  ⚠️ 已标记 published —— 但没有排期就不会出现在任何一天' : '  当前是 draft',
     ].join('\n'),
   )
@@ -362,7 +385,7 @@ async function cmdScheduleGet(args: Args): Promise<void> {
 
 const HELP = `句库管理 CLI
 
-  add-sentence --text "..." [--translation "..."] [--id N] [--publish] [--no-audio] [--force]
+  add-sentence --text "..." --difficulty <easy|medium|hard> [--translation "..."] [--tags "a,b"] [--id N] [--publish] [--no-audio] [--force]
   audio         --id N [--force]          只为已有句子补/重做标准音
   schedule-set  --date <Y|today|tomorrow|+N> --id N [--force]
   schedule-get  --date <Y|today|tomorrow|+N>

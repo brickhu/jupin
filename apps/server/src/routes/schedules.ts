@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { desc, eq, lt } from 'drizzle-orm'
-import { today } from '@jushuo/shared'
-import type { ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
+import { normalizeDifficulty, normalizeTags, today } from '@jushuo/shared'
+import type { ArticleDifficulty, ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
 import { loadArticleContent } from '../services/content'
@@ -116,15 +116,28 @@ schedulesRoutes.get('/', async (c) => {
   ])
 
   // ⚠️ 正文按 contentJson 去重后一次性读：轮转池只有几句，反复出现同一条内容
-  const byContentJson = new Map<string, { text: string; translation: string }>()
+  // ⚠️ 这里的 type 必须与 loadArticleContent 的解析口径一致：
+  //    难度 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
+  //    （articles 表只是索引，见 db/schema.ts）。
+  const byContentJson = new Map<
+    string,
+    { text: string; translation: string; difficulty: ArticleDifficulty | null; tags: string[] }
+  >()
   for (const id of articleIds) {
     const a = articleById.get(id)
-    if (a) byContentJson.set(a.contentJson, { text: '', translation: '' })
+    if (a) byContentJson.set(a.contentJson, { text: '', translation: '', difficulty: null, tags: [] })
   }
   await Promise.all(
     [...byContentJson.keys()].map(async (key) => {
       const content = await loadArticleContent(key)
-      byContentJson.set(key, { text: content?.text ?? '', translation: content?.translation ?? '' })
+      byContentJson.set(key, {
+        text: content?.text ?? '',
+        translation: content?.translation ?? '',
+        // ⚠️ 内容可能比代码旧（CDN 上的老 JSON 没有这两个字段）⇒ 一律过规范化，
+        //    认不出就是 null / []，**不补默认档位**（见 shared/difficulty.ts）
+        difficulty: normalizeDifficulty(content?.difficulty),
+        tags: normalizeTags(content?.tags),
+      })
     }),
   )
 
@@ -145,9 +158,13 @@ schedulesRoutes.get('/', async (c) => {
   /** 卡片里与「哪一天」无关的那部分 —— 今日和历史共用 */
   const commonOf = (articleId: number, contentJson: string): Omit<ScheduleEntry, 'articleId'> | null => {
     const st = stats.get(articleId)
+    const c = byContentJson.get(contentJson)
     return {
-      text: byContentJson.get(contentJson)?.text ?? '',
-      translation: byContentJson.get(contentJson)?.translation ?? '',
+      text: c?.text ?? '',
+      translation: c?.translation ?? '',
+      // ⭐ 难度 / 标签跟正文一起走，卡片与详情页共用同一份口径
+      difficulty: c?.difficulty ?? null,
+      tags: c?.tags ?? [],
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
       myBest: st?.myBest ?? null,
@@ -227,6 +244,8 @@ schedulesRoutes.get('/:date', async (c) => {
     articleId: pick.article.id,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
+    difficulty: normalizeDifficulty(content?.difficulty),
+    tags: normalizeTags(content?.tags),
     isScheduled: pick.source === 'scheduled',
     isToday: date === now,
     participantCount: stats?.participantCount ?? 0,

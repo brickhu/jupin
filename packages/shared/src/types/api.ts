@@ -1,4 +1,5 @@
 import type { ScoreParts } from '../scoring'
+import type { ArticleDifficulty } from './content'
 
 /**
  * 引擎输出的词级结果。
@@ -417,6 +418,10 @@ export interface ScheduleEntry {
   /** 句子原文 */
   text: string
   translation: string
+  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  difficulty: ArticleDifficulty | null
+  /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
+  tags: string[]
   /**
    * ⭐ 卡片上的标准音（可播引用 + 时长）—— 用来在卡片上放「圆形播放按钮」。
    *
@@ -470,6 +475,10 @@ export interface ScheduleDetail {
   submissionDate: string
   text: string
   translation: string
+  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  difficulty: ArticleDifficulty | null
+  /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
+  tags: string[]
   isScheduled: boolean
   isToday: boolean
   participantCount: number
@@ -501,6 +510,10 @@ export interface ArenaDetail {
   articleId: number
   text: string
   translation: string
+  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  difficulty: ArticleDifficulty | null
+  /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
+  tags: string[]
   /** ⭐ 这次挑战该记到哪一天 —— 按句子寻址时是服务端的**今天** */
   submissionDate: string
   /** submissionDate 是不是今天（页面据此显示连战提示） */
@@ -527,7 +540,7 @@ export interface SchedulesResponse {
    *    · history —— **articles 表**（句库）：竞技数据的单位永远是句子，
    *                  排期只是「哪一天展示哪一句」的展示层（见 db/schema.ts）
    * ⚠️ 不会和 today 那句重复（池子小的时候隔几天就会轮回到同一句）。
-   * ⚠️ date 是该句**最近一次排期**的日子 —— arena 页目前仍按日期寻址。
+   * ⚠️ 端侧**不再需要**这个日期：点进去走按句子寻址的 /api/arenas/:articleId。
    *    规则与单测见 services/schedule-shape.ts。
    */
   history: ScheduleEntry[]

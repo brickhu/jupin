@@ -31,6 +31,14 @@ export interface ArticleAudio extends AudioRef {
  *    articles.contentJson / tipsJson / standardAudio 分别指向下面的 JSON / MP3。
  */
 
+/**
+ * ⭐ 句子难度 —— **朗读难度**，三档。
+ *
+ * ⚠️⚠️ 不是阅读难度，两者的区别与依据写在 difficulty.ts（那里有实测例子）。
+ * ⚠️ 存 ASCII 值，中文只在 UI 上出现（DIFFICULTY_LABEL）。
+ */
+export type ArticleDifficulty = 'easy' | 'medium' | 'hard'
+
 /** 文章正文静态 JSON —— articles.contentJson 指向它 */
 export interface ArticleContent {
   id: number
@@ -39,6 +47,26 @@ export interface ArticleContent {
   translation: string
   /** 词级数据（点词回放 / 逐词 A/B 的基础设施） */
   words: ArticleWord[]
+
+  /**
+   * ⭐ **朗读难度**（见 difficulty.ts）。
+   *
+   * ⚠️ 可选，**这不是省事、是必须的**：正文在静态资源 / CDN 上，
+   *    可能比代码旧 —— 老 JSON 里没有这个字段。
+   *    所以端侧与服务端一律 fail-soft（不显示难度徽标），
+   *    并且**不许**在这里补一个默认档位：编出来的难度比没有难度更糟。
+   */
+  difficulty?: ArticleDifficulty
+  /**
+   * ⭐ 主题 / 朗读特征标签（自由文本，顺序即重要程度）。
+   *
+   * ⚠️ 与难度一样是**可选**的，理由同上。
+   * ⚠️ 读到的值不必假设干净：入库前一律走 normalizeTags（去空 / 去重 / 限个数）。
+   * ⚠️ 为什么不落 article_tags 表：那张表是为「按标签索引」准备的，而目前
+   *    没有任何查询用它 —— 现在同步只会多出一份会和这份 JSON 漂移的第二真相。
+   *    真要按标签筛选时，这里就是回填源（表已经建好，见 db/schema.ts）。
+   */
+  tags?: string[]
 
   /**
    * ⭐ 标准音的**云存储 fileID** —— 由服务端按当前环境拼好返回。
