@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ENERGY_PACKS, ENERGY_PER_CHALLENGE, PAY_MIN_PRICE_FEN } from '../packages/shared/src/constants/index.ts'
+import { loadEnv } from './env.mjs'
 
 /**
  * ⭐ 生成虚拟支付「道具批量导入」模板（道具管理 → 批量添加）。
@@ -146,6 +147,8 @@ function writeXlsx(rows: Row[], outPath: string): void {
 }
 
 async function main(): Promise<void> {
+  /** ⚠️ 要读 .env 才能核对道具 ID（根 .env 里那份，与 target 无关） */
+  loadEnv('local')
   await ensureTemplate()
   mkdirSync(OUT_DIR, { recursive: true })
 
@@ -184,6 +187,27 @@ async function main(): Promise<void> {
       )
     }
     console.log('   （不改的话发货时会对不上价，报 -15013）')
+  }
+  /**
+   * ⭐⭐ 核对 `.env` 里的道具 ID 与这份文件是否**逐字一致**。
+   *
+   * ⚠️ 不一致的症状是支付时报 **-15010（道具未发布）** ——
+   *    而那个报错会让人跑去微信侧翻道具列表，不会想到「我们配的 ID 和导入的差一个下划线」。
+   *    （这个坑真踩过一次：文件里是 energy10，.env 里写成了 energy_10。）
+   */
+  const mismatched: string[] = []
+  for (const g of ENERGY_PACKS) {
+    const want = productIdOf(g.code)
+    const key = 'XPAY_PRODUCT_' + g.code.toUpperCase()
+    const got = process.env[key]
+    if (got && got !== want) mismatched.push('  · ' + key + '=' + got + '，但导入文件里是 ' + want)
+  }
+  console.log('')
+  if (mismatched.length) {
+    console.log('❌ .env 里的道具 ID 与这份导入文件对不上（会报 -15010 道具未发布）：')
+    for (const m of mismatched) console.log(m)
+  } else {
+    console.log('✅ .env 里的道具 ID 与这份导入文件一致（没有配的会跳过）')
   }
   console.log('')
   console.log('最低价下限（iOS 硬约束）：¥' + PAY_MIN_PRICE_FEN / 100)

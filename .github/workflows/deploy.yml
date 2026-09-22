@@ -82,9 +82,13 @@ jobs:
           MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
           MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+          # ⚠️ 虚拟支付：两把 AppKey 都要齐（dev 走沙箱那把、prod 走现网那把）
+          XPAY_OFFER_ID: ${{ secrets.XPAY_OFFER_ID }}
+          XPAY_APP_KEY: ${{ secrets.XPAY_APP_KEY }}
+          XPAY_SANDBOX_APP_KEY: ${{ secrets.XPAY_SANDBOX_APP_KEY }}
         run: |
           missing=""
-          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET; do
+          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET XPAY_OFFER_ID XPAY_APP_KEY XPAY_SANDBOX_APP_KEY; do
             eval "v=\$"$k
             [ -z "$v" ] && missing="$missing $k"
           done
@@ -115,6 +119,14 @@ jobs:
           XFYUN_API_SECRET: ${{ secrets.XFYUN_API_SECRET }}
           WX_APPID: ${{ secrets.WX_APPID }}
           WX_SECRET: ${{ secrets.WX_SECRET }}
+          # ⭐ 虚拟支付。⚠️ XPAY_ENV 刻意**不在这里** —— 它由 deploy 脚本按目标环境写死
+          #    （dev=沙箱 / prod=现网），避免有人手填成现网、测试时真扣钱。
+          XPAY_OFFER_ID: ${{ secrets.XPAY_OFFER_ID }}
+          XPAY_APP_KEY: ${{ secrets.XPAY_APP_KEY }}
+          XPAY_SANDBOX_APP_KEY: ${{ secrets.XPAY_SANDBOX_APP_KEY }}
+          XPAY_PRODUCT_ENERGY_10: ${{ secrets.XPAY_PRODUCT_ENERGY_10 }}
+          XPAY_PRODUCT_ENERGY_300: ${{ secrets.XPAY_PRODUCT_ENERGY_300 }}
+          XPAY_PRODUCT_ENERGY_3000: ${{ secrets.XPAY_PRODUCT_ENERGY_3000 }}
           ENGINE: xfyun
         run: node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
 
@@ -153,9 +165,13 @@ jobs:
           MYSQL_USERNAME: ${{ secrets.MYSQL_USERNAME }}
           MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+          # ⚠️ 虚拟支付：两把 AppKey 都要齐（dev 走沙箱那把、prod 走现网那把）
+          XPAY_OFFER_ID: ${{ secrets.XPAY_OFFER_ID }}
+          XPAY_APP_KEY: ${{ secrets.XPAY_APP_KEY }}
+          XPAY_SANDBOX_APP_KEY: ${{ secrets.XPAY_SANDBOX_APP_KEY }}
         run: |
           missing=""
-          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET; do
+          for k in WXCLOUD_APPID WXCLOUD_CLI_SECRET WXCLOUD_ENV_ID MYSQL_ADDRESS MYSQL_USERNAME MYSQL_PASSWORD TOKEN_SECRET XPAY_OFFER_ID XPAY_APP_KEY XPAY_SANDBOX_APP_KEY; do
             eval "v=\$"$k
             [ -z "$v" ] && missing="$missing $k"
           done
@@ -187,6 +203,13 @@ jobs:
           WX_APPID: ${{ secrets.WX_APPID }}
           WX_SECRET: ${{ secrets.WX_SECRET }}
           ENGINE: xfyun
+          # ⭐ 虚拟支付。⚠️ XPAY_ENV 刻意不在这里：deploy 脚本按目标环境写死（prod=0 现网）
+          XPAY_OFFER_ID: ${{ secrets.XPAY_OFFER_ID }}
+          XPAY_APP_KEY: ${{ secrets.XPAY_APP_KEY }}
+          XPAY_SANDBOX_APP_KEY: ${{ secrets.XPAY_SANDBOX_APP_KEY }}
+          XPAY_PRODUCT_ENERGY_10: ${{ secrets.XPAY_PRODUCT_ENERGY_10 }}
+          XPAY_PRODUCT_ENERGY_300: ${{ secrets.XPAY_PRODUCT_ENERGY_300 }}
+          XPAY_PRODUCT_ENERGY_3000: ${{ secrets.XPAY_PRODUCT_ENERGY_3000 }}
           # ⚠️ prod 默认**不灌种子**（deploy 脚本里 target 为 prod 时是 false）。
           #    首次部署 prod 时把仓库变量 SEED_ON_START 设为 true 跑一次，
           #    否则 prod 句库是空的 —— 朗读页读不到正文。

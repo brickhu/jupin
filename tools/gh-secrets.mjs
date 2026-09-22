@@ -35,6 +35,18 @@ const ACCOUNT_LEVEL = [
   'XFYUN_API_SECRET',
   'WX_APPID',
   'WX_SECRET',
+  // ⭐ 虚拟支付（见 docs/design/payment-and-purchase.md §9）。
+  // ⚠️ 漏掉这几个的症状是**静默的**：服务起来了、/health 也 ok，
+  //    只是 pay.offerId / pay.appKey 是 false，购买页永远买不了 ——
+  //    而 CI 日志里看不出任何异常。（这个坑真踩过一次。）
+  'XPAY_OFFER_ID',
+  'XPAY_APP_KEY',
+  'XPAY_SANDBOX_APP_KEY',
+  // ⚠️ 三个道具 ID 是**账号级**（属于微信侧，不属于我们的 dev/prod）：
+  //    用哪个由 XPAY_ENV 决定，而 XPAY_ENV 由 deploy 脚本按目标环境给。
+  'XPAY_PRODUCT_ENERGY_10',
+  'XPAY_PRODUCT_ENERGY_300',
+  'XPAY_PRODUCT_ENERGY_3000',
 ]
 
 /** 环境级：dev 与 prod 不同，来自 .env.<target> */
