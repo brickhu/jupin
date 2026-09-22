@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { migrate } from 'drizzle-orm/mysql2/migrator'
 import mysql from 'mysql2/promise'
+import { today } from '@jushuo/shared'
 import { env, envError } from '../env'
 import * as schema from './schema'
 
@@ -58,6 +59,17 @@ export const dbState = {
    *    云托管 CLI 看不到容器日志，所以这个数必须出现在 /health 里。
    */
   goodsCount: null as number | null,
+  /**
+   * ⭐ 今天之前、**去重后**还有几个竞技场（首页「历史挑战」那一栏会有几张卡）。
+   *
+   * ⚠️ 为什么值得暴露：这一栏的数据**只能通过受鉴权的接口看到**
+   *    （/api/schedules 要登录），从外面 curl 不到 ——
+   *    而它的取数口径刚改过（全库 + 按句子去重 + 剔除今日那一句），
+   *    「到底是空的，还是我写错了」必须在 /health 上能一眼看出来。
+   * ⚠️ 它与首页**同一条口径**（date < 今天、按句子去重），
+   *    只差「剔除与今日重复那一句」—— 那一句要运行时才知道，这里报的是量级。
+   */
+  historyArenas: null as number | null,
 }
 
 /** 把连接串里的密码打码，方便核对环境变量解析结果 */
@@ -280,6 +292,24 @@ async function refreshArticleCount(): Promise<void> {
   }
 }
 
+/**
+ * 今天之前、去重后还剩几个竞技场 —— 首页「历史挑战」会有几张卡。
+ * ⚠️ 读库失败返回 null（/health 不该因为一次查询就 500）。
+ */
+async function refreshHistoryArenas(): Promise<void> {
+  try {
+    const { countDistinct, lt } = await import('drizzle-orm')
+    const { schedules } = await import('./schema')
+    const [row] = await db
+      .select({ n: countDistinct(schedules.articleId) })
+      .from(schedules)
+      .where(lt(schedules.date, today()))
+    dbState.historyArenas = Number(row?.n ?? 0)
+  } catch {
+    dbState.historyArenas = null
+  }
+}
+
 /** 商品目录行数 —— 与 refreshArticleCount 完全同理（空表是静默故障） */
 async function refreshGoodsCount(): Promise<void> {
   try {
@@ -320,6 +350,7 @@ export async function initDatabase(): Promise<void> {
   dbState.status = 'ready'
   await refreshArticleCount()
   await refreshGoodsCount()
+  await refreshHistoryArenas()
   dbState.error = ''
 
   if (!env.AUTO_MIGRATE) {
@@ -413,6 +444,7 @@ export async function initDatabase(): Promise<void> {
   await refreshTableList('当前')
   await refreshArticleCount()
   await refreshGoodsCount()
+  await refreshHistoryArenas()
 }
 
 /**

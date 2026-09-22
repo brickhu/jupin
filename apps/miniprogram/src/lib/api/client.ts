@@ -506,11 +506,15 @@ export async function login(): Promise<void> {
  * 今日挑战、历史挑战、streak 都在同一个响应里：
  * 做减法之后首页就是这一页列表，拆成多个请求只会让首屏出现几段先后到达的空白。
  *
- * @param days 含今天一共列几天（服务端会夹到 2–30）
+ * ⚠️ 不带任何参数：两段数据由服务端按各自的口径取（见 routes/schedules.ts）——
+ *    · today   = 今天的**排期**那一条
+ *    · history = **全库**今天之前的排期，按日期倒序、同一句只留最近一次，
+ *                并剔除与今日重复的那一句
+ *    端侧不该用「列几天」这种参数去描述它 —— 历史那一段按的是**竞技场**，不是天数。
  */
-export function fetchSchedules(days = 7): Promise<SchedulesResponse> {
+export function fetchSchedules(): Promise<SchedulesResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
-  return request<SchedulesResponse>('/api/schedules?days=' + days, { budgetMs: LAUNCH_BUDGET_MS })
+  return request<SchedulesResponse>('/api/schedules', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
