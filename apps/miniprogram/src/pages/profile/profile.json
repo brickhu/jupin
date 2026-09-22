@@ -1,7 +1,6 @@
 {
-  "navigationBarTitleText": "修改资料",
+  "navigationBarTitleText": "我的主页",
   "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar",
-    "profile-form": "/components/profile-form/profile-form"
+    "nav-bar": "/components/nav-bar/nav-bar"
   }
 }

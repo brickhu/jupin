@@ -215,11 +215,14 @@ standout = round(f(score − m) * w)
 
 ⭐ 成长值放在**用户主页**里 —— 就是用户面板菜单里那个一直是「敬请期待」的「我的主页」。
 
-**新页面**：pages/me/profile/profile
-（与 pages/me/challenges、pages/me/participations 同级）
+**新页面**：pages/profile/profile —— ⭐ **放在 pages 根目录，不在 me/ 下**。
 
-⚠️ **命名不要和已有的 pages/profile/profile 混** —— 那是**修改资料**页（表单）。
-新页面是「我的主页」（只读展示）。两个名字太近，靠目录区分：一个在 pages/ 下，一个在 pages/me/ 下。
+⚠️⚠️ 理由与挑战结果页（pages/challenge）完全一样：**这一页是要对外展示的**
+（以后要能被别人打开、能分享），不属于任何一个人的私有地盘。
+放在 me/ 下面会让人以为「只有我自己能看」。
+
+⚠️ 相应地，原来的**修改资料**页（私有表单）让出了 profile 这个名字，
+改叫 **pages/profile-edit/profile-edit** —— 否则会有两个 profile 页面靠猜。
 
 页面结构（自上而下）：
 
@@ -437,7 +440,8 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | pages/reading/reading.wxml | 提交按钮旁显示能量：「⚡ N 点」+ 差多少才能挑战 |
 | pages/index/index.wxml:149-162 | 徽章区块 → 成长值 |
 | components/user-sheet/user-sheet.wxml:29 | 徽章那行 → 成长值 |
-| **pages/me/profile/profile（新增）** | **我的主页**：成长值三行 + 战绩入口；在 app.json 注册 |
+| **pages/profile/profile（新增，根目录）** | **用户主页**：成长值三行 + 战绩入口；在 app.json 注册。⚠️ 对外展示，故不在 me/ 下 |
+| pages/profile-edit/profile-edit | 原 pages/profile（修改资料）—— 给上面那页让出 profile 这个名字 |
 | components/user-sheet/user-sheet.ts:212 | 「我的主页」从「敬请期待」改成真跳转 |
 | lib/challenges.ts（或新建 lib/profile.ts） | 加 PROFILE_HOME_PAGE 常量与 openProfileHomePage() |
 | pages/challenge/challenge.wxml | 结果页：本次成长值三行 + 各自的解释 |

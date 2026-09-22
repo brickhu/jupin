@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "修改资料",
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/nav-bar",
+    "profile-form": "/components/profile-form/profile-form"
+  }
+}

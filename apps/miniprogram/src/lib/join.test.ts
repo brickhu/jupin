@@ -127,7 +127,7 @@ describe('openProfilePage —— 用户面板里的「修改」', () => {
   })
 
   it('⚠️ 已经在那一页上就不再压一层', () => {
-    stack = [{ route: 'pages/index/index' }, { route: 'pages/profile/profile' }]
+    stack = [{ route: 'pages/index/index' }, { route: 'pages/profile-edit/profile-edit' }]
     join.openProfilePage()
     expect(nav).toEqual([])
   })

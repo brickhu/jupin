@@ -1,0 +1,19 @@
+<!--
+  ⭐ 「修改资料」页 —— 已经加入的人回来换头像 / 改昵称的地方。
+
+  ⚠️ 它和「加入句拼」页长得像，但不是同一件事，所以是**两个页面**：
+     · 加入页是"你还没有名字，先认领一个"，进来就自动弹键盘、按钮写「确认加入」
+     · 这一页是"你已经在了，想换张脸"，不弹键盘、按钮写「保存」
+     把两件事挤进一个页面，用户会分不清"我到底加入了没有"。
+
+  ⚠️ 但**表单本身是同一个组件**（components/profile-form）——
+     两页的差别只有文案和要不要自动聚焦，其余一份实现。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="修改资料" />
+
+  <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">改完之后，榜单上显示的就是新的名字和头像。</text>
+
+  <profile-form submit-label="保存" bind:saved="onSaved" />
+</view>

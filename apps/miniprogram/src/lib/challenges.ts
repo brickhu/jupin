@@ -12,12 +12,20 @@
 const CHALLENGES_PAGE = '/pages/me/challenges/challenges'
 /** 「挑战结果」页 —— 录音打完分要 redirect 过去的那一页（可分享，故不在 me 下） */
 export const CHALLENGE_PAGE = '/pages/challenge/challenge'
-/** 「我的主页」—— 只读的成绩墙（与「修改资料」页不是一回事） */
-const PROFILE_HOME_PAGE = '/pages/me/profile/profile'
+/**
+ * ⭐ 「用户主页」—— 只读的成绩墙。
+ *
+ * ⚠️⚠️ 它**刻意不在 pages/me/ 下**，和挑战结果页是同一个理由：
+ *    这一页是**对外展示**的（以后要能被别人打开、能分享），
+ *    不属于任何一个人的私有地盘。放在 me/ 下面会让人以为"只有我自己能看"。
+ * ⚠️ 相应地，「修改资料」（表单、私有）让出了 profile 这个名字，
+ *    改叫 pages/profile-edit —— 免得两个 profile 页面靠猜。
+ */
+const PROFILE_HOME_PAGE = '/pages/profile/profile'
 /** 页面栈里那一页的 route 写法（无斜杠） */
-const PROFILE_HOME_ROUTE = 'pages/me/profile/profile'
+const PROFILE_HOME_ROUTE = 'pages/profile/profile'
 
-/** 打开「我的主页」—— 同一套去重逻辑（别压两层同样的页） */
+/** 打开「用户主页」—— 同一套去重逻辑（别压两层同样的页） */
 export function openProfileHomePage(): void {
   const stack = getCurrentPages()
   const current = stack[stack.length - 1] as { route?: string } | undefined
