@@ -101,6 +101,25 @@ export const users = mysqlTable('users', {
   /** 最后一次"补足"的日期 'YYYY-MM-DD'（惰性 + 幂等，见 growth-and-energy.md 2.3） */
   energyDate: varchar('energy_date', { length: 10 }),
 
+  // ----------------------------------------------------------------
+  // ⭐ 虚拟支付要用的登录态
+  // ----------------------------------------------------------------
+  /**
+   * ⭐ 登录态 session_key —— 虚拟支付的**用户态签名**要用它。
+   *
+   * ⚠️ 它只能从 auth.code2Session 拿到。而线上主通道是 callContainer
+   *    （openid 由网关注入）——**那条路上没有 session_key**。
+   *    所以下单前允许端侧补一个 wx.login 的 code，服务端换一次再落库
+   *    （见 routes/auth.ts 的 /session 与 routes/shop.ts 的提示）。
+   *
+   * ⚠️ 它是**敏感凭证**（等同于登录态）：只存库、绝不下发，
+   *    也不要写进日志。
+   * ⚠️ 会过期：微信侧报 -15007 时重新换一次即可。
+   */
+  sessionKey: varchar('session_key', { length: 64 }),
+  /** session_key 的获取时间 —— 微信不给过期时间，只能按新鲜度自己估 */
+  sessionKeyAt: datetime('session_key_at', { mode: 'date', fsp: 3 }),
+
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 })
 

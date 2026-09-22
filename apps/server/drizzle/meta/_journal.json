@@ -148,6 +148,13 @@
       "when": 1790101008037,
       "tag": "0020_drop_payment_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1790101212224,
+      "tag": "0021_session_key",
+      "breakpoints": true
     }
   ]
 }

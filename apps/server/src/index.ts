@@ -16,6 +16,8 @@ import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { shareRoutes } from './routes/share'
 import { schedulesRoutes } from './routes/schedules'
+import { shopRoutes } from './routes/shop'
+import { payRoutes } from './routes/pay'
 
 const app = new Hono()
 
@@ -99,12 +101,23 @@ app.route('/media', mediaRoutes)
  */
 app.route('/share', shareRoutes)
 
+/**
+ * ⭐⭐ 虚拟支付的**发货推送** —— 全站唯一一个公开的**写**接口。
+ *
+ * ⚠️ 它必须公开：推送来自微信平台，不带（也带不了）我们的 token。
+ *    所以「这条推送是真的吗」在路由自己那一层解决（单号存在 + 金额相等 +
+ *    归属匹配 + 状态机幂等），见 routes/pay.ts 开头。
+ *    ⚠️ 别往这里加业务接口 —— 这个前缀是**免鉴权**的。
+ */
+app.route('/api/pay', payRoutes)
+
 // 需鉴权路由
 app.use('/api/articles/*', authMiddleware)
 app.use('/api/submissions/*', authMiddleware)
 app.use('/api/uploads/*', authMiddleware)
 app.use('/api/user/*', authMiddleware)
 app.use('/api/schedules/*', authMiddleware)
+app.use('/api/shop/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
@@ -112,6 +125,8 @@ app.route('/api/uploads', uploadsRoutes)
 app.route('/api/user', userRoutes)
 // ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak
 app.route('/api/schedules', schedulesRoutes)
+// ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）
+app.route('/api/shop', shopRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

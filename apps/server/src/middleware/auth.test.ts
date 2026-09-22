@@ -65,8 +65,18 @@ function scan(re: RegExp): Hit[] {
 const ROUTES = scan(/app\.route\('(\/api\/[a-z-]+)'/)
 const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
 
-/** 唯一允许不鉴权的 /api 前缀：登录入口本身（它要拿 code 换 token）。 */
-const PUBLIC_PREFIXES = new Set(['/api/auth'])
+/**
+ * ⭐ 唯一允许不鉴权的两个 /api 前缀。
+ *
+ * ⚠️⚠️ 它们不是「忘了挂鉴权」，而是**结构上安全**的两种公开路径**：
+ *    · /api/auth —— 要拿 code 换 token，鉴权无从谈起（而且它只能改自己那一行的 session_key）
+ *    · /api/pay  —— 虚拟支付的**发货推送**，来自微信平台、带不了 token ⇒
+ *                   鉴权只能做在路由自己那一层（单号存在 + 金额相等 + 归属匹配 + 幂等）
+ *
+ * ⚠️ 往 /api/pay 下加业务接口 = 直接开一个免鉴权的洞，要加就另开前缀。
+ */
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay'])
+const EXPECTED_PUBLIC = ['/api/auth', '/api/pay']
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {
   it('扫到了路由（别让正则悄悄失配，那会让下面几条变成空转）', () => {
@@ -92,10 +102,19 @@ describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据�
     }
   })
 
-  it('⚠️ /api/auth 是唯一公开的 /api 前缀', () => {
+  it('⚠️ 公开的 /api 前缀只有登记过的那几个', () => {
     const unguarded = ROUTES.map((r) => r.path)
       .filter((p) => !PUBLIC_PREFIXES.has(p))
       .filter((p) => !GUARDS.some((g) => g.path === p))
     expect(unguarded).toEqual([])
+    /**
+     * ⭐ 反向也钉死：公开前缀**不许静默增加**。
+     *    上一个用例只能发现「新路由没挂鉴权」，发现不了
+     *    「有人把一个新前缀塞进 PUBLIC_PREFIXES 图省事」—— 那条路必须显式改这个数组。
+     */
+    const declared = ROUTES.map((r) => r.path)
+      .filter((p) => PUBLIC_PREFIXES.has(p))
+      .sort()
+    expect(declared).toEqual([...EXPECTED_PUBLIC].sort())
   })
 })
