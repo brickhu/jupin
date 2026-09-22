@@ -73,6 +73,8 @@ app.get('/health', async (c) => {
       existingTables: dbState.existingTables.length ? dbState.existingTables : undefined,
       /** ⭐ 句库行数 —— 真机朗读页「正文加载失败」的头号原因就是它是 0 */
       articleCount: dbState.articleCount,
+      /** ⭐ 商品目录行数 —— 它是 0 的话，购买页一张卡片都没有（静默故障） */
+      goodsCount: dbState.goodsCount,
       envError: envError ?? undefined,
       storage,
       content,

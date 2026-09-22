@@ -50,6 +50,14 @@ export const dbState = {
    *    null 表示还没查（迁移失败等）。
    */
   articleCount: null as number | null,
+  /**
+   * ⭐ goods 表里有多少行（商品目录）。
+   *
+   * ⚠️ 和 articleCount 同一个理由：商品表空 = 购买页一张卡片都没有，
+   *    而那是**静默**的（没有任何东西会报错，只是没人能买）。
+   *    云托管 CLI 看不到容器日志，所以这个数必须出现在 /health 里。
+   */
+  goodsCount: null as number | null,
 }
 
 /** 把连接串里的密码打码，方便核对环境变量解析结果 */
@@ -272,6 +280,18 @@ async function refreshArticleCount(): Promise<void> {
   }
 }
 
+/** 商品目录行数 —— 与 refreshArticleCount 完全同理（空表是静默故障） */
+async function refreshGoodsCount(): Promise<void> {
+  try {
+    const { count } = await import('drizzle-orm')
+    const { goods } = await import('./schema')
+    const [row] = await db.select({ n: count() }).from(goods)
+    dbState.goodsCount = Number(row?.n ?? 0)
+  } catch {
+    dbState.goodsCount = null
+  }
+}
+
 export async function initDatabase(): Promise<void> {
   if (envError) {
     dbState.status = 'error'
@@ -299,6 +319,7 @@ export async function initDatabase(): Promise<void> {
   await waitForDatabase()
   dbState.status = 'ready'
   await refreshArticleCount()
+  await refreshGoodsCount()
   dbState.error = ''
 
   if (!env.AUTO_MIGRATE) {
@@ -391,6 +412,7 @@ export async function initDatabase(): Promise<void> {
    */
   await refreshTableList('当前')
   await refreshArticleCount()
+  await refreshGoodsCount()
 }
 
 /**
