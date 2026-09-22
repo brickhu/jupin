@@ -105,12 +105,6 @@
           <text class="idx-play-icon">{{playingArticle === today.articleId ? '■' : '▶'}}</text>
         </view>
         <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{today.durationText}}">{{today.durationText}}</text>
-        <!-- ⭐ 朗读难度（初 / 中 / 高）。
-             ⚠️ 只在内容里写了难度时才渲染 —— 老 JSON 没有这个字段，
-                渲染一个空药丸会被读成「难度没加载出来」。
-             ⚠️ 不按档位着色：「高」不是警告级别，上色会让人以为是在提示风险。 -->
-        <text class="text-22rpx text-faint bg-page rounded-full px-2 py-[6rpx] leading-[1] ml-2 shrink-0"
-              wx:if="{{today.difficultyText}}">{{today.difficultyText}}</text>
         <!-- ⭐ 竞技数据挂在箭头左侧。
              ⚠️ 这里**只**说「有多少人」——
                 「我参没参与」由按钮下方那行说，「我最好多少分」在详情页的榜单里。
@@ -162,12 +156,6 @@
           <text class="idx-play-icon">{{playingArticle === item.articleId ? '■' : '▶'}}</text>
         </view>
         <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{item.durationText}}">{{item.durationText}}</text>
-        <!-- ⭐ 朗读难度（初 / 中 / 高）。
-             ⚠️ 只在内容里写了难度时才渲染 —— 老 JSON 没有这个字段，
-                渲染一个空药丸会被读成「难度没加载出来」。
-             ⚠️ 不按档位着色：「高」不是警告级别，上色会让人以为是在提示风险。 -->
-        <text class="text-22rpx text-faint bg-page rounded-full px-2 py-[6rpx] leading-[1] ml-2 shrink-0"
-              wx:if="{{item.difficultyText}}">{{item.difficultyText}}</text>
         <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构。
              ⚠️ 同样**不放日期**：理由见今日卡片那段（会被读成发布日期）。
                 想知道是哪一天的，点进详情页 —— 那一页有它自己的日期。 -->

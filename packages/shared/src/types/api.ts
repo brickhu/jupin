@@ -418,7 +418,7 @@ export interface ScheduleEntry {
   /** 句子原文 */
   text: string
   translation: string
-  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
   difficulty: ArticleDifficulty | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]
@@ -475,7 +475,7 @@ export interface ScheduleDetail {
   submissionDate: string
   text: string
   translation: string
-  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
   difficulty: ArticleDifficulty | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]
@@ -510,7 +510,7 @@ export interface ArenaDetail {
   articleId: number
   text: string
   translation: string
-  /** ⭐ 朗读难度；内容里没写（老 JSON）就是 null ⇒ 端侧不渲染徽标 */
+  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
   difficulty: ArticleDifficulty | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]

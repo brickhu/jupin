@@ -152,7 +152,7 @@ async function cmdAddSentence(args: Args): Promise<void> {
    * ⭐ 难度**必填**（初 / 中 / 高）。
    *
    * ⚠️ 刻意不给默认档位：默认成「中」等于把一句**没评过级**的句子
-   *    标成评过级，而这类错在界面上完全看不出来（就是一个徽标而已）。
+   *    标成评过级，而这类错在界面上完全看不出来（界面上暂时根本不显示难度）。
    *    宁可在这里报错 —— 反正 content-files.test.ts 也会拦下没难度的正文 JSON。
    */
   const difficulty = normalizeDifficulty(str(args, 'difficulty'))

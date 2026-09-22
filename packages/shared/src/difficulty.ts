@@ -7,14 +7,17 @@
  *    但 /s/ 与 /ʃ/ 在 8 个词里反复切换，是公认最难的绕口令（朗读难度最高）。
  *    ⇒ 难度**不能**靠词汇表算，判定发生在内容流水线（步骤 ③）。
  *
- * ⚠️ 值用 ASCII（easy / medium / hard），中文只出现在 UI 上：
+ * ⚠️ 值用 ASCII（easy / medium / hard），中文只出现在**运营 CLI 的输出**里：
  *    值要进 JSON、query 参数、以及将来的筛选条件，
  *    中文值迟早会在某一层被转义、或被比较错。
  */
 
 import type { ArticleDifficulty } from './types/content'
 
-/** 三档的中文标签 —— UI 要显示难度时**只从这里取** */
+/**
+ * 三档的中文标签 —— **运营 CLI 的输出**用它。
+ * ⚠️ UI 目前**不展示**难度（字段先预留），将来要显示时也从这里取，别另写一份映射。
+ */
 export const DIFFICULTY_LABEL: Record<ArticleDifficulty, string> = {
   easy: '初',
   medium: '中',
@@ -40,12 +43,6 @@ export function normalizeDifficulty(v: unknown): ArticleDifficulty | null {
   return typeof v === 'string' && DIFFICULTY_ORDER.includes(v as ArticleDifficulty)
     ? (v as ArticleDifficulty)
     : null
-}
-
-/** 难度 → 中文标签；认不出时 null（UI 据此不渲染徽标） */
-export function difficultyLabel(v: unknown): string | null {
-  const d = normalizeDifficulty(v)
-  return d === null ? null : DIFFICULTY_LABEL[d]
 }
 
 /**

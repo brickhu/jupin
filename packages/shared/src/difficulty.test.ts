@@ -3,7 +3,6 @@ import {
   DIFFICULTY_LABEL,
   DIFFICULTY_ORDER,
   MAX_ARTICLE_TAGS,
-  difficultyLabel,
   normalizeDifficulty,
   normalizeTags,
 } from './difficulty'
@@ -18,7 +17,6 @@ describe('朗读难度', () => {
   it('认不出的一律 null，不默认成 medium', () => {
     for (const v of [undefined, null, '', 'EASY', 'easy ', 1, {}, [], 'medium2', '初']) {
       expect(normalizeDifficulty(v)).toBeNull()
-      expect(difficultyLabel(v)).toBeNull()
     }
   })
 })

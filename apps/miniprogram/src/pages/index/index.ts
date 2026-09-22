@@ -1,4 +1,4 @@
-import { BRAND, difficultyLabel, formatScore, startButtonLabel } from '@jushuo/shared'
+import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type {
   GrowthRankResponse,
   GrowthRankRow,
@@ -54,13 +54,6 @@ interface CardView {
    *    卡片头这行只回答一个问题：这个竞技场有多大。
    */
   stat: string
-  /**
-   * ⭐ 朗读难度徽标（'初' / '中' / '高'）；空串 = 这一句没有难度 ⇒ WXML 不渲染。
-   *
-   * ⚠️ 用空串而不是补一个默认档位：编出来的难度比没有难度更糟 ——
-   *    用户会以为这一句真的被评过级（同 shared/difficulty.ts 的说明）。
-   */
-  difficultyText: string
   /**
    * ⭐ 标准音的可播引用（null = 这一句没有标准音 ⇒ 不渲染播放按钮）。
    * ⚠️ 端侧不拼地址：full 的形态由 kind 决定（云存储 fileID / 服务端路径），
@@ -481,7 +474,6 @@ Page({
       text: card.text,
       translation: card.translation,
       stat: statText(card.participantCount),
-      difficultyText: difficultyLabel(card.difficulty) ?? '',
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
       durationText: durationText(card.audio ? card.audio.durationMs : null),
       hint: hintText(mine),
