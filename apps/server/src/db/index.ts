@@ -339,6 +339,19 @@ export async function initDatabase(): Promise<void> {
     console.error('[db] 奖励规则初始化失败（不影响服务启动）：', (err as Error).message)
   }
 
+  /**
+   * ⭐ 商品目录：同样是**每次启动补一次**（幂等，只在缺的时候插）。
+   * ⚠️ 理由与奖励规则一模一样：空表的后果是「购买页一张卡片都没有」，
+   *    而那是**静默**的 —— 没有东西会报错，只是没人能买。
+   * ⚠️ 与 SEED_ON_START 无关：商品是**配置**，不是种子内容。
+   */
+  try {
+    const { ensureDefaultGoods } = await import('../services/goods')
+    await ensureDefaultGoods()
+  } catch (err) {
+    console.error('[db] 商品目录初始化失败（不影响服务启动）：', (err as Error).message)
+  }
+
   if (env.SEED_ON_START) {
     try {
       try {

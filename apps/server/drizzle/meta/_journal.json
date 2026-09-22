@@ -134,6 +134,20 @@
       "when": 1790075952172,
       "tag": "0018_unfreeze_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1790101003053,
+      "tag": "0019_goods_and_payment_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1790101008037,
+      "tag": "0020_drop_payment_plan",
+      "breakpoints": true
     }
   ]
 }

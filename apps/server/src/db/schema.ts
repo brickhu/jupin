@@ -422,26 +422,89 @@ export const subscriptions = mysqlTable('subscriptions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 }, (t) => [index('subscriptions_user_idx').on(t.userId, t.endAt)])
 
+/**
+ * ⭐ 商品目录（**可配置** —— 改价不用发版）。
+ *
+ * ⚠️ 为什么落库而不是写死在代码里：价格必须**和小程序里显示的一致**，
+ *    而小程序审核要 1–3 天 —— 把价格绑在发版上，促销/调价就废了。
+ *    与 reward_rules 是同一个判断：**能被运营改的东西不要写死在代码里**。
+ *
+ * ⚠️ 但**下单时必须快照**（见 payments 的 goods_code / goods_amount）：
+ *    商品以后改了，历史订单必须还是当时那个商品 —— 改配置不追溯。
+ *
+ * ⚠️⚠️ price_fen 必须与**微信侧「道具管理」里的价格一致**：
+ *    道具价格安卓 / iOS 双端通用，且发货推送会带 ActualPrice 供对账。
+ *
+ * ⚠️ 首档不能低于 ¥1.00（iOS 最低支付金额）—— 不变量由 shared 的单元测试守着。
+ */
+export const goods = mysqlTable('goods', {
+  /** 商品码：energy_10 / energy_300 / energy_3000 …（下单时用它，不用自增 id） */
+  code: varchar('code', { length: 32 }).notNull().primaryKey(),
+  /** energy | unfreeze —— 决定发货加到哪儿（见 shared 的 GOODS_KIND） */
+  kind: varchar('kind', { length: 16 }).notNull(),
+  /** 发多少（点 / 张） */
+  amount: int('amount').notNull(),
+  /** 售价，单位**分**（1990 = ¥19.90） */
+  priceFen: int('price_fen').notNull(),
+  /**
+   * ⭐ 微信侧「道具管理」里的**道具 ID**。
+   * ⚠️ 可空：开通虚拟支付、建好道具之前是空的（那时只有 mock 通道能下单）。
+   */
+  xpayProductId: varchar('xpay_product_id', { length: 64 }),
+  title: varchar('title', { length: 32 }).notNull(),
+  subtitle: varchar('subtitle', { length: 64 }).notNull().default(''),
+  /** 角标文案（如「最划算」），可空 */
+  badge: varchar('badge', { length: 16 }),
+  sort: int('sort').notNull().default(0),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+})
+
 /** 支付（财务凭证，独立于订阅） */
 export const payments = mysqlTable('payments', {
   id: int('id').autoincrement().primaryKey(),
   userId: int('user_id').notNull().references(() => users.id),
-  /** 微信支付商户单号 */
+  /** 微信支付商户单号（**我们自己生成**的，也是发货的幂等键） */
   outTradeNo: varchar('out_trade_no', { length: 64 }).notNull().unique(),
-  /** monthly | yearly */
-  plan: varchar('plan', { length: 16 }).notNull(),
-  /** 金额，单位分（19.9 → 1990） */
+  /**
+   * ⭐ 商品码 —— **下单那一刻的快照**。
+   * ⚠️ 它占的是原来 plan 列的位置（monthly | yearly，旧包月模型的遗留）——
+   *    那一列在 0020 里删掉了。分两步走是因为 drizzle-kit 对「同时删一列加一列」
+   *    会弹交互式 rename 提问，非 TTY 环境答不了。
+   * ⚠️ 这一列占的是原来 plan 的位置（monthly | yearly，旧包月模型的遗留）。
+   * ⚠️ 不 join goods 表：商品以后改价改名，历史订单必须还是当时那个商品。
+   */
+  goodsCode: varchar('goods_code', { length: 32 }).notNull().default(''),
+  /** 商品种类快照（energy | unfreeze）—— 发货时按它分支 */
+  goodsKind: varchar('goods_kind', { length: 16 }).notNull().default(''),
+  /** 发多少点/张的快照 */
+  goodsAmount: int('goods_amount').notNull().default(0),
+  /** 金额，单位分（19.9 → 1990）。⚠️ 与微信侧道具价格对账用 */
   amount: int('amount').notNull(),
   /** pending | paid | refunded | failed */
   status: varchar('status', { length: 16 }).notNull().default('pending'),
   /** 微信支付预支付会话 id —— 查单 / 关单要用 */
   prepayId: varchar('prepay_id', { length: 64 }),
   /**
+   * ⭐ 虚拟支付平台返回的单号（文档里的 wx_order_id）。
+   * ⚠️ 和 out_trade_no（我们自己生成的）是两个东西：查单、对账、退款都用它。
+   */
+  xpayOrderId: varchar('xpay_order_id', { length: 64 }),
+  /** 支付环境：0 = 现网，1 = 沙箱。⚠️ 同一个单号在两边是两个世界 */
+  payEnv: int('pay_env').notNull().default(0),
+  /**
    * ⚠️ 微信支付订单号，**和 out_trade_no 是两个东西**。
    *    对账、退款全靠它；out_trade_no 是我们自己生成的商户单号。
    */
   transactionId: varchar('transaction_id', { length: 64 }),
   paidAt: datetime('paid_at', { mode: 'date', fsp: 3 }),
+  /**
+   * ⭐ 发货时间。
+   * ⚠️ paid 是「钱到了」，delivered 是「货发了」—— 两件事，不合成一个：
+   *    钱到了但发货失败（我们写库挂了）是**必须能被发现**的状态。
+   * ⚠️ 发货有两条路（平台推送、主动查单），两条都要幂等地写这一个时间戳。
+   */
+  deliveredAt: datetime('delivered_at', { mode: 'date', fsp: 3 }),
 
   /** 退款是**独立的单**，不是把 status 改成 refunded 就完事 */
   refundNo: varchar('refund_no', { length: 64 }),

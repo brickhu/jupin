@@ -227,6 +227,39 @@ const schema = z.object({
    *    由 deploy-cloud.mjs 的 --reset 一次性带上。
    */
   SCHEMA_RESET: boolEnv(false),
+
+  /* ------------------------------------------------------------------ */
+  /* ⭐ 虚拟支付（见 docs/design/payment-and-purchase.md）              */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * ⭐ 支付通道：mock = 本地假支付（下单即发货，只用于本地联调）；xpay = 真实虚拟支付。
+   *
+   * ⚠️⚠️ 默认值是 xpay（**fail closed**），不是 mock —— 两个默认值的代价完全不对称：
+   *    · 该真付却走了 mock ⇒ 谁都能空手拿走能量（**真金白银的损失**）
+   *    · 该 mock 却走了 xpay ⇒ 本地下单报错，一眼就能看出来，改一下 .env.local 即可
+   * ⚠️ 而且 mock 分支**在 production 下一律拒绝**（见 services/order.ts），双保险。
+   */
+  PAY: z.enum(['mock', 'xpay']).default('xpay'),
+  /**
+   * ⭐ 虚拟支付的三件套 + 环境号（MP 后台 → 虚拟支付 → 基础配置）。
+   * ⚠️ 全空 = 只能走 mock；真实支付会在下单时明确报错，而不是静默失败。
+   * ⚠️ AppKey 分**沙箱**和**现网**两把，由 XPAY_ENV 决定用哪把。
+   * ⚠️ 会员订阅**不支持沙箱**（env 只能为 0）—— 我们只做道具直购，暂不涉及。
+   */
+  XPAY_OFFER_ID: z.string().optional(),
+  XPAY_APP_KEY: z.string().optional(),
+  XPAY_SANDBOX_APP_KEY: z.string().optional(),
+  /** 0 = 现网，1 = 沙箱 */
+  XPAY_ENV: z.coerce.number().int().min(0).max(1).default(0),
+  /**
+   * ⭐ 微信侧「道具管理」里的**道具 ID**（按商品码一一对应）。
+   * ⚠️ 它是**配置**不是运营数据：启动时会同步进 goods 表（有值才写）。
+   *    这样开通虚拟支付之后只要填 .env，不用手工改库。
+   */
+  XPAY_PRODUCT_ENERGY_10: z.string().optional(),
+  XPAY_PRODUCT_ENERGY_300: z.string().optional(),
+  XPAY_PRODUCT_ENERGY_3000: z.string().optional(),
 })
 
 export type Env = z.infer<typeof schema>
@@ -257,6 +290,9 @@ const FALLBACK: Env = {
   SEED_ON_START: false,
   DIAG_ENABLED: false,
   SCHEMA_RESET: false,
+  // ⚠️ 兜底值同样 fail closed：配置坏掉时宁可付不了款，也不能白送
+  PAY: 'xpay',
+  XPAY_ENV: 0,
 }
 
 if (!parsed.success) {

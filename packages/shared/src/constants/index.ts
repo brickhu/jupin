@@ -234,10 +234,92 @@ export const ENERGY_DAILY_FLOOR = 3
 export const ENERGY_PER_CHALLENGE = 2
 
 /**
- * ⭐ 充值的最小单位（档位 10 / 30 / 100…后定）。
+ * ⭐ 充值的最小单位。
  * ⚠️ **只有购买有起步单位**；发放没有最小刻度 —— 1 点就是有意义的。
+ * ⚠️ 只对**自己造档位**的场合有意义（比如运营手工发）；真实档位见 ENERGY_PACKS。
  */
 export const ENERGY_PURCHASE_MIN = 10
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 商品（见 docs/design/payment-and-purchase.md）                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 商品种类 —— 决定发货时「加到哪儿」。
+ * ⚠️ 加新种类要**同时**改发货分支（services/order.ts），这是唯一需要动代码的地方。
+ */
+export const GOODS_KIND = {
+  energy: 'energy',
+  unfreeze: 'unfreeze',
+} as const
+
+export type GoodsKind = (typeof GOODS_KIND)[keyof typeof GOODS_KIND]
+
+export interface GoodsItem {
+  /** 商品码 —— 订单里存它（下单时校验在售），微信侧道具 ID 另存一列 */
+  code: string
+  kind: GoodsKind
+  /** 发多少（点 / 张） */
+  amount: number
+  /** 售价，单位**分** */
+  priceFen: number
+  title: string
+  subtitle: string
+  /** 角标文案，可空 */
+  badge?: string
+  sort: number
+}
+
+/**
+ * ⭐ 三档能量包 —— 这是**首次启动写进 goods 表的种子**，不是运行时的真相。
+ *
+ * ⚠️⚠️ 价格必须与**微信侧「道具管理」里配置的价格完全一致**：
+ *    微信侧道具价格是**安卓 / iOS 双端通用**的，而且发货推送里会带 ActualPrice，
+ *    发货时要拿它和订单快照对账（对不上就不发货）—— 所以两处必须是同一个数。
+ *
+ * ⚠️⚠️ 首档**不能低于 ¥1.00**：iOS 的 Apple 支付有「最低支付金额 1 元」的硬约束，
+ *    而道具价格双端通用、不能分端定价 —— 定成 ¥0.99 的结果是**iOS 用户直接支付失败**。
+ *    （这条有单元测试守着，见 constants/goods.test.ts）
+ *
+ * ⚠️ 落库之后**运行时以库为准**（改价不用发版）；这里的值只在缺商品时才灌。
+ */
+export const ENERGY_PACKS: GoodsItem[] = [
+  {
+    code: 'energy_10',
+    kind: GOODS_KIND.energy,
+    amount: 10,
+    priceFen: 100,
+    title: '10 点能量',
+    subtitle: '够读 5 句',
+    sort: 10,
+  },
+  {
+    code: 'energy_300',
+    kind: GOODS_KIND.energy,
+    amount: 300,
+    priceFen: 1990,
+    title: '300 点能量',
+    subtitle: '够读 150 句',
+    badge: '最划算',
+    sort: 20,
+  },
+  {
+    code: 'energy_3000',
+    kind: GOODS_KIND.energy,
+    amount: 3000,
+    priceFen: 16990,
+    title: '3000 点能量',
+    subtitle: '够读 1500 句',
+    badge: '省 43%',
+    sort: 30,
+  },
+]
+
+/**
+ * ⭐ iOS 的最低支付金额（分）—— Apple 支付的硬约束。
+ * ⚠️ 所有**面向支付**的商品价格都必须 >= 它（有测试守着）。
+ */
+export const PAY_MIN_PRICE_FEN = 100
 
 /* ------------------------------------------------------------------ */
 /* ⭐ 奖励系统（见 docs/design/reward-system.md）                        */
