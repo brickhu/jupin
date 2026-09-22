@@ -282,6 +282,11 @@ export interface GoodsItem {
  *    （这条有单元测试守着，见 constants/goods.test.ts）
  *
  * ⚠️ 落库之后**运行时以库为准**（改价不用发版）；这里的值只在缺商品时才灌。
+ *
+ * ⚠️ 价格**必须是整元**（priceFen % 100 == 0）：微信侧「道具管理」的导入模板明写
+ *    「道具价格：需为整数，不超过 10000 元」，而道具价格是安卓/iOS 双端通用的唯一价格 ——
+ *    我们这边写 ¥19.90、微信侧只能填 20 的话，发货时对账直接报 -15013。
+ *    （有测试守着，见 goods.test.ts。）
  */
 export const ENERGY_PACKS: GoodsItem[] = [
   {
@@ -297,20 +302,26 @@ export const ENERGY_PACKS: GoodsItem[] = [
     code: 'energy_300',
     kind: GOODS_KIND.energy,
     amount: 300,
-    priceFen: 1990,
+    priceFen: 2000,
     title: '300 点能量',
     subtitle: '够读 150 句',
-    badge: '最划算',
+    /**
+     * ⚠️ 这里原来写的是「最划算」—— 它在 ¥19.90 / ¥169.90 那套价下就已经是假话了
+     *    （3000 点那档单价更低），现在改成**算出来的**折扣，
+     *    并由单元测试盯着（见 goods.test.ts 的角标用例）。
+     * ⇒ 改价时角标会**当场对不上**，而不是悄悄留在界面上骗人。
+     */
+    badge: '省 33%',
     sort: 20,
   },
   {
     code: 'energy_3000',
     kind: GOODS_KIND.energy,
     amount: 3000,
-    priceFen: 16990,
+    priceFen: 18000,
     title: '3000 点能量',
     subtitle: '够读 1500 句',
-    badge: '省 43%',
+    badge: '省 40%',
     sort: 30,
   },
 ]

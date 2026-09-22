@@ -49,7 +49,7 @@ describe('signData 构造', () => {
   const input = {
     outTradeNo: 'JP1758500000000abcdef',
     productId: 'prod_energy_300',
-    goodsPriceFen: 1990,
+    goodsPriceFen: 2000,
     attach: 'u:42',
   }
 
@@ -57,7 +57,7 @@ describe('signData 构造', () => {
     const parsed = JSON.parse(buildSignData(input)) as Record<string, unknown>
     expect(parsed.outTradeNo).toBe(input.outTradeNo)
     expect(parsed.productId).toBe(input.productId)
-    expect(parsed.goodsPrice).toBe(1990)
+    expect(parsed.goodsPrice).toBe(2000)
     expect(parsed.buyQuantity).toBe(1)
     expect(parsed.currencyType).toBe('CNY')
   })

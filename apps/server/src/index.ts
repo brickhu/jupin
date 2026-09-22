@@ -7,7 +7,7 @@ import { dbState, initDatabase, maskDatabaseUrl, pingDatabase } from './db'
 import { probeStorage } from './storage'
 import { probeContent } from './services/content'
 import { probeStandardAudio } from './services/standard-audio'
-import { productIdStatus } from './services/goods'
+import { goodsPriceMap, productIdStatus } from './services/goods'
 import { authMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
@@ -94,6 +94,11 @@ app.get('/health', async (c) => {
         appKey: Boolean(env.XPAY_ENV === 1 ? env.XPAY_SANDBOX_APP_KEY : env.XPAY_APP_KEY),
         /** 这一环境下三个商品各配没配**有效的**道具 ID */
         productIds: productIdStatus(),
+        /**
+         * ⭐ **库里实际存的价格**（分）—— 用来核对「代码 / 库 / 微信侧」三方是不是同一个数。
+         * ⚠️ 三方不一致的表现是支付时报 -15013，而那时人不会想到「库里还是旧价」。
+         */
+        prices: await goodsPriceMap(),
       },
       envError: envError ?? undefined,
       storage,

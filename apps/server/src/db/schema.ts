@@ -463,7 +463,7 @@ export const goods = mysqlTable('goods', {
   kind: varchar('kind', { length: 16 }).notNull(),
   /** 发多少（点 / 张） */
   amount: int('amount').notNull(),
-  /** 售价，单位**分**（1990 = ¥19.90） */
+  /** 售价，单位**分**（2000 = ¥20.00）。⚠️ 必须是整元（微信道具只收整数元） */
   priceFen: int('price_fen').notNull(),
   /**
    * ⭐ 微信侧「道具管理」里的**道具 ID**。
@@ -498,7 +498,7 @@ export const payments = mysqlTable('payments', {
   goodsKind: varchar('goods_kind', { length: 16 }).notNull().default(''),
   /** 发多少点/张的快照 */
   goodsAmount: int('goods_amount').notNull().default(0),
-  /** 金额，单位分（19.9 → 1990）。⚠️ 与微信侧道具价格对账用 */
+  /** 金额，单位分（¥20 → 2000）。⚠️ 必须与微信侧道具价格一致，发货时对账 */
   amount: int('amount').notNull(),
   /** pending | paid | refunded | failed */
   status: varchar('status', { length: 16 }).notNull().default('pending'),

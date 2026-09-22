@@ -16,10 +16,11 @@ import { ENERGY_PACKS, ENERGY_PER_CHALLENGE, PAY_MIN_PRICE_FEN } from '../packag
  *    2. 价格会变、以后还要加解冻卡 ⇒ 手填的模板改一次就多一份不知道对不对的副本
  *    3. 它顺便校验三条官方限制（ID ≤32 英文字符 / 名称 ≤10 字 / 备注 ≤50 字）
  *
- * ⚠️ 官方模板里的「道具价格」写的是「**需为整数**，不超过 10000 元」，
- *    而我们的 ¥19.90 / ¥169.90 不是整数 ⇒ 所以这里产出**两个版本**：
- *      · 小数版（1 / 19.9 / 169.9）—— 与代码里的 ENERGY_PACKS 完全一致，**先试这个**
- *      · 整数版（1 / 20 / 170）—— 万一导入拒绝小数，用这个（但代码要跟着改，见下）
+ * ⚠️⚠️ 官方模板里的「道具价格」写的是「**需为整数**，不超过 10000 元」——
+ *    而道具价格是安卓 / iOS **双端通用**的唯一价格，我们这边改一个小数就对不上（报 -15013）。
+ *    ⇒ 我们的三档一律按**整元**定（1 / 20 / 180），这个工具把它写死成不变量：
+ *      · 全是整元 ⇒ 产出一个文件（正常情况）
+ *      · 有档位不是整元 ⇒ 仍然产出两个版本并**警告要改哪几个数**（留给将来真需要小数时）
  */
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
@@ -148,11 +149,18 @@ async function main(): Promise<void> {
   await ensureTemplate()
   mkdirSync(OUT_DIR, { recursive: true })
 
-  for (const mode of ['decimal', 'integer'] as const) {
+  /** ⭐ 全整元 = 正常情况（与微信侧的「需为整数」天然一致）⇒ 只产出一个文件 */
+  const allInteger = ENERGY_PACKS.every((g) => g.priceFen % 100 === 0)
+  const modes = allInteger ? (['integer'] as const) : (['decimal', 'integer'] as const)
+
+  for (const mode of modes) {
     const rows = buildRows(mode)
     const problems = validate(rows)
     const label = mode === 'integer' ? '整数元' : '小数元'
-    const out = resolve(OUT_DIR, 'jupin-道具批量导入-' + label + '.xlsx')
+    const out = resolve(
+      OUT_DIR,
+      allInteger ? 'jupin-道具批量导入.xlsx' : 'jupin-道具批量导入-' + label + '.xlsx',
+    )
     writeXlsx(rows, out)
 
     console.log('')
@@ -163,15 +171,20 @@ async function main(): Promise<void> {
   }
 
   console.log('')
-  console.log('⚠️ 先导入【小数元】那版：它和代码里的 ENERGY_PACKS 完全一致。')
-  console.log('   万一官方只收整数元，再用【整数元】那版 —— 但那时代码里的三个价格也要跟着改成：')
-  for (const g of ENERGY_PACKS) {
-    console.log(
-      '     ' + g.code.padEnd(12) + 'priceFen: ' + g.priceFen + ' → ' +
-        Math.round(g.priceFen / 100) * 100,
-    )
+  if (allInteger) {
+    console.log('✅ 三档都是整元 —— 与微信侧「道具价格需为整数」天然一致，一个文件即可。')
+  } else {
+    console.log('⚠️ 有档位不是整元，所以产出两个版本：')
+    console.log('   先导入【小数元】那版（与代码里的 ENERGY_PACKS 完全一致）。')
+    console.log('   万一官方只收整数元，再用【整数元】那版 —— 但那时代码要跟着改成：')
+    for (const g of ENERGY_PACKS) {
+      console.log(
+        '     ' + g.code.padEnd(12) + 'priceFen: ' + g.priceFen + ' → ' +
+          Math.round(g.priceFen / 100) * 100,
+      )
+    }
+    console.log('   （不改的话发货时会对不上价，报 -15013）')
   }
-  console.log('   （不改的话发货时会对不上价，报 -15013）')
   console.log('')
   console.log('最低价下限（iOS 硬约束）：¥' + PAY_MIN_PRICE_FEN / 100)
 }

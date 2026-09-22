@@ -125,12 +125,25 @@ export function productIdStatus(): Record<string, boolean> {
 }
 
 /**
- * ⭐ 把默认商品写进库（**幂等**，只在缺的时候插）+ 同步道具 ID。
+ * ⭐ 把默认商品写进库（**幂等**）+ 每次启动**校正**配置字段 + 同步道具 ID。
  *
  * ⚠️ 为什么必须有个种子：商品表空 = 购买页一张卡片都没有 ——
  *    而那是**静默**的（没有报错，只是没人能买）。
- * ⚠️ 只在**缺**的时候插：运营改过的价格/文案不会被启动覆盖（同 reward_rules）。
- * ⚠️ 道具 ID 例外：它是配置，有值就同步（开通虚拟支付后只填 .env 即可）。
+ *
+ * ⚠️⚠️ 配置字段（点数 / 价格 / 文案 / 角标 / 排序）**每次都按代码校正**，
+ *    这与 reward_rules 的「只在缺的时候插」**故意不同** —— 因为它们的约束不一样：
+ *
+ *    · reward_rules 的阈值是**我们自己的**业务参数：运营改了就是改了，不该被启动抹掉
+ *    · goods 的价格必须与**微信侧道具价格**三方一致（我们库里 / 微信侧 / 用户看到的），
+ *      而用户在支付页看到的是微信侧那个价 —— 一旦两边不一致，
+ *      微信会拿 signData 里的 goodsPrice 去比，直接报 **-15013（道具价格错误）**
+ *
+ *    ⇒ 只改库里的价是**结构性坏掉**的（改完反而付不了款），所以它必须以代码为准。
+ *      改价的正规路径是：改 ENERGY_PACKS → 重新生成导入文件 → 微信侧重新导入 → 部署。
+ *
+ * ⚠️ 两样东西**不校正**：
+ *    · `enabled`（运营可以临时下架一个档位，不该被启动重新上架）
+ *    · `xpay_product_id`（它来自环境变量，见下面的分支）
  */
 export async function ensureDefaultGoods(): Promise<void> {
   await db
@@ -150,8 +163,40 @@ export async function ensureDefaultGoods(): Promise<void> {
     )
 
   for (const g of ENERGY_PACKS) {
+    await db
+      .update(goods)
+      .set({
+        kind: g.kind,
+        amount: g.amount,
+        priceFen: g.priceFen,
+        title: g.title,
+        subtitle: g.subtitle,
+        badge: g.badge ?? null,
+        sort: g.sort,
+      })
+      .where(eq(goods.code, g.code))
+
+    /** 道具 ID 是配置：环境变量里有就同步（开通虚拟支付后只填 .env 即可） */
     const productId = productIdFromEnv(g.code)
-    if (!productId) continue
-    await db.update(goods).set({ xpayProductId: productId }).where(eq(goods.code, g.code))
+    if (productId) {
+      await db.update(goods).set({ xpayProductId: productId }).where(eq(goods.code, g.code))
+    }
+  }
+}
+
+/**
+ * ⭐ 当前**库里**的商品价格（分）—— 给 /health 用。
+ *
+ * ⚠️ 为什么值得暴露：价格有三个副本（我们库里 / 微信侧道具 / 用户看到的），
+ *    而不一致的表现是支付时报 -15013 —— 到那时再回头查，
+ *    会先怀疑签名、怀疑 AppKey，不会想到「库里还留着上一次的价格」。
+ *    ⚠️ 读库失败返回 null（/health 不该因为一次查询就 500）。
+ */
+export async function goodsPriceMap(): Promise<Record<string, number> | null> {
+  try {
+    const rows = await db.select({ code: goods.code, priceFen: goods.priceFen }).from(goods)
+    return Object.fromEntries(rows.map((r) => [r.code, r.priceFen]))
+  } catch {
+    return null
   }
 }
