@@ -76,14 +76,21 @@
   </view>
 
   <block wx:else>
-    <!-- ══ 今天这一张 ═══════════════════════════════════════
-         ⚠️ 刻意**不写**「今日挑战」这种分组标题：
-            位置最上 + 字号最大 + 日期最新，本来就认不错，
-            再加一行标题只是多一层要读的东西。 -->
+    <!-- ══ 今日挑战 ═════════════════════════════════════════
+         ⚠️ 这个标题是**必须**的，不是装饰：卡片上的日期已经去掉了
+            （那个日期容易被读成「这句子的发布日期」），
+            所以「这是今天要读的那句」只能由这行标题说。
+         ⚠️ 居中，而下面「历史挑战」保持靠左 —— 这个差异是**故意的**：
+            今日这一张是整页的主角（只有它有按钮），标题居中是在「报幕」；
+            历史那行带的是一串卡片，标题居中会跟它的列表脱开。
+            两者同一档字号，差别只在对齐。 -->
+    <text class="text-28rpx font-semibold text-ink block text-center pt-1 pb-2">今日挑战</text>
+
     <view class="bg-white rounded-2.5 p-5">
-      <!-- ⭐ 卡片头：日期在左、箭头在右。
-           ⚠️ 日期放在卡片**内部**而不是外面的小标题行：历史和今日是同一张卡片，
-              日期在卡片里、角色一致，扫一眼就知道哪张是哪天。
+      <!-- ⭐ 卡片头：播放按钮在左、人数与箭头在右。
+           ⚠️ 这里**不放日期**：它紧挨着句子，很容易被读成「这句子的发布日期」，
+              而它其实是「这一场排在哪一天」。要表达这个信息得用别的方式，
+              不是把日期横在句子旁边。
            ⚠️ 箭头是「点卡片进详情」的**唯一提示** —— 卡片底部还有一个按钮，
               不给提示的话「点哪儿都一样」的错觉会让人以为自己点错了。 -->
       <view class="flex items-center mb-3" data-date="{{today.date}}" bindtap="onOpenDetail">
@@ -98,13 +105,11 @@
           <text class="idx-play-icon">{{playingArticle === today.articleId ? '■' : '▶'}}</text>
         </view>
         <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{today.durationText}}">{{today.durationText}}</text>
-        <!-- ⭐ 竞技数据挂在箭头左侧：它和日期同属一行元信息。
-             原来单独占一行、还被一条分隔线隔开，一行只有 6 个字却占掉整行高度。
+        <!-- ⭐ 竞技数据挂在箭头左侧。
              ⚠️ 这里**只**说「有多少人」——
                 「我参没参与」由按钮下方那行说，「我最好多少分」在详情页的榜单里。
                 同一件事说三遍，用户反而不知道哪一处才是准的。 -->
-        <text class="text-24rpx text-faint ml-auto shrink-0">{{today.dateText}}</text>
-        <text class="text-22rpx text-faint ml-3 shrink-0">{{today.stat}}</text>
+        <text class="text-22rpx text-faint ml-auto shrink-0">{{today.stat}}</text>
         <text class="text-36rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
       </view>
 
@@ -124,19 +129,20 @@
       <text class="text-22rpx text-faint block text-center mt-2.5">{{today.hint}}</text>
     </view>
 
-    <!-- ══ 往日 ══════════════════════════════════════════════
-         ⚠️ 这一页**只有往日有分组标题**：今天那一张在最上面、字号最大、
-            日期也最新，本来就不会认错，再给它一行标题只是噪声；
-            而「往日」是一串同构卡片，需要一个词说明它们是什么。 -->
+    <!-- ══ 历史挑战 ══════════════════════════════════════════
+         ⚠️ 叫「历史」不叫「往日」：它是一串同构卡片，
+            需要一个词说明它们是什么 —— 而「往日」更像时间副词。
+         ⚠️ 与上面「今日挑战」同一档字号，但**靠左**：
+            它带的是一串卡片（有分组感），而今日那张是独立的一张。 -->
     <view class="pt-6 pb-2 px-1" wx:if="{{history.length > 0}}">
-      <text class="text-28rpx font-semibold text-ink">往日挑战</text>
+      <text class="text-28rpx font-semibold text-ink">历史挑战</text>
     </view>
 
-    <!-- ⚠️ 往日卡片**不显示我参没参与**（药丸和「已挑战 N 次」都去掉了），
+    <!-- ⚠️ 历史卡片**不显示我参没参与**（药丸和「已挑战 N 次」都去掉了），
          因为它们没有按钮、也就没有「按钮下方那行」来承接这个信息。
          要看自己的成绩和名次，点进详情页 —— 那里有完整榜单。 -->
-    <!-- ⭐ 往日卡片**整张就是一个入口**，没有按钮。
-         ⚠️ 刻意不放按钮：往日是一串同构卡片，每张都挂一个实心按钮，
+    <!-- ⭐ 历史卡片**整张就是一个入口**，没有按钮。
+         ⚠️ 刻意不放按钮：历史是一串同构卡片，每张都挂一个实心按钮，
             整页会变成一片按钮墙，反而看不出哪一张是今天。
             要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
     <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="date"
@@ -150,9 +156,10 @@
           <text class="idx-play-icon">{{playingArticle === item.articleId ? '■' : '▶'}}</text>
         </view>
         <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{item.durationText}}">{{item.durationText}}</text>
-        <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构 -->
-        <text class="text-24rpx text-faint ml-auto shrink-0">{{item.dateText}}</text>
-        <text class="text-22rpx text-faint ml-3 shrink-0">{{item.stat}}</text>
+        <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构。
+             ⚠️ 同样**不放日期**：理由见今日卡片那段（会被读成发布日期）。
+                想知道是哪一天的，点进详情页 —— 那一页有它自己的日期。 -->
+        <text class="text-22rpx text-faint ml-auto shrink-0">{{item.stat}}</text>
         <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
       </view>
 

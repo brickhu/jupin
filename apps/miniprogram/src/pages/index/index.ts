@@ -12,8 +12,6 @@ import type { ArenaRecord } from '../../lib/store'
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
 interface CardView {
   date: string
-  /** '2026.11.24' —— 直接用点分隔，和中文排版更搭 */
-  dateText: string
   articleId: number
   text: string
   translation: string
@@ -410,7 +408,6 @@ Page({
     const mine = me.arenaOf(card.articleId)
     return {
       date: card.date,
-      dateText: card.date.replace(/-/g, '.'),
       articleId: card.articleId,
       text: card.text,
       translation: card.translation,
