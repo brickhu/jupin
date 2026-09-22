@@ -16,23 +16,26 @@ import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
-/** 首页那一块榜的展示视图（标题 + 行） */
+/** 首页荣誉榜的一块（tab 上的短标签 + 它自己的前十） */
 interface BoardView {
   key: string
-  title: string
+  /** ⚠️ 短标签：三个 tab 要挤在一行里，写「📈 自我超越」就够，别带 TOP10 */
+  label: string
   rows: GrowthRankRow[]
 }
 
 /**
- * 三块榜 → WXML 能直接渲染的数组。
- * ⚠️ 标题与顺序只在这里写一次：三块榜的图标要与用户面板里那三个数一致
+ * 三个成长指标 → WXML 能直接渲染的数组。
+ * ⚠️ 标签与顺序只在这里写一次：图标要与用户面板里那三个数一致
  *    （📈 自我超越 / 🔥 孜孜不倦 / 🏔️ 鹤立鸡群）。
+ * ⚠️ 顺序固定为「自我超越 / 孜孜不倦 / 鹤立鸡群」—— 与用户面板那一排一致，
+ *    换个顺序会让人以为漏了一个。
  */
 function boardListOf(b: GrowthRankResponse): BoardView[] {
   return [
-    { key: 'self', title: '📈 自我超越 TOP10', rows: b.self },
-    { key: 'diligence', title: '🔥 孜孜不倦 TOP10', rows: b.diligence },
-    { key: 'standout', title: '🏔️ 鹤立鸡群 TOP10', rows: b.standout },
+    { key: 'self', label: '📈 自我超越', rows: b.self },
+    { key: 'diligence', label: '🔥 孜孜不倦', rows: b.diligence },
+    { key: 'standout', label: '🏔️ 鹤立鸡群', rows: b.standout },
   ]
 }
 
@@ -244,7 +247,18 @@ Page({
      * ⚠️ 只在 TS 里拼成数组、**不另存一份原始响应** —— 同一份数据两种表示迟早对不上。
      */
     boardList: [] as BoardView[],
-    /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪三个空框） */
+    /**
+     * ⭐ 当前选中的是第几块（0 = 自我超越）。
+     * ⚠️ 用下标而不是 key：它同时是 wx:for 的 index，比较起来最直接。
+     */
+    activeBoard: 0,
+    /**
+     * 当前那一块的行。
+     * ⚠️ 在 TS 里算好、而不是在 WXML 里写 `boardList[activeBoard].rows`：
+     *    动态下标 + 点号连写在小程序模板里支持得很勉强，换个写法就白屏。
+     */
+    activeRows: [] as GrowthRankRow[],
+    /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
     boardsLoaded: false,
     /**
      * ⭐ 正在播的是哪一句（articleId）。0 = 没在播。
@@ -412,7 +426,10 @@ Page({
        * ⚠️ 失败只警告：榜拉不到，首页照常能用（顶多那三块不出现）。
        */
       void fetchGrowthBoards()
-        .then((b) => this.setData({ boardList: boardListOf(b), boardsLoaded: true }))
+        .then((b) => {
+          const list = boardListOf(b)
+          this.setData({ boardList: list, activeRows: list[0]?.rows ?? [], boardsLoaded: true })
+        })
         .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))
       this.cards = { today: d.today, history: d.history }
       this.setData({ loading: false })
@@ -464,6 +481,17 @@ Page({
       //    但「参与过」的权威判据是**有没有成绩**。
       action: startButtonLabel(mine.myBest !== null),
     }
+  },
+
+  /**
+   * ⭐ 切换荣誉榜的 tab。
+   * ⚠️ 纯本地切换（数据已经全在手里）—— 点一下就该立刻换，不该再发请求。
+   * ⚠️ 点当前这个直接返回：不返回的话会白 setData 一次（列表看着闪一下）。
+   */
+  onSwitchBoard(e: WechatMiniprogram.BaseEvent) {
+    const index = Number((e.currentTarget.dataset as { i?: string }).i ?? -1)
+    if (index < 0 || index === this.data.activeBoard) return
+    this.setData({ activeBoard: index, activeRows: this.data.boardList[index]?.rows ?? [] })
   },
 
   onRetry() {

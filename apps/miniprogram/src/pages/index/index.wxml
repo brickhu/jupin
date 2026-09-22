@@ -193,19 +193,34 @@
       <view class="pt-6 pb-2 px-1">
         <text class="text-28rpx font-semibold text-ink">荣誉榜</text>
       </view>
-      <!-- ⚠️ 卡片类名与「历史挑战」那串**一字不差**（连间距也一致）：
-           两者的差异只该是内容，不该是排版 -->
-      <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{boardList}}" wx:key="key">
-        <text class="text-28rpx font-semibold text-ink">{{item.title}}</text>
+      <!--
+        ⭐ 三个指标**共用一个位置**，用等宽药丸切换。
 
-        <view class="flex items-center py-2" wx:for="{{item.rows}}" wx:for-item="row" wx:key="rank">
-          <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐，一眼就能看出来 -->
-          <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
-          <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
-          <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
+        ⚠️ 为什么不做成三块平铺：三块 TOP10 = 最多 30 行，首页会拖到两三屏，
+           而用户同一时刻只会看一个指标 —— 三块里有两块永远在浪费位置。
+        ⚠️ 切换是**纯本地**的（三个榜一次就全拉回来了），点一下立刻换、不发请求。
+        ⚠️ 卡片类名与「历史挑战」那串一字不差：两段的差异只该是内容，不是排版。
+      -->
+      <view class="bg-white rounded-2.5 p-4 mb-3">
+        <!-- tab 行：三段等宽，选中的是实心药丸 -->
+        <view class="flex items-center">
+          <view class="flex-1 text-center py-2 rounded-full {{activeBoard === i ? 'bg-brand' : ''}}"
+                wx:for="{{boardList}}" wx:for-item="tab" wx:for-index="i" wx:key="key"
+                data-i="{{i}}" bindtap="onSwitchBoard" hover-class="active__opacity-60">
+            <text class="text-24rpx {{activeBoard === i ? 'text-white font-medium' : 'text-muted'}}">{{tab.label}}</text>
+          </view>
         </view>
 
-        <text class="text-22rpx text-faint block py-2" wx:if="{{item.rows.length === 0}}">还没有人上榜</text>
+        <view class="mt-2">
+          <view class="flex items-center py-2" wx:for="{{activeRows}}" wx:for-item="row" wx:key="rank">
+            <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐，一眼就能看出来 -->
+            <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
+            <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
+            <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
+          </view>
+
+          <text class="text-22rpx text-faint block py-3 text-center" wx:if="{{activeRows.length === 0}}">还没有人上榜</text>
+        </view>
       </view>
     </block>
   </block>
