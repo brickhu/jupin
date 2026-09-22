@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { today } from '@jushuo/shared'
-import type { ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
+import type { ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
 import { loadArticleContent } from '../services/content'
 import { ensureSchedules, recentScheduleDates, scheduleAhead } from '../services/schedules'
+import { scheduleAudioOf } from '../services/standard-audio-meta'
 import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
 import { readStreakView } from '../services/streak'
 import { MAX_BACKFILL_DAYS, resolveScheduleDate } from '../services/schedule-date'
@@ -68,6 +69,22 @@ schedulesRoutes.get('/', async (c) => {
     }),
   )
 
+  /**
+   * ⭐ 标准音（含时长）按**句子**算一次 —— 7 天里大概率有好几天是同一句。
+   * ⚠️ 时长是读 content/audio/*.mp3 现算的（容器里没有 ffprobe），
+   *    进程内缓存；算不出来是 null ⇒ 端侧只显示按钮、不显示时长。
+   */
+  const articleOf = new Map<number, { id: number; standardAudio: string | null }>()
+  for (const pick of picks.values()) {
+    articleOf.set(pick.article.id, { id: pick.article.id, standardAudio: pick.article.standardAudio })
+  }
+  const audioOf = new Map<number, ScheduleAudio | null>()
+  await Promise.all(
+    [...articleOf.values()].map(async (a) => {
+      audioOf.set(a.id, await scheduleAudioOf(a))
+    }),
+  )
+
   const cards: ScheduleEntry[] = []
   for (const d of dates) {
     const pick = picks.get(d)
@@ -84,6 +101,7 @@ schedulesRoutes.get('/', async (c) => {
       topScore: st?.topScore ?? null,
       myBest: st?.myBest ?? null,
       myAttempts: st?.myAttempts ?? 0,
+      audio: audioOf.get(pick.article.id) ?? null,
     })
   }
 

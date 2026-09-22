@@ -361,6 +361,20 @@ export interface StreakDelta {
  *
  *    ⚠️ 唯一按日期算的是连续天数（streak），它在 SchedulesResponse 里单列。
  */
+/**
+ * ⭐ 卡片上的标准音。
+ *
+ * ⚠️ full / kind 的含义由 kind 决定（同 content.ts 的 AudioRef）：
+ *    · cloud → 云存储 fileID，要用 wx.cloud.getTempFileURL 换地址
+ *    · http  → 服务端路径，加 BASE_URL 前缀直接用
+ * ⚠️ durationMs 可能是 null（算不出来）—— 那时端侧只显示按钮、不显示时长。
+ */
+export interface ScheduleAudio {
+  full: string
+  kind: 'cloud' | 'http'
+  durationMs: number | null
+}
+
 export interface ScheduleEntry {
   /** 挑战日期 'YYYY-MM-DD'（北京时间） */
   date: string
@@ -368,11 +382,19 @@ export interface ScheduleEntry {
   /** 句子原文 */
   text: string
   translation: string
-  // ⚠️ 这里**刻意没有**标准音字段。
-  //    听句子是朗读页的事，标准音只经 /api/articles/:id/content 发布、
-  //    只被朗读页消费（见 ArticleContent.audio）。
-  //    列表页和详情页都不该有播放入口 —— 卡片整张是「点进详情」的 tap 目标，
-  //    再塞一个音频控件必然互相误触。
+  /**
+   * ⭐ 卡片上的标准音（可播引用 + 时长）—— 用来在卡片上放「圆形播放按钮」。
+   *
+   * ⚠️ 这里原来**刻意没有**这个字段，理由是「卡片整张是『点进详情』的 tap 目标，
+   *    再塞一个音频控件必然互相误触」。现在按产品要求加上，误触是这么处理的：
+   *      · 播放按钮是**独立的一小块**，用 catchtap 吃掉事件（不冒泡到卡片）
+   *      · 手点不到的地方（圆点以外）仍然是「点进详情」
+   *    ⇒ 代价与收益都摆在明面上：多了一个更小的独立热区。
+   *
+   * ⚠️ 为 null = 这句没有标准音 ⇒ 端侧**不渲染播放入口**
+   *    （渲染一个点了 404 的按钮比不渲染更糟）。
+   */
+  audio: ScheduleAudio | null
   /** 这条句子是不是专门排给那一天的（false = 从池子按天轮转来的） */
   isScheduled: boolean
   isToday: boolean

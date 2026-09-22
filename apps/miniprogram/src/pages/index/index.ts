@@ -1,6 +1,8 @@
 import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
+import { ensureLocalAudio } from '../../lib/audio/standard'
+import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -25,6 +27,14 @@ interface CardView {
    *    卡片头这行只回答一个问题：这个竞技场有多大。
    */
   stat: string
+  /**
+   * ⭐ 标准音的可播引用（null = 这一句没有标准音 ⇒ 不渲染播放按钮）。
+   * ⚠️ 端侧不拼地址：full 的形态由 kind 决定（云存储 fileID / 服务端路径），
+   *    两条路的解释在 lib/audio/standard.ts 里统一处理。
+   */
+  audio: { full: string; kind: 'cloud' | 'http' } | null
+  /** '0:03' —— 标准音时长；算不出来是空串 ⇒ 只显示按钮、不显示时长 */
+  durationText: string
   /**
    * 按钮下方那行：'你已经参与 3 次挑战 · 最高得分 86' / '还未参与挑战'。
    *
@@ -136,6 +146,21 @@ function statsOf(profile: me.Profile | null, streak: StreakView | null): StatsVi
   }
 }
 
+/**
+ * 标准音时长 → '0:03'。
+ *
+ * ⚠️ 算不出来（null / 非正数）返回**空串**，端侧就只显示播放按钮、不显示时长 ——
+ *    而不是显示一个 0:00（那会让人以为音频坏了）。
+ * ⚠️ 只到「分:秒」：标准音最长也就十几秒，显示毫秒只会更吵。
+ */
+function durationText(ms: number | null): string {
+  if (!ms || !Number.isFinite(ms) || ms <= 0) return ''
+  const total = Math.round(ms / 1000)
+  const m = Math.floor(total / 60)
+  const sec = total % 60
+  return m + ':' + String(sec).padStart(2, '0')
+}
+
 function statText(participantCount: number): string {
   return participantCount === 0 ? '' : participantCount + ' 人参与'
 }
@@ -190,6 +215,13 @@ Page({
     stats: null as StatsView | null,
     today: null as CardView | null,
     history: [] as CardView[],
+    /**
+     * ⭐ 正在播的是哪一句（articleId）。0 = 没在播。
+     *
+     * ⚠️ 用 **articleId** 而不是「第几张卡」：7 天里大概率好几天是同一句，
+     *    按卡片记的话，点一张卡播的却是另一张卡的按钮亮着。
+     */
+    playingArticle: 0,
   },
 
   /** 请求是否在途 —— 只用来挡并发，不参与任何业务判断 */
@@ -258,6 +290,45 @@ Page({
    *    以及下面那张连战卡。它们回答的是同一个问题的两种问法 ——
    *    「我连了几天」—— 点哪一处去的地方当然该是同一个。
    */
+  /**
+   * ⭐ 卡片上的圆形播放按钮：播这一句的标准音。
+   *
+   * ⚠️⚠️ 它是**独立的一小块热区**，WXML 那边用 catchtap 吃掉事件 ——
+   *    不 catch 的话会冒泡到整张卡片，变成「点播放却进了详情页」。
+   *    （这正是这个入口当初没做的原因，见 ScheduleEntry.audio 的注释。）
+   * ⚠️ 再点一次 = 停：同一句的按钮就是开关，不需要额外的停止控件。
+   * ⚠️ 走**和朗读页同一条**取音路径（ensureLocalAudio 优先本地），
+   *    所以同一句第二次点会是秒出声。
+   */
+  async onPlayAudio(e: WechatMiniprogram.BaseEvent) {
+    const ds = e.currentTarget.dataset as { id?: number; full?: string; kind?: string }
+    const articleId = Number(ds.id ?? 0)
+    if (!articleId || !ds.full) return
+
+    // 再点一次 → 停（stopAudio 是全局唯一那个播放器）
+    if (this.data.playingArticle === articleId) {
+      stopAudio()
+      this.setData({ playingArticle: 0 })
+      return
+    }
+
+    const kind = ds.kind === 'cloud' ? 'cloud' : 'http'
+    // ⚠️ 先点亮按钮再取音：取音这一步在弱网下要等一下，
+    //    不给反馈的话用户会以为没点上，然后连点好几下。
+    this.setData({ playingArticle: articleId })
+    try {
+      const src = await ensureLocalAudio(ds.full, kind)
+      if (!src) throw new Error('拿不到标准音')
+      await playAudioUrl(src, '标准音', () => {
+        // ⚠️ 只在「还是这一句在播」时清掉标记：用户可能在播放期间点了另一句
+        if (this.data.playingArticle === articleId) this.setData({ playingArticle: 0 })
+      })
+    } catch (err) {
+      if (this.data.playingArticle === articleId) this.setData({ playingArticle: 0 })
+      wx.showToast({ title: (err as Error).message || '播放失败', icon: 'none' })
+    }
+  },
+
   onOpenStreak() {
     openStreakPage()
   },
@@ -345,6 +416,8 @@ Page({
       translation: card.translation,
       isToday: card.isToday,
       stat: statText(card.participantCount),
+      audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
+      durationText: durationText(card.audio ? card.audio.durationMs : null),
       hint: hintText(mine),
       // ⚠️ 用 myBest 判断而不是 myAttempts：两者在正常流程里同进同退，
       //    但「参与过」的权威判据是**有没有成绩**。

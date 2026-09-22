@@ -87,13 +87,24 @@
            ⚠️ 箭头是「点卡片进详情」的**唯一提示** —— 卡片底部还有一个按钮，
               不给提示的话「点哪儿都一样」的错觉会让人以为自己点错了。 -->
       <view class="flex items-center mb-3" data-date="{{today.date}}" bindtap="onOpenDetail">
-        <text class="text-24rpx text-faint">{{today.dateText}}</text>
+        <!-- ⭐ 圆形播放按钮 + 时长。
+             ⚠️ catchtap 是必须的：不 catch 会冒泡到整张卡片，变成「点播放却进了详情页」。
+             ⚠️ 没有标准音（audio 为 null）时整块不渲染 —— 而不是给一个点了没反应的图标。
+             ⚠️ 日期没删，挪到了右边：往日卡片里它是唯一能区分哪一天的信息。 -->
+        <view class="idx-play {{playingArticle === today.articleId ? 'idx-play-on' : ''}}"
+              wx:if="{{today.audio}}"
+              data-id="{{today.articleId}}" data-full="{{today.audio.full}}" data-kind="{{today.audio.kind}}"
+              catchtap="onPlayAudio" hover-class="idx-play-hover">
+          <text class="idx-play-icon">{{playingArticle === today.articleId ? '■' : '▶'}}</text>
+        </view>
+        <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{today.durationText}}">{{today.durationText}}</text>
         <!-- ⭐ 竞技数据挂在箭头左侧：它和日期同属一行元信息。
              原来单独占一行、还被一条分隔线隔开，一行只有 6 个字却占掉整行高度。
              ⚠️ 这里**只**说「有多少人」——
                 「我参没参与」由按钮下方那行说，「我最好多少分」在详情页的榜单里。
                 同一件事说三遍，用户反而不知道哪一处才是准的。 -->
-        <text class="text-22rpx text-faint ml-auto shrink-0">{{today.stat}}</text>
+        <text class="text-24rpx text-faint ml-auto shrink-0">{{today.dateText}}</text>
+        <text class="text-22rpx text-faint ml-3 shrink-0">{{today.stat}}</text>
         <text class="text-36rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
       </view>
 
@@ -131,9 +142,17 @@
     <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="date"
           data-date="{{item.date}}" bindtap="onOpenDetail">
       <view class="flex items-center mb-2">
-        <text class="text-24rpx text-faint">{{item.dateText}}</text>
+        <!-- ⭐ 圆形播放按钮 + 时长（与今日卡片同构，理由见上面那段注释） -->
+        <view class="idx-play {{playingArticle === item.articleId ? 'idx-play-on' : ''}}"
+              wx:if="{{item.audio}}"
+              data-id="{{item.articleId}}" data-full="{{item.audio.full}}" data-kind="{{item.audio.kind}}"
+              catchtap="onPlayAudio" hover-class="idx-play-hover">
+          <text class="idx-play-icon">{{playingArticle === item.articleId ? '■' : '▶'}}</text>
+        </view>
+        <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{item.durationText}}">{{item.durationText}}</text>
         <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构 -->
-        <text class="text-22rpx text-faint ml-auto shrink-0">{{item.stat}}</text>
+        <text class="text-24rpx text-faint ml-auto shrink-0">{{item.dateText}}</text>
+        <text class="text-22rpx text-faint ml-3 shrink-0">{{item.stat}}</text>
         <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
       </view>
 
