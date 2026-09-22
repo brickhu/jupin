@@ -30,8 +30,9 @@
 
 | 文件 | 内容 | 状态 |
 |---|---|---|
-| [growth-and-energy.md](design/growth-and-energy.md) | **用户成长体系**（自我超越 / 孜孜不倦 / 鹤立鸡群）+ **能量值**（替换等级徽章与每日挑战次数） | ⏳ **待确认，确认后开工** |
-| [reward-system.md](design/reward-system.md) | **奖励系统**（解冻卡 / 能量点的发放规则、触发器枚举、一个发放接口、幂等键） | ⏳ **待确认** |
+| [growth-and-energy.md](design/growth-and-energy.md) | **用户成长体系**（自我超越 / 孜孜不倦 / 鹤立鸡群）+ **能量值**（替换等级徽章与每日挑战次数） | ✅ **已实施** |
+| [reward-system.md](design/reward-system.md) | **奖励系统**（解冻卡 / 能量点的发放规则、触发器枚举、一个发放接口、幂等键） | ✅ **已实施** |
+| [payment-and-purchase.md](design/payment-and-purchase.md) | **购买与支付**（能量包商品 / 小程序虚拟支付 / 发货推送 / 对账退款 / pages/me/energy） | ⏳ **待确认，确认后开工** |
 
 ### experiments/ —— 待执行的实验
 
