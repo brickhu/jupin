@@ -29,7 +29,7 @@ function stateOf(user: User): StreakState {
 export function streakView(
   state: StreakState,
   date: string = today(),
-  unfreeze: UnfreezeStatus = { count: 0, expiresOn: null },
+  unfreeze: UnfreezeStatus = { count: 0, pending: 0, expiresOn: null },
 ): StreakView {
   return {
     streakDays: state.streakDays,
@@ -37,8 +37,9 @@ export function streakView(
     // ⭐ 「今天读没读」由**服务端的日期**判定，不信客户端时钟。
     //    手机时间可以随便改；让本地判断只会出现「本地显示已打卡、服务端不认」。
     readToday: state.lastReadDate === date,
-    // ⚠️ 卡的两个数由调用方查出来后传进来（现算，见 ./unfreeze.ts）
+    // ⚠️ 卡的三样都由调用方查出来后传进来（现算，见 ./unfreeze.ts）
     unfreezeCards: unfreeze.count,
+    unfreezePending: unfreeze.pending,
     unfreezeExpiresOn: unfreeze.expiresOn,
   }
 }

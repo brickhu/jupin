@@ -144,10 +144,14 @@
             这一块现在只回答两件事：连了几天、手上有几张解冻卡。
          ⚠️ 解冻卡**不再自动消耗** —— 断档就是归 1，用不用卡由用户自己决定。
             所以文案不能写「自动补上」，那是旧的（也是错的）说法。 -->
-    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}">
+    <!-- ⚠️ 整卡可点 → 连战记录（日历 + 领奖）：
+         这张卡回答"我连了几天"，而"怎么连起来的、还有什么没领"在那一页。 -->
+    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}" bindtap="onOpenStreak" active__opacity-60>
       <view class="flex items-center">
         <text class="text-22rpx text-faint">连续朗读</text>
-        <text class="text-22rpx text-faint ml-auto" wx:if="{{streak.unfreezeCards > 0}}">❄️ 解冻卡 ×{{streak.unfreezeCards}}</text>
+        <!-- ⭐ 待领取优先显示：它是一件"还没做的事"，比"我手上有什么"更该被看见 -->
+        <text class="text-22rpx text-warn font-medium ml-auto" wx:if="{{streak.unfreezePending > 0}}">🎁 {{streak.unfreezePending}} 张待领取</text>
+        <text class="text-22rpx text-faint ml-auto" wx:elif="{{streak.unfreezeCards > 0}}">❄️ 解冻卡 ×{{streak.unfreezeCards}}</text>
       </view>
       <view class="flex items-baseline mt-2">
         <text class="text-48rpx font-bold text-ink">{{streak.streakDays}}</text>

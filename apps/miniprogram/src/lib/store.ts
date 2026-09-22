@@ -304,6 +304,8 @@ export function applySubmissionResult(input: {
         streakBest: input.streak.streakBest,
         // ⚠️ 解冻卡的**到期日**提交响应里没带，保留上一次刷新拿到的值
         unfreezeCards: input.streak.unfreezeCards,
+        // ⚠️ 提交响应里没有"待领取"这个数（发奖是服务端的事），保留上一次刷新拿到的值
+        unfreezePending: state.streak?.unfreezePending ?? 0,
         unfreezeExpiresOn: state.streak?.unfreezeExpiresOn ?? null,
         readToday: input.streak.counted,
       }

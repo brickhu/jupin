@@ -1,0 +1,86 @@
+<!--
+  ⭐ 「连战记录」—— 一个月的日历：哪天读了、哪天的缺口是解冻卡补的。
+
+  ⚠️ 三块自上而下：统计 → 日历 → 领奖。
+     顺序是「我走到哪了 → 怎么走到这的 → 还有什么没拿」，别调。
+  ⚠️ 日历排版要的三个数全来自服务端（见 streak.ts 的说明），这里只负责画。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="连战记录" />
+
+  <!-- ── ① 统计 ─────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5 flex items-center">
+    <view class="flex-1">
+      <text class="text-72rpx font-bold text-ink leading-[1]">{{streakDays}}</text>
+      <text class="text-24rpx text-faint block mt-2">连续战斗</text>
+      <text class="text-22rpx text-faint block mt-1">历史最长 {{streakBest}} 天</text>
+    </view>
+    <text class="text-120rpx leading-[1]">🔥</text>
+  </view>
+
+  <!-- ── ② 连战日历 ─────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-4 mt-3">
+    <view class="flex items-center">
+      <view class="px-3 py-2" bindtap="onPrev" hover-class="active__opacity-60">
+        <text class="text-32rpx text-muted">‹</text>
+      </view>
+      <text class="flex-1 text-center text-28rpx font-medium text-ink">{{monthText}}</text>
+      <view class="px-3 py-2 {{canNext ? '' : 'opacity-30'}}" bindtap="onNext" hover-class="{{canNext ? 'active__opacity-60' : ''}}">
+        <text class="text-32rpx text-muted">›</text>
+      </view>
+    </view>
+
+    <!-- 星期表头 -->
+    <view class="flex mt-2">
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">日</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">一</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">二</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">三</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">四</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">五</text>
+      <text class="text-22rpx text-faint text-center" style="width:14.28%">六</text>
+    </view>
+
+    <!-- 格子：7 列自动换行。⚠️ 类是拼出来的，见 wxss 里的说明 -->
+    <view class="flex flex-wrap mt-1">
+      <view class="streak-cell" wx:for="{{cells}}" wx:key="key">
+        <view class="streak-day {{item.kind === 'read' ? 'streak-day-read' : ''}} {{item.kind === 'unfreeze' ? 'streak-day-unfreeze' : ''}} {{item.isToday ? 'streak-day-today' : ''}}">
+          <text class="text-24rpx">{{item.day}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 图例 —— ⚠️ 色块用 streak.wxss 里的类，不是 uno 工具类：
+         日历的黄/蓝是这一页专有的，uno theme 里没有这两个色板（见 wxss 顶部说明） -->
+    <view class="flex items-center mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
+      <view class="streak-swatch streak-swatch-read"></view>
+      <text class="text-22rpx text-faint ml-2">连战</text>
+      <view class="streak-swatch streak-swatch-unfreeze ml-4"></view>
+      <text class="text-22rpx text-faint ml-2">用解冻卡补的</text>
+    </view>
+  </view>
+
+  <!-- ── ③ 领奖 ─────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-4 mt-3">
+    <view class="flex items-center">
+      <text class="text-28rpx text-ink flex-1">领取奖励</text>
+      <text class="text-24rpx text-faint" wx:if="{{unfreezePending > 0}}">{{unfreezePending}} 张解冻卡待领取</text>
+      <text class="text-24rpx text-faint" wx:else>没有待领取的</text>
+    </view>
+
+    <view class="mt-3 text-center py-[24rpx] rounded-full text-30rpx font-medium {{unfreezePending > 0 && !claiming ? 'bg-brand text-white' : 'bg-line text-faint'}}"
+          bindtap="onClaim" hover-class="{{unfreezePending > 0 ? 'active__opacity-60' : ''}}">
+      {{claiming ? '领取中…' : (unfreezePending > 0 ? '领取 ' + unfreezePending + ' 张' : '暂无可领取')}}
+    </view>
+
+    <text class="text-22rpx text-faint block mt-3 leading-[1.6]">每连续 7 天得 1 张解冻卡。领到之后**从领取那天**算 1 年有效期 —— 断档后可以自己决定要不要用它补上。</text>
+    <text class="text-22rpx text-faint block mt-1" wx:if="{{unfreezeCards > 0}}">手上 {{unfreezeCards}} 张{{unfreezeExpiresOn ? '，最早 ' + unfreezeExpiresOn + ' 到期' : ''}}</text>
+  </view>
+
+  <!-- ── 连不上 ────────────────────────────────────────────── -->
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  </view>
+</view>

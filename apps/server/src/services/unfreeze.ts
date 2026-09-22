@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { UNFREEZE_VALID_DAYS, daysBetween, today as dayOf } from '@jushuo/shared'
 
 import { db, type Executor } from '../db'
@@ -17,9 +17,11 @@ import { unfreezeCards, users } from '../db/schema'
 const DAY_MS = 86_400_000
 
 export interface UnfreezeStatus {
-  /** 手上还有几张（未过期、未使用） */
+  /** **手上**还有几张（已领取、未使用、未过期） */
   count: number
-  /** 最早到期的那张的到期日 'YYYY-MM-DD'；没有就是 null */
+  /** ⭐ **待领取**几张（发了但用户还没点"领取"） */
+  pending: number
+  /** 手上最早到期的那张的到期日 'YYYY-MM-DD'；没有就是 null */
   expiresOn: string | null
 }
 
@@ -38,13 +40,52 @@ export async function unfreezeStatus(
     .select({ expiresAt: unfreezeCards.expiresAt })
     .from(unfreezeCards)
     .where(
-      and(eq(unfreezeCards.userId, userId), isNull(unfreezeCards.usedAt), gt(unfreezeCards.expiresAt, now)),
+      and(
+        eq(unfreezeCards.userId, userId),
+        // ⚠️ 三条一起判：领取过、没用过、没过期（见 schema 里 claimed_at 的说明）
+        isNotNull(unfreezeCards.claimedAt),
+        isNull(unfreezeCards.usedAt),
+        gt(unfreezeCards.expiresAt, now),
+      ),
     )
-    // ⚠️ 先到期先排在前面 —— 消耗时也用这个顺序（"食品柜"规则）
+    // ⚠️ 先到期先排在前面 —— 消耗时也用这个顺序（「食品柜」规则）
     .orderBy(asc(unfreezeCards.expiresAt))
 
+  const [pendingRow] = await ex
+    .select({ n: count() })
+    .from(unfreezeCards)
+    .where(and(eq(unfreezeCards.userId, userId), isNull(unfreezeCards.claimedAt)))
+
   const first = rows[0]
-  return { count: rows.length, expiresOn: first ? dayOf(first.expiresAt) : null }
+  return {
+    count: rows.length,
+    pending: Number(pendingRow?.n ?? 0),
+    expiresOn: first && first.expiresAt ? dayOf(first.expiresAt) : null,
+  }
+}
+
+/**
+ * ⭐ **领取**所有待领取的解冻卡。
+ *
+ * ⚠️ 有效期从**这一刻**开始算（领取 + 1 年），不是从发放算 ——
+ *    否则"没及时来领"会变成"白白过期"，而用户根本没机会知道。
+ *
+ * @returns 这次领到几张（0 = 没有待领取的）
+ */
+export async function claimUnfreezeCards(userId: number, now: Date = new Date()): Promise<number> {
+  return db.transaction(async (tx) => {
+    const pending = await tx
+      .select({ id: unfreezeCards.id })
+      .from(unfreezeCards)
+      .where(and(eq(unfreezeCards.userId, userId), isNull(unfreezeCards.claimedAt)))
+    if (pending.length === 0) return 0
+
+    await tx
+      .update(unfreezeCards)
+      .set({ claimedAt: now, expiresAt: new Date(now.getTime() + UNFREEZE_VALID_DAYS * DAY_MS) })
+      .where(inArray(unfreezeCards.id, pending.map((c) => c.id)))
+    return pending.length
+  })
 }
 
 /**
@@ -62,7 +103,7 @@ export async function grantUnfreezeCard(
   await ex.insert(unfreezeCards).values({
     userId: input.userId,
     grantedAt: now,
-    expiresAt: new Date(now.getTime() + UNFREEZE_VALID_DAYS * DAY_MS),
+    // ⚠️ 发下来是**待领取**：claimed_at 与 expires_at 都由"领取"那一步填（见 claimUnfreezeCards）
     ruleCode: input.ruleCode,
   })
 }
@@ -118,6 +159,8 @@ export async function useUnfreezeCards(
       .where(
         and(
           eq(unfreezeCards.userId, userId),
+          // ⚠️ 待领取的卡**不能用来补签** —— 得先去「连战记录」页领一下
+          isNotNull(unfreezeCards.claimedAt),
           isNull(unfreezeCards.usedAt),
           gt(unfreezeCards.expiresAt, now),
         ),

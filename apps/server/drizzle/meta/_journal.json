@@ -127,6 +127,13 @@
       "when": 1790069840651,
       "tag": "0017_drop_freeze_count",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1790075952172,
+      "tag": "0018_unfreeze_claim",
+      "breakpoints": true
     }
   ]
 }

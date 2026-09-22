@@ -50,6 +50,12 @@
 
   <!-- ── 战绩入口 ────────────────────────────────────────────── -->
   <view class="bg-white rounded-2.5 mt-3 overflow-hidden">
+    <view class="flex items-center px-4 py-[26rpx]" bindtap="onStreak" hover-class="active__opacity-60">
+      <text class="text-28rpx text-ink flex-1">连战记录</text>
+      <text class="text-24rpx text-faint">🔥 连续 {{streakDays}} 天</text>
+      <text class="text-28rpx text-faint ml-2">›</text>
+    </view>
+    <view class="h-[1rpx] bg-line mx-4"></view>
     <view class="flex items-center px-4 py-[26rpx]" bindtap="onParticipations" hover-class="active__opacity-60">
       <text class="text-28rpx text-ink flex-1">参与场次</text>
       <text class="text-24rpx text-faint">{{participated}} 场 · {{conqueredCount}} 句拿到过分</text>

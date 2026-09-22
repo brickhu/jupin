@@ -8,7 +8,8 @@ import { getTotalConquered } from '../services/conquest'
 import { getRank } from '../services/leaderboard'
 import { challengeStats } from '../services/submission'
 import { readEnergy } from '../services/energy'
-import { unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
+import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
+import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
 import type { ChallengeWordScore } from '@jushuo/shared'
@@ -216,6 +217,34 @@ userRoutes.get('/me', async (c) => {
       streak,
     },
   })
+})
+
+/**
+ * ⭐ 「连战记录」—— 一个月的日历：哪天读了（连战）、哪天的缺口是解冻卡补的。
+ *
+ * ⚠️ 纯查询，**不落表**：连战日从 submissions 现算、解冻日从卡的 used_at 反推
+ *    （见 services/streak-record.ts 的说明）。存一份"日历"就是第二份真相。
+ * ⚠️ month 只接受 'YYYY-MM'，缺省 = 服务端的这个月；非法值直接按缺省处理
+ *    （这是只读接口，报错没有意义，给用户一屏正常的内容更好）。
+ */
+userRoutes.get('/streak-record', async (c) => {
+  const userId = c.get('userId')
+  const data = await readStreakRecord(userId, c.req.query('month'))
+  return c.json({ ok: true, data })
+})
+
+/**
+ * ⭐ 领取待领取的解冻卡。
+ *
+ * ⚠️ 有效期从**这一刻**开始算（领取 + 1 年），不是从发放算 ——
+ *    否则"没及时来领"变成"白白过期"，而用户根本没机会知道。
+ * ⚠️ 幂等：没有待领取的就返回 0，不报错（用户连点两下不该看到红字）。
+ */
+userRoutes.post('/claim', async (c) => {
+  const userId = c.get('userId')
+  const claimed = await claimUnfreezeCards(userId)
+  const streak = await readStreakView(userId)
+  return c.json({ ok: true, data: { claimed, streak } })
 })
 
 /**

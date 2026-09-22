@@ -1,7 +1,7 @@
 import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
-import { openChallengesPage, openParticipationsPage } from '../../lib/challenges'
+import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -248,6 +248,11 @@ Page({
 
   onOpenChallenges() {
     openChallengesPage()
+  },
+
+  /** 连战卡 → 连战记录（日历 + 领奖） */
+  onOpenStreak() {
+    openStreakPage()
   },
 
   /** 下拉刷新 —— 万一还有没覆盖到的时机，用户至少有个手动出口 */

@@ -33,6 +33,18 @@ export function openProfileHomePage(): void {
   wx.navigateTo({ url: PROFILE_HOME_PAGE, fail: () => wx.reLaunch({ url: PROFILE_HOME_PAGE }) })
 }
 
+/** 「连战记录」页（一个月一张日历） */
+const STREAK_PAGE = '/pages/me/streak/streak'
+const STREAK_ROUTE = 'pages/me/streak/streak'
+
+/** 打开「连战记录」—— 同一套去重逻辑 */
+export function openStreakPage(): void {
+  const stack = getCurrentPages()
+  const current = stack[stack.length - 1] as { route?: string } | undefined
+  if (current?.route === STREAK_ROUTE) return
+  wx.navigateTo({ url: STREAK_PAGE, fail: () => wx.reLaunch({ url: STREAK_PAGE }) })
+}
+
 /** 「参与场次」列表页 */
 const PARTICIPATIONS_PAGE = '/pages/me/participations/participations'
 /** 页面栈里那一页的 route 写法（无斜杠） */

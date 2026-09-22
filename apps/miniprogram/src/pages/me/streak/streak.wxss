@@ -1,0 +1,69 @@
+/**
+ * 「连战记录」页的样式 —— 只有**日历**这一块是手写的。
+ *
+ * ⚠️ 为什么不用 UnoCSS 的工具类画日历：
+ *    这个项目只往 uno theme 里加了语义色（brand/ok/warn/bad/ink/page/line…），
+ *    **没有 amber / sky 这类色板**。日历要的"黄底 / 蓝底"不是语义色，
+ *    硬套 warn/ok 只会让"黄色=警告"这种既有含义串味。
+ *    颜色取的是 Tailwind 的 amber-200 / sky-200，写在这里、只此一处。
+ *
+ * ⚠️ 其余排版（卡片、间距、字号）照旧用工具类 —— 这一页只有日历是特例。
+ */
+
+/* 一格：7 列 = 14.28%，用 padding 撑出上下留白 */
+.streak-cell {
+  width: 14.28%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6rpx 0;
+  box-sizing: border-box;
+}
+
+/* 日期格：正方形圆角块 */
+.streak-day {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 没有记录的日子：淡到几乎看不见，但**还在** —— 空格子会让人以为日历坏了 */
+  color: #c8c8cc;
+}
+
+/* ⭐ 连战日：黄底 */
+.streak-day-read {
+  background: #fde68a; /* amber-200 */
+  color: #78350f; /* amber-900 */
+  font-weight: 600;
+}
+
+/* ⭐ 解冻日（缺口是解冻卡补上的）：蓝底 */
+.streak-day-unfreeze {
+  background: #bae6fd; /* sky-200 */
+  color: #0c4a6e; /* sky-900 */
+  font-weight: 600;
+}
+
+/**
+ * 今天：加一圈描边。
+ * ⚠️ 用 box-shadow 而不是 border —— border 会把格子撑大 6rpx，
+ *    整个月的高度就会随"今天在哪一行"变来变去。
+ */
+.streak-day-today {
+  box-shadow: 0 0 0 3rpx #4f46e5;
+}
+
+/* 图例的小色块 —— 复用上面两个颜色，保证和图例说的是一回事 */
+.streak-swatch {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 6rpx;
+}
+.streak-swatch-read {
+  background: #fde68a;
+}
+.streak-swatch-unfreeze {
+  background: #bae6fd;
+}

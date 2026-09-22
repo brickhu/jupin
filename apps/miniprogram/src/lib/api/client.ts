@@ -6,6 +6,8 @@ import type {
   ScheduleDetail,
   ChallengeShareResponse,
   SchedulesResponse,
+  StreakRecordResponse,
+  StreakView,
   SubmissionAudioResponse,
   SubmissionStatusResponse,
 } from '@jushuo/shared'
@@ -506,6 +508,31 @@ export function fetchSchedules(days = 7): Promise<SchedulesResponse> {
  * ⚠️ 容器通道下 login() 内部也调了一次同一个接口（它只要 id）——
  *    那一次是**必须**的（uid 拿不到就没法上传），这一次是顺带取展示数据。
  */
+/**
+ * ⭐ 「连战记录」—— 某个月的日历（哪天读了、哪天的缺口是解冻卡补的）。
+ *
+ * ⚠️ 日历排版要的三个数（首日 / 天数 / 首日是周几）**全部由服务端给**：
+ *    端侧拿 'YYYY-MM-01' 去 new Date() 会按 UTC 解析，星期几可能差一天 ——
+ *    而那种错在界面上只表现为"整月的格子整体错位"，很难看出来。
+ *
+ * @param month 'YYYY-MM'；不给就是服务端的这个月
+ */
+export function fetchStreakRecord(month?: string): Promise<StreakRecordResponse> {
+  const q = month ? '?month=' + encodeURIComponent(month) : ''
+  return request<StreakRecordResponse>('/api/user/streak-record' + q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 领取待领取的解冻卡。
+ * ⚠️ 服务端幂等：没有待领取的就返回 claimed=0，不报错。
+ */
+export function claimRewards(): Promise<{ claimed: number; streak: StreakView }> {
+  return request<{ claimed: number; streak: StreakView }>('/api/user/claim', {
+    method: 'POST',
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
 /**
  * ⭐ 我的挑战记录（全部，按时间倒序）。
  * ⚠️ 它和 /api/user/me 一样属于「启动路径」—— 从用户面板点进来，

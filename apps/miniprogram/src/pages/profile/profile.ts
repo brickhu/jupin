@@ -1,7 +1,7 @@
 import type { GrowthView } from '@jushuo/shared'
 
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { openChallengesPage, openParticipationsPage } from '../../lib/challenges'
+import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -120,6 +120,10 @@ Page({
     void resolveCloudFileUrl(fileId).then((url) => {
       if (avatarFileId === fileId) this.setData({ avatarSrc: url })
     })
+  },
+
+  onStreak() {
+    openStreakPage()
   },
 
   onParticipations() {

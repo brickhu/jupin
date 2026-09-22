@@ -214,7 +214,39 @@ export interface StreakView {
    * ⚠️ **现算**，不是 users 上的计数器 —— 卡有有效期，整数表达不了。
    */
   unfreezeCards: number
+  /** ⭐ 待领取几张（发了但用户还没去「连战记录」页点领取） */
+  unfreezePending: number
   /** 手上最早到期那张的到期日 'YYYY-MM-DD'；没有就是 null */
+  unfreezeExpiresOn: string | null
+}
+
+/**
+ * ⭐ 「连战记录」—— 一个月里哪天读了、哪天的缺口是解冻卡补的。
+ *
+ * ⚠️ 日历排版要的三个数（首日/天数/首日是周几）**全由服务端给**：
+ *    端侧拿 'YYYY-MM-01' 去 new Date() 会按 UTC 解析，星期几有可能差一天，
+ *    而那种错在界面上只表现为"整个月的格子整体错位"，很难看出来。
+ */
+export interface StreakRecordDay {
+  date: string
+  /** read = 那天读了；unfreeze = 那天的缺口是用解冻卡补上的 */
+  kind: 'read' | 'unfreeze'
+}
+
+export interface StreakRecordResponse {
+  /** 'YYYY-MM' */
+  month: string
+  firstDay: string
+  daysInMonth: number
+  /** 1 号是周几（0 = 周日） */
+  weekdayOfFirst: number
+  /** 服务端的今天 */
+  today: string
+  streakDays: number
+  streakBest: number
+  days: StreakRecordDay[]
+  unfreezeCards: number
+  unfreezePending: number
   unfreezeExpiresOn: string | null
 }
 

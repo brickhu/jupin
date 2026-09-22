@@ -514,8 +514,25 @@ export const unfreezeCards = mysqlTable('unfreeze_cards', {
   id: int('id').autoincrement().primaryKey(),
   userId: int('user_id').notNull().references(() => users.id),
   grantedAt: datetime('granted_at', { mode: 'date', fsp: 3 }).notNull(),
-  /** 到期时间 = grantedAt + 1 年。⚠️ 消耗时**先到期先用**（FIFO by expires_at） */
-  expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }).notNull(),
+  /**
+   * ⭐ **领取时间；null = 待领取**。
+   *
+   * ⚠️⚠️ 奖励发下来**不等于**进了用户的口袋 —— 待领取是刻意的：
+   *    用户得回到「连战记录」页点一下才真正拿到。
+   *    （这也是那一页存在的理由之一：它得有点"值得回来一趟"的东西。）
+   * ⚠️ 所以「手上还有几张」的判据是**三条一起**：
+   *    claimed_at IS NOT NULL AND used_at IS NULL AND expires_at > now。
+   */
+  claimedAt: datetime('claimed_at', { mode: 'date', fsp: 3 }),
+  /**
+   * 到期时间 —— ⚠️ **可空，因为领取时才定**（claimedAt + 1 年）。
+   *
+   * ⚠️ 为什么不在发放时就定时：那样"没及时来领"会变成"白白过期"，
+   *    而用户根本没机会知道 —— 同一个页面里既催他回来、又偷偷扣他的东西，
+   *    这件事说不通。领取之后才开始倒计时。
+   * ⚠️ 消耗时仍然**先到期先用**（FIFO by expires_at）。
+   */
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }),
   /** null = 还在手上；非 null = 已用（状态就靠它判断，见上） */
   usedAt: datetime('used_at', { mode: 'date', fsp: 3 }),
   /** 使用记录：补的是几天断档（今天 − lastReadDate − 1） */
