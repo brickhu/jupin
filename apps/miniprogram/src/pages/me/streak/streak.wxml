@@ -74,7 +74,7 @@
       {{claiming ? '领取中…' : (unfreezePending > 0 ? '领取 ' + unfreezePending + ' 张' : '暂无可领取')}}
     </view>
 
-    <text class="text-22rpx text-faint block mt-3 leading-[1.6]">每连续 7 天得 1 张解冻卡。领到之后**从领取那天**算 1 年有效期 —— 断档后可以自己决定要不要用它补上。</text>
+    <text class="text-22rpx text-faint block mt-3 leading-[1.6]">每连续 7 天得 1 张解冻卡。有效期从领取那天算起，一年内有效 —— 断档之后可以自己决定要不要拿它补上。</text>
     <text class="text-22rpx text-faint block mt-1" wx:if="{{unfreezeCards > 0}}">手上 {{unfreezeCards}} 张{{unfreezeExpiresOn ? '，最早 ' + unfreezeExpiresOn + ' 到期' : ''}}</text>
   </view>
 
