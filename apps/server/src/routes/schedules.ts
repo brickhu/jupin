@@ -4,6 +4,7 @@ import type { ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/share
 import { loadArticleContent } from '../services/content'
 import { ensureSchedules, recentScheduleDates, scheduleAhead } from '../services/schedules'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
+import { shapeScheduleCards } from '../services/schedule-shape'
 import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
 import { readStreakView } from '../services/streak'
 import { MAX_BACKFILL_DAYS, resolveScheduleDate } from '../services/schedule-date'
@@ -105,8 +106,14 @@ schedulesRoutes.get('/', async (c) => {
     })
   }
 
-  const [first, ...rest] = cards
-  if (!first) {
+  /**
+   * ⭐ 切「今日 + 历史」—— 规则在 services/schedule-shape.ts（有单测）：
+   *    今日那张不进历史、**和今日同一句的也不进**、其余同一句只留最近一次、按日期倒序。
+   * ⚠️ 最后一条在池子小的时候是必须的：池子 5 句而窗口 7 天时，
+   *    -5 号会轮回到今天那一句 —— 不折叠的话历史里会有两张卡和上面那张一模一样。
+   */
+  const shaped = shapeScheduleCards(cards, date)
+  if (!shaped.today) {
     // ⚠️ 明确的 503 而不是空对象：句库为空是**部署问题**，
     //    报成「今天没有内容」会让排查方向完全跑偏（见 db/seed-articles.ts）。
     return c.json(
@@ -115,7 +122,7 @@ schedulesRoutes.get('/', async (c) => {
     )
   }
 
-  return c.json({ ok: true, data: { date, today: first, history: rest, streak } })
+  return c.json({ ok: true, data: { date, today: shaped.today, history: shaped.history, streak } })
 })
 
 /**

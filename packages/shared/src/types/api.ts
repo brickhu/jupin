@@ -445,6 +445,13 @@ export interface SchedulesResponse {
   date: string
   today: ScheduleEntry
   /** 历史挑战，最近的在最前（不含今天） */
+  /**
+   * ⭐ 历史挑战：**排除掉今日之后**的列表，按日期倒序（新的在前）。
+   *
+   * ⚠️ 同一句（同一个竞技场）只出现一次，且**不会**和 today 那句重复 ——
+   *    池子比窗口小时这是必须的（池子 5 句、窗口 7 天时，
+   *    -5 号会轮回到今天那一句）。规则与单测见 services/schedule-shape.ts。
+   */
   history: ScheduleEntry[]
   /**
    * 我的连续天数与解冻卡。
