@@ -5,6 +5,7 @@ import { openJoinPage, openProfilePage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import {
   openChallengesPage,
+  openEnergyPage,
   openParticipationsPage,
   openProfileHomePage,
   openStreakPage,
@@ -252,6 +253,23 @@ Component({
       }
       // ⚠️ 「通知」还没有页面 —— 说清楚，而不是点了没反应
       wx.showToast({ title: '通知 还在做，敬请期待', icon: 'none', duration: 1800 })
+    },
+
+    /**
+     * ⭐ 名字下面那行「⚡ 能量 N 点」→ 能量页（余额 / 充值 / 流水）。
+     *
+     * ⚠️⚠️ WXML 那边用的是 **catchtap**（阻止冒泡），因为这一行在 us-head 里面，
+     *    而 us-head 整块是「改资料」—— 不 catch 的话点能量会连带跳去改资料。
+     * ⚠️ 先收面板再跳（同菜单）：面板盖在页面上，不收的话返回时它还开着。
+     *
+     * ⚠️ 一个踩过的坑：WXML 里写了 catchtap="onOpenEnergy" 而这里**没有这个方法**时，
+     *    表现是「点了完全没反应」—— 既不报错也不跳转，控制台最多一行 warning。
+     *    所以 build.mjs 现在会检查「WXML 里绑的每个事件名，同名 .ts 里都得有」
+     *    （见 assertHandlersExist）。
+     */
+    onOpenEnergy() {
+      this.triggerEvent('close')
+      openEnergyPage()
     },
 
     onClose() {

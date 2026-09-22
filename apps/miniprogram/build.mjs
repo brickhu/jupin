@@ -29,6 +29,7 @@ import unoConfig, {
   makeEscapeMap,
 } from './uno.config.mjs'
 import { lintWxSource } from './wxss-lint.mjs'
+import { missingHandlers } from './wxml-handlers.mjs'
 
 /**
  * ⭐ 环境变量统一从**仓库根**读（见 tools/env.mjs）。
@@ -394,6 +395,32 @@ async function escapeWxmlClasses(map) {
  *    build.mjs 原来也只查「类名有没有定义」—— 这两类错跑一百遍构建都碰不到，
  *    只有在微信开发者工具里才会炸，而那时人已经在看页面了。
  */
+/**
+ * ⚠️⚠️ WXML 里绑的事件名，同名 .ts 里必须真的有那个方法（规则与理由见 wxml-handlers.mjs）。
+ *
+ * 绑一个不存在的方法时**既不报错也不跳转**，用户点了完全没反应 ——
+ * 真实事故：user-sheet.wxml 写了 catchtap="onOpenEnergy"，而 .ts 里没有它
+ * （那次编辑只落到了 WXML 上），用户的原话是「能量文字点不动」。
+ *
+ * ⚠️ tsc 只看 .ts、类名检查只看 class 属性，所以构建原来完全碰不到这类错。
+ */
+async function assertHandlersExist() {
+  const bad = []
+  for (const file of await collectByExt(SRC, ['.wxml'])) {
+    const ts = file.replace(/\.wxml$/, '.ts')
+    if (!existsSync(ts)) continue
+    const miss = missingHandlers(readFileSync(file, 'utf8'), readFileSync(ts, 'utf8'))
+    for (const name of miss) bad.push(relative(SRC, file) + '  →  ' + name)
+  }
+  if (bad.length > 0) {
+    console.error('❌ WXML 里绑了这些事件，但同名 .ts 里没有对应方法（点了会没反应）：')
+    for (const b of bad) console.error('   · ' + b)
+    console.error('')
+    console.error('   这种错不报错、不跳转、控制台最多一行 warning —— 所以必须在这里拦住。')
+    process.exit(1)
+  }
+}
+
 async function assertWxSourceValid() {
   const bad = []
   for (const ext of ['.wxss', '.wxml']) {
@@ -448,6 +475,7 @@ async function assertClassesResolve() {
 /** 静态资源全套：拷贝 → 生成 WXSS → 改写 WXML 类名 → 复查类名 */
 async function syncStaticAssets() {
   await assertWxSourceValid()
+  await assertHandlersExist()
   await copyAssets()
   const map = await buildUnoCss()
   await escapeWxmlClasses(map)
