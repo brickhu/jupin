@@ -549,12 +549,35 @@ mock 时下单返回一个假 payData，并**立即**走一遍「推送处理」
 | 要配的东西 | 值 / 来源 |
 |---|---|
 | XPAY_OFFER_ID | 虚拟支付-基础配置 |
-| XPAY_APP_KEY / XPAY_SANDBOX_APP_KEY | 同上（两把，按 env 选）|
-| XPAY_ENV | 0 现网 / 1 沙箱 |
-| 三个道具 ID | 道具管理（写进 goods.xpay_product_id）|
+| XPAY_APP_KEY / XPAY_SANDBOX_APP_KEY | 同上（**两把**，按 env 选）|
+| **XPAY_ENV** | ⚠️ **不用手填** —— deploy-cloud.mjs 结构性决定：**dev = 1（沙箱）/ prod = 0（现网）** |
+| 三个道具 ID | 道具管理（同步进 goods.xpay_product_id）|
+| （可选）沙箱道具 ID | 若沙箱与现网的 ID 不同，填 XPAY_PRODUCT_ENERGY_*_SANDBOX |
 | 回调 URL | https://<云托管域名>/api/pay/notify |
 
-⚠️ 上面四项都是**密钥级**，走既有的 tools/gh-secrets.mjs 一起进 GitHub Secrets + 服务环境变量。
+⚠️ 上面几项都是**密钥级**，走既有的 tools/gh-secrets.mjs 一起进 GitHub Secrets + 服务环境变量。
+
+#### ⭐⭐ 为什么 XPAY_ENV 必须由 deploy 脚本决定，而不是写进 .env
+
+`env` 的代码默认值是 **0（现网）**，而「忘了配」在 dev 上的后果是——
+**测试的时候真扣钱**，而且它**不会报错**：支付照常成功，只是花了真钱。
+这类「静默花真钱」正是最该用结构而不是纪律去防的东西，所以它和 ENGINE / SEED_ON_START
+一样写死在 deploy-cloud.mjs 里：
+
+~~~
+XPAY_ENV: target === 'dev' ? '1' : '0'
+~~~
+
+⭐ 配套的自查：**`/health` 里有 `pay` 块**，一眼能看出当前是沙箱还是现网、
+该环境的 AppKey 和三个道具 ID 配没配全 ——
+`{"mode":"xpay","env":1,"envName":"沙箱","offerId":true,"appKey":true,"productIds":{...}}`
+
+⚠️ 沙箱的两个前提（**待实测核实**）：
+
+1. 道具在微信侧有「**开发版本**」与「**现网版本**」两种状态，ID 未必相同 ——
+   不同就填 `_SANDBOX` 那几个变量（dev / prod 是两个独立的库，各存各的，不用在表里分环境）
+2. 腾讯规定「**现网版本的 env 只能是 0**」（报错 -15011）⇒
+   **沙箱只能用开发版 / 体验版测**，正式版试不了
 
 ### 9.3 ❌ 不需要配的（省得你去折腾）
 

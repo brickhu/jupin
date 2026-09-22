@@ -76,14 +76,52 @@ export function sellableIssue(item: ShopItem): string | null {
 }
 
 /**
+ * ⭐ 道具 ID 的**格式校验**。
+ *
+ * ⚠️⚠️ 为什么需要它：`.env` 里把值留成占位符（比如三个点）是很自然的做法，
+ *    而「有值」和「值是有效的道具 ID」是两件事 —— 只看有没有值的话，
+ *    我们会带着一个垃圾 ID 去微信，报回来的是 -15010（道具未发布）或者 -15013（价格错），
+ *    排查方向完全跑偏。宁可在这里判定「没配」，让前端显示「暂时买不了」。
+ */
+function looksLikeProductId(v: string | undefined): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(v)
+}
+
+/**
  * 商品码 → 微信道具 ID 的**环境变量**（见 env.ts）。
+ *
  * ⚠️ 它是**配置**不是运营数据：改了 .env 重启就生效，不用手工改库。
+ * ⚠️ **沙箱优先按 XPAY_ENV 选**：dev 走沙箱（env=1），prod 走现网（env=0）——
+ *    由 deploy-cloud.mjs 结构性决定，不靠人记。
  */
 function productIdFromEnv(code: string): string | undefined {
-  if (code === 'energy_10') return env.XPAY_PRODUCT_ENERGY_10
-  if (code === 'energy_300') return env.XPAY_PRODUCT_ENERGY_300
-  if (code === 'energy_3000') return env.XPAY_PRODUCT_ENERGY_3000
-  return undefined
+  const sandbox = env.XPAY_ENV === 1
+  const table: Record<string, [string | undefined, string | undefined]> = {
+    energy_10: [env.XPAY_PRODUCT_ENERGY_10, env.XPAY_PRODUCT_ENERGY_10_SANDBOX],
+    energy_300: [env.XPAY_PRODUCT_ENERGY_300, env.XPAY_PRODUCT_ENERGY_300_SANDBOX],
+    energy_3000: [env.XPAY_PRODUCT_ENERGY_3000, env.XPAY_PRODUCT_ENERGY_3000_SANDBOX],
+  }
+  const pair = table[code]
+  if (!pair) return undefined
+  const [prod, sandboxId] = pair
+  /** ⚠️ 沙箱那一份没填就回退到现网的（道具 ID 两边相同时不用重复填） */
+  const picked = sandbox ? (sandboxId || prod) : prod
+  return looksLikeProductId(picked) ? picked : undefined
+}
+
+/**
+ * ⭐ 当前环境下，三个商品各配没配**有效的**道具 ID。
+ *
+ * ⚠️ 它是给 /health 用的：光看「我填了 .env」不等于「服务真的读到了」，
+ *    而这两件事的区别只有在用户点购买时才暴露。
+ * ⚠️ 复用上面那套选择逻辑（含沙箱优先与格式守卫），别再实现一遍。
+ */
+export function productIdStatus(): Record<string, boolean> {
+  return {
+    energy_10: Boolean(productIdFromEnv('energy_10')),
+    energy_300: Boolean(productIdFromEnv('energy_300')),
+    energy_3000: Boolean(productIdFromEnv('energy_3000')),
+  }
 }
 
 /**

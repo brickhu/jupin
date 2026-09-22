@@ -260,6 +260,18 @@ const schema = z.object({
   XPAY_PRODUCT_ENERGY_10: z.string().optional(),
   XPAY_PRODUCT_ENERGY_300: z.string().optional(),
   XPAY_PRODUCT_ENERGY_3000: z.string().optional(),
+  /**
+   * ⭐ 沙箱（开发版本）的**道具 ID**。
+   *
+   * ⚠️ 道具在微信侧有「开发版本」与「现网版本」两种状态，ID 未必相同；
+   *    而 dev 环境固定走**沙箱**（见 deploy-cloud.mjs），所以它需要沙箱那一套 ID。
+   * ⚠️ 可空：ID 相同时留空即可（会回退到上面那三个）。
+   * ⚠️ 好在 dev / prod 是**两个独立的库**，所以两边可以各存各的道具 ID，
+   *    不需要在 goods 表里再分环境。
+   */
+  XPAY_PRODUCT_ENERGY_10_SANDBOX: z.string().optional(),
+  XPAY_PRODUCT_ENERGY_300_SANDBOX: z.string().optional(),
+  XPAY_PRODUCT_ENERGY_3000_SANDBOX: z.string().optional(),
 })
 
 export type Env = z.infer<typeof schema>

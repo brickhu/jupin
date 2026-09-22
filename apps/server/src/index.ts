@@ -7,6 +7,7 @@ import { dbState, initDatabase, maskDatabaseUrl, pingDatabase } from './db'
 import { probeStorage } from './storage'
 import { probeContent } from './services/content'
 import { probeStandardAudio } from './services/standard-audio'
+import { productIdStatus } from './services/goods'
 import { authMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
@@ -75,6 +76,25 @@ app.get('/health', async (c) => {
       articleCount: dbState.articleCount,
       /** ⭐ 商品目录行数 —— 它是 0 的话，购买页一张卡片都没有（静默故障） */
       goodsCount: dbState.goodsCount,
+      /**
+       * ⭐ 支付环境的**自述** —— 必须能一眼看出「现在扣的是真钱还是沙箱」。
+       *
+       * ⚠️ 这是整个支付模块里最容易搞错、而且**错了不会报错**的一件事：
+       *    env 配成现网（0）时，测试支付会**真的扣钱**，而且一切看起来都正常。
+       *    所以它和 database / migrated 一样属于「必须能自查」的状态。
+       * ⚠️ appKey 只看「这个环境该用的那一把」有没有值 —— 沙箱环境配了现网 key 也白搭。
+       */
+      pay: {
+        /** mock = 本地假支付；xpay = 真实虚拟支付 */
+        mode: env.PAY,
+        /** 0 = 现网（真钱）／1 = 沙箱 */
+        env: env.XPAY_ENV,
+        envName: env.XPAY_ENV === 1 ? '沙箱' : '现网',
+        offerId: Boolean(env.XPAY_OFFER_ID),
+        appKey: Boolean(env.XPAY_ENV === 1 ? env.XPAY_SANDBOX_APP_KEY : env.XPAY_APP_KEY),
+        /** 这一环境下三个商品各配没配**有效的**道具 ID */
+        productIds: productIdStatus(),
+      },
       envError: envError ?? undefined,
       storage,
       content,

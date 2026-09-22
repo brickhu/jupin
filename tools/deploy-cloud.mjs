@@ -194,6 +194,20 @@ const params = {
   DIAG_ENABLED: target === 'dev' ? 'true' : 'false',
   // --reset 时删库重建；否则明确关掉，避免误删
   SCHEMA_RESET: reset ? 'true' : 'false',
+
+  /**
+   * ⭐⭐ 支付环境：**dev 永远沙箱，prod 永远现网**。
+   *
+   * ⚠️⚠️ 这一条绝不能让人手填：env 的默认值是 0（现网），
+   *    而「忘了配」在 dev 上的后果是 **测试的时候真扣钱** ——
+   *    更糟的是它**不会报错**（支付照常成功，只是花了真钱）。
+   *    放在这里 = 由目标环境结构性决定，和 ENGINE / SEED_ON_START 同一套做法。
+   * ⚠️ 反过来 prod 必须是 0：腾讯规定「现网版本的 env 只能是 0」（报错 -15011），
+   *    填错的话线上会直接付不了款（这是期望中的 fail closed）。
+   */
+  XPAY_ENV: target === 'dev' ? '1' : '0',
+  // ⚠️ mock 通道只属于本机：云上必须走真实虚拟支付（PAY 的默认值本来就是 xpay）
+  PAY: 'xpay',
   // ⭐ COS_BUCKET / COS_REGION 由下面的 resolveStorageConfig() 自动填入，不用手抄
   MIGRATIONS_DIR: 'drizzle',
   // ⚠️ 音频改为永久保留，只在检测失败时删除 —— 见 routes/submissions.ts
@@ -218,6 +232,33 @@ if (!params.MYSQL_DATABASE) params.MYSQL_DATABASE = 'jushuo'
 //    反而把服务上原有的值抹掉。
 for (const k of XFYUN_KEYS) {
   if (process.env[k]) params[k] = process.env[k]
+}
+
+/**
+ * ⭐ 虚拟支付凭据（见 docs/design/payment-and-purchase.md §9）。
+ *
+ * ⚠️ **只在有值且不是占位符时写入**：`.env` 里把道具 ID 留成 `...` 是很自然的做法，
+ *    而把 `...` 注入进去的后果是「服务以为自己配好了道具」，
+ *    然后在微信侧报 -15010 / -15013 —— 离真正的原因（还没建道具）很远。
+ * ⚠️ 不过滤 OfferID / AppKey 的占位符，是因为它们更短、更容易误判；
+ *    那三个道具 ID 才是最可能被留成占位符的。
+ */
+const XPAY_KEYS = [
+  'XPAY_OFFER_ID',
+  'XPAY_APP_KEY',
+  'XPAY_SANDBOX_APP_KEY',
+  'XPAY_PRODUCT_ENERGY_10',
+  'XPAY_PRODUCT_ENERGY_300',
+  'XPAY_PRODUCT_ENERGY_3000',
+  'XPAY_PRODUCT_ENERGY_10_SANDBOX',
+  'XPAY_PRODUCT_ENERGY_300_SANDBOX',
+  'XPAY_PRODUCT_ENERGY_3000_SANDBOX',
+]
+/** 占位符守卫：值必须像真的（字母数字，长度 >= 4），否则当没配 */
+const isRealValue = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{4,}$/.test(v)
+for (const k of XPAY_KEYS) {
+  const v = process.env[k]
+  if (isRealValue(v)) params[k] = v
 }
 
 /**
