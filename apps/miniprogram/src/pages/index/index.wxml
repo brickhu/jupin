@@ -23,13 +23,14 @@
           **不是**「我起名字了没有」：那两件事曾经被混成一个，
           结果一个没起名字的老用户会被判成新人、状态卡凭空消失。
           三个数都是 0 时照常显示：那是真实的 0，不是记录丢了。
-       ⚠️ 前两格各自可点：参与场次 → 参与场次页（句子粒度）；
-          挑战回合 → 我的挑战（提交粒度）。第三格（连战天数）没有对应页面。 -->
+       ⚠️ **三格各自可点**：参与场次 → 参与场次页（句子粒度）；
+          挑战回合 → 我的挑战（提交粒度）；连战天数 → 连战记录（日历 + 领奖）。
+          三格的标签都带一个 ›，就是为了让「能点」这件事**在点之前**看得出来。 -->
   <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center" wx:if="{{stats}}">
     <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。
          攻克线废除之后「攻克」就等于「参与并拿到分」，是同一个数，
          所以直接用更直白的说法。单位「场」跟着标签走（数的是句子=场次）。 -->
-    <view class="flex-1 text-center" bindtap="onOpenParticipations" active__opacity-60>
+    <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
       <view class="flex items-baseline justify-center">
         <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
         <text class="text-24rpx text-faint ml-1">场</text>
@@ -41,7 +42,7 @@
 
     <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「攻克」分开看：
          读十次才攻克一句，也是常有的事，这两个数本来就该不一样。 -->
-    <view class="flex-1 text-center" bindtap="onOpenChallenges" active__opacity-60>
+    <view class="flex-1 text-center" bindtap="onOpenChallenges" hover-class="active__opacity-60">
       <view class="flex items-baseline justify-center">
         <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
         <text class="text-24rpx text-faint ml-1">次</text>
@@ -51,12 +52,15 @@
 
     <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-    <view class="flex-1 text-center">
+    <!-- ⚠️ 第三格曾经**没有**对应页面（连战只有天数、没有可看的细节）。
+         连战记录页做出来之后它就有了归属 —— 而「同一屏里长得一样的三格，
+         两格能点、一格点了没反应」比三格都不能点更让人困惑。 -->
+    <view class="flex-1 text-center" bindtap="onOpenStreak" hover-class="active__opacity-60">
       <view class="flex items-baseline justify-center">
         <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
         <text class="text-24rpx text-faint ml-1">天</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">连战天数</text>
+      <text class="text-22rpx text-faint block mt-1.5">连战天数 ›</text>
     </view>
   </view>
 
@@ -146,7 +150,7 @@
             所以文案不能写「自动补上」，那是旧的（也是错的）说法。 -->
     <!-- ⚠️ 整卡可点 → 连战记录（日历 + 领奖）：
          这张卡回答"我连了几天"，而"怎么连起来的、还有什么没领"在那一页。 -->
-    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}" bindtap="onOpenStreak" active__opacity-60>
+    <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}" bindtap="onOpenStreak" hover-class="active__opacity-60">
       <view class="flex items-center">
         <text class="text-22rpx text-faint">连续朗读</text>
         <!-- ⭐ 待领取优先显示：它是一件"还没做的事"，比"我手上有什么"更该被看见 -->

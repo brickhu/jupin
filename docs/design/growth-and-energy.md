@@ -445,7 +445,8 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | pages/reading/reading.ts:1027 | QUOTA_EXHAUSTED 分支 → ENERGY_EXHAUSTED；文案改成「还差 N 点能量 —— 明天会补到 3 点，也可以充值」 |
 | pages/reading/reading.wxml | 提交按钮旁显示能量：「⚡ N 点」+ 差多少才能挑战 |
 | pages/index/index.wxml:149-162 | 徽章区块 → 连战天数 + 待领取提示，**整张卡可点**进连战记录 |
-| components/user-sheet/user-sheet.wxml | 徽章那行 → ⚡ 能量 + ❄️ 解冻卡；原来那排数字 → 三个成长值 |
+| pages/index/index.wxml 状态卡 | 第三格「连战天数」→ 与另外两格一样可点，进连战记录 |
+| components/user-sheet/user-sheet.wxml | 徽章那行 → ⚡ 能量 + ❄️ 解冻卡；原来那排数字 → 三个成长值；菜单加一项「🔥 连战记录」 |
 | **pages/me/streak（新增）** | **连战记录**：统计 + 月历（连战日/解冻日）+ 领取奖励；在 app.json 注册 |
 | **pages/profile/profile（新增，根目录）** | **用户主页**：成长值三行 + 战绩入口；在 app.json 注册。⚠️ 对外展示，故不在 me/ 下 |
 | pages/profile-edit/profile-edit | 原 pages/profile（修改资料）—— 给上面那页让出 profile 这个名字 |

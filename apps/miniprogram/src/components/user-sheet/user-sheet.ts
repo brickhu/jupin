@@ -3,7 +3,12 @@ import type { StreakView } from '@jushuo/shared'
 import { fetchMe } from '../../lib/api/client'
 import { openJoinPage, openProfilePage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { openChallengesPage, openParticipationsPage, openProfileHomePage } from '../../lib/challenges'
+import {
+  openChallengesPage,
+  openParticipationsPage,
+  openProfileHomePage,
+  openStreakPage,
+} from '../../lib/challenges'
 import * as me from '../../lib/store'
 
 /**
@@ -100,6 +105,10 @@ Component({
     menu: [
       { key: 'participations', icon: '🎯', label: '参与场次' },
       { key: 'challenges', icon: '📋', label: '我的挑战' },
+      // ⭐ 连战记录排在这三个战绩入口的最后：它和它们是同一类 ——
+      //    「我走到哪了」。⚠️ 别把它塞进「我的主页」里面当二级入口：
+      //    那一页是**给别人看**的（对外展示），连战日历只给自己看。
+      { key: 'streak', icon: '🔥', label: '连战记录' },
       { key: 'home', icon: '🏠', label: '我的主页' },
       { key: 'notice', icon: '🔔', label: '通知' },
     ],
@@ -231,6 +240,10 @@ Component({
       }
       if (key === 'participations') {
         openParticipationsPage()
+        return
+      }
+      if (key === 'streak') {
+        openStreakPage()
         return
       }
       if (key === 'home') {
