@@ -1,0 +1,81 @@
+<!--
+  ⭐ 「能量」—— 余额 → 充值 → 流水。
+
+  ⚠️ 顺序是「我有什么 → 怎么变多 → 怎么花掉的」，别调：
+     一屏上来就摆价格，用户第一反应是「我又要花钱了」。
+  ⚠️ 价格全部来自服务端（`/api/shop/goods`），这一页一个字都不写死。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="能量" />
+
+  <!-- ⚠️ 沙箱环境要在页面上**说出来**：测试期最容易犯的错觉是「我在花钱」。 -->
+  <view class="energy-sandbox rounded-1 px-3 py-2 mb-3" wx:if="{{payEnv === 1}}">
+    <text class="text-22rpx text-warn">当前是沙箱环境（测试）—— 不会真扣钱，道具也未必真发货</text>
+  </view>
+
+  <!-- ── ① 余额 ───────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5 flex items-center">
+    <view class="flex-1">
+      <view class="flex items-baseline">
+        <text class="text-72rpx font-bold text-ink leading-[1]">{{energy}}</text>
+        <text class="text-24rpx text-faint ml-2">点</text>
+      </view>
+      <!-- ⚠️ 两个数都由服务端给（perChallenge / dailyFloor），端侧不写死 2 和 3 -->
+      <text class="text-22rpx text-faint block mt-3">每次挑战消耗 {{perChallenge}} 点</text>
+      <text class="text-22rpx text-faint block mt-1">每天补到 {{dailyFloor}} 点（用不完不会清零）</text>
+    </view>
+    <text class="text-120rpx leading-[1]">⚡</text>
+  </view>
+
+  <!-- ── ② 充值 ───────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-28rpx font-medium text-ink">充值</text>
+
+    <view class="mt-3" wx:for="{{goods}}" wx:key="code">
+      <!-- ⚠️ 买不了的两件事要分开说：下架 vs 还没配好道具。文案都用服务端那句「暂时买不了」 -->
+      <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line {{item.sellable ? '' : 'opacity-40'}}"
+            data-code="{{item.code}}" bindtap="onBuy"
+            hover-class="{{item.sellable ? 'active__opacity-60' : ''}}">
+        <!-- ⚠️ 图是**可选**的：认不出来的商品码就没有 image，这里就不渲染 -->
+        <image class="energy-thumb" src="{{item.image}}" mode="aspectFill" wx:if="{{item.image}}" />
+        <view class="flex-1">
+          <view class="flex items-center">
+            <text class="text-32rpx font-medium text-ink">{{item.title}}</text>
+            <text class="text-20rpx text-white bg-warn rounded-full px-2 py-[2rpx] ml-2" wx:if="{{item.badge}}">{{item.badge}}</text>
+          </view>
+          <text class="text-22rpx text-faint block mt-1">{{item.subtitle}} · {{item.unitText}}</text>
+        </view>
+        <text class="text-30rpx font-semibold text-brand ml-3">{{item.priceText}}</text>
+        <text class="text-24rpx text-faint ml-2" wx:if="{{paying && payingCode === item.code}}">…</text>
+      </view>
+    </view>
+
+    <text class="text-22rpx text-faint block mt-3 leading-[1.6]">能量不过期、不清零。充值的点数会一直留着，直到你用掉。</text>
+  </view>
+
+  <!-- ── ③ 流水 ───────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-28rpx font-medium text-ink">能量流水</text>
+
+    <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line" wx:for="{{rows}}" wx:key="id">
+      <view class="flex-1">
+        <text class="text-26rpx text-ink block">{{item.label}}</text>
+        <text class="text-20rpx text-faint block mt-[2rpx]">{{item.timeText}}</text>
+      </view>
+      <!-- ⚠️ 入账用品牌色、出账用灰：一眼能扫出「哪几笔是花钱的」 -->
+      <text class="text-28rpx font-medium {{item.income ? 'text-brand' : 'text-muted'}}">{{item.deltaText}}</text>
+    </view>
+
+    <view class="text-center py-3" wx:if="{{hasMore}}" bindtap="onMore" hover-class="active__opacity-60">
+      <text class="text-24rpx text-brand">{{loadingMore ? '加载中…' : '看更早的'}}</text>
+    </view>
+    <text class="text-22rpx text-faint block text-center py-3" wx:elif="{{rows.length === 0 && !loading}}">还没有任何记录</text>
+  </view>
+
+  <!-- ── 连不上 ────────────────────────────────────────────── -->
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  </view>
+</view>

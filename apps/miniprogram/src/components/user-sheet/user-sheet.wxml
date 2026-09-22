@@ -43,7 +43,13 @@
                 能量决定还能挑战几次，解冻卡决定断档后能不能补。
              ⚠️ 连续天数不在这里（它在首页的状态卡、「我的主页」，以及菜单里的
                 「连战记录」）；成长值是**累计的荣誉**，属于下面那一排数字。 -->
-        <text class="us-sub">⚡ 能量 {{energy}} 点 · ❄️ 解冻卡 {{streak.unfreezeCards}} 张</text>
+        <!--
+          ⚠️ 能量这一段用 **catchtap** 单独接一个点击：
+              外面整块 us-head 是「改资料」，用 bindtap 的话点能量会连带跳去改资料；
+              catch 阻止冒泡，父级那个 bindtap 就不会触发。
+          ⚠️ 解冻卡不接点击：它没有独立页面，入口在「连战记录」里。
+        -->
+        <text class="us-sub" catchtap="onOpenEnergy" hover-class="us-sub-hover">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{streak.unfreezeCards}} 张</text>
       </view>
       <text class="us-edit">{{named ? '修改' : '设置'}}</text>
     </view>

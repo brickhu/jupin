@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
-import { XPAY_MODE, XPAY_URI, buildSignData, calcPaySig, calcSignature, explainXpayError } from './xpay'
+import { XPAY_MODE, XPAY_URI, buildSignData, calcPaySig, calcSignature } from './xpay'
 
 /**
  * ⭐⭐ 这里有一条**官方测试向量**（微信支付文档《签名详解》里给的断言值）。
@@ -79,17 +79,5 @@ describe('signData 构造', () => {
   })
 })
 
-describe('错误码翻译', () => {
-  it('认识的码给人话，且带上码本身（方便回查文档）', () => {
-    expect(explainXpayError(-15013)).toContain('道具价格')
-    expect(explainXpayError(-15013)).toContain('-15013')
-  })
-
-  it('不认识的码不丢信息', () => {
-    expect(explainXpayError(-99999, '奇奇怪怪')).toContain('奇奇怪怪')
-  })
-
-  it('没有码时用原始信息兜底', () => {
-    expect(explainXpayError(undefined, '网络错误')).toBe('网络错误')
-  })
-})
+/** ⚠️ 错误码翻译的用例搬去了 packages/shared/src/xpay.test.ts —— 那张表在 shared 里，
+ *    因为端侧同样要用它（wx.requestVirtualPayment 的 fail 会拿到 errCode）。 */

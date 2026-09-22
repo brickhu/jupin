@@ -250,6 +250,90 @@ export interface StreakRecordResponse {
   unfreezeExpiresOn: string | null
 }
 
+/* ------------------------------------------------------------------ */
+/* ⭐ 能量 / 商店（见 docs/design/payment-and-purchase.md）              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 能量流水的一条。
+ *
+ * ⚠️ 服务端只给 `reason` **原文**（purchase / daily_topup / challenge_hold …），
+ *    文案由端侧映射 —— 这样加一个 reason 不用改接口，而端侧也不会去猜业务。
+ */
+export interface EnergyLedgerItem {
+  id: number
+  /** 正数入账、负数出账，单位「点」 */
+  delta: number
+  /** 服务端的 reason 原文 */
+  reason: string
+  /** submission | day | purchase | reward */
+  refType: string
+  refId: string
+  /** ISO 时间串 */
+  createdAt: string
+}
+
+/** me/energy 页的数据：余额 + 流水（分页） */
+export interface EnergyResponse {
+  /** 当前余额。⚠️ 服务端已经顺带做过「每日补足」，端侧拿到的就是真实可用点数 */
+  energy: number
+  /** 每次挑战消耗多少点 —— ⚠️ 端侧别自己写死 2 */
+  perChallenge: number
+  /** 每天补足到的下限 */
+  dailyFloor: number
+  items: EnergyLedgerItem[]
+  /** 下一页游标（把最后一条的 id 当 before 传回来）；null = 没有更多了 */
+  nextBefore: number | null
+}
+
+/** 商店里的一件商品（价格由服务端给，端侧不写死） */
+export interface ShopGoodsItem {
+  code: string
+  /** 发多少点 */
+  amount: number
+  /** 售价，单位**分** */
+  priceFen: number
+  title: string
+  subtitle: string
+  badge: string | null
+  /**
+   * ⭐ 现在能不能买（在售 + 已配道具 ID）。
+   * ⚠️ 端侧据此**置灰**，而不是让用户点了才失败 ——
+   *    「点了没反应」和「按不了」在体验上差很远。
+   */
+  sellable: boolean
+}
+
+export interface ShopGoodsResponse {
+  items: ShopGoodsItem[]
+  /** 0 = 现网 / 1 = 沙箱 —— 端侧在界面上标一下，免得测试时以为花的是真钱 */
+  payEnv: number
+}
+
+/** wx.requestVirtualPayment 的参数 —— 由服务端签好名，端侧**原样展开**传进去 */
+export interface VirtualPayData {
+  /**
+   * ⚠️ 用**联合类型**而不是 string：基础库的入参就是这两个字面量，
+   *    写成 string 的话端侧传给 wx.requestVirtualPayment 会直接类型不通过。
+   *    我们只用 short_series_goods（道具直购）。
+   */
+  mode: 'short_series_goods' | 'short_series_coin'
+  /** ⚠️ 是**字符串**（基础库要求 string 形式），不是对象 */
+  signData: string
+  paySig: string
+  signature: string
+}
+
+/** 下单结果 */
+export interface ShopOrderResponse {
+  outTradeNo: string
+  amountFen: number
+  points: number
+  /** ⭐ true = mock 通道已经「付掉了」，端侧**不要**再拉起支付 */
+  mockPaid: boolean
+  payData: VirtualPayData
+}
+
 /** 一次提交给 streak 带来的具体变化 —— 结果页要逐条讲清楚 */
 export interface StreakDelta {
   streakDays: number

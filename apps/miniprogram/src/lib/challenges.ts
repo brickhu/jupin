@@ -45,6 +45,23 @@ export function openStreakPage(): void {
   wx.navigateTo({ url: STREAK_PAGE, fail: () => wx.reLaunch({ url: STREAK_PAGE }) })
 }
 
+/** 「能量」页（余额 + 充值 + 流水） */
+const ENERGY_PAGE = '/pages/me/energy/energy'
+const ENERGY_ROUTE = 'pages/me/energy/energy'
+
+/**
+ * 打开「能量」—— 同一套去重逻辑。
+ *
+ * ⚠️ 入口有三个，都指向这一页：用户面板名字下面那行「⚡ 能量 N 点」、
+ *    朗读页能量不够时的引导、以及「我的主页」。
+ */
+export function openEnergyPage(): void {
+  const stack = getCurrentPages()
+  const current = stack[stack.length - 1] as { route?: string } | undefined
+  if (current?.route === ENERGY_ROUTE) return
+  wx.navigateTo({ url: ENERGY_PAGE, fail: () => wx.reLaunch({ url: ENERGY_PAGE }) })
+}
+
 /** 「参与场次」列表页 */
 const PARTICIPATIONS_PAGE = '/pages/me/participations/participations'
 /** 页面栈里那一页的 route 写法（无斜杠） */

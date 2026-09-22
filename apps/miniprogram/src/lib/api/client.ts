@@ -1,11 +1,14 @@
 import type {
   ApiResult,
   ChallengesResponse,
+  EnergyResponse,
   MeResponse,
   ParticipationsResponse,
   ScheduleDetail,
   ChallengeShareResponse,
   SchedulesResponse,
+  ShopGoodsResponse,
+  ShopOrderResponse,
   StreakRecordResponse,
   StreakView,
   SubmissionAudioResponse,
@@ -450,6 +453,24 @@ function isTransportFailure(e: Error): boolean {
  *    因为上传音频的路径里必须带 uid（服务端会校验）。
  *    （早先这里只探了个健康检查，导致拿不到 uid，见 upload.ts。）
  */
+/**
+ * ⭐ wx.login 拿 code。
+ *
+ * ⚠️ 它现在有**两个**用途，所以抽出来：
+ *    ① login() 换 token（本地 / 公网通道）
+ *    ② 下单前换 session_key —— 虚拟支付的**用户态签名**要它，
+ *       而线上主通道 callContainer **拿不到 session_key**（openid 由网关注入）。
+ *    两处各写一遍的话，迟早有一处忘了处理失败分支。
+ */
+export function wxLoginCode(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    wx.login({
+      success: (res) => resolve(res.code),
+      fail: (err) => reject(new Error(err.errMsg)),
+    })
+  })
+}
+
 export async function login(): Promise<void> {
   if (TRANSPORT === 'container') {
     // ⚠️⚠️ 这里**必须**带 noRelogin。
@@ -466,12 +487,7 @@ export async function login(): Promise<void> {
     return
   }
 
-  const code = await new Promise<string>((resolve, reject) => {
-    wx.login({
-      success: (res) => resolve(res.code),
-      fail: (err) => reject(new Error(err.errMsg)),
-    })
-  })
+  const code = await wxLoginCode()
   const data = await request<{ token: string; user: { id: number } }>('/api/auth/login', {
     method: 'POST',
     data: { code },
@@ -549,6 +565,52 @@ export function fetchChallenges(): Promise<ChallengesResponse> {
  */
 export function fetchParticipations(): Promise<ParticipationsResponse> {
   return request<ParticipationsResponse>('/api/user/participations', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 能量：余额 + 流水（me/energy 页）。
+ *
+ * ⚠️ 余额是服务端**先做过每日补足**再给的，端侧拿到的就是「现在真能用几点」，
+ *    所以页面不需要自己算「今天补过了没有」。
+ * ⚠️ 流水用**游标**翻页（before = 上一条的 id），不是 offset ——
+ *    见服务端 routes/user.ts 的说明。
+ *
+ * @param before 上一页最后一条的 id；不给就是第一页
+ */
+export function fetchEnergy(before?: number): Promise<EnergyResponse> {
+  const q = before ? '?before=' + before : ''
+  return request<EnergyResponse>('/api/user/energy' + q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 商店商品（充值卡片）。
+ *
+ * ⚠️ 价格**只从服务端拿**，端侧一份都不写死：小程序审核要 1–3 天，
+ *    把价格绑在发版上，促销 / 调价就废了（见 docs/design/payment-and-purchase.md §2.4）。
+ * ⚠️ 每件商品带 `sellable`：没配道具 / 已下架时端侧**置灰**，
+ *    而不是让用户点了才失败。
+ */
+export function fetchShopGoods(): Promise<ShopGoodsResponse> {
+  return request<ShopGoodsResponse>('/api/shop/goods', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 下单，拿回签好名的 payData。
+ *
+ * ⚠️⚠️ 这里**一定要顺手带一个 wx.login 的 code**：
+ *    下单需要用户态签名（要 session_key），而线上主通道 callContainer
+ *    **根本没有 session_key**（openid 是网关注入的）。
+ *    一次带上去，服务端顺手换一次并存库 —— 用户看不到「请重新登录」这种中间态。
+ * ⚠️ wx.login 失败也不直接放弃：库里可能已经有可用的 session_key，
+ *    让服务端自己判（它回 409 NEED_SESSION 才是真的没有）。
+ */
+export async function createShopOrder(goodsCode: string): Promise<ShopOrderResponse> {
+  const code = await wxLoginCode().catch(() => '')
+  return request<ShopOrderResponse>('/api/shop/order', {
+    method: 'POST',
+    data: { goodsCode, code },
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
 }
 
 export function fetchMe(): Promise<MeResponse> {

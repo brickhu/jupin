@@ -8,6 +8,7 @@
     "pages/me/challenges/challenges",
     "pages/me/participations/participations",
     "pages/me/streak/streak",
+    "pages/me/energy/energy",
     "pages/profile/profile",
     "pages/challenge/challenge"
   ],

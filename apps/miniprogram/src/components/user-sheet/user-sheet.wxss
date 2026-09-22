@@ -121,6 +121,12 @@
   color: #999;
 }
 
+/* ⚠️ 那一行现在**可点**（进能量页），所以按下要给反馈 —— 而父级 us-head 的
+   hover 反馈是整块变的，分不出点的是哪一块。这一条只让这一行自己变。 */
+.us-sub-hover {
+  opacity: 0.6;
+}
+
 .us-stats {
   display: flex;
   padding: 24rpx 0;

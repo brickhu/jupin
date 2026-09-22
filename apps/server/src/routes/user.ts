@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import { and, count, desc, eq, max, min } from 'drizzle-orm'
+import { and, count, desc, eq, lt, max, min } from 'drizzle-orm'
 import { db } from '../db'
-import { articles, submissions, users } from '../db/schema'
+import { articles, energyLedger, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { loadArticleRefText } from '../services/content'
 import { getTotalConquered } from '../services/conquest'
@@ -12,7 +12,8 @@ import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../service
 import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
-import type { ChallengeWordScore } from '@jushuo/shared'
+import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE } from '@jushuo/shared'
+import type { ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
@@ -231,6 +232,55 @@ userRoutes.get('/streak-record', async (c) => {
   const userId = c.get('userId')
   const data = await readStreakRecord(userId, c.req.query('month'))
   return c.json({ ok: true, data })
+})
+
+/**
+ * ⭐ 能量：余额 + 流水（me/energy 页）。
+ *
+ * ⚠️ 余额走 readEnergy() 而不是直接读 users.energy —— 它内部**先做每日补足**，
+ *    所以端侧拿到的一定是「现在真正能用几点」，而不是昨天留下的旧值。
+ *
+ * ⚠️ 分页用**游标**（before = 上一条的 id）而不是 offset：
+ *    流水只会往前长，offset 分页在「一边翻页一边有新记录」时会漏条/重条。
+ * ⚠️ limit 不信任端侧：夹在 5–100。
+ */
+userRoutes.get('/energy', async (c) => {
+  const userId = c.get('userId')
+
+  const limitRaw = Number(c.req.query('limit'))
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(5, Math.trunc(limitRaw))) : 30
+  const beforeRaw = Number(c.req.query('before'))
+  const before = Number.isFinite(beforeRaw) && beforeRaw > 0 ? Math.trunc(beforeRaw) : null
+
+  const energy = await readEnergy(userId)
+
+  const rows = await db
+    .select()
+    .from(energyLedger)
+    .where(before === null ? eq(energyLedger.userId, userId) : and(eq(energyLedger.userId, userId), lt(energyLedger.id, before)))
+    .orderBy(desc(energyLedger.id))
+    .limit(limit)
+
+  const items: EnergyLedgerItem[] = rows.map((r) => ({
+    id: r.id,
+    delta: r.delta,
+    reason: r.reason,
+    refType: r.refType,
+    refId: r.refId,
+    createdAt: r.createdAt.toISOString(),
+  }))
+
+  return c.json({
+    ok: true,
+    data: {
+      energy,
+      perChallenge: ENERGY_PER_CHALLENGE,
+      dailyFloor: ENERGY_DAILY_FLOOR,
+      items,
+      /** ⭐ 只有「刚好取满一页」时才可能还有下一页 —— 少取一条就说明到底了 */
+      nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
+    },
+  })
 })
 
 /**

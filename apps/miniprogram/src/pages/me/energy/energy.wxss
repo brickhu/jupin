@@ -1,0 +1,40 @@
+/**
+ * 「能量」页的样式。
+ *
+ * ⚠️ 道具缩略图是**手写的正方形**：`image` 组件不会自己撑成正方形，
+ *    用工具类写 width+height 也行，但方形圆角这套在别的页面已经手写了两次，
+ *    在这里集中一格更省事。
+ */
+.energy-thumb {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+
+ *
+ * ⚠️ 沙箱提示的底色是手写的：UnoCSS 的 `bg-warn/10` 这种透明度写法**全项目没用过**
+ *    （不确定 preset-weapp 支不支持，不值得为一行提示去赌一次构建）。
+ *    颜色沿用 warn 的浅色版（amber-100），与连战日历那段同理。
+ */
+.energy-sandbox {
+  background: #fef3c7; /* amber-100 */
+}
+
+ *
+ * ⚠️ 这一页**没有手写布局**，只有下面两条工具类表达不了的东西：
+ *    · 余额那个数字的行高（大字号配默认行高会把它顶出卡片）
+ *    · 流水行的分隔线留白
+ *    其余一律用 UnoCSS 工具类 —— 与全站一致，别在这里另起一套。
+ */
+
+/* 余额数字：行高压到 1，否则 72rpx 的字会把卡片撑高 */
+.energy-num {
+  line-height: 1;
+}
+
+/* 流水 / 商品行：最后一行不要分隔线（否则卡片底部多一条悬空的线） */
+.energy-row:last-child {
+  border-bottom-width: 0;
+}

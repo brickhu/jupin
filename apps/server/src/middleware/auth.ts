@@ -42,6 +42,13 @@ export interface Variables {
  *    公网请求**不携带任何 x-wx-* header** —— 只看 x-wx-openid 的话，
  *    任何人手写一个 header 就能冒充任意用户。这是本文件唯一的安全要害。
  *
+ * ⭐ 后半句**已实测**（2026-09-22，从公网直连 dev 服务）：
+ *    什么都不带 → 401；只带 x-wx-openid → 401；
+ *    **同时带 x-wx-source + x-wx-openid → 仍然 401**。
+ *    ⇒ 网关会把公网请求里的 x-wx-* 全部剥掉，这两条头只可能由 callContainer 注入。
+ *    （顺带：这也意味着**没法**用 curl 从本机冒烟测任何受鉴权保护的接口 ——
+ *      要测就得真机进小程序。）
+ *
  * ⚠️ header 名大小写不敏感，Hono 的 c.req.header() 已做归一化，写小写即可。
  */
 export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (c, next) => {
