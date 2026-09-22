@@ -3,7 +3,7 @@
 
   ⚠️ 顺序是「我有什么 → 怎么变多 → 怎么花掉的」，别调：
      一屏上来就摆价格，用户第一反应是「我又要花钱了」。
-  ⚠️ 价格全部来自服务端（`/api/shop/goods`），这一页一个字都不写死。
+  ⚠️ 价格全部来自服务端（/api/shop/goods），这一页一个字都不写死。
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 

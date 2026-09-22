@@ -28,6 +28,7 @@ import unoConfig, {
   escapeWxml,
   makeEscapeMap,
 } from './uno.config.mjs'
+import { lintWxSource } from './wxss-lint.mjs'
 
 /**
  * ⭐ 环境变量统一从**仓库根**读（见 tools/env.mjs）。
@@ -383,6 +384,35 @@ async function escapeWxmlClasses(map) {
 }
 
 /**
+ * ⚠️⚠️ WXSS / WXML 的**结构**检查（规则与理由见 wxss-lint.mjs）。
+ *
+ * 查三件事：反引号、注释配平、花括号配平。两次真实事故都栽在这里：
+ *   ① 注释里写了个反引号 → 模拟器报 [ WXSS 文件编译错误] unexpected
+ *   ② 一次编辑把注释块的开头吃掉了 → 同样是编译错误，而构建仍然打印「完成」
+ *
+ * ⚠️ 为什么必须在**构建期**拦：esbuild / tsc 都不碰 wxss，
+ *    build.mjs 原来也只查「类名有没有定义」—— 这两类错跑一百遍构建都碰不到，
+ *    只有在微信开发者工具里才会炸，而那时人已经在看页面了。
+ */
+async function assertWxSourceValid() {
+  const bad = []
+  for (const ext of ['.wxss', '.wxml']) {
+    for (const file of await collectByExt(SRC, [ext])) {
+      for (const p of lintWxSource(readFileSync(file, 'utf8'))) {
+        bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
+      }
+    }
+  }
+  if (bad.length > 0) {
+    console.error('❌ WXSS / WXML 有问题（小程序编译器会直接报错，整个样式文件不生效）：')
+    for (const b of bad) console.error('   · ' + b)
+    console.error('')
+    console.error('   改法：反引号用「」代替；注释块的开头结尾要成对。')
+    process.exit(1)
+  }
+}
+
+/**
  * ⭐ 复查：WXML 里用到的**每一个**类名，都能在某份 WXSS 里找到定义。
  *
  * ⚠️ 为什么值得单独做一道：类名写错一个字母（`flx` / `flxe`）、
@@ -417,6 +447,7 @@ async function assertClassesResolve() {
 
 /** 静态资源全套：拷贝 → 生成 WXSS → 改写 WXML 类名 → 复查类名 */
 async function syncStaticAssets() {
+  await assertWxSourceValid()
   await copyAssets()
   const map = await buildUnoCss()
   await escapeWxmlClasses(map)
