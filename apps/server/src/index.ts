@@ -77,10 +77,11 @@ app.get('/health', async (c) => {
       /** ⭐ 商品目录行数 —— 它是 0 的话，购买页一张卡片都没有（静默故障） */
       goodsCount: dbState.goodsCount,
       /**
-       * ⭐ 今天之前去重后还剩几个竞技场 = 首页「历史挑战」会有几张卡。
-       * ⚠️ 受鉴权保护的接口从外面看不到，所以这个数必须在 /health 里。
+       * ⭐ 句库里可读的句子数 = 首页「历史挑战」的卡片数 + 1（今日那一句）。
+       * ⚠️ 受鉴权保护的接口从外面看不到，所以这个数必须在 /health 里 ——
+       *    否则「历史那一栏是不是空的」只能靠真机点进去看。
        */
-      historyArenas: dbState.historyArenas,
+      activeArticles: dbState.activeArticles,
       /**
        * ⭐ 支付环境的**自述** —— 必须能一眼看出「现在扣的是真钱还是沙箱」。
        *

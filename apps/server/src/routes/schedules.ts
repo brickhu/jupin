@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { desc, eq, inArray, lt } from 'drizzle-orm'
+import { desc, eq, lt } from 'drizzle-orm'
 import { today } from '@jushuo/shared'
 import type { ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
 import { db } from '../db'
@@ -7,7 +7,7 @@ import { articles, schedules } from '../db/schema'
 import { loadArticleContent } from '../services/content'
 import { ensureSchedules, scheduleAhead } from '../services/schedules'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
-import { pickHistoryArenas } from '../services/schedule-shape'
+import { pickHistoryArticles } from '../services/schedule-shape'
 import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
 import { readStreakView } from '../services/streak'
 import { MAX_BACKFILL_DAYS, resolveScheduleDate } from '../services/schedule-date'
@@ -66,25 +66,70 @@ schedulesRoutes.get('/', async (c) => {
   }
 
   /**
-   * ② 历史：走**全库**。
-   * ⚠️ 排序与去重的规则在 services/schedule-shape.ts（有单测）——
-   *    这里只负责把**全库**的行取出来，不在这里写「窗口」。
+   * ② 历史：走**句库**（articles 表），不是排期表。
+   *
+   * ⚠️⚠️ 理由在 db/schema.ts 里写着：排期「**不是竞技单位，只是一个按日组织的
+   *    展示层**」，竞技数据的单位永远是**句子**（排名/人数/最高分全按 article_id 查）。
+   *    ⇒ 首页下半段要列的是「句库里还有哪些竞技场」，不是「过去哪几天排过」。
+   *
+   * ⚠️ 但 arena 页目前仍按**日期**寻址，所以每个句子还要带上「它最近一次排在过去的哪一天」；
+   *    没排过期的句子先不列（点进去会打开另一句的竞技场，比不显示更糟）。
+   *    挑选规则在 services/schedule-shape.ts（有单测）。
    */
-  const rows = await db
+  const latestRows = await db
     .select({ date: schedules.date, articleId: schedules.articleId, source: schedules.source })
     .from(schedules)
     .where(lt(schedules.date, date))
     .orderBy(desc(schedules.date))
-  const historyRows = pickHistoryArenas(rows, todayPick.article.id, limit)
+  /** 每个句子只留最近一次 —— 结果已按日期倒序，第一条命中的就是最近的 */
+  const latestOf = new Map<number, { date: string; source: string }>()
+  for (const r of latestRows) {
+    if (!latestOf.has(r.articleId)) latestOf.set(r.articleId, { date: r.date, source: r.source })
+  }
 
-  // ⚠️ 正文 / 音频 / 统计**都按句子算一次** —— 今日那一条和历史里的可能是同一句
-  const articleIds = [...new Set([todayPick.article.id, ...historyRows.map((r) => r.articleId)])]
-  const [articleRows, stats, streak] = await Promise.all([
-    db.select().from(articles).where(inArray(articles.id, articleIds)),
+  const candidateRows = await db
+    .select({
+      articleId: articles.id,
+      contentJson: articles.contentJson,
+      standardAudio: articles.standardAudio,
+    })
+    .from(articles)
+    .where(eq(articles.isActive, true))
+    .orderBy(desc(articles.id))
+  const candidates = candidateRows.flatMap((a) => {
+    const s = latestOf.get(a.articleId)
+    /**
+     * ⚠️ 只列**排过期**的句子：arena 页是按日期寻址的（/api/schedules/:date），
+     *    没排过期的句子点进去会打开**另一句**的竞技场 —— 那比不显示更糟。
+     *    ⇒ 新句要等它第一次排期过去之后才会出现在这里（轮转保证几天内必到）。
+     *    正解是给 arena 页加「按句子寻址」的路由，那是另一件事。
+     */
+    return s ? [{ ...a, date: s.date, source: s.source }] : []
+  })
+  const historyRows = pickHistoryArticles(candidates, todayPick.article.id, limit)
+
+  /** 今日 + 历史涉及的全部句子 —— 统计/正文/音频都按句子算一次 */
+  const articleById = new Map<
+    number,
+    { id: number; contentJson: string; standardAudio: string | null }
+  >()
+  articleById.set(todayPick.article.id, {
+    id: todayPick.article.id,
+    contentJson: todayPick.article.contentJson,
+    standardAudio: todayPick.article.standardAudio,
+  })
+  for (const c of candidates) {
+    articleById.set(c.articleId, {
+      id: c.articleId,
+      contentJson: c.contentJson,
+      standardAudio: c.standardAudio,
+    })
+  }
+  const articleIds = [...articleById.keys()]
+  const [stats, streak] = await Promise.all([
     getArenaStatsBatch(articleIds, userId),
     readStreakView(userId, date),
   ])
-  const articleById = new Map(articleRows.map((a) => [a.id, a]))
 
   // ⚠️ 正文按 contentJson 去重后一次性读：轮转池只有几句，反复出现同一条内容
   const byContentJson = new Map<string, { text: string; translation: string }>()
