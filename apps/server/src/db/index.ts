@@ -201,6 +201,32 @@ export async function pingDatabase(timeoutMs = 2500): Promise<'ok' | 'error' | '
 }
 
 /**
+ * 读一次库里的表清单，写进 dbState（会出现在 /health 的 existingTables 里）。
+ *
+ * ⚠️⚠️ 迁移**前**和**后**各读一次，是因为它们回答的是两个不同的问题：
+ *    · 迁移前 = 「这个库原来长什么样」（诊断 v1 遗留库）
+ *    · 迁移后 = 「现在到底有哪些表」（核对这次发版到底建没建出来）
+ *    只留迁移前那一份的话，一次 --reset 部署之后 /health 会一直显示「空库」，
+ *    而按 AGENT.md 的说法那正是「schema 不是新版」的判据 —— 于是一次成功
+ *    的重建反而看起来像失败。（这个坑真实发生过：清库重建后 articleCount=null、
+ *    existingTables 消失，排查时差点当成迁移没跑。）
+ *
+ * ⚠️ 只读、不抛：读不到就保持旧值，/health 不该因为一次 SHOW TABLES 失败而 500。
+ */
+async function refreshTableList(label: string): Promise<void> {
+  try {
+    const [rows] = await pool.query<mysql.RowDataPacket[]>('SHOW TABLES')
+    dbState.existingTables = rows.map((r) => String(Object.values(r)[0]))
+    console.log(
+      '[db] ' + label + '已有表（' + dbState.existingTables.length + '）：' +
+        (dbState.existingTables.join(', ') || '空库'),
+    )
+  } catch (err) {
+    console.warn('[db] 读取表清单失败（不阻断）:', (err as Error).message)
+  }
+}
+
+/**
  * 跑迁移。
  *
  * ⚠️ 多副本同时启动会并发跑迁移。本项目实例副本数为 1，可以接受；
@@ -211,15 +237,7 @@ export async function runMigrations(): Promise<void> {
 
   // ⭐ 先列出已有表：线上库是 v1 遗留的，表名相同但结构不同会让迁移中途失败 ——
   //    有这份清单才能在 /health 里一眼定位。
-  try {
-    const [rows] = await pool.query<mysql.RowDataPacket[]>('SHOW TABLES')
-    dbState.existingTables = rows.map((r) => String(Object.values(r)[0]))
-    console.log(
-      `[db] 迁移前已有表（${dbState.existingTables.length}）：${dbState.existingTables.join(', ') || '空库'}`,
-    )
-  } catch (err) {
-    console.warn('[db] 读取表清单失败（不阻断迁移）:', (err as Error).message)
-  }
+  await refreshTableList('迁移前')
 
   console.log(`[db] 应用迁移：${migrationsFolder}`)
   await migrate(db, { migrationsFolder })
@@ -347,6 +365,19 @@ export async function initDatabase(): Promise<void> {
       console.error('[db] 灌种子失败（不影响服务启动）：', (err as Error).message)
     }
   }
+
+  /**
+   * ⭐ 全部初始化动作跑完，**再照一次镜子**。
+   *
+   * ⚠️ 上面那两次 refreshArticleCount / refreshTableList 都在**迁移之前** ——
+   *    首次部署、SCHEMA_RESET 清库重建这两种情况下，那时库里还什么都没有，
+   *    于是 /health 会一直停在「空库 + articleCount: null」，
+   *    而 AGENT.md 的排查表恰恰把这两个值当成「没灌上 / schema 不是新版」的判据，
+   *    ⇒ 一次成功的初始化看起来像失败。
+   * ⚠️ 放在最后而不是插在中间：seed 会插文章，articles 的行数要等它跑完才算得准。
+   */
+  await refreshTableList('当前')
+  await refreshArticleCount()
 }
 
 /**
