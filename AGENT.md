@@ -734,7 +734,7 @@ Docker 端口映射到宿主机后，**局域网设备可正常访问**（macOS 
 | AppID | `wxc0418392e9116a01` |
 | 环境 | dev = `dev-0go66cfz212d3d83` ／ prod = `prod-9gjwc01kcd98d6d1` |
 | 服务名 | **`jupin`**（`deploy-cloud.mjs` 的 `SERVICE` 常量；写错会报 -601031） |
-| 公网域名（dev） | `https://jushuo-219743-12-1258596499.sh.run.tcloudbase.com` |
+| 公网域名（dev） | `https://jupin-219743-12-1258596499.sh.run.tcloudbase.com` ⚠️ 域名前缀跟**服务名**走：服务叫 `jupin`，所以旧的 `jushuo-…` 域名已 **404** |
 | 数据库 | 云托管 MySQL，内网 `MYSQL_ADDRESS`（形如 `10.x.x.x:3306`） |
 
 一条命令部署：`pnpm deploy:dev`（= `node tools/deploy-cloud.mjs dev`）。
@@ -953,6 +953,14 @@ CLI 密钥在 **云托管控制台 → 全局设置 → CLI 密钥** 生成，�
 | `MYSQL_ADDRESS` · `MYSQL_USERNAME` · `MYSQL_PASSWORD` · `MYSQL_DATABASE` | **环境级** | 同上 |
 | `TOKEN_SECRET` | **环境级** | ⚠️ 各环境**必须不同**且不能省 —— 省了脚本会现生成一个，而 runner 是临时的，等于每次部署都换密钥、登录态全掉 |
 
+⭐ **不用手抄**：`.env` / `.env.<env>` 里全都有，一条命令搬上去 ——
+
+```bash
+node tools/gh-secrets.mjs dev           # 只列要设哪些（默认不打印值）
+node tools/gh-secrets.mjs dev --apply   # 真写（需要先 gh auth login）
+node tools/gh-secrets.mjs prod --apply
+```
+
 环境级那几个建议用 GitHub **Environment**（建 `dev` / `prod` 两个）承载。
 顺带可以给 `prod` 配 **Required reviewers** —— 那样「合并到 main」就变成需要你点一下确认。
 
@@ -1139,7 +1147,7 @@ pnpm db:info          # 校验 .env.dev 与真实地址是否一致
 
 # 4. 部署：AUTO_MIGRATE=true 会在容器启动时自动建表
 pnpm deploy:dev
-curl https://jushuo-219743-12-1258596499.sh.run.tcloudbase.com/health
+curl https://jupin-219743-12-1258596499.sh.run.tcloudbase.com/health
 # 期望 db: ready / migrated: true
 
 # 5. 灌种子（需要临时开一下外网地址，从本机打；灌完可关）
