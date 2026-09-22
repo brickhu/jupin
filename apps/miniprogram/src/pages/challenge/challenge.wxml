@@ -1,0 +1,132 @@
+<!--
+  ⭐ 「挑战结果」—— 一次挑战的全部结果。本人与**从分享链接进来的陌生人**看的是同一屏。
+
+  ⚠️ 卡片顺序是产品定的（改顺序前先想清楚"第一眼该看到什么"）：
+     ① 头像 + 总分 + 分享  ② 朗读结果（逐词 + 播放/时长 + 点赞位）
+     ③ 成绩详情（总结 + 五个分项，纵向）  ④ AI 建议  ⑤ 排名（整卡可点去竞技场）
+     ⑥ 我要挑战 / 再次挑战
+  ⚠️ 刻意**没有**：公开录音开关、连战（streak）信息 —— 按产品要求去掉。
+     可见性的默认值仍在服务端（is_public），只是不再在这一屏给开关。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="{{isOwner ? '挑战结果' : '这次的成绩'}}" />
+
+  <!-- ── 加载中 / 出错 ─────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取这次挑战的结果…</text>
+  </view>
+
+  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:elif="{{result}}">
+
+    <!-- ① 头像 + 总分 + 分享 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3 flex items-center">
+      <image class="w-[88rpx] h-[88rpx] rounded-full bg-line shrink-0" src="{{owner.avatarSrc}}" mode="aspectFill" wx:if="{{owner.avatarSrc}}"></image>
+      <view class="w-[88rpx] h-[88rpx] rounded-full bg-brand_10 shrink-0 flex items-center justify-center" wx:else>
+        <text class="text-34rpx text-brand font-semibold">{{owner.nickname}}</text>
+      </view>
+
+      <view class="ml-3 flex-1 min-w-0">
+        <text class="text-26rpx text-muted block truncate">{{owner.nickname}}</text>
+        <view class="flex items-baseline mt-[2rpx]">
+          <text class="text-72rpx font-bold text-ink leading-[1.1]">{{scoreText}}</text>
+          <text class="text-26rpx text-faint ml-1">分</text>
+          <text class="text-22rpx text-ok font-semibold ml-2" wx:if="{{result.isPersonalBest && result.previousBest !== null}}">个人最好</text>
+        </view>
+        <text class="text-22rpx text-faint block">{{ago}}</text>
+      </view>
+
+      <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->
+      <button class="cl-share shrink-0" open-type="share">
+        <text class="text-32rpx">🔗</text>
+      </button>
+    </view>
+
+    <!-- ② 朗读结果：逐词标注 + 播放/时长 + 点赞位 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3">
+      <text class="text-24rpx text-faint block mb-2">朗读结果</text>
+
+      <!-- ⚠️ 逐词上色（绿 = 读准了）。判据与挑战列表同一处（@jushuo/shared 的 wordLevel），
+           对齐用 alignWordScores —— 引擎词表可能多一个插入词（见那个函数的说明） -->
+      <view class="flex flex-wrap" wx:if="{{words.length > 0}}">
+        <text class="text-40rpx leading-[1.5] mr-1 {{item.cls}}" wx:for="{{words}}" wx:key="i">{{item.text}}</text>
+      </view>
+
+      <view class="flex items-center mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
+        <view class="flex items-center px-5 py-[14rpx] rounded-full bg-brand_10 {{canPlay ? '' : 'opacity-40'}}" bindtap="onPlay">
+          <text class="text-27rpx text-brand font-medium">{{playing ? '❚❚ 停止' : '▶ 播放'}}</text>
+        </view>
+        <text class="text-24rpx text-faint ml-3">{{durationText}}</text>
+
+        <!-- ⭐ 点赞位：按产品要求先**预留**在右侧。
+             ⚠️ 不做成一个点了没反应的图标 —— 点它给一句实话，别让人以为坏了。 -->
+        <view class="ml-auto flex items-center px-4 py-[12rpx] rounded-full bg-page" bindtap="onLike">
+          <text class="text-26rpx text-faint">♡ 点赞</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ③ 成绩详情：结果总结 + 五个分项（纵向） -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{dimensions.length > 0}}">
+      <text class="text-24rpx text-faint block mb-2">成绩详情</text>
+      <text class="text-27rpx text-body block leading-[1.6] mb-3" wx:if="{{summary}}">{{summary}}</text>
+
+      <!-- ⚠️ 纵向一行一项（原来横向平铺，五个数字挤在一行看不清是谁的） -->
+      <view class="flex items-center py-2" wx:for="{{dimensions}}" wx:key="key">
+        <text class="text-26rpx text-muted w-[88rpx] shrink-0">{{item.label}}</text>
+        <view class="flex-1 h-[10rpx] bg-line rounded-full mx-3">
+          <view class="h-[10rpx] rounded-full {{item.barCls}}" style="width:{{item.pct}}%"></view>
+        </view>
+        <text class="text-28rpx font-semibold w-[96rpx] text-right shrink-0 {{item.textCls}}">{{item.value}}</text>
+      </view>
+    </view>
+
+    <!-- ④ AI 建议 -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.aiAdvice}}">
+      <text class="text-26rpx font-semibold text-ink block">AI 建议</text>
+      <text class="text-27rpx text-body block mt-2 leading-[1.7]">{{result.aiAdvice}}</text>
+    </view>
+
+    <!-- ⑤ 排名卡（整卡可点 → 竞技场） -->
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" bindtap="onOpenArena" wx:if="{{result.participantCount > 0}}">
+      <view class="flex items-center mb-2">
+        <text class="text-24rpx text-faint">排名</text>
+        <text class="text-22rpx text-faint ml-auto">看竞技场</text>
+        <text class="text-32rpx text-faint ml-1 leading-[1]">›</text>
+      </view>
+      <view class="flex">
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">名次</text>
+          <text class="text-34rpx font-semibold text-ink">{{result.rank}} / {{result.participantCount}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">击败</text>
+          <text class="text-34rpx font-semibold text-ink">{{result.beatenCount}} 人</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">距上一名</text>
+          <text class="text-34rpx font-semibold text-ink">{{gapText}}</text>
+        </view>
+      </view>
+
+      <!-- 榜单前几名 —— 与排名卡同属"跟别人比"这一层 -->
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{leaderboard.length > 0}}">
+        <view class="flex items-center py-1" wx:for="{{leaderboard}}" wx:key="rank">
+          <text class="text-26rpx w-[60rpx] text-faint">{{item.rank}}</text>
+          <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
+          <text class="text-26rpx font-semibold text-ink">{{item.scoreText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ⑥ 挑战按钮 —— 本人是「再次挑战」，从分享链接进来的人直接挑战**同一句** -->
+    <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium" bindtap="onAgain">
+      {{isOwner ? '再次挑战' : '我要挑战'}}
+    </view>
+  </block>
+</view>

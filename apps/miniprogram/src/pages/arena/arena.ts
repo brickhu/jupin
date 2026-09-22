@@ -3,7 +3,6 @@ import type { ScheduleDetail } from '@jushuo/shared'
 import { fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
-import { ensureJoined } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -145,11 +144,11 @@ Page({
   },
 
   /** 去朗读 —— 把这一天的日期原样带过去 */
-  async onStart() {
+  onStart() {
     const { articleId, date } = this.data
     if (!articleId || !date) return
-    // 同上：先确认加入过，再进朗读页（见 pages/index/index.ts 的说明）
-    if (!(await ensureJoined())) return
+    // ⚠️ 不拦「加入过没有」：能不能挑战由服务端说了算，
+    //    昵称/头像只是展示字段（见 pages/index/index.ts 的 onStart）。
     wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
   },
 })

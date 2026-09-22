@@ -6,9 +6,13 @@ import { env } from '../env'
 export type User = typeof users.$inferSelect
 
 /**
- * ⭐ 本地联调账号的会员到期时间 —— 远到不用再续。
+ * ⭐ 本地联调账号直接发一大笔能量 —— 远到用不完。
+ *
+ * ⚠️ 以前这里发的是**会员**（每天 50 次额度）。额度整体换成能量之后，
+ *    "发会员"这条路不通了：能量是**余额**，不是身份。
+ *    不发的话本地只有 3 点，读一次扣 2 点 —— 什么都测不了。
  */
-const DEV_MEMBER_UNTIL = new Date('2099-01-01T00:00:00Z')
+const DEV_ENERGY = 9999
 
 /**
  * 这是不是一个「本地联调环境」—— 是的话，账号一律给会员。
@@ -44,11 +48,10 @@ function isLocalDevEnv(): boolean {
 async function withLocalDevPrivilege(user: User): Promise<User> {
   if (!isLocalDevEnv()) return user
 
-  const alreadyMember = user.memberUntil !== null && user.memberUntil.getTime() >= DEV_MEMBER_UNTIL.getTime()
-  if (alreadyMember) return user
+  if (user.energy >= DEV_ENERGY) return user
 
-  await db.update(users).set({ memberUntil: DEV_MEMBER_UNTIL }).where(eq(users.id, user.id))
-  return { ...user, memberUntil: DEV_MEMBER_UNTIL }
+  await db.update(users).set({ energy: DEV_ENERGY }).where(eq(users.id, user.id))
+  return { ...user, energy: DEV_ENERGY }
 }
 
 /**
@@ -67,8 +70,8 @@ export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
 
   await db.insert(users).ignore().values({
     openid,
-    // ⭐ 建号时就带上会员，省掉一次 UPDATE
-    ...(isLocalDevEnv() ? { memberUntil: DEV_MEMBER_UNTIL } : {}),
+    // ⭐ 建号时就把本地能量发好，省掉一次 UPDATE
+    ...(isLocalDevEnv() ? { energy: DEV_ENERGY } : {}),
   })
 
   const [created] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)

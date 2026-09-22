@@ -1,42 +1,10 @@
-import { BADGES } from '@jushuo/shared'
 import type { StreakView } from '@jushuo/shared'
 
 import { fetchMe } from '../../lib/api/client'
-import { openProfilePage } from '../../lib/join'
+import { openJoinPage, openProfilePage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
+import { openChallengesPage, openParticipationsPage, openProfileHomePage } from '../../lib/challenges'
 import * as me from '../../lib/store'
-
-/** 徽章阶梯里的一行 */
-interface LadderRow {
-  code: string
-  emoji: string
-  name: string
-  /** 达成所需的历史最长连续天数 */
-  days: number
-  earned: boolean
-  note: string
-}
-
-/**
- * 徽章阶梯 → 展示行。
- *
- * ⚠️ 徽章**不落库**，它只是 f(历史最长连续天数)（见 @jushuo/shared/badges）——
- *    所以这里也不需要向服务端要一份「我有哪些徽章」，那是第二份真相。
- *
- * ⚠️ 已得的写「它是什么」，未得的写「还差几天」：
- *    两行都写「还差 N 天」的话，手里那个徽章反而没有任何说明。
- */
-function ladderOf(streak: StreakView | null): LadderRow[] {
-  const best = streak?.streakBest ?? 0
-  return BADGES.map((b) => ({
-    code: b.code,
-    emoji: b.emoji,
-    name: b.name,
-    days: b.days,
-    earned: best >= b.days,
-    note: best >= b.days ? b.blurb : '还差 ' + (b.days - best) + ' 天',
-  }))
-}
 
 /**
  * 组件实例上的**私有字段**（不参与渲染）。
@@ -61,6 +29,18 @@ const priv = (ctx: unknown): Internals => {
 
 /** 滑出 / 收回的时长 —— 必须与 user-sheet.wxss 里的 transition 对齐 */
 const SLIDE_MS = 220
+
+/**
+ * 抓手往下拖多少 px 就判定为「要收起」。
+ * ⚠️ 用 px 不是 rpx：e.touches[].clientY 本身就是 px，换算一次只会多一个出错的地方。
+ *    60px 大约是手机高度的十分之一 —— 比"手抖"大得多，又不用拖到底。
+ */
+const DRAG_CLOSE_PX = 60
+
+/** 拖动过程中的临时状态（不参与渲染，所以不放 data） */
+let dragStartY = 0
+let dragOffset = 0
+let dragActive = false
 /** 等一帧再翻转状态，过渡才有机会发生（见 toggle 里的说明） */
 const NEXT_FRAME_MS = 20
 
@@ -68,7 +48,7 @@ const NEXT_FRAME_MS = 20
  * 全局用户面板。
  *
  * ⚠️ 数据只有两个来源，都不在本组件里自己算：
- *    · 战绩 / 徽章 —— 全局 store 的 streak（服务端算好的视图）
+ *    · 战绩 / 解冻卡 —— 全局 store 的 streak（服务端算好的视图）
  *    · 头像 / 昵称 / 已征服数 —— store 的 profile
  */
 Component({
@@ -91,16 +71,38 @@ Component({
      */
     mounted: false,
     entered: false,
+    /**
+     * 拖动时给面板的内联 transform；平时是空串。
+     * ⚠️ 只有拖动/回弹这几十毫秒里有值 —— 位置平时完全由 CSS 类决定，
+     *    否则两个来源（类 + 内联）会打架，出现"滑出动画失效"这类怪事。
+     */
+    panelStyle: '',
 
-    nickname: '挑战者',
+    nickname: '未设置昵称',
+    /** 有没有起过名字 —— 决定点进去的是「补资料」还是「修改资料」 */
+    named: false,
     avatarUrl: '',
     /** 头像的**可显示地址** —— 库里存的是 cloud:// fileID，要先换一次 */
     avatarSrc: '',
     /** 没配头像时画的那张图 —— 与导航栏同一张（见 nav-bar.ts 的说明） */
     avatarPlaceholder: '/assets/avatar-placeholder.png',
     conqueredCount: 0,
+    /** ⚡ 能量点数 */
+    energy: 0,
+    /** ⭐ 三个成长值（并排展示，**不合成总分**） */
+    growth: { self: 0, diligence: 0, standout: 0 },
     streak: null as StreakView | null,
-    ladder: [] as LadderRow[],
+    /**
+     * ⭐ 菜单项。
+     * ⚠️ 「通知」暂时没有页面 —— 点了给一句「敬请期待」，
+     *    而不是留一个点了没反应的死链接（那看起来就像坏了）。
+     */
+    menu: [
+      { key: 'participations', icon: '🎯', label: '参与场次' },
+      { key: 'challenges', icon: '📋', label: '我的挑战' },
+      { key: 'home', icon: '🏠', label: '我的主页' },
+      { key: 'notice', icon: '🔔', label: '通知' },
+    ],
   },
 
   lifetimes: {
@@ -163,11 +165,13 @@ Component({
       const st = me.getState()
       const p = st.profile
       this.setData({
-        nickname: (p?.nickname ?? '').trim() || '挑战者',
+        nickname: (p?.nickname ?? '').trim() || '未设置昵称',
+        named: !!p?.nickname,
         avatarUrl: p?.avatarUrl ?? '',
         conqueredCount: p?.conqueredCount ?? 0,
+        energy: p?.energy ?? 0,
+        growth: p?.growth ?? { self: 0, diligence: 0, standout: 0 },
         streak: st.streak,
-        ladder: ladderOf(st.streak),
       })
 
       // ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。
@@ -196,20 +200,108 @@ Component({
     },
 
     /**
-     * ⭐ 改头像 / 改昵称。
+     * ⭐ 补 / 改头像和昵称。
      *
-     * ⚠️ 去的是**修改资料**页，不是加入页：已经加入的人再看到"确认加入"，
-     *    那一瞬间他会以为自己的账号没了。
-     *    两个页面的表单是同一个组件，差别只在说法（见 pages/profile/profile.wxml）。
-     * ⚠️ 先收面板再弹层：两层叠在一起，用户看到的是"点了没反应"。
+     * ⚠️⚠️ 两个页面按**有没有起过名字**分流，不能合成一个：
+     *    没起过名字的人看到的是「加入句拼 / 确认加入」—— 那是邀请；
+     *    已经起过名字的人再看到一次，那一瞬间他会以为自己的账号没了。
+     *    两页的表单是同一个组件，差别只在说法（见 pages/join 与 pages/profile）。
+     *
+     * ⚠️ 它**不是登录**：账号（openid）早就有了，这里补的只是
+     *    榜上显示成什么 —— **因此不点它也完全不影响使用**。
+     * ⚠️ 先收面板再弹层：两层叠在一起，用户看到的是点了没反应。
      */
     onEditProfile() {
       this.triggerEvent('close')
-      openProfilePage()
+      if (this.data.named) openProfilePage()
+      else openJoinPage()
+    },
+
+    /**
+     * ⭐ 菜单点击。
+     * ⚠️ 先收面板再跳：面板盖在页面上，不收的话返回时它还开着。
+     */
+    onMenuTap(e: WechatMiniprogram.BaseEvent) {
+      const key = (e.currentTarget.dataset as { key?: string }).key
+      this.triggerEvent('close')
+
+      if (key === 'challenges') {
+        openChallengesPage()
+        return
+      }
+      if (key === 'participations') {
+        openParticipationsPage()
+        return
+      }
+      if (key === 'home') {
+        openProfileHomePage()
+        return
+      }
+      // ⚠️ 「通知」还没有页面 —— 说清楚，而不是点了没反应
+      wx.showToast({ title: '通知 还在做，敬请期待', icon: 'none', duration: 1800 })
     },
 
     onClose() {
       this.triggerEvent('close')
+    },
+
+    /* ---------------------------------------------------------------- */
+    /* 抓手的手势：按住往下拖，拖过阈值就收起                              */
+    /* ---------------------------------------------------------------- */
+
+    onGrabStart(e: WechatMiniprogram.TouchEvent) {
+      const t = e.touches[0]
+      if (!t) return
+      dragStartY = t.clientY
+      dragOffset = 0
+      dragActive = true
+    },
+
+    /**
+     * ⚠️ 这里**每帧一次 setData** —— 一般来说要避免（跨层通信很贵），
+     *    但拖拽是唯一没有替代方案的地方：位置必须跟着手指走。
+     *    （真嫌贵的做法是把这段挪进 WXS，代价是多一个文件、逻辑分两处。）
+     * ⚠️ 只允许**往下**拖：面板本来就贴着底边，往上拖没有对应的语义，
+     *    所以给 1/4 的阻尼，让"拖不动"这件事有反馈而不是完全僵住。
+     */
+    onGrabMove(e: WechatMiniprogram.TouchEvent) {
+      if (!dragActive) return
+      const t = e.touches[0]
+      if (!t) return
+      const dy = t.clientY - dragStartY
+      dragOffset = dy > 0 ? dy : dy / 4
+      this.setData({
+        panelStyle: 'transform: translateY(' + dragOffset + 'px); transition: none',
+      })
+    },
+
+    /**
+     * ⚠️ 关闭有**两段**，顺序不能反：
+     *    ① 先把面板顺着手指滑下去（内联样式 + 过渡）
+     *    ② 动画结束再清掉内联样式、并通知父组件收起
+     *    反过来（先清样式）面板会**先跳回原位**再往下滑 —— 看起来很怪。
+     *    清掉之后位置由 .us-panel-on 是否还在决定，而这时 entered 已经是 false，
+     *    所以不会二次跳动。
+     */
+    onGrabEnd() {
+      if (!dragActive) return
+      dragActive = false
+
+      const settle = (to: string) =>
+        this.setData({ panelStyle: 'transform: translateY(' + to + '); transition: transform ' + SLIDE_MS + 'ms ease-out' })
+
+      if (dragOffset > DRAG_CLOSE_PX) {
+        settle('100%')
+        setTimeout(() => {
+          this.setData({ panelStyle: '' })
+          this.triggerEvent('close')
+        }, SLIDE_MS)
+        return
+      }
+
+      // 没拖够 → 弹回原位
+      settle('0')
+      setTimeout(() => this.setData({ panelStyle: '' }), SLIDE_MS)
     },
 
     /** 挡住冒泡 / 滚动穿透用的空处理器，不要删 */

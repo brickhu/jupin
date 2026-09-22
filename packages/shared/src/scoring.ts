@@ -21,7 +21,7 @@
  * ⚠️ 纯函数、零依赖：这类规则最容易错在边界上，必须能在 Node 里逐条钉住
  *    （见 scoring.test.ts）。
  */
-import { WORD_GREEN_LINE } from './constants/index'
+import { WORD_GREEN_LINE, WORD_RED_LINE } from './constants/index'
 
 /** 权重 —— 改这里就是改标准，别在别处再抄一份 */
 export const SCORE_WEIGHTS = {
@@ -189,6 +189,30 @@ export function round1(v: number): number {
  */
 export function formatScore(v: number | null | undefined): string {
   return v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(1)
+}
+
+/**
+ * ⭐ 一个词该上哪一档色 —— 'ok'（标绿）/ 'bad'（标红）/ 'ink'（普通）。
+ *
+ * ⚠️⚠️ 为什么这条判断放在 shared，而不是各自写在页面里：
+ *    同一个词会在**两个地方**被上色 —— 结果屏（刚读完那一次）和
+ *    「我的挑战」列表（历史里的每一次）。两处各写一份，
+ *    某天只调了其中一处，用户就会看到同一句、同一个词，一处绿一处灰，
+ *    而这条解释链（灰的那几个就是我丢分的地方）当场断掉。
+ *
+ * ⚠️ 判据与算分的「绿词」共用 WORD_GREEN_LINE：界面上标绿的词，
+ *    就是总分公式里数的那些词（见 constants 里的说明）。
+ * ⚠️ dp 不是 'normal' 一律标红，**不看分数**：那是引擎明确判定的读错 / 漏读，
+ *    分数偶尔还能剩不少 —— 红的理由要说在「读错了」上，而不是「分低」。
+ * ⚠️ 比的是**原始分**，不是显示用的 round1：84.96 显示成 85.0 也不该标绿，
+ *    否则列表里是绿的、点进结果屏却是灰的。
+ */
+export type WordLevel = 'ok' | 'bad' | 'ink'
+
+export function wordLevel(score: number, dp?: string | null): WordLevel {
+  if (dp !== undefined && dp !== null && dp !== 'normal') return 'bad'
+  if (!Number.isFinite(score) || score < WORD_RED_LINE) return 'bad'
+  return score >= WORD_GREEN_LINE ? 'ok' : 'ink'
 }
 
 

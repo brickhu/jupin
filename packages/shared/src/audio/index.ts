@@ -18,5 +18,7 @@
  *    保留下来的只有**录音链路必需**的三样：FFT / 重采样 / WAV 编解码。
  */
 export * from './fft'
+export * from './sniff'
+export * from './level'
 export * from './wav'
 export * from './resample'

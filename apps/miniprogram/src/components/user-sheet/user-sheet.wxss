@@ -36,8 +36,11 @@
   bottom: 0;
   /* ⚠️ 必须在遮罩之上：两者是兄弟，靠 z-index 分前后 */
   z-index: 1;
-  /* 半屏 —— 用户明确要的「从底部向上滑动半屏」 */
-  height: 50vh;
+  /* ⚠️ 高度**跟着内容走**（auto + max-height），不再写死半屏：
+     原来那一整张等级徽章阶梯去掉之后，面板里只剩「头像 + 四个数字 + 三行菜单」，
+     写死 50vh 会在底部留一大块什么都没有的白 —— 看起来像内容没加载出来。
+     max-height 是护栏：菜单以后变长也不会把自己顶出屏幕。 */
+  max-height: 70vh;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -145,90 +148,40 @@
   color: #999;
 }
 
-.us-sec {
-  display: flex;
-  align-items: baseline;
-  padding: 24rpx 0 12rpx;
-}
-
-.us-sec-t {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #111;
-}
-
-.us-sec-n {
-  margin-left: auto;
-  font-size: 22rpx;
-  color: #999;
-}
-
-/* ⚠️ scroll-view 必须有**确定的高度**才能滚：flex:1 在这里就是那个高度，
-   而它外面的 .us-panel 是固定 50vh —— 所以内容是溢出去滚，不是把面板撑高 */
-.us-scroll {
-  flex: 1;
-  overflow: hidden;
-}
-
-.us-item {
-  display: flex;
-  align-items: center;
-  padding: 18rpx 0;
-}
-
-.us-item-off {
-  opacity: 0.35;
-}
-
-.us-item-emoji {
-  width: 56rpx;
-  font-size: 32rpx;
-  flex-shrink: 0;
-}
-
-.us-item-col {
-  flex: 1;
-  overflow: hidden;
-}
-
-.us-item-name {
-  display: block;
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #111;
-}
-
-.us-item-note {
-  display: block;
-  margin-top: 4rpx;
-  font-size: 22rpx;
-  color: #999;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.us-item-days {
-  flex-shrink: 0;
-  margin-left: 16rpx;
-  font-size: 24rpx;
-  color: #666;
-}
-
-.us-foot {
-  padding: 24rpx 0 40rpx;
+/* ⭐ 菜单 —— 一行一个入口。
+   ⚠️ 这里原来是一整张「等级徽章」阶梯（.us-sec / .us-scroll / .us-item* / .us-foot*），
+      已按产品要求整体去掉：拉开面板是来找入口的，不是来读等级表的。 */
+.us-menu {
+  margin-top: 8rpx;
   border-top: 1rpx solid #f0f0f0;
 }
 
-.us-foot-t {
-  display: block;
-  font-size: 24rpx;
-  color: #333;
+.us-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 26rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
 }
 
-.us-foot-n {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  color: #999;
+.us-menu-hover {
+  opacity: 0.55;
+}
+
+.us-menu-icon {
+  width: 48rpx;
+  font-size: 30rpx;
+  flex-shrink: 0;
+}
+
+.us-menu-label {
+  flex: 1;
+  font-size: 28rpx;
+  color: #111;
+}
+
+/* 右箭头：让「这一行可以点」这件事不用猜 */
+.us-menu-arrow {
+  flex-shrink: 0;
+  font-size: 32rpx;
+  color: #c8c8cd;
 }

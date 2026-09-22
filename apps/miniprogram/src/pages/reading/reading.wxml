@@ -2,7 +2,9 @@
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
   <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
-  <nav-bar id="nav" title="参与挑战" />
+  <!-- ⚠️ 回看模式（URL 带 sid）下这一页不是"来挑战"的，标题要跟着变 ——
+       否则用户从「我的挑战」点进来，看到标题写着「参与挑战」会以为自己又开了一局。 -->
+  <nav-bar id="nav" title="{{review ? '挑战详情' : '参与挑战'}}" />
 
   <!-- ── 加载中 ────────────────────────────────────────────── -->
   <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && !error}}">
@@ -67,12 +69,19 @@
            ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
               没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
            ⚠️ 用 canvas 而不是一排 <view>：一帧 1024 个采样点，节点方案既扛不住也会糊成一块。
-           ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。 -->
-      <canvas type="2d" id="wave" class="w-full h-[88rpx] my-1"></canvas>
+           ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。
+
+           ⚠️⚠️ 画不画由 waveOn 决定，而它取决于**这一轮真的收到了 PCM 帧没有**：
+              录音格式选 mp3 就是因为「压缩」和「帧回调」只能在这个格式上兼得
+              （aac 拿不到帧，pcm 体积翻五倍）。
+              真机上万一帧里装的是**压缩块**而不是 PCM，drawWave 会当场把
+              waveOn 置 false —— 那时这里不渲染画布，只留「录音中」和时间：
+              一块不动的空画布比没有更糟，它会让人以为是自己手机的问题。 -->
+      <canvas type="2d" id="wave" class="w-full h-[88rpx] my-1" wx:if="{{waveOn}}"></canvas>
 
       <!-- ⚠️ 只在开发者工具里显示：波形不出来的原因有好几种（帧没来 / 画布没就绪 /
            数据是压缩字节），它们在屏幕上长得一模一样。真机上恒为空。 -->
-      <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveDebug}}">{{waveDebug}}</text>
+      <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveOn && waveDebug}}">{{waveDebug}}</text>
 
       <view class="mb-2.5"></view>
       <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
@@ -92,6 +101,11 @@
       </view>
       <!-- ⭐ 等待必须可见：打分要十几秒，一句「打分中…」不动的按钮会被当成卡死 -->
       <text class="text-22rpx text-faint block text-center mt-2" wx:if="{{phase === 'submitting' && uploadPercent >= 100}}">云端正在逐词评测，通常 10–20 秒，长句更久 —— 期间可以停留在此页</text>
+
+      <!-- ⭐ 能量：挑战要花点数，所以必须**提交前**就让用户看见还剩多少。
+           ⚠️ 余额来自服务端（每次 /me 都会顺手补足到 3 点），端侧不自己算。
+           ⚠️ 检测失败服务端会把这点数退回，所以文案说「消耗」而不是「扣除」。 -->
+      <text class="text-22rpx text-faint block text-center mt-2" wx:if="{{phase !== 'submitting'}}">⚡ 能量 {{energy}} 点 · 这次挑战消耗 2 点{{energy < 2 ? '（不够了，明天会补到 3 点）' : ''}}</text>
     </block>
 
     <!-- 失败提示（冷却也走这里 —— 它不是错误，只是需要说清楚） -->
@@ -100,127 +114,35 @@
     </view>
   </view>
 
-  <!-- ── 结果 ──────────────────────────────────────────────── -->
-  <block wx:if="{{phase === 'done' && result}}">
-    <view class="bg-white rounded-2.5 p-3.5 mb-3">
-      <view class="flex items-baseline">
-        <text class="text-96rpx font-bold text-ink">{{scoreText}}</text>
-        <text class="text-28rpx text-faint ml-1">分</text>
-        <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{result.isPersonalBest && result.previousBest !== null}}">个人最好</text>
+  <!-- ── 简版结果反馈 ─────────────────────────────────────────
+       ⭐ 打完分停在这一屏：大号总分 + AI 一句话点评 + AI 建议 + 两个按钮。
+       ⚠️ 详细结果（五个分项 / 逐词上色 / 榜单 / 分享）在 pages/challenge ——
+          这一屏刻意只做「刚读完那一下」的反馈，点「查看详情」才进那一页。
+       ⚠️ AI 点评/建议拿不到时（没配大模型、那次调用失败）整块不渲染，
+          而不是显示一个空标签（那看起来像坏了）。 -->
+  <block wx:if="{{phase === 'done'}}">
+    <view class="bg-white rounded-2.5 px-6 py-10 mb-3 text-center">
+      <view class="flex items-baseline justify-center">
+        <text class="text-140rpx font-bold text-ink leading-[1]">{{scoreText}}</text>
+        <text class="text-30rpx text-faint ml-2">分</text>
       </view>
-
-      <!-- ⭐ AI 点评：4-8 个字，一眼看完。
-           ⚠️ 拿不到（没配大模型 / 那次调用失败）就整块不渲染 ——
-              显示一个空标签比不显示更糟（用户会以为坏了）。 -->
-      <view class="mt-2" wx:if="{{result.aiComment}}">
-        <text class="text-24rpx text-brand bg-brand_10 rounded-full px-2.5 py-1">AI 点评 · {{result.aiComment}}</text>
-      </view>
-
-      <!-- ⭐ 评分详情 = **我们自己那套打分的五个分项**，五项加权就是上面那个总分。
-           ⚠️⚠️ 这里**不要**摆引擎返回的四维：总分已经不按它们等权算了，
-              摆在一起用户对不上（「我准确度 91，为什么总分 85」），
-              而且完整度对能读完的人恒为 100，占着位置却不提供信息。
-           ⚠️ 拿不到（老成绩没有这个字段）时整块不渲染，绝不补 0。 -->
-      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{dimensions.length > 0}}">
-        <view class="flex">
-          <view class="flex-1" wx:for="{{dimensions}}" wx:key="key">
-            <text class="text-22rpx text-faint block">{{item.label}}</text>
-            <text class="text-30rpx font-semibold block {{item.textCls}}">{{item.value}}</text>
-            <view class="h-[6rpx] bg-line rounded-full mt-1">
-              <view class="h-[6rpx] rounded-full {{item.barCls}}" style="width:{{item.pct}}%"></view>
-            </view>
-          </view>
-        </view>
-        <text class="text-22rpx text-faint block mt-1.5 leading-[1.6]" wx:if="{{dimensionHint}}">{{dimensionHint}}</text>
-      </view>
-
-      <!-- ⭐ 听听自己读的 —— 结果页必须能回放。
-           ⚠️ 判定「说得好不好」最终靠耳朵：没有回放，用户只能看分数和文字建议，
-              无法把「AI 说的那个词」和「我实际读成什么样」对上。
-           ⚠️ 用的是录音时那份本地文件（模拟器播文件、真机播帧拼的 WAV，见 onReplay），
-              不依赖网络，也不受服务端删音频影响。 -->
-      <view class="flex items-center py-3 mt-2.5 border-t-[1rpx] border-t-solid border-t-line">
-        <view class="flex-1">
-          <text class="text-27rpx text-ink block">听听我自己读的</text>
-          <text class="text-22rpx text-faint block mt-[6rpx]">{{elapsed}} 秒 · 对照上面的建议，重点听那几个词</text>
-        </view>
-        <view class="px-5 py-[14rpx] rounded-full bg-brand_10 text-brand text-27rpx font-medium" bindtap="onReplay">▶ 试听</view>
-      </view>
-
-      <!-- ⭐ 录音公开与否 —— **提交之后**才问。
-           ⚠️ 提交前问等于让每个用户先做一个与「读好这句」无关的决定；
-              而听完自己的分数再决定，依据更足。 -->
-      <view class="flex items-center py-3 mt-2.5 border-t-[1rpx] border-t-solid border-t-line">
-        <view class="flex-1">
-          <text class="text-27rpx text-ink block">公开我的录音</text>
-          <text class="text-22rpx text-faint block mt-[6rpx]">关闭后别人看不到、也听不到这段声音，成绩照样上榜</text>
-        </view>
-        <switch checked="{{isPublic}}" bindchange="onTogglePublic" color="#4f46e5" />
-      </view>
-
-      <view class="flex mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line">
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">排名</text>
-          <text class="text-30rpx font-semibold text-ink">{{result.rank}} / {{result.participantCount}}</text>
-        </view>
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">击败</text>
-          <text class="text-30rpx font-semibold text-ink">{{result.beatenCount}} 人</text>
-        </view>
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">距上一名</text>
-          <text class="text-30rpx font-semibold text-ink">{{gapText}}</text>
-        </view>
-      </view>
+      <text class="text-28rpx text-muted block mt-4 leading-[1.6]" wx:if="{{aiComment}}">{{aiComment}}</text>
     </view>
 
-    <!-- ⭐ AI 教练的提升建议 —— 指明到具体的词/音，给一个能马上照做的练法。
-         ⚠️ 放在分数卡**下面**、榜单**上面**：先看分，再看「我该怎么练」，
-            榜单是跟别人比，属于下一层的信息。 -->
-    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.aiAdvice}}">
-      <text class="text-26rpx font-semibold text-ink block">怎么练</text>
-      <text class="text-27rpx text-body block mt-2 leading-[1.7]">{{result.aiAdvice}}</text>
-    </view>
-
-    <!-- ⭐ Streak —— 结果页必须把「那天到底发生了什么」讲清楚：
-         同样一个数字，可能是续上了、可能只是今天已经读过、也可能是烧了冻结卡补回来的。
-         只说 +1 的话，用户根本不知道 Freeze 是干什么用的。 -->
-    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{streak}}">
-      <view class="flex items-baseline">
-        <text class="text-40rpx">🔥</text>
-        <text class="text-48rpx font-bold text-ink ml-1.5">{{streak.streakDays}}</text>
-        <text class="text-26rpx text-faint ml-1">天连续</text>
-        <text class="text-26rpx font-semibold text-ok ml-auto" wx:if="{{streak.counted && streak.delta > 0}}">+{{streak.delta}}</text>
-      </view>
-
-      <text class="text-24rpx text-body block mt-2 leading-[1.6]" wx:if="{{streak.counted && streak.freezeUsed === 0 && streak.delta > 0}}">今天这一句已经算上了，明天再来就接上了。</text>
-      <text class="text-24rpx text-warn block mt-2 leading-[1.6]" wx:if="{{streak.freezeUsed > 0}}">❄️ 用掉 {{streak.freezeUsed}} 张冻结卡，把断掉的那几天补上了 —— 连续天数没断。</text>
-      <text class="text-24rpx text-body block mt-2 leading-[1.6]" wx:if="{{streak.counted && streak.delta <= 0}}">中间断了几天，从今天重新开始数。历史最长 {{streak.streakBest}} 天还在。</text>
-      <text class="text-24rpx text-faint block mt-2 leading-[1.6]" wx:if="{{!streak.counted}}">今天已经读过一句了 —— 同一天多读不加天数。</text>
-      <text class="text-24rpx text-ok block mt-2 leading-[1.6]" wx:if="{{streak.freezeEarned > 0}}">❄️ 连续满 7 天，得到 {{streak.freezeEarned}} 张冻结卡（现有 {{streak.freezeCount}} 张）。</text>
-
-      <!-- ⭐ 新解锁的徽章 —— 只在这里弹一次，徽章墙在个人页 -->
-      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{streak.newBadges}}" wx:key="code">
-        <text class="text-28rpx text-ink">🎉 解锁徽章 {{item.emoji}} {{item.name}} —— {{item.blurb}}</text>
-      </view>
-      <view class="mt-2.5 pt-2.5 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{streak.nextBadge}}">
-        <text class="text-22rpx text-faint">下一个徽章 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}}，还差 {{streak.daysToNext}} 天</text>
-      </view>
-    </view>
-
-    <!-- 榜单 -->
-    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{result.leaderboard.length > 0}}">
-      <text class="text-24rpx text-faint block mb-2">榜单</text>
-      <view class="flex items-center py-1.5" wx:for="{{leaderboard}}" wx:key="rank">
-        <text class="text-26rpx w-[60rpx] text-faint">{{item.rank}}</text>
-        <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
-        <text class="text-26rpx font-semibold text-ink">{{item.scoreText}}</text>
-      </view>
+    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{aiAdvice}}">
+      <text class="text-26rpx font-semibold text-ink block">AI 建议</text>
+      <text class="text-27rpx text-body block mt-2 leading-[1.7]">{{aiAdvice}}</text>
     </view>
 
     <view class="flex gap-2">
-      <view class="flex-1 text-center py-[26rpx] rounded-2 bg-white text-body text-28rpx" bindtap="onAgain">再录一次</view>
-      <view class="flex-1 text-center py-[26rpx] rounded-2 bg-brand text-white text-28rpx" bindtap="onBack">返回</view>
+      <view class="flex-1 text-center py-[26rpx] rounded-full bg-white text-body text-30rpx" bindtap="onChallengeAgain">再次挑战</view>
+      <view class="flex-1 text-center py-[26rpx] rounded-full bg-brand text-white text-30rpx font-medium" bindtap="onOpenDetail">查看详情</view>
     </view>
   </block>
+  <!-- ⚠️ 这里原来是**整个结果屏**（分数卡 / 五个分项 / AI 点评与建议 / 逐词上色 /
+       榜单 / 试听 / 可见性开关 / 再读一次）—— 已整体搬去 pages/challenge。
+
+       为什么搬：那一屏要能被**分享、被陌生人打开**，而这一页是录音状态机
+       （麦克风、波形、上传进度、轮询）。打完分这一页 redirectTo 过去，
+       从结果页返回会回到**进入朗读页之前**那一页。 -->
 </view>

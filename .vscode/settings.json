@@ -1,0 +1,15 @@
+{
+  // ⭐ 固定用**工作区里的 TypeScript**（node_modules/typescript，v5.9.3）。
+  //
+  // ⚠️⚠️ 为什么必须固定：本仓库的 tsconfig 依赖两个较新的选项 ——
+  //    · moduleResolution: "bundler"（TS 5.0 才有）
+  //    · lib: ["ES2022"]（TS 4.6 才有）
+  //    编辑器若用了更旧的 TS（它自带的那份、或之前手动选过的某个版本），
+  //    这两个选项会被当作「不认识」而忽略 → 退回 classic + 无 lib，
+  //    于是满屏「找不到名称 Boolean / Error / Promise」「ES5 下的 async 需要 Promise」
+  //    「resolveJsonModule 需要 node 解析策略」—— 全都是这一件事的连锁反应，
+  //    而命令行 tsc（5.9.3）跑同一份配置是全过的。
+  "typescript.tsdk": "node_modules/typescript/lib",
+  // 打开工作区时提示「是否使用工作区 TS」——多一道保险，换机器时不会静默用错版本
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

@@ -1,0 +1,89 @@
+<!--
+  ⭐ 「我的挑战」—— 这个用户自己的全部挑战记录，新的在上面。
+
+  ⚠️ 一行 = 一次提交（submissions 里的一行），不是一句：
+     同一句可以挑战好几回，用户想看的是「我哪天读了哪一句、拿了多少分」——
+     那正是提交的粒度；按句子去重会把「我读了三遍才读好」这件事抹掉。
+
+  排版（用户定的）：
+
+      [▶] The best way to predict…（一行，超出渐隐）   5 分钟前
+      55.4，部分单词发音错误
+
+  ⚠️ 句子**只占一行**：这一页是给人竖着扫过去比的，句句等宽才有意义。
+     超出的部分用右侧渐隐遮罩盖住（见 challenges.wxss 的 .cl-fade）——
+     看不全就点进详情，那一屏有完整的整句和逐词明细。
+  ⚠️ 整行可点进详情；播放按钮用 catchtap 拦住冒泡，否则一按播放就跳走了。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="我的挑战" />
+
+  <!-- ── 加载中 ────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取挑战记录…</text>
+  </view>
+
+  <!-- ── 连不上（且一条都还没拿到）───────────────────────────
+       ⚠️ 只有「一条都没有」时才整屏报错：列表已经有内容时刷新失败，
+          把已经看到的东西换成一句错误提示是**退步** —— 那种情况走列表上方那条细提示。 -->
+  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error && rows.length === 0}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <!-- ── 一条都没有 ──────────────────────────────────────────
+       ⚠️ 它和「加载中」是两件事，所以文案也不同：
+          空列表配「正在取…」会让人一直等下去。 -->
+  <view class="bg-white rounded-2.5 px-5 py-10 text-center" wx:elif="{{empty}}">
+    <text class="text-56rpx block">🎙️</text>
+    <text class="text-30rpx text-ink font-medium block mt-3">还没有挑战记录</text>
+    <text class="text-24rpx text-faint block mt-2 leading-[1.6]">回首页读今天这一句，读完这里就有第一条。</text>
+  </view>
+
+  <block wx:else>
+    <!-- ⚠️ 有内容、但这次刷新失败：一行细提示 + 重试，**保留**已有记录 ——
+         拉不到新数据不该把已经看到的内容也清掉（见 challenges.ts 的 load）。 -->
+    <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mb-2.5" wx:if="{{error}}">
+      <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+      <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+    </view>
+
+    <view class="bg-white rounded-2.5 px-3.5 py-3 mb-2.5"
+          wx:for="{{rows}}" wx:for-item="row" wx:key="submissionId"
+          data-i="{{index}}" bindtap="onOpen">
+
+      <!-- 第一行：播放按钮 + 一句（一行）+ 时间 -->
+      <view class="flex items-center">
+        <!-- ⭐ 播放按钮：听自己当时是怎么读的。
+             ⚠️ 正在播时换成深色 + 暂停符号 —— 这是「点了有没有反应」的唯一反馈，
+                而这段音频要先取地址再下载，本来就有等待。 -->
+        <view class="cl-play {{playing === index ? 'cl-play-on' : ''}}"
+              data-i="{{index}}" catchtap="onPlay">
+          <text class="cl-play-glyph">{{playing === index ? '❚❚' : '▶'}}</text>
+        </view>
+
+        <!-- ⭐ 句子：**一行**，逐词上色（绿 = 读准了）。
+             ⚠️ 逐词渲染（不是整句一个 text）是因为颜色只能落在词上；
+                一行是给「竖着比」用的，超出部分靠 .cl-fade 渐隐。
+             ⚠️ 内层 wx:for 必须改名，否则会把外层那一行遮掉。 -->
+        <view class="cl-line">
+          <view class="flex">
+            <text class="text-30rpx leading-[1.5] mr-1 shrink-0 {{w.cls}}"
+                  wx:for="{{row.words}}" wx:for-item="w" wx:key="i">{{w.text}}</text>
+          </view>
+          <view class="cl-fade"></view>
+        </view>
+
+        <text class="text-22rpx text-faint ml-2 shrink-0">{{row.ago}}</text>
+      </view>
+
+      <!-- 第二行：分数 + 一句「为什么是这个分」。
+           ⚠️ 分数不给「没有成绩」的行走彩色：0.0 和「没有分」是两件事。 -->
+      <view class="flex items-baseline mt-1.5">
+        <text class="text-28rpx font-bold mr-1.5 shrink-0 {{row.failed || row.scoreText === '—' ? 'text-faint' : 'text-ink'}}">{{row.scoreText}}</text>
+        <text class="text-24rpx text-muted flex-1">{{row.verdict}}</text>
+      </view>
+    </view>
+  </block>
+</view>

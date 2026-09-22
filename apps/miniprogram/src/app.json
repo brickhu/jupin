@@ -4,7 +4,11 @@
     "pages/arena/arena",
     "pages/reading/reading",
     "pages/join/join",
-    "pages/profile/profile"
+    "pages/profile/profile",
+    "pages/me/challenges/challenges",
+    "pages/me/participations/participations",
+    "pages/me/profile/profile",
+    "pages/challenge/challenge"
   ],
   "window": {
     "navigationStyle": "custom",

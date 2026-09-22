@@ -51,12 +51,55 @@ export const users = mysqlTable('users', {
   // ----------------------------------------------------------------
   /** 当前连续天数 */
   streakDays: int('streak_days').notNull().default(0),
-  /** 历史最长连续天数 —— **只增不减**，等级徽章的唯一依据（徽章由它推导，不落库） */
+  /**
+   * 历史最长连续天数 —— **只增不减**。
+   *
+   * ⚠️ 等级徽章已整体废除（见 docs/design/growth-and-energy.md），
+   *    它现在的用途只剩展示（我的主页上的「历史最长」）。
+   * ⚠️ **孜孜不倦用的是 streakDays 的跨档，不是它** —— 跨档是事件，只发生一次；
+   *    拿 streakBest 判会变成「到过就永远算」，那是另一回事。
+   */
   streakBest: int('streak_best').notNull().default(0),
   /** 最后一次计入 streak 的自然日 'YYYY-MM-DD'（北京时间）。never read 时为 null */
   lastReadDate: varchar('last_read_date', { length: 10 }),
-  /** 冻结卡：断档时自动消耗，每连续满 7 天得 1 张 */
-  freezeCount: int('freeze_count').notNull().default(0),
+
+  // ⚠️ 这里原来有一列 freeze_count（解冻卡的**计数器**）。
+  //    现在删掉了，两个原因：
+  //      ① 解冻卡要**有效期**，"手上还有几张"已经不是一个整数能表达的（每张卡有自己的到期日）
+  //         ⇒ 改成一张卡一行（unfreeze_cards），余额从那里现算
+  //      ② 存量计数器就是第二份真相，必然和卡表漂移
+  /**
+   * ⭐ 上次发解冻卡时的 streakDays —— 奖励规则 A（连续 7 天发 1 张）用。
+   * ⚠️ 它让发卡变成**事件**而不是状态函数：发过一次就推进一次，
+   *    改阈值不会追溯重发（见 docs/design/reward-system.md 第 2 节）。
+   * ⚠️ 断档（streakDays 变小）时它归 0，计数从头。
+   */
+  unfreezeMarkerStreak: int('unfreeze_marker_streak').notNull().default(0),
+
+  // ----------------------------------------------------------------
+  // ⭐ 成长值（三个独立指标，**分开展示、不合成总分**）
+  //
+  // ⚠️ 这三个是**累加值**；每一次提交的明细在 submissions 的快照列里。
+  //    两者分工：这里回答"我一共多少"，那里回答"这一次为什么是这些分"。
+  // ----------------------------------------------------------------
+  /** 自我超越（句子内 + 个人全局，各占一半后取平均） */
+  growthSelf: int('growth_self').notNull().default(0),
+  /** 孜孜不倦（跨过 7 / 30 / 180 / 360×k 里程碑） */
+  growthDiligence: int('growth_diligence').notNull().default(0),
+  /** 鹤立鸡群（与榜单中位数的差距 × 样本量权重） */
+  growthStandout: int('growth_standout').notNull().default(0),
+
+  // ----------------------------------------------------------------
+  // ⭐ 能量值（替代"每天 N 次挑战机会"）
+  //
+  // ⚠️⚠️ 与旧的额度**最大的结构差别**：额度每天重置、可以从 submissions 现算；
+  //    能量**跨天留存**（昨天剩的点数今天还在），所以必须落库。
+  //    但余额是**缓存**，真相在 energy_ledger 的流水里，两者必须同事务写。
+  // ----------------------------------------------------------------
+  /** 能量余额（整数点；每次挑战 2 点、每日补足到 3 点） */
+  energy: int('energy').notNull().default(0),
+  /** 最后一次"补足"的日期 'YYYY-MM-DD'（惰性 + 幂等，见 growth-and-energy.md 2.3） */
+  energyDate: varchar('energy_date', { length: 10 }),
 
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 })
@@ -83,7 +126,7 @@ export const articles = mysqlTable('articles', {
   isActive: boolean('is_active').notNull().default(true),
   /** 参与人数（冗余计数，可排序） */
   participantCount: int('participant_count').notNull().default(0),
-  /** 征服人数（≥ CONQUEST_THRESHOLD） */
+  /** 攻克人数 —— 在这条句子上**拿到过分数**的去重用户数（85 分线已废除） */
   conqueredCount: int('conquered_count').notNull().default(0),
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   updatedAt: datetime('updated_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
@@ -221,10 +264,14 @@ export const submissions = mysqlTable('submissions', {
    *    tsconfig 会逼着你处理（这也是选它的副作用，好处是不会静默当成数字用）。
    */
   score: decimal('score', { precision: 5, scale: 1 }),
-  /** score >= CONQUEST_THRESHOLD */
+  /**
+   * 这条提交算不算「攻克」—— **拿到分数就算**（85 分线已废除，见 services/conquest.ts）。
+   * ⚠️ 这一列现在是 status = 'scored' 的同义词，保留只为留痕；
+   *    统计一律以 status 为准 —— 老数据这一列是按旧线写的，会漏。
+   */
   isConquered: boolean('is_conquered'),
 
-  /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.pcm（永久保留）。失败时对象会删，但这里仍记 key 留痕 */
+  /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.{aac|mp3|pcm}（永久保留）。失败时对象会删，但这里仍记 key 留痕 */
   audioKey: varchar('audio_key', { length: 255 }),
 
   /**
@@ -238,6 +285,8 @@ export const submissions = mysqlTable('submissions', {
    *
    * ⚠️ 签名地址会过期。所以读音频的顺序是「先试存下来的地址，失败再退回对象存储」，
    *    两条都不行才算 failed —— 见 services/scoring.ts。
+   * ⚠️⚠️ 它指向的是**上传时那个原件**，而存档之后原件就被删了 ——
+   *    所以存档那一步会把它置空（见 services/recording.ts 的 archiveRecording）。
    */
   audioUrl: varchar('audio_url', { length: 1024 }),
   /** 音频元信息 —— 音频永久保存，但库里得知道它多大、多长，否则排查「读不出来」会很瞎 */
@@ -269,11 +318,46 @@ export const submissions = mysqlTable('submissions', {
    * ⭐ 这次打分给 streak 带来的具体变化（StreakDelta 的 JSON）。
    *
    * ⚠️ 为什么必须落库：打分是异步的，结果由**轮询**取回，
-   *    而轮询可能发生很多次。「+1 / 用掉几张冻结卡 / 解锁了哪个徽章」
-   *    只在 recordRead 那一刻算得出来，不存下来的话，
-   *    结果页就只能显示一个光秃秃的天数 —— 用户根本不知道冻结卡干了什么。
+   *    而轮询可能发生很多次。「+1 / 断档归 1」只在**结算那一刻**算得出来，
+   *    不存下来的话，结果页就只剩一个光秃秃的天数。
+   *    ⚠️ 解冻卡**不在这个快照里** —— 它有有效期，是现算的（见 services/unfreeze.ts）。
    */
   streakDelta: text('streak_delta'),
+
+  // ----------------------------------------------------------------
+  // ⭐ 成长值快照 —— 本次提交在三个指标上各拿了多少
+  //
+  // ⚠️⚠️ 为什么必须落库，不能回看时现算：
+  //    这三个数依赖「提交那一刻的历史」（我在这句的最高分、个人最高分、榜单中位数），
+  //    而历史会变 —— 现算的话同一个成绩今天显示 +5、明天显示 +3，用户会认为是 bug。
+  //    落库之后是**永久冻结的事实**，与 streakDelta 同一类东西。
+  //
+  // ⚠️ 这里存的是「算出来是多少」，不是「真相的副本」—— 不违反「不建第二份真相」。
+  // ----------------------------------------------------------------
+  /** 本次自我超越（n1 与 n2 取平均后的值） */
+  growthSelf: int('growth_self'),
+  /** 本次孜孜不倦（跨过的里程碑之和，通常是 0） */
+  growthDiligence: int('growth_diligence'),
+  /** 本次鹤立鸡群 */
+  growthStandout: int('growth_standout'),
+  /**
+   * 本次成长值的**记账依据**（JSON）：
+   * { highestInSentence, highestInUser, n1, n2, sampleSize, baseline, weight }
+   * ⚠️ 回看结果页要能回答「为什么是这些分」—— 光有结果没有依据，那句话就说不出来。
+   */
+  growthMeta: text('growth_meta'),
+
+  /**
+   * ⭐ 这次挑战的能量状态 —— 两阶段的第二段。
+   *
+   *   held     = 受理时已锁住 2 点，还没结算（打分中）
+   *   charged  = 打分成功，锁变成实扣
+   *   released = 失败/超时，锁已退回
+   *
+   * ⚠️ 为什么要落这一列而不是「看 status 推」：失败与超时是**两条路**
+   *    （超时那条由回收任务处理），不记下来的话回收任务不知道哪些锁还没结。
+   */
+  energyState: varchar('energy_state', { length: 16 }),
 
   /** 评测引擎标识（mock / xfyun） */
   engine: varchar('engine', { length: 16 }),
@@ -408,4 +492,124 @@ export const reviews = mysqlTable('reviews', {
   index('reviews_submission_idx').on(t.submissionId),
   // 异步 worker 靠这条捞「待处理」
   index('reviews_status_idx').on(t.status, t.createdAt),
+])
+
+
+/* ================================================================== */
+/* ⭐ 解冻卡 / 奖励 / 能量流水                                           */
+/*    规格：docs/design/reward-system.md 与 docs/design/growth-and-energy.md */
+/* ================================================================== */
+
+/**
+ * ⭐ 解冻卡 —— **一张卡一行**。
+ *
+ * ⚠️⚠️ 为什么不是 users 上的一个计数器：
+ *    ① 卡有**有效期**，「手上还有几张」要按 expires_at 过滤，整数表达不了；
+ *    ② 需要**使用记录**（用户主动用的，什么时候补的哪一次断档，必须能查）。
+ *
+ * ⚠️ 「过期」**不落状态**，由 expires_at 与「现在」比较得出 ——
+ *    落一个 expired 状态就需要定时任务去翻，那是白给自己找事。
+ */
+export const unfreezeCards = mysqlTable('unfreeze_cards', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull().references(() => users.id),
+  grantedAt: datetime('granted_at', { mode: 'date', fsp: 3 }).notNull(),
+  /** 到期时间 = grantedAt + 1 年。⚠️ 消耗时**先到期先用**（FIFO by expires_at） */
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }).notNull(),
+  /** null = 还在手上；非 null = 已用（状态就靠它判断，见上） */
+  usedAt: datetime('used_at', { mode: 'date', fsp: 3 }),
+  /** 使用记录：补的是几天断档（今天 − lastReadDate − 1） */
+  usedForGap: int('used_for_gap'),
+  /** 哪条规则发的（可追溯到规则；规则后来改了也不影响这张卡） */
+  ruleCode: varchar('rule_code', { length: 64 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+}, (t) => [
+  // 「我手上还有几张、最早哪张到期」就是这一个查询
+  index('unfreeze_cards_user_idx').on(t.userId, t.expiresAt),
+])
+
+/**
+ * ⭐ 奖励规则 —— **可配置**，于是运营改阈值不用发版。
+ *
+ * ⚠️ trigger 是**封闭枚举**（streak_milestone / sentence_top_exceed / daily_topup），
+ *    不是自由表达式。加新触发点要发版，但不改求值器 ——
+ *    自由表达式引擎没法测、也没法向用户解释，而「弹性可配置」要的是
+ *    **阈值和数量**可配，不是**逻辑**可配。
+ *
+ * ⚠️ 改配置**不追溯**：规则只对 starts_at 之后的事件生效。
+ *    改配置 = 停旧规则 + 起新规则（这也是「必须落库」的根本原因）。
+ */
+export const rewardRules = mysqlTable('reward_rules', {
+  id: int('id').autoincrement().primaryKey(),
+  /** 规则标识，唯一。grantReward 的幂等键里有它 */
+  code: varchar('code', { length: 64 }).notNull().unique(),
+  trigger: varchar('trigger', { length: 32 }).notNull(),
+  /** 结构化参数（阈值 / N 等），JSON */
+  params: text('params'),
+  /** unfreeze | energy */
+  rewardKind: varchar('reward_kind', { length: 16 }).notNull(),
+  rewardAmount: int('reward_amount').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  /** 生效时间 —— 只对之后的事件生效（不追溯） */
+  startsAt: datetime('starts_at', { mode: 'date', fsp: 3 }),
+  /** 上限：防正反馈失控（奖励发能量 ⇒ 多读 ⇒ 更多提交 ⇒ 更多奖励） */
+  dailyCap: int('daily_cap'),
+  lifetimeCap: int('lifetime_cap'),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+})
+
+/**
+ * ⭐ 奖励发放流水 —— **幂等键就在这里**。
+ *
+ * ⚠️⚠️ unique(rule_code, ref_type, ref_id, user_id) 是整套奖励系统的安全底：
+ *    重放、补跑、并发、改配置，全靠它兜底。没有它，同一次挑战会被发好几次。
+ *
+ * ⚠️ ref_id 用 **submission_id**，不是 article_id：
+ *    规则 B 是「每次破纪录都发」，用 article_id 做键会导致一个人在同一句上
+ *    一辈子只发一次。
+ *
+ * ⚠️ reward_kind / reward_amount 存的是**快照** —— 规则后来改了，
+ *    历史发放记录也不该跟着变。
+ */
+export const rewardGrants = mysqlTable('reward_grants', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull().references(() => users.id),
+  ruleCode: varchar('rule_code', { length: 64 }).notNull(),
+  /** submission | day | purchase */
+  refType: varchar('ref_type', { length: 16 }).notNull(),
+  refId: varchar('ref_id', { length: 64 }).notNull(),
+  rewardKind: varchar('reward_kind', { length: 16 }).notNull(),
+  rewardAmount: int('reward_amount').notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+}, (t) => [
+  uniqueIndex('reward_grants_idem_idx').on(t.ruleCode, t.refType, t.refId, t.userId),
+  index('reward_grants_user_idx').on(t.userId, t.createdAt),
+])
+
+/**
+ * ⭐ 能量流水 —— **流水是真相，users.energy 是缓存**。
+ *
+ * ⚠️⚠️ 两者必须**在同一个事务里**写。分开写就一定会漂移，
+ *    而「余额和流水对不上」是最难查的一类问题（没有任何东西看起来是坏的）。
+ *
+ * reason 取值：daily_topup / purchase / challenge_hold / challenge_release / admin /
+ * 以及奖励规则的 code。
+ *
+ * ⚠️ unique(reason, ref_type, ref_id, user_id) 是**一次性发放**的幂等键：
+ *    同一条 submission 的 hold 只会有一行、同一天的 topup 只会有一行。
+ *    （hold 与 release 的 reason 不同，所以不会互相撞。）
+ */
+export const energyLedger = mysqlTable('energy_ledger', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull().references(() => users.id),
+  /** 正数入账、负数出账，单位「点」 */
+  delta: int('delta').notNull(),
+  reason: varchar('reason', { length: 64 }).notNull(),
+  /** submission | day | purchase | reward */
+  refType: varchar('ref_type', { length: 16 }).notNull(),
+  refId: varchar('ref_id', { length: 64 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+}, (t) => [
+  uniqueIndex('energy_ledger_idem_idx').on(t.reason, t.refType, t.refId, t.userId),
+  index('energy_ledger_user_idx').on(t.userId, t.createdAt),
 ])

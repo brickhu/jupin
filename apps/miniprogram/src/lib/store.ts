@@ -32,6 +32,7 @@
  */
 
 import type {
+  GrowthView,
   MeResponse,
   ScheduleDetail,
   SchedulesResponse,
@@ -69,6 +70,17 @@ export interface Profile {
   challengedCount: number
   /** ⭐ 一共挑战了**几回**（打分成功的提交数，全时段累计） */
   challengedRounds: number
+  /**
+   * ⭐ **能量点数**（替代旧的「每天 N 次挑战机会」）。
+   * ⚠️ 端侧只展示：补足、扣减、奖励全在服务端（见 services/energy.ts），
+   *    端侧自己算一份必然和服务器对不上。
+   */
+  energy: number
+  /**
+   * ⭐ 三个成长值 —— **分开展示、不合成总分**。
+   * ⚠️ 同样只展示：每次提交拿了多少由服务端结算并落快照。
+   */
+  growth: GrowthView
 }
 
 export interface MeState {
@@ -76,7 +88,7 @@ export interface MeState {
   serverDate: string | null
   /** ⭐ articleId → 我在那个竞技场里的战绩 */
   arena: Record<number, ArenaRecord>
-  /** 我的连续天数与徽章 */
+  /** 我的连续天数与解冻卡（**等级徽章已废除**） */
   streak: StreakView | null
   /** 我的头像 / 昵称 —— 自定义导航栏左侧那个圆形头像靠它 */
   profile: Profile | null
@@ -111,16 +123,38 @@ export function arenaOf(articleId: number): ArenaRecord {
 }
 
 /**
- * ⭐ 我**加入句拼**了没有 —— 判据是**昵称非空**。
+ * ⭐ 我**加入句拼**了吗 —— 服务端认不认识我，users 表里有没有我这一行。
  *
- * ⚠️ 为什么不是「有没有 openid」：openid 是 wx.login 静默拿到的，
- *    用户从来就没有"没登录"这个状态。他真正能感知到的那个动作，
- *    是**取了个名字、认领了头像**（见服务端 routes/user.ts 的 /profile）——
- *    也就是"加入"。所以界面上、代码里都叫加入，不叫登录。
- * ⚠️ 同一个判据：没有昵称 = 导航栏显示「加入」按钮 = 挑战被拦。
+ * ⚠️⚠️ 判据**只有一个**：profile 非空。它与「我起名字了没有」**毫无关系**。
+ *
+ *    这个产品里有两层身份，混在一起就会写出自相矛盾的界面：
+ *
+ *      ① 授权层 —— openid。wx.login（或云托管网关注入）静默拿到。
+ *                  「静默」只是说授权这一步不需要用户点什么，
+ *                  **不等于他已经进了我们的业务库**。
+ *      ② 账号层 —— users 里有没有我这一行。**就是本函数**。
+ *                  ⭐ 任何业务数据（分数、榜单、排期）都挂在 user_id 上，
+ *                  所以业务数据的前置条件就是这一层。
+ *
+ *    昵称 / 头像**不构成任何一层**：它们只回答「榜上显示成什么」，
+ *    是加入之后随时可以补、也随时可以一直不补的资料（见 pages/join）。
+ *    曾经拿「昵称非空」当登录判断，代价很实在：一个有账号、有成绩、
+ *    只是没起名字的人会被判成新人 —— 状态卡给他 0，挑战把他往加入页推。
+ *
+ * ⚠️ 判据是「服务端给过我身份」：profile 只可能来自服务端的成功应答
+ *    （GET /api/user/me），而服务端在那个接口上按 openid 取用户、
+ *    **没有就当场建一行**（见 middleware/auth.ts）——
+ *    所以「能返回」本身就证明了那一行存在。
+ *
+ * ⚠️ profile 会**落 storage**，所以断网重开也仍然算「加入过」 ——
+ *    这是对的：账号在服务端，不因这一次请求失败而消失。
+ *    反过来，拿不到 profile（后端没起来 / appid 没配）才叫「还没加入」，
+ *    这时**不要显示任何业务数据**，首页状态卡就是这么判的。
+ *
+ * ⚠️ 界面上它对应导航栏那一格：加入了画头像，没加入画「加入」按钮。
  */
 export function hasJoined(): boolean {
-  return !!state.profile?.nickname
+  return state.profile !== null
 }
 
 /** 服务端的「今天」还没拿到时，退回本机时区的今天（只用于首屏占位） */
@@ -268,11 +302,9 @@ export function applySubmissionResult(input: {
     ? {
         streakDays: input.streak.streakDays,
         streakBest: input.streak.streakBest,
-        freezeCount: input.streak.freezeCount,
-        badge: input.streak.badge,
-        // ⚠️ 这两个是「下一个目标」，提交响应里没带，保留上一次刷新拿到的值
-        nextBadge: state.streak?.nextBadge ?? null,
-        daysToNext: state.streak?.daysToNext ?? 0,
+        // ⚠️ 解冻卡的**到期日**提交响应里没带，保留上一次刷新拿到的值
+        unfreezeCards: input.streak.unfreezeCards,
+        unfreezeExpiresOn: state.streak?.unfreezeExpiresOn ?? null,
         readToday: input.streak.counted,
       }
     : state.streak
@@ -284,7 +316,7 @@ export function applySubmissionResult(input: {
  * ⭐ 用 GET /api/user/me 的返回值刷新「我是谁」。
  *
  * ⚠️ 顺带把 streak 也写进来：同一份响应里就有，而且是**更完整**的那一份
- *    （含 nextBadge / daysToNext，提交响应里没有这两个）。
+ *    （含解冻卡的到期日，提交响应里没有它）。
  *    两条路（这里和 schedules）写的是同一个服务端视图，谁后到谁生效。
  */
 export function applyProfile(m: MeResponse): void {
@@ -294,6 +326,8 @@ export function applyProfile(m: MeResponse): void {
     conqueredCount: m.conqueredCount,
     challengedCount: m.challengedCount,
     challengedRounds: m.challengedRounds,
+    energy: m.energy,
+    growth: m.growth,
   }
   // ⚠️ 改完资料后**不用**再管界面态：加入页在提交成功后自己 navigateBack
   //    （见 pages/join/join.ts）。store 里没有一个"层开着没有"的标志了。
@@ -303,12 +337,13 @@ export function applyProfile(m: MeResponse): void {
 /**
  * ⭐ 只改头像 / 昵称这两格，其余（已征服数、streak）原样留着。
  *
- * ⚠️⚠️ 为什么不能"存完再 GET 一次 /me 才知道自己是谁"：
+ * ⚠️⚠️ 为什么不能存完再 GET 一次 /me 才知道自己是谁：
  *    POST /api/user/profile 成功 = 资料**已经落库**，这时候全局 state 还停在
  *    「没昵称」只有一种可能 —— 那次多余的 GET 失败了。
- *    而 hasJoined() 的判据正是昵称非空，于是用户明明已经加入，
- *    界面却坚持他是个新人：挑战还会把他往加入页推。
- *    ⇒ 加入成功这件事必须以**保存接口自己的返回值**为准，不能靠第二次请求。
+ *    而界面拿这一格画头像和昵称，于是他明明刚填完，界面却还是一个没名字的人。
+ *    ⇒ 保存成功这件事必须以**保存接口自己的返回值**为准，不能靠第二次请求。
+ * ⚠️ 顺带说清边界：这一格只是**展示资料**，改不改都不影响「是否已加入」
+ *    （见 hasJoined）—— 但正因为界面拿它显示头像和昵称，它落后一步就看得见。
  */
 export function applyProfilePatch(patch: { nickname: string | null; avatarUrl: string | null }): void {
   const prev = state.profile
@@ -321,6 +356,10 @@ export function applyProfilePatch(patch: { nickname: string | null; avatarUrl: s
       // ⚠️ 下面三个都是**统计值**，保存接口不返回它们 —— 原样留着，
       //    别顺手清零（那会让首页状态卡闪一下 0）
       conqueredCount: prev?.conqueredCount ?? 0,
+      // ⚠️ 能量与三个成长值同样是**统计值**，保存接口不返回 —— 原样留着，
+      //    别顺手清零（那会让"我的主页"闪一下 0）
+      energy: prev?.energy ?? 0,
+      growth: prev?.growth ?? { self: 0, diligence: 0, standout: 0 },
       challengedCount: prev?.challengedCount ?? 0,
       challengedRounds: prev?.challengedRounds ?? 0,
     },

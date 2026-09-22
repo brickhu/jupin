@@ -1,5 +1,5 @@
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { ensureJoined } from '../../lib/join'
+import { refreshMe } from '../../lib/join'
 import { getNavMetrics, navSolidFrom } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -43,8 +43,9 @@ const priv = (ctx: unknown): Internals & AvatarHolder => {
  *    也可能就是**栈底**（开发者工具直接编译到这一页、分享卡片 / 扫码直达）。
  *    栈底画一个「返回」点了没反应，比不画更糟 —— 那时要画「回首页」。
  *
- * ⚠️ 首页那一格有**两种形态**：还没加入是「加入」按钮（点了走 ensureJoined），
- *    加入之后才是头像（点了拉用户面板）。判据见 store 的 hasJoined。
+ * ⚠️ 首页那一格有**两种形态**：还没加入（服务端还不认识我）是「加入」按钮
+ *    （点了再确认一次身份），加入之后才是头像（点了拉用户面板）。
+ *    判据见 store 的 hasJoined —— **与有没有起昵称无关**。
  */
 Component({
   properties: {
@@ -67,7 +68,7 @@ Component({
 
     /** 'avatar' | 'home' | 'back' */
     leftMode: 'back' as 'avatar' | 'home' | 'back',
-    /** 已加入 = 有昵称（见 store 的 hasJoined）—— 还没加入时这一格画的是「加入」按钮 */
+    /** 已加入 = 有账号（见 store 的 hasJoined）—— 还没加入时这一格画的是「加入」按钮 */
     joined: false,
     /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
     avatarSrc: '',
@@ -168,15 +169,35 @@ Component({
         /**
          * ⭐ 还没加入时这一格是「加入」按钮。
          *
-         * ⚠️⚠️ 点它**不是**直接弹加入页：老用户换了设备 / 清了缓存时，
-         *    账号其实还在服务端 —— 这时候该直接进去，而不是让他重新认领一次自己。
-         *    判定顺序在 lib/join.ts 里，这里只负责挡住连点。
+         * ⚠️⚠️ 「还没加入」= **服务端还不认识我**（大多是后端没起来），
+         *    而不是「还没起昵称」—— 判据见 store 的 hasJoined。
+         *
+         * ⚠️ 点它**不跳加入页**：加入页是补头像和昵称的地方，
+         *    而「补资料」要求先有账号 —— 没账号时跳过去也存不下来。
+         *    所以点它的唯一意义是**再确认一次身份**（那一步顺带完成注册）。
          */
         if (!this.data.joined) {
           if (this.data.joinBusy) return
           this.setData({ joinBusy: true })
-          // 跳不跳加入页由 ensureJoined 决定（它要先问一次服务端才知道该不该问用户）
-          void ensureJoined().finally(() => this.setData({ joinBusy: false }))
+          void refreshMe()
+            .then((known) => {
+              // null = 没问到。不说一声的话，用户只会以为这个按钮坏了
+              if (known === null) {
+                wx.showToast({ title: '连不上服务，稍后再试', icon: 'none' })
+                return
+              }
+              /**
+               * ⭐ 这次问到了（true / false 都算「服务端认识我」）⇒ **顺手把面板拉开**。
+               *
+               * ⚠️ 不这么做的话，用户要点**两下**才看得到面板：
+               *    第一下只是"重试身份确认"，成功了却什么都不发生 ——
+               *    而他的感受是"点了没反应"，只会再点一次（或者以为坏了）。
+               *    这个 bug 真实发生过：本地服务端跑着旧代码、/me 一直 500，
+               *    于是 joined 恒为 false，面板**永远**打不开。
+               */
+              this.setData({ sheetOpen: true })
+            })
+            .finally(() => this.setData({ joinBusy: false }))
           return
         }
         this.setData({ sheetOpen: true })

@@ -120,10 +120,26 @@ const schema = z.object({
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().url(),
   TOKEN_SECRET: z.string().min(8, 'TOKEN_SECRET 至少 8 位'),
-  ENGINE: z.enum(['mock', 'xfyun']).default('mock'),
+  ENGINE: z.enum(['mock', 'xfyun', 'youdao']).default('mock'),
   XFYUN_APP_ID: z.string().optional(),
   XFYUN_API_KEY: z.string().optional(),
   XFYUN_API_SECRET: z.string().optional(),
+  /**
+   * ⭐ 有道智云「实时语音评测」—— 应用 ID / 应用密钥（控制台 → 应用管理）。
+   *
+   * ⚠️ 它是选型调研里指定的**唯一备胎**：价格公开、可自助开通、含音素级
+   *    （judge / calibration / prominence），用来跟讯飞做同音频 A/B
+   *    （见 docs/research/speech-eval-vendor-comparison.md 的结论 1）。
+   * ⚠️ 目前**只被探针脚本用到**（apps/server/scripts/dump-youdao.ts）——
+   *    ENGINE=youdao 还没有对应的引擎实现，见 engines/index.ts 的说明。
+   *    先留着这两个键，是为了让「先 dump 原始返回、再决定怎么写解析」这条路能走通。
+   *
+   * ⚠️ 签名是 sha256(appKey + salt + curtime + secret) —— **不是 HMAC**，
+   *    就是把四段字符串拼起来再 sha256，顺序不能换。
+   * ⚠️ 密钥只在服务端用：客户端拿不到也不该拿到（同讯飞的 APISecret）。
+   */
+  YDS_APP_KEY: z.string().optional(),
+  YDS_APP_SECRET: z.string().optional(),
 
   /**
    * ⭐ AI 教练（出「点评 + 提升建议」）用的大模型。

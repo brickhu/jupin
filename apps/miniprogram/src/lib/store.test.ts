@@ -28,10 +28,8 @@ beforeAll(async () => {
 const STREAK = {
   streakDays: 3,
   streakBest: 3,
-  freezeCount: 0,
-  badge: null,
-  nextBadge: null,
-  daysToNext: 4,
+  unfreezeCards: 0,
+  unfreezeExpiresOn: null,
   readToday: true,
 }
 
@@ -113,13 +111,9 @@ describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => 
       streak: {
         streakDays: 9,
         streakBest: 9,
-        freezeCount: 0,
+        unfreezeCards: 0,
         counted: true,
         delta: 1,
-        freezeUsed: 0,
-        freezeEarned: 0,
-        newBadges: [],
-        badge: null,
       },
     })
     expect(store.getState().streak?.streakDays).toBe(9)
@@ -129,6 +123,37 @@ describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => 
     store.applySchedules(listResponse())
     store.applySubmissionResult({ articleId: 3, score: 70 })
     expect(store.getState().streak?.streakDays).toBe(3)
+  })
+})
+
+// ⚠️ 放在「订阅」前面：那一组里有一个故意抛异常的订阅者不退订，
+//    它会让后面每一次 commit 都吐一行 console.error（不影响结果，但没必要把日志搞脏）。
+// ⚠️ 放在「订阅」前面：那一组里有一个故意抛异常的订阅者不退订，
+//    它会让后面每一次 commit 都吐一行 console.error（不影响结果，但没必要把日志搞脏）。
+describe('hasJoined —— 「加入」的判据是账号，不是昵称', () => {
+  const profile = (nickname: string | null) =>
+    ({
+      id: 7,
+      nickname,
+      avatarUrl: null,
+      conqueredCount: 0,
+      challengedCount: 0,
+      challengedRounds: 0,
+      streak: STREAK,
+    }) as never
+
+  it('⭐ 服务端一次都没应答过 → 还没加入', () => {
+    expect(store.hasJoined()).toBe(false)
+  })
+
+  it('⭐⭐ 有账号、但还没起名字 → 已经加入（这正是曾经被搞错的那一格）', () => {
+    store.applyProfile(profile(null))
+    expect(store.hasJoined()).toBe(true)
+  })
+
+  it('起了名字 → 当然也是已加入', () => {
+    store.applyProfile(profile('张三'))
+    expect(store.hasJoined()).toBe(true)
   })
 })
 

@@ -9,6 +9,8 @@
  *   ⑨ 对齐校验 + 切片 + 入库
  */
 
+import { step04 } from './04-standard-audio'
+
 export interface StepContext {
   force: boolean
 }
@@ -34,7 +36,7 @@ export function listSteps(): Step[] {
     stub('01', '选文', '人工挑选短文，写入 data/drafts/{passageId}/source.json'),
     stub('02', '切分竞技场', 'LLM 提案句群切分 → 人工确认（语义完整 / 10–20 秒 / 自然停顿）'),
     stub('03', '朗读难度定级', '脚本算特征 → LLM 带锚点判断 → 输出 stars + reason'),
-    stub('04', '标准音 + 词级时间戳', 'fish-audio /v1/tts/stream/with-timestamp，整篇 + 每竞技场各一份'),
+    step04,
     stub('05', '整篇翻译', 'LLM 翻译'),
     stub('06', '音标 / 词性 / 义项', 'ECDICT 查表（⚠️ 音标绝不能让 LLM 生成）'),
     stub('07', '词级释义', 'ECDICT 给义项 → LLM 选语境义（从「生成」降级为「选择」）'),

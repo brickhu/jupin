@@ -17,24 +17,36 @@
   <!-- ══ 我的状态卡 ═══════════════════════════════════════
        ⚠️ 放在「今天这一张」**上面**：先回答"我是谁、走到哪了"，
           再回答"今天读哪一句"——先有身份才有任务。
-       ⚠️ 三个数是**全时段累计**（服务端数的），不是今天：今天剩几次在朗读页说。 -->
+       ⚠️ 三个数是**全时段累计**（服务端数的），不是今天：今天剩几次在朗读页说。
+       ⚠️⚠️ **没登录就不显示这一条** —— 判据是「服务端认识我」
+          （users 里已经有我这一行），见 index.ts 的 statsOf。
+          **不是**「我起名字了没有」：那两件事曾经被混成一个，
+          结果一个没起名字的老用户会被判成新人、状态卡凭空消失。
+          三个数都是 0 时照常显示：那是真实的 0，不是记录丢了。
+       ⚠️ 前两格各自可点：参与场次 → 参与场次页（句子粒度）；
+          挑战回合 → 我的挑战（提交粒度）。第三格（连战天数）没有对应页面。 -->
   <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center" wx:if="{{stats}}">
-    <view class="flex-1 text-center">
+    <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。
+         攻克线废除之后「攻克」就等于「参与并拿到分」，是同一个数，
+         所以直接用更直白的说法。单位「场」跟着标签走（数的是句子=场次）。 -->
+    <view class="flex-1 text-center" bindtap="onOpenParticipations" active__opacity-60>
       <view class="flex items-baseline justify-center">
-        <text class="text-40rpx font-bold text-ink">{{stats.challengedCount}}</text>
-        <text class="text-24rpx text-faint ml-1">句</text>
+        <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
+        <text class="text-24rpx text-faint ml-1">场</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">挑战场次</text>
+      <text class="text-22rpx text-faint block mt-1.5">参与场次 ›</text>
     </view>
 
     <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-    <view class="flex-1 text-center">
+    <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「攻克」分开看：
+         读十次才攻克一句，也是常有的事，这两个数本来就该不一样。 -->
+    <view class="flex-1 text-center" bindtap="onOpenChallenges" active__opacity-60>
       <view class="flex items-baseline justify-center">
         <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
         <text class="text-24rpx text-faint ml-1">次</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">挑战回合</text>
+      <text class="text-22rpx text-faint block mt-1.5">挑战回合 ›</text>
     </view>
 
     <view class="w-[1rpx] h-[56rpx] bg-line"></view>
@@ -126,29 +138,23 @@
       </view>
     </view>
 
-    <!-- ── 徽章 ────────────────────────────────────────────── -->
+    <!-- ── 连战 ──────────────────────────────────────────────
+         ⚠️ 这里原来是一整块「等级徽章」（由历史最长连续天数推导的 8 档阶梯），
+            已按产品要求**整体废除**，换成成长值（在「我的主页」里）。
+            这一块现在只回答两件事：连了几天、手上有几张解冻卡。
+         ⚠️ 解冻卡**不再自动消耗** —— 断档就是归 1，用不用卡由用户自己决定。
+            所以文案不能写「自动补上」，那是旧的（也是错的）说法。 -->
     <view class="bg-white rounded-2.5 p-4 mt-4" wx:if="{{streak}}">
       <view class="flex items-center">
-        <text class="text-22rpx text-faint">等级徽章</text>
-        <!-- ❄️ 冻结卡：断档时自动补上，用户必须知道它是什么、还剩几张 -->
-        <text class="text-22rpx text-faint ml-auto" wx:if="{{streak.freezeCount > 0}}">❄️ 冻结卡 ×{{streak.freezeCount}}</text>
+        <text class="text-22rpx text-faint">连续朗读</text>
+        <text class="text-22rpx text-faint ml-auto" wx:if="{{streak.unfreezeCards > 0}}">❄️ 解冻卡 ×{{streak.unfreezeCards}}</text>
       </view>
-
-      <view class="flex items-center mt-3" wx:if="{{streak.badge}}">
-        <text class="text-56rpx">{{streak.badge.emoji}}</text>
-        <view class="ml-3 flex-1">
-          <text class="text-30rpx font-semibold text-ink block">{{streak.badge.name}}</text>
-          <text class="text-22rpx text-faint block mt-[4rpx]">历史最长连续 {{streak.streakBest}} 天</text>
-        </view>
+      <view class="flex items-baseline mt-2">
+        <text class="text-48rpx font-bold text-ink">{{streak.streakDays}}</text>
+        <text class="text-24rpx text-faint ml-2">天 · 历史最长 {{streak.streakBest}} 天</text>
       </view>
-
-      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:if="{{streak.nextBadge}}">
-        <text class="text-22rpx text-faint">下一个 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}} —— 再连续 {{streak.daysToNext}} 天</text>
-        <text class="text-22rpx text-faint block mt-1">每连续 7 天得 1 张冻结卡，断档时自动补上，天数不断</text>
-      </view>
-      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:else>
-        <text class="text-22rpx text-faint">已经拿到最高等级徽章 {{streak.badge.emoji}} {{streak.badge.name}}</text>
-      </view>
+      <text class="text-22rpx text-faint block mt-2">每连续 7 天得 1 张解冻卡 —— 断档后可以自己决定要不要用它补上</text>
+      <text class="text-22rpx text-faint block mt-1" wx:if="{{streak.unfreezeExpiresOn}}">最早一张 {{streak.unfreezeExpiresOn}} 到期</text>
     </view>
   </block>
 </view>

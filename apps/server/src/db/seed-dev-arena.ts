@@ -1,5 +1,8 @@
 import { and, count, countDistinct, eq } from 'drizzle-orm'
-import { addDays, CONQUEST_THRESHOLD, today } from '@jushuo/shared'
+import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
+
+import { unfreezeCards, users } from './schema'
+import { RULE_CODE } from '../services/rewards'
 
 /**
  * 开发用的**竞技数据**种子 —— 让本地库看起来像真的有人在读。
@@ -8,7 +11,7 @@ import { addDays, CONQUEST_THRESHOLD, today } from '@jushuo/shared'
  * 为什么值得单独写一个种子：
  *
  *   句子只有 5 条、真机账号只有几个，于是首页每张卡都是「1 人参与」、
- *   榜单只有一行、徽章阶梯永远是灰的 —— 而这三样（人有多少 / 我排第几 /
+ *   榜单只有一行、成长值永远是 0 —— 而这三样（人有多少 / 我排第几 /
  *   连续了几天）**恰恰是这个产品唯一的看点**。空库上根本看不出它对不对。
  *   这不是「造点假数据让页面好看」，是让本地能验证排名与 streak 的正确性。
  * ══════════════════════════════════════════════════════════════════
@@ -30,7 +33,7 @@ import { addDays, CONQUEST_THRESHOLD, today } from '@jushuo/shared'
  *    自己再写一遍轮转，就会造出一批在别的日子根本对不上的历史。
  */
 
-/** 往今天之前铺多少天 —— 30 天正好能让 30 天徽章亮起来 */
+/** 往今天之前铺多少天 —— 30 天正好能让孜孜不倦的 30 天档亮起来 */
 const LOOKBACK_DAYS = 30
 
 /**
@@ -144,8 +147,9 @@ async function main(): Promise<void> {
       streakDays: c.run,
       streakBest,
       lastReadDate,
-      // 每连续 7 天发一张（见 @jushuo/shared/streak.ts）
-      freezeCount: Math.min(3, Math.floor(streakBest / 7)),
+      // ⚠️ 解冻卡**不再是 users 上的计数器**（一张卡一行、带有效期，见 unfreeze_cards）。
+      //    这里只把 marker 设成 streakBest —— 他们"已经记过账"，不会再补发。
+      unfreezeMarkerStreak: streakBest,
     }
     await db
       .insert(users)
@@ -157,6 +161,24 @@ async function main(): Promise<void> {
       .from(users)
       .where(eq(users.openid, openid))
       .limit(1)
+
+    // ⭐ 顺手发几张解冻卡 —— 本地看「我的主页」时卡不是 0，才有东西可验
+    if (row) {
+      const cards = Math.min(3, Math.floor(streakBest / 7))
+      await db.delete(unfreezeCards).where(eq(unfreezeCards.userId, row.id))
+      if (cards > 0) {
+        const now = new Date()
+        const expiresAt = new Date(now.getTime() + UNFREEZE_VALID_DAYS * 86_400_000)
+        await db.insert(unfreezeCards).values(
+          Array.from({ length: cards }, () => ({
+            userId: row.id,
+            grantedAt: now,
+            expiresAt,
+            ruleCode: RULE_CODE.streakUnfreeze,
+          })),
+        )
+      }
+    }
     if (!row) throw new Error('写入选手失败：' + openid)
     userIds.push(row.id)
   }
@@ -202,7 +224,8 @@ async function main(): Promise<void> {
         status: 'scored',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）
         score: Number(score).toFixed(1),
-        isConquered: score >= CONQUEST_THRESHOLD,
+        // ⚠️ 攻克 = 出分即可（85 分线已废除，见 constants 里的说明）
+        isConquered: true,
         audioKey: makeAudioKey(articleId, userId, at.getTime()),
         audioBytes: 40000 + Math.round(rnd() * 60000),
         audioDurationMs: 3200 + Math.round(rnd() * 4200),

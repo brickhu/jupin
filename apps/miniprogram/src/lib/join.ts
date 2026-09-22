@@ -12,18 +12,25 @@ const PROFILE_ROUTE = 'pages/profile/profile'
 export const HOME_PAGE = '/pages/index/index'
 
 /**
- * ⭐ 问一次服务端「我是谁（这个 openid 认领过名字没有）」，并把结果写回全局 state。
+ * ⭐ 问一次服务端「我是谁」，并把结果写回全局 state。
+ *
+ * ⚠️⚠️ 这一步**同时就是注册**，别只把它当成「顺手取个头像」：
+ *    服务端在 /api/user/me 上按 openid 取用户，**没有就当场建一行**
+ *    （见 middleware/auth.ts —— 那是全站唯一的注册点）。
+ *    所以只要它**能返回**，就说明 users 里已经有我这一行了。
  *
  * 整条链是：
- *   ① wx.login 拿 openid —— **不在这一层**：它由 lib/api/client 在发请求时
- *      按需完成（401 自动重登 + 并发合并），云托管那条路更是网关注入的。
- *      这里只负责"拿着身份去问我是谁"。
- *   ② GET /api/user/me —— 服务端按 openid 取用户（没有就建一行），
- *      返回昵称 / 头像 / 已征服数 / streak。
- *   ③ 写回全局 state。
+ *   ① 授权层：wx.login 拿 openid —— **不在这一层**。它由 lib/api/client
+ *      在发请求时按需完成（401 自动重登 + 并发合并），云托管那条路更是
+ *      微信网关注入的；对用户完全不可见，也不等于他进了我们的库。
+ *   ② 账号层：GET /api/user/me —— 服务端按 openid 取用户（没有就建一行）。
+ *      ⭐ 业务数据的前置条件就是这一层（判据见 store 的 hasJoined）。
+ *   ③ 资料层：昵称 / 头像 / 已征服数 —— 顺便带回来，写回全局 state。
  *
- * @returns true = 服务端认识我（有昵称）；false = 还没认领；null = **没问到**
- *          ⚠️ 三者必须分开：把"没问到"当成"没加入"，就会在网络抖动时
+ * @returns true  = 服务端认识我，而且我起了名字
+ *          false = 服务端认识我，但我还没认领名字
+ *          null  = **没问到**（没进到服务端，注册状态未知）
+ *          ⚠️ 三者必须分开：把「没问到」当成「没加入」，就会在网络抖动时
  *             把老用户推去加入页，让他以为自己的账号没了。
  */
 export async function refreshMe(): Promise<boolean | null> {
@@ -38,44 +45,13 @@ export async function refreshMe(): Promise<boolean | null> {
 }
 
 /**
- * ⭐ 「加入句拼」这件事的**唯一入口** —— 所有需要"榜上有名"的地方都调它。
+ * 跳到「加入句拼」页 —— **补头像和昵称**的地方。
  *
- * ══════════════════════════════════════════════════════════════════
- * ① 本地就知道自己加入过 → 直接放行（**一次请求都不发**）。
- * ② 本地不知道 → 拿 openid 问一次服务端：
- *      · 认识我 → 写回 state，放行，**不跳加入页**
- *      · 不认识我 → 跳加入页（确认加入后返回，全局 state 已经是加入态）
- *      · 没问到 → 也放行（见下）
- *
- * ⚠️⚠️ 为什么"没问到"也放行：
- *    没有昵称**不影响提交**（服务端只认 openid，成绩照样入库），
- *    但把老用户推去加入页的代价是"他以为账号没了"。
- *    两害相权，宁可让他先读，也不要为了一个名字把人挡在门外。
- *    真没加入的人，等网络好了自然会看到导航栏那个「加入」按钮。
- * ══════════════════════════════════════════════════════════════════
- *
- * 「加入过了」的判据只有一条：**昵称非空**（见 store 的 hasJoined）——
- * 那正好就是服务端「这个 openid 认领过名字没有」的答案。
- *
- * @returns true = 现在可以继续；false = 已经跳去加入页，等他弄完回来
- */
-export async function ensureJoined(): Promise<boolean> {
-  if (me.hasJoined()) return true
-
-  const joined = await refreshMe()
-  // false 才是"确实还没认领"；true / null 都放行
-  if (joined !== false) return true
-
-  openJoinPage()
-  return false
-}
-
-/**
- * 跳到「加入句拼」页。
- *
- * ⚠️ 这一页是 navigateTo 压上去的，所以「确认加入」能 navigateBack 回原页。
- * ⚠️ 已经在那一页上就不要再压一层（导航栏、用户面板、挑战入口都可能调它）——
- *    否则会叠出两三个一样的页面，返回要按好几次。
+ * ⚠️ 它**不是登录**，也不是任何功能的前置条件：账号（openid）是静默拿到的，
+ *    成绩照样入库。这一页补的只是「榜上显示成什么」，**略过完全不影响使用**。
+ * ⚠️ 已经起过名字的人不该看到这一页（见 openProfilePage）。
+ * ⚠️ 这一页是 navigateTo 压上去的，所以保存完能 navigateBack 回原页。
+ * ⚠️ 已经在那一页上就不要再压一层 —— 否则会叠出两三个一样的页面，返回要按好几次。
  */
 export function openJoinPage(): void {
   const stack = getCurrentPages()

@@ -28,6 +28,7 @@
     "dev:unlock": "node tools/dev-unlock.mjs",
     "dev:unlock:status": "node tools/dev-unlock.mjs --status",
     "db:info": "node tools/cloud-db-info.mjs",
+    "admin": "tsx tools/jushuo-admin.ts",
     "seed:cloud": "node tools/seed-cloud.mjs",
     "seed:cloud:prod": "node tools/seed-cloud.mjs prod",
     "db:info:prod": "node tools/cloud-db-info.mjs prod",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@wxcloud/cli": "^2.3.3",
+    "drizzle-orm": "^0.38.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"

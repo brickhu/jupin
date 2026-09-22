@@ -1,16 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * ensureJoined / openJoinPage / refreshMe 的单测。
+ * refreshMe / openJoinPage / openProfilePage 的单测。
  *
- * ⚠️⚠️ 这一版守的是一条产品判断，不是一个工具函数：
+ * ⚠️⚠️ 这一版守的是一条产品判断：**「加入」= 有账号，与有没有起名字无关**。
  *
- *    「点加入」要区分**三件事**，而不是两件：
- *      · 账号已经在服务端（换设备 / 清了缓存）→ 直接进去，什么都别问
- *      · 账号还不存在                          → 才谈得上跳加入页
- *      · **没问到**（网络抖了）                → 也放行，不能当"没加入"
- *    第三种最容易被写漏，代价也最实在：老用户被推去加入页，
- *    然后以为自己的成绩没了。所以三种情况逐条钉死。
+ *    若 refreshMe 的三态不分开，就会把「没问到」当成「没加入」：
+ *      · true / false —— 服务端认识我（false 只是「还没填昵称」，不是「没加入」）
+ *      · null         —— 没问到，注册状态未知
+ *    后果很实在：老用户被推去加入页，然后以为自己的成绩没了。
  */
 
 const memory = new Map<string, unknown>()
@@ -74,41 +72,6 @@ beforeEach(() => {
   store.reset()
 })
 
-describe('ensureJoined', () => {
-  it('⭐ 本地已经有昵称 → 直接放行，一次请求都不发', async () => {
-    store.applyProfile(meResponse('老用户') as never)
-    await expect(join.ensureJoined()).resolves.toBe(true)
-    expect(fetchMe).not.toHaveBeenCalled()
-    expect(nav).toEqual([])
-  })
-
-  it('⭐ 本地没有、但服务端认识我 → 直接放行，不跳加入页', async () => {
-    fetchMe.mockResolvedValue(meResponse('老用户'))
-    await expect(join.ensureJoined()).resolves.toBe(true)
-    expect(store.hasJoined()).toBe(true)
-    expect(nav).toEqual([])
-  })
-
-  it('⭐ 服务端也不认识我 → 放行=false 且跳加入页', async () => {
-    fetchMe.mockResolvedValue(meResponse(null))
-    await expect(join.ensureJoined()).resolves.toBe(false)
-    expect(store.hasJoined()).toBe(false)
-    expect(nav).toEqual(['to:' + join.JOIN_PAGE])
-  })
-
-  it('⚠️ 只有空白昵称也算「还没认领」', async () => {
-    fetchMe.mockResolvedValue(meResponse('   '))
-    await expect(join.ensureJoined()).resolves.toBe(false)
-    expect(nav).toEqual(['to:' + join.JOIN_PAGE])
-  })
-
-  it('⚠️⚠️ 取资料失败 → **放行**，不能把老用户当新人推去加入页', async () => {
-    fetchMe.mockRejectedValue(new Error('network down'))
-    await expect(join.ensureJoined()).resolves.toBe(true)
-    expect(nav).toEqual([])
-  })
-})
-
 describe('refreshMe', () => {
   it('服务端认识我 → true，并把资料写进 state', async () => {
     fetchMe.mockResolvedValue(meResponse('老用户'))
@@ -127,7 +90,7 @@ describe('refreshMe', () => {
   })
 })
 
-describe('applyProfilePatch —— 保存接口的返回值直接定"已加入"', () => {
+describe('applyProfilePatch —— 保存接口的返回值直接定「已经有名字」', () => {
   it('⭐ 昵称一写进来就立刻算已加入（不依赖再 GET 一次）', () => {
     expect(store.hasJoined()).toBe(false)
     store.applyProfilePatch({ nickname: '张三', avatarUrl: null })

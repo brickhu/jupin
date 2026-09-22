@@ -1,7 +1,8 @@
 import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type { ScheduleEntry, SchedulesResponse, StreakView } from '@jushuo/shared'
 import { fetchSchedules } from '../../lib/api/client'
-import { ensureJoined, refreshMe } from '../../lib/join'
+import { openChallengesPage, openParticipationsPage } from '../../lib/challenges'
+import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
@@ -83,9 +84,18 @@ interface CardView {
  */
 /** 状态卡上的三个数 */
 interface StatsView {
-  /** 挑战过几句（去重句子） */
-  challengedCount: number
-  /** 一共挑战了几回 */
+  /**
+   * ⭐ 参与场次：**拿到过分数**的去重句子数（一句 = 一个竞技场 = 一场）。
+   *
+   * ⚠️⚠️ 字段名还叫 conqueredCount（服务端的口径就是它），但**显示叫「参与场次」**：
+   *    85 分那条攻克线废除之后，「攻克」就等于「参与并且拿到分」——
+   *    两个说法指的是同一个数，那就用更直白的那个。
+   *    ⛔ 不要为了「凑出两个不同的数」去改口径：这一格数句子、
+   *       下一格（挑战回合）数提交次数，两个数天然就不一样，
+   *       读十次才读完一句是很正常的事。
+   */
+  conqueredCount: number
+  /** 挑战回合：一共打了几次分（**过程量**，读得多就大） */
   challengedRounds: number
   /** 连战天数 */
   streakDays: number
@@ -95,17 +105,32 @@ interface StatsView {
  * ⭐ 拼出状态卡上的三个数。
  *
  * ⚠️ 三个数**要么一起出现，要么都不出现**：
- *    「挑战场次」和「挑战回合」来自 profile（/me），「连战天数」来自 streak。
- *    只拿到一半就渲染，会出现「0 句 · 20 次 · 1 天」这种自相矛盾的一行 ——
- *    而用户看到的是"我的记录是不是坏了"。
+ *    「参与场次」和「挑战回合」来自 profile（/me），「连战天数」来自 streak。
+ *    只拿到一半就渲染，会出现「0 场 · 20 次 · 1 天」这种自相矛盾的一行 ——
+ *    而用户看到的是「我的记录是不是坏了」。
  *    ⇒ 没有 profile 就整张卡不画（见 data.stats 的说明）。
+ *
+ * ⚠️⚠️ 这里的判据是**登录** —— 服务端认识我，也就是 users 里已经有我这一行。
+ *    **不是**「我起名字了没有」。这两个判断曾经被合成一个（原来是 !profile?.nickname），
+ *    代价很实在：
+ *
+ *      openid 是 wx.login 静默拿到的，但它只解决「你是谁」（授权层）；
+ *      用户有没有进我们的业务库是另一回事 —— 那是服务端按 openid
+ *      取或建出 users 那一行时才发生的（见 middleware/auth.ts）。
+ *      于是「有账号、有成绩、只是没起名字」的人会被这条判成新人，
+ *      状态卡直接消失 —— 而他明明有记录。
+ *
+ *    ⇒ profile 非空 = 服务端认过我 = 我有账号 → 该显示就显示。
+ *      三个数都是 0 也是**真实的 0**（注册了但还没读过），不是记录丢了 ——
+ *      那正是「先注册、再谈业务数据」的意义。
  *
  * ⚠️ 写成纯函数：输入只有两个对象，与页面实例无关，好单测。
  */
 function statsOf(profile: me.Profile | null, streak: StreakView | null): StatsView | null {
+  // ⚠️ 没有 profile = 还没跟服务端确认过身份（真正的「没登录」）→ 整张卡不画。
   if (!profile) return null
   return {
-    challengedCount: profile.challengedCount,
+    conqueredCount: profile.conqueredCount,
     challengedRounds: profile.challengedRounds,
     streakDays: streak?.streakDays ?? 0,
   }
@@ -205,6 +230,24 @@ Page({
    */
   onShow() {
     void this.load()
+  },
+
+  /**
+   * ⭐ 状态卡上的两个数字各自是一个入口：
+   *    「参与场次」→ 参与场次列表（一句一张卡）
+   *    「挑战回合」→ 我的挑战（一次提交一条）
+   *
+   * ⚠️ 两者是**不同粒度**：一个是「句子」，一个是「提交」——
+   *    所以是两个页面，不是一个页面的两个筛选。
+   * ⚠️ 这里不再判「登录了没有」：没登录（服务端不认识我）时整条状态卡根本不渲染，
+   *    见 statsOf —— 点不到就没有可点的东西，判据只留一处，免得两处打架。
+   */
+  onOpenParticipations() {
+    openParticipationsPage()
+  },
+
+  onOpenChallenges() {
+    openChallengesPage()
   },
 
   /** 下拉刷新 —— 万一还有没覆盖到的时机，用户至少有个手动出口 */
@@ -331,14 +374,15 @@ Page({
   },
 
   /** 开始/再次挑战 —— 必须把**这一天的日期**带过去 */
-  async onStart(e: WechatMiniprogram.BaseEvent) {
+  onStart(e: WechatMiniprogram.BaseEvent) {
     const ds = e.currentTarget.dataset as { id?: number; date?: string }
     if (!ds.id || !ds.date) return
-    // ⚠️ 挑战要记成绩、要占额度，先确认这是「有人」在挑战。
-    //    拦在**进门之前**：让他录完 1 分钟再告诉他还没加入，比不让进更气人。
-    //    ⚠️ 但**不要**直接弹加入页：账号已经在服务端的（换设备 / 清了缓存）直接放行，
-    //       该不该问用户由 ensureJoined 先问完服务端再决定（见 lib/join.ts）。
-    if (!(await ensureJoined())) return
+    /**
+     * ⚠️ 这里**不再拦「加入过没有」**。身份（openid）是静默拿到的，而服务端在
+     *    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）——
+     *    能不能挑战由服务端说了算。昵称 / 头像只是榜上显示成什么，
+     *    可以随时补、也可以一直不补（见 pages/join），端侧不该拿它当门。
+     */
     wx.navigateTo({
       url: '/pages/reading/reading?id=' + ds.id + '&date=' + ds.date,
     })

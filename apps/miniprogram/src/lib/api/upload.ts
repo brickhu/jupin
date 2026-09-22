@@ -1,3 +1,5 @@
+import { RECORD_SPEC } from '@jushuo/shared'
+
 import { BASE_URL, TRANSPORT } from '../../config'
 import { authHeader, getUserId } from './client'
 
@@ -44,18 +46,27 @@ export interface UploadOptions {
 /**
  * ⭐ 存储路径规范：**句子 / 用户 / 时间戳** 三段。
  *
- *   audio/{articleId}/{userId}/{timestamp}.pcm
+ *   audio/{articleId}/{userId}/{timestamp}.{后缀}
  *
  * ⚠️ 必须与服务端 `services/audio-key.ts` 的 `makeAudioKey()` 完全一致。
- *    服务端会校验这个路径：段数、前缀、文件名格式，
+ *    服务端会校验这个路径：段数、前缀、文件名格式（后缀在允许集合里），
  *    以及**第二段的 uid 必须等于发起请求的人**（防冒充）。
+ *
+ * ⭐ 后缀取**落盘文件的真实扩展名**，而不是写死一个：
+ *    录音格式跟着微信接口的默认值走（aac，见 RECORD_SPEC），
+ *    而不同平台上同一个格式落盘的后缀可能不同（.aac / .m4a），
+ *    写死就会让「文件叫什么」和「里面是什么」对不上。
+ *    ⚠️ 服务端其实**按文件头 sniff**（不靠后缀判断内容），后缀只用于日志和排查，
+ *       所以这里取错也不会算错分 —— 但会让排查时看不出这一条是什么。
  *
  * 为什么路径不能直接用 submissionId：
  *   路径要在**上传那一刻**就定下来，而 submissionId 含序列号，
  *   序列号要等提交时数库才知道 —— 所以两者是独立的（见服务端注释）。
  */
-function makeAudioKey(articleId: number, userId: number): string {
-  return 'audio/' + articleId + '/' + userId + '/' + Date.now() + '.pcm'
+function makeAudioKey(articleId: number, userId: number, filePath: string): string {
+  const m = /\.([A-Za-z0-9]{1,5})$/.exec(filePath)
+  const ext = (m?.[1] ?? RECORD_SPEC.extension).toLowerCase()
+  return 'audio/' + articleId + '/' + userId + '/' + Date.now() + '.' + ext
 }
 
 export function uploadAudio(filePath: string, opts: UploadOptions): Promise<UploadResult> {
@@ -65,7 +76,7 @@ export function uploadAudio(filePath: string, opts: UploadOptions): Promise<Uplo
     return Promise.reject(new Error('还没拿到用户 id，请稍后重试'))
   }
 
-  const audioKey = makeAudioKey(opts.articleId, userId)
+  const audioKey = makeAudioKey(opts.articleId, userId, filePath)
   return TRANSPORT === 'http'
     ? uploadToLocalServer(filePath, audioKey, opts)
     : uploadToCloudStorage(filePath, audioKey, opts)

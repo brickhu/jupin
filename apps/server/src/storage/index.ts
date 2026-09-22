@@ -5,6 +5,7 @@ import type { ObjectStorage } from './types'
 
 export type { ObjectStorage } from './types'
 export { normalizeKey } from './types'
+export { fileIdOf } from './wxcloud'
 export { LocalStorage } from './local'
 
 let cached: ObjectStorage | undefined

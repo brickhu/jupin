@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { WORD_GREEN_LINE } from './constants/index'
+import { WORD_GREEN_LINE, WORD_RED_LINE } from './constants/index'
 import {
   formatScore,
   GATE_INCOMPLETE,
@@ -8,6 +8,7 @@ import {
   scoreSentence,
   sentenceScore,
   speechGaps,
+  wordLevel,
 } from './scoring'
 
 /**
@@ -139,5 +140,46 @@ describe('speechGaps —— 词间停顿（引擎不给，自己算）', () => {
     ])
     expect(g.longGapCount).toBe(0)
     expect(g.longestGapMs).toBe(0)
+  })
+})
+
+/**
+ * 逐词上色的判据 —— 结果屏和「我的挑战」列表共用这一个函数。
+ *
+ * ⚠️ 这些断言锁的是**产品口径**：绿 = 算分时数的那个绿词，
+ *    红 = 引擎判定的读错 / 漏读。写错了不会报错，只会让两处界面开始不一致。
+ */
+describe('wordLevel —— 逐词标绿 / 标红', () => {
+  it('≥ 绿线标绿，且与算分用的绿词是同一条线', () => {
+    expect(wordLevel(WORD_GREEN_LINE)).toBe('ok')
+    expect(wordLevel(WORD_GREEN_LINE + 0.1)).toBe('ok')
+    expect(wordLevel(100)).toBe('ok')
+  })
+
+  it('绿线以下、红线以上是普通墨色（既不算好，也不必报警）', () => {
+    expect(wordLevel(WORD_GREEN_LINE - 0.1)).toBe('ink')
+    expect(wordLevel(WORD_RED_LINE)).toBe('ink')
+    expect(wordLevel(70.45788)).toBe('ink')
+  })
+
+  it('低于红线标红', () => {
+    expect(wordLevel(WORD_RED_LINE - 0.1)).toBe('bad')
+    expect(wordLevel(0)).toBe('bad')
+  })
+
+  it('⭐ dp 不是 normal 一律标红 —— 分数再高也不算读对', () => {
+    expect(wordLevel(100, 'omission')).toBe('bad')
+    expect(wordLevel(99, 'mispronunciation')).toBe('bad')
+    expect(wordLevel(100, 'normal')).toBe('ok')
+    expect(wordLevel(100, undefined)).toBe('ok')
+  })
+
+  it('⚠️ 比的是原始分：84.96 显示成 85.0 也不算绿（列表与结果屏要对得上）', () => {
+    expect(formatScore(84.96)).toBe('85.0')
+    expect(wordLevel(84.96)).toBe('ink')
+  })
+
+  it('拿不到分（NaN）不当成读对', () => {
+    expect(wordLevel(Number.NaN)).toBe('bad')
   })
 })

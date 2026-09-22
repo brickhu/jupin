@@ -26,6 +26,13 @@
 | [styling-decision.md](research/styling-decision.md) | 样式方案选型（StyleX / Tailwind / UnoCSS） | ⭐ 选 UnoCSS + preset-weapp —— **WXML 调不了 JS，CSS-in-JS 全部出局** · ⚠️ 变体分隔符必须是 `__` |
 | [skyline-evaluation.md](research/skyline-evaluation.md) | **Skyline 渲染引擎评估**（官方文档核实） | ⭐ 现在不切、但按它的 WXSS 子集写 · ⚠️ **不开 AB 实验线上仍走 WebView** · ⚠️ 不支持 `*`/属性选择器/inline 布局/sticky/多层 shadow |
 
+### design/ —— 设计稿
+
+| 文件 | 内容 | 状态 |
+|---|---|---|
+| [growth-and-energy.md](design/growth-and-energy.md) | **用户成长体系**（自我超越 / 孜孜不倦 / 鹤立鸡群）+ **能量值**（替换等级徽章与每日挑战次数） | ⏳ **待确认，确认后开工** |
+| [reward-system.md](design/reward-system.md) | **奖励系统**（解冻卡 / 能量点的发放规则、触发器枚举、一个发放接口、幂等键） | ⏳ **待确认** |
+
 ### experiments/ —— 待执行的实验
 
 | 文件 | 内容 | 状态 |

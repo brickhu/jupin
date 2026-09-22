@@ -1,4 +1,3 @@
-import type { BadgeDef } from '../badges'
 import type { ScoreParts } from '../scoring'
 
 /**
@@ -126,6 +125,21 @@ export interface SubmitResponse {
    *    这里给的正是总分的五个组成部分，加起来就是那个分。
    */
   parts?: ScoreParts
+  /**
+   * ⭐ 这次读的**参考原文**（服务端一并给出）。
+   *
+   * ⚠️ 为什么要它：详情/分享页要把句子逐词上色，而逐词结果的第 i 项
+   *    对应的是**这一句**的第 i 个词 —— 客户端自己再去拉一次正文，
+   *    等于同一份数据两条路，哪天正文改了版本就对不上了。
+   */
+  text?: string
+  /** ⭐ 这段录音有多长（毫秒）—— 结果页显示在播放按钮旁边 */
+  durationMs?: number
+  /**
+   * ⭐ 这次挑战属于哪一天（YYYY-MM-DD）—— 结果页的排名卡点进竞技场要用它。
+   * ⚠️ 不能拿端侧日期凑：历史挑战点进去要看的是**当时那一轮**的榜单。
+   */
+  scheduleDate?: string
   rank: number
   participantCount: number
   /** 距上一名还差多少分；null 表示已是第一 */
@@ -188,35 +202,32 @@ export interface LeaderboardRow {
 export interface StreakView {
   /** 当前连续天数 */
   streakDays: number
-  /** 历史最长连续天数 —— 徽章依据 */
+  /**
+   * 历史最长连续天数 —— **只增不减**。
+   * ⚠️ 等级徽章已整体废除，它现在只剩展示用途（我的主页上的「历史最长」）。
+   */
   streakBest: number
   /** 今天是否已经读过（读过再读不叠加） */
   readToday: boolean
-  /** 手上的冻结卡 */
-  freezeCount: number
-  /** 当前等级徽章；未入门为 null */
-  badge: BadgeDef | null
-  /** 下一个目标徽章；已到顶为 null */
-  nextBadge: BadgeDef | null
-  /** 距下一个徽章还差几天；已到顶为 0 */
-  daysToNext: number
+  /**
+   * ⭐ 手上还有几张**解冻卡**（未过期、未使用）。
+   * ⚠️ **现算**，不是 users 上的计数器 —— 卡有有效期，整数表达不了。
+   */
+  unfreezeCards: number
+  /** 手上最早到期那张的到期日 'YYYY-MM-DD'；没有就是 null */
+  unfreezeExpiresOn: string | null
 }
 
 /** 一次提交给 streak 带来的具体变化 —— 结果页要逐条讲清楚 */
 export interface StreakDelta {
   streakDays: number
   streakBest: number
-  freezeCount: number
   /** 这次读有没有被计入（false = 今天已经读过） */
   counted: boolean
   /** streak 变化量 */
   delta: number
-  freezeUsed: number
-  freezeEarned: number
-  /** 本次新解锁的徽章（可能多个，也可能为空） */
-  newBadges: BadgeDef[]
-  /** 当前最高等级徽章 */
-  badge: BadgeDef | null
+  /** 读完之后手上还有几张解冻卡（含本次新发的） */
+  unfreezeCards: number
 }
 
 /* ---------- 每日挑战 ---------- */
@@ -298,7 +309,7 @@ export interface SchedulesResponse {
   /** 历史挑战，最近的在最前（不含今天） */
   history: ScheduleEntry[]
   /**
-   * 我的连续天数与徽章。
+   * 我的连续天数与解冻卡。
    *
    * ⚠️⚠️ 它**和这张列表没有任何关系** —— 只是搭个顺风车省一次往返。
    *    streak 按**用户实际提交的时间**算（见 services/scoring.ts），
@@ -331,26 +342,170 @@ export interface MyStats {
  * ⚠️ streak 也在这份响应里 —— 它和 schedules 响应里的那份是同一个视图，
  *    两条路都写进全局 store，谁后到谁生效（服务端是唯一真相）。
  */
+/**
+ * ⭐ 三个成长值 —— **分开给，不合成总分**。
+ *
+ * ⚠️ 三个数各自回答一个问题，相加之后没人解释得清那个数是怎么来的：
+ *    · self      自我超越（跟自己的历史比）
+ *    · diligence 孜孜不倦（坚持的里程碑）
+ *    · standout  鹤立鸡群（跟榜单比）
+ */
+export interface GrowthView {
+  self: number
+  diligence: number
+  standout: number
+}
+
 export interface MeResponse {
   id: number
   nickname: string | null
   avatarUrl: string | null
   /** 'active' / 'banned'；界面目前只区分「能不能用」 */
   status: string
-  isMember: boolean
-  /** ⭐ 每天能挑战几次（按当前身份：免费 1 次 / 付费 50 次，**与句子无关**） */
-  dailyLimit: number
-  /** 今天已经挑战成功几次 —— 端侧拿 dailyLimit - usedToday 说「今天还剩几次」 */
-  usedToday: number
+  /**
+   * ⭐ **能量点数**（替代旧的"每天 N 次挑战机会"）。
+   * ⚠️ 每次挑战消耗 2 点、每日补足到 3 点；端侧只做展示，不自己算余额。
+   */
+  energy: number
   /** ⭐ 挑战过**几句**（去重句子数，全时段累计）—— 首页状态卡的「挑战场次」 */
   challengedCount: number
   /** ⭐ 一共挑战了**几回**（打分成功的提交数，全时段累计）—— 首页状态卡的「挑战回合」 */
   challengedRounds: number
-  /** 已征服的句子数（拿到 ≥ CONQUEST_THRESHOLD 分的**去重句子**数，只增不减） */
+  /** 攻克金句数：**拿到过分数**的去重句子数（只要参与并出分就算，只增不减） */
   conqueredCount: number
+  /** ⭐ 三个成长值（分开展示） */
+  growth: GrowthView
   streak: StreakView
 }
 
+/**
+ * ⭐ 「我的挑战」列表里的一条（GET /api/user/challenges）。
+ *
+ * ⚠️ 它**不是** SubmitResponse：列表只要够认出「这是哪一次」+ 一眼看到分数，
+ *    把榜单、逐词明细也带上会让响应大好几倍，而列表根本不用。
+ */
+/**
+ * ⭐ 列表里一条的**逐词结果** —— 只要够把那一行的句子重新上色。
+ *
+ * ⚠️ 刻意不是完整的 WordScore：起始/结束时间、坏音素都是点开详情才有用的东西，
+ *    而列表是一次几十条地返回 —— 带上它们等于把整个详情包乘上条数。
+ * ⚠️ score 是**原始分**（不四舍五入）：标绿的判据与结果屏共用同一个数，
+ *    这里先舍一次，两边就会在 84.96 这种边界上一个绿一个灰。
+ */
+export interface ChallengeWordScore {
+  /**
+   * 引擎认定的那个词 —— **对齐要用它**（见 alignWordScores）。
+   * ⚠️ 不能省：引擎词表可能比原文多一个插入词（把别的音读成了词），
+   *    少了它就只剩「按下标硬套」这条路，而那会让颜色整体错位。
+   */
+  word: string
+  score: number
+  /** 引擎的读音判定；不是 'normal' 一律标红（与结果屏同一条口径） */
+  dp: string
+}
+
+/**
+ * ⭐ 分享出去的「一次挑战结果」—— GET /share/challenge/:sid（**不需要登录**）。
+ *
+ * ⚠️ 它是给别人看的：拿到链接的人可能没有账号、也没读过这句。
+ *    所以这里只放**公开信息**：分数、分项、逐词、榜单、这条录音是否公开；
+ *    录音地址只在 isPublic 时给（成绩永远进榜，公开与否只管**声音**）。
+ */
+export interface ChallengeShareResponse {
+  /** 与本人看到的 result 同构（同一处 describe() 产出），所以两屏能共用一套渲染 */
+  result: SubmitResponse
+  /** 这条挑战是谁读的 */
+  owner: { nickname: string; avatarUrl: string | null }
+  /** 这段录音的可播地址；**不公开时为 null** */
+  audio: SubmissionAudioRef | null
+  /** 提交时刻（ISO）—— 分享页只显示到分钟 */
+  at: string
+}
+
+export interface ChallengeRecord {
+  submissionId: string
+  articleId: number
+  /** 这次挑战归属哪一天（老数据可能为空） */
+  scheduleDate: string | null
+  /** 0–100，一位小数；没打完分时为空 */
+  score: number | null
+  isConquered: boolean
+  /** scoring / scored / failed */
+  status: string
+  /** AI 的 4–8 字点评（有没有取决于当时配没配大模型） */
+  aiComment: string | null
+  /** 句子原文 —— 列表里靠它认出「这是哪一句」 */
+  text: string
+  /**
+   * 逐词结果，下标与 text 切出来的词一一对应。
+   * ⚠️ 老成绩没有这一列（或条数对不上）时是 null ——
+   *    那时列表退回**不标色**的整句，而不是猜着上色。
+   */
+  wordScores: ChallengeWordScore[] | null
+  /** 时间（ISO 字符串），列表按它倒序 */
+  at: string
+}
+
+/**
+ * ⭐ 一段**用户录音**的可播地址 —— 与 ArticleContent.audio 同构（kind + src）。
+ *
+ * ⚠️ 两条通道各有一套，客户端那侧只有一处分支（lib/audio/standard.ts 已处理）：
+ *      · 'cloud' —— 云存储 fileID，客户端用 wx.cloud.getTempFileURL 换地址。
+ *        云开发通道**不需要配 downloadFile 合法域名**，真机正式版才播得响。
+ *      · 'http'  —— 服务端路径（本机联调，客户端自己拼 BASE_URL）。
+ * ⚠️ 地址**只从「校验过归属的接口」发出来**（GET /api/submissions/:id/audio），
+ *    这一页也是私人复盘页（只有本人看自己的记录），所以没有再套一层签名；
+ *    真要把这条地址公开使用时，得先把鉴权加回去 —— 见 routes/media.ts。
+ */
+export interface SubmissionAudioRef {
+  kind: 'cloud' | 'http'
+  src: string
+}
+
+/** GET /api/submissions/:id/audio —— 拿一段自己录音的可播地址（audio 为 null = 音频不在了） */
+export interface SubmissionAudioResponse {
+  audio: SubmissionAudioRef | null
+}
+
+/**
+ * ⭐ 「参与场次」里的一条 —— **一句 = 一个竞技场 = 一场**。
+ *
+ * ⚠️ 一条记录对应「我对这一句的全部战绩」，不是一次提交：
+ *    同一句读十次，这里仍然只是一条（次数在 attempts 里）。
+ */
+export interface ParticipationRecord {
+  articleId: number
+  /** 句子原文 —— 列表里靠它认出是哪一句 */
+  text: string
+  /** 这句有多少个词（句子本身的长度，不是我能控制的） */
+  words: number
+  /** 我在这一句上挑战了几次（只数拿到分的） */
+  attempts: number
+  /** 最高分 / 最低分（都是拿到分的那些提交） */
+  bestScore: number
+  worstScore: number
+  /** 我在这一句上的名次与参与人数（按最高分排） */
+  rank: number
+  participantCount: number
+  /** 最近一次挑战的时间（ISO）—— 列表按它倒序 */
+  lastAt: string
+  /**
+  /**
+   * ⭐ **最近这次挑战属于哪一天**（YYYY-MM-DD）—— 点卡片跳**竞技场**要用它。
+   * ⚠️ 竞技场是按「哪一天」取场次的（pages/arena 的 onLoad），
+   *    所以这里给的必须是**你参与的那一场**的日期，而不是端侧的今天。
+   * ⚠️ 老数据可能没有（schedule_date 为空）→ 空串，端侧那时不给跳。
+   */
+  lastScheduleDate: string
+}
+
+export interface ParticipationsResponse {
+  items: ParticipationRecord[]
+}
+
+export interface ChallengesResponse {
+  items: ChallengeRecord[]
+}
 /**
  * ⭐ 提交被拒的**业务分支**（429，但不是"错误"，是规则）。
  *

@@ -70,6 +70,8 @@ const TOKEN_ERRORS = [40001, 40003, 42001]
  */
 function contentTypeOf(key: string): string {
   if (key.endsWith('.mp3')) return 'audio/mpeg'
+  if (key.endsWith('.aac')) return 'audio/aac'
+  if (key.endsWith('.m4a')) return 'audio/mp4'
   if (key.endsWith('.pcm')) return 'application/octet-stream'
   return 'application/octet-stream'
 }
@@ -158,8 +160,14 @@ interface DownloadResult extends WxError {
   file_list?: DownloadFileItem[]
 }
 
-/** key → cloud://<环境>.<桶>/<key> */
-function fileIdOf(key: string): string {
+/**
+ * key → cloud://<环境>.<桶>/<key>
+ *
+ * ⚠️ 导出给「让用户重听自己的录音」用（见 services/recording.ts）：
+ *    那条路要把录音（mp3）放进云存储，再把 fileID 交给客户端去换临时地址。
+ *    拼法只此一处 —— 客户端那边绝不能自己拼，桶名它根本不知道。
+ */
+export function fileIdOf(key: string): string {
   if (!env.WX_CLOUD_ENV_ID || !env.COS_BUCKET) {
     throw new Error(
       '缺少 WX_CLOUD_ENV_ID / COS_BUCKET，拼不出 fileID。' +

@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto'
+import { RECORD_SPEC } from '@jushuo/shared'
 
 /**
  * 提交记录的标识与音频路径规范 —— **纯函数，零 DB 依赖**（可单测）。
  *
  * ⭐ 两个 id 互相独立：
- *   submissionId = hash(userId, articleId, seq)        —— 服务端算
- *   audioKey     = audio/{articleId}/{userId}/{ts}.pcm  —— 客户端上传时就得知道
+ *   submissionId = hash(userId, articleId, seq)   —— 服务端算
+ *   audioKey     = audio/{articleId}/{userId}/{ts}.{后缀}  —— 客户端上传时就得知道
+ *
+ * ⚠️ 后缀跟着**录音格式**走：现在客户端录的是微信接口的默认格式 aac（见 RECORD_SPEC），
+ *    所以库里常见的是 `.aac`（平台上也可能是 `.m4a`）。
+ *    历史遗留还有两种：老客户端传的裸 `.pcm`，以及服务端给它们补的 `.mp3` 存档
+ *    （见 services/recording.ts）。**内容一律按文件头判断**，不看后缀。
  */
 
 const AUDIO_PREFIX = 'audio'
@@ -18,7 +24,7 @@ export function makeSubmissionId(userId: number, articleId: number, seq: number)
 }
 
 export function makeAudioKey(articleId: number, userId: number, timestampMs: number): string {
-  return `${AUDIO_PREFIX}/${articleId}/${userId}/${timestampMs}.pcm`
+  return `${AUDIO_PREFIX}/${articleId}/${userId}/${timestampMs}.${RECORD_SPEC.extension}`
 }
 
 /**
@@ -118,7 +124,17 @@ export function assertAudioKeyOwnedBy(audioKey: string, userId: number, articleI
 
   const [prefix, articlePart, userPart, filePart] = parts as [string, string, string, string]
   if (prefix !== AUDIO_PREFIX) throw new Error('音频路径前缀不对')
-  if (!/^\d{10,}\.pcm$/.test(filePart)) throw new Error('音频文件名不对')
+  /**
+   * ⚠️⚠️ 只校验**名字的形状**（时间戳 + 短后缀），**不枚举后缀**：
+   *    · 后缀跟着录音格式走（RECORD_SPEC），而各平台落盘的后缀未必一样 ——
+   *      开发者工具甚至会给 `.webm`。枚举式白名单的后果是「换个格式，
+   *      所有提交突然全被挡在门外」，而报错只有一句「音频文件名不对」，
+   *      排查时很容易怀疑到别处去（客户端那边会看到 submit 直接 400）。
+   *    · 这里挡的是**路径穿越与非法文件名**（不能有 `/`、不能有第二个点）；
+   *      内容是什么一律由服务端按文件头 sniff（services/audio.ts），
+   *      所以后缀本来就不能被用来骗过什么。
+   */
+  if (!/^\d{10,}\.[a-z0-9]{1,5}$/.test(filePart)) throw new Error('音频文件名不对')
 
   if (Number(articlePart) !== articleId) throw new Error('音频路径里的文章与提交的不一致')
   if (Number(userPart) !== userId) throw new Error('音频路径不属于当前用户')

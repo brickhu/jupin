@@ -22,10 +22,18 @@
        ⚠️ 下面那行说的是**这个表单做什么**，与上面那句不重复：
           "AI 评分冲排名"回答"这是什么产品"，"成绩记在这个名字下"回答"我为什么要填"。 -->
   <text class="text-32rpx font-semibold text-ink block px-1 mb-2 leading-[1.5] text-center">{{brand.pitch}}</text>
-  <text class="text-26rpx text-muted block px-1 mb-3 leading-[1.6] text-center">头像和昵称会显示在榜单上，你的成绩都记在这个名字下。</text>
+  <text class="text-26rpx text-muted block px-1 mb-3 leading-[1.6] text-center">头像和昵称会显示在榜单上。不填也行 —— 成绩已经记在你的账号下了。</text>
 
   <!-- autoFocus：新人进来就把微信昵称摆到键盘上方（见组件里的说明） -->
   <profile-form submit-label="确认加入" auto-focus="{{true}}" bind:saved="onSaved" />
+
+  <!-- ⭐ 可以略过。
+       ⚠️ 这一页**不是**登录，也不是任何功能的前置条件：账号（openid）是静默拿到的，
+          成绩照样入库。这里补的只是「榜上显示成什么」。
+          没这个入口，用户只能靠系统返回键去猜自己能不能走。 -->
+  <view class="mt-3 py-2" bindtap="onSkip" hover-class="active__opacity-60">
+    <text class="text-24rpx text-faint block text-center">以后再说</text>
+  </view>
 
   <text class="text-22rpx text-faint block mt-3 text-center">不会给你发任何消息，也不做别的用途。</text>
 </view>

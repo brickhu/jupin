@@ -1,0 +1,70 @@
+<!--
+  ⭐ 「参与场次」—— 我在哪些句子上参与过，最近参与的排前面。
+
+  ⚠️ 一张卡 = **一句**（= 一个竞技场 = 一场），不是一次提交。
+  ⚠️ 卡上只有五样东西：句子 / 挑战几次 / 最高得分 / 位列 / 最低得分。
+     不摆日期、不摆词数 —— 排序已经说明「最近的在前」，多一行字只是干扰。
+  ⚠️ 整张卡可点 → **竞技场**（那一场的完整榜单）。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="参与场次" />
+
+  <!-- ── 加载中 ────────────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取参与记录…</text>
+  </view>
+
+  <!-- ── 连不上（且一条都还没有）───────────────────────────── -->
+  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error && rows.length === 0}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <!-- ── 一场都没参与过 ────────────────────────────────────── -->
+  <view class="bg-white rounded-2.5 px-5 py-10 text-center" wx:elif="{{empty}}">
+    <text class="text-56rpx block">🎯</text>
+    <text class="text-30rpx text-ink font-medium block mt-3">还没有参与过</text>
+    <text class="text-24rpx text-faint block mt-2 leading-[1.6]">回首页读今天这一句，读完这里就有第一场。</text>
+  </view>
+
+  <block wx:else>
+    <!-- ⚠️ 有内容、但这次刷新失败：一行细提示 + 重试，保留已有记录 -->
+    <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mb-2.5" wx:if="{{error}}">
+      <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+      <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+    </view>
+
+    <!-- ⚠️ 卡片是**竖向两段**：上段「句子 + 箭头」，下段「四个数」。
+         别把两段塞进同一个 flex 行里 —— 那样四个数会挤在句子右边当第三列。 -->
+    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{rows}}" wx:key="articleId"
+          data-i="{{index}}" bindtap="onOpen">
+
+      <view class="flex items-start">
+        <text class="text-32rpx leading-[1.5] text-ink flex-1">{{item.text}}</text>
+        <!-- 箭头是「整张卡可点」的唯一提示 -->
+        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1.2]">›</text>
+      </view>
+
+      <!-- 四个数：挑战 / 最高 / 位列 / 最低 -->
+      <view class="flex mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">挑战</text>
+          <text class="text-30rpx font-semibold text-ink">{{item.attemptsText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">最高</text>
+          <text class="text-34rpx font-bold text-brand">{{item.bestText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">位列</text>
+          <text class="text-30rpx font-semibold text-ink">{{item.rankText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">最低</text>
+          <text class="text-30rpx font-semibold text-muted">{{item.worstText}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

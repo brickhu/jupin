@@ -1,6 +1,12 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { eq } from 'drizzle-orm'
+import { db } from '../db'
+import { submissions } from '../db/schema'
 import { readStaticFile } from '../services/content'
+import { env } from '../env'
+import { playableBytesOf } from '../services/recording'
+import { getStorage } from '../storage'
 
 export const mediaRoutes = new Hono()
 
@@ -22,8 +28,10 @@ export const mediaRoutes = new Hono()
  *      要么公开，要么走签名地址 —— 我们选了公开，因为标准音本来就是
  *      任何人都可以听的内容，不涉及任何用户数据。
  *
- * ⚠️ 用户录音**不在此列**：那是隐私，走对象存储的签名地址，每条单独授权。
- *    两者别混 —— 把录音也搬到这条公开路由上会是一次真实的隐私事故。
+ * ⚠️ 用户录音**不在此列**：那是私人数据，地址只能从「校验过归属的接口」发出来。
+ *    云上它走对象存储（fileID）；本机那条回吐在下面 /recording/:id，
+ *    而那条**只在 STORAGE=local 时存在**。两者别混 ——
+ *    把录音挂成一条无条件的公开路由会是一次真实的隐私事故（见那条路由的说明）。
  */
 mediaRoutes.get('/articles/:file', async (c) => {
   // 形如 1.mp3
@@ -47,6 +55,74 @@ mediaRoutes.get('/articles/:id/:file', async (c) => {
     return c.json({ ok: false, error: '音频不存在' }, 404)
   }
   return serveAudio(c, `content/audio/${id}/w${index}.mp3`)
+})
+
+/**
+ * ⭐ 回吐**用户自己的一段录音**（可播的 WAV）—— 列表里那个播放按钮。
+ *
+ * ⚠️⚠️ 为什么这条路由是**无鉴权**的、以及为什么这样是可以的：
+ *    InnerAudioContext **不带 Authorization 头**（它不是一个 wx.request 调用），
+ *    所以「客户端自己按 URL 去取」这件事**没法**用请求头鉴权 ——
+ *    要么公开，要么签名地址，要么换成客户端先把字节下下来（多一层）。
+ *
+ *    而这条路由**只在 STORAGE=local 时存在**（下面第一行就是那道门）：
+ *    那意味着它只可能跑在开发者自己的机器上（模拟器直连 localhost），
+ *    服务端也不必为此多写一套签名 / 过期逻辑。
+ *    云端根本不走这条路由 —— 那边客户端没有本服务的域名，
+ *    播放走的是云存储 fileID（见 services/recording.ts）。
+ *
+ *    ⛔ 如果哪天要在云端也用它（比如给服务配了域名、进了白名单），
+ *       **必须先把鉴权加回来**：那时它是一条任何人都能按 id 读录音的公开地址。
+ */
+mediaRoutes.get('/recording/:id', async (c) => {
+  if (env.STORAGE !== 'local') {
+    return c.json({ ok: false, error: '录音暂不支持这种取法' }, 404)
+  }
+
+  const id = c.req.param('id')
+  // ⚠️ 先按形状挡一道：提交 id 是 24 位十六进制。
+  //    这样任何手写的路径都到不了数据库查询那一步。
+  if (!/^[0-9a-f]{24}$/.test(id)) {
+    return c.json({ ok: false, error: '录音不存在' }, 404)
+  }
+
+  const [row] = await db
+    .select({ audioKey: submissions.audioKey })
+    .from(submissions)
+    .where(eq(submissions.id, id))
+    .limit(1)
+  if (!row?.audioKey) return c.json({ ok: false, error: '这段录音已经不在了' }, 404)
+
+  const storage = getStorage()
+  /**
+   * ⚠️ 先问一句「还在不在」，不要直接读：
+   *    失败的提交会被清掉音频（见 services/scoring.ts），
+   *    直接读会抛 ENOENT 变成 500 —— 而那不是「服务坏了」，是「这条没有录音」。
+   */
+  if (!(await storage.exists(row.audioKey))) {
+    return c.json({ ok: false, error: '这段录音已经不在了' }, 404)
+  }
+
+  try {
+    // ⚠️ 新记录存的就是 mp3，这里**一字节都不动**地交出去；
+    //    老记录（裸 PCM / WebM）才会被转一次码（见 services/recording.ts）。
+    const { bytes, mime } = await playableBytesOf(storage, row.audioKey)
+    // ⚠️ 与 serveAudio 同一个理由：复制成一份**独占的 ArrayBuffer** 再交出去。
+    //    playableBytesOf 给的是 Uint8Array<ArrayBufferLike>，而 Hono 的 Data
+    //    要的是 Uint8Array<ArrayBuffer> —— TS 分得比运行时细。
+    const body = new Uint8Array(bytes.byteLength)
+    body.set(bytes)
+    return c.newResponse(body, 200, {
+      // ⚠️ Content-Type 不能少：缺了它 InnerAudioContext 在真机上直接不播，且不报错
+      'Content-Type': mime,
+      'Content-Length': String(body.byteLength),
+      // ⚠️ private：这是某个人的录音，不能被任何中间层缓存下来
+      'Cache-Control': 'private, max-age=600',
+    })
+  } catch (err) {
+    console.error('[media] 录音转可播格式失败 id=' + id + '：' + (err as Error).message)
+    return c.json({ ok: false, error: '这段录音暂时放不出来' }, 500)
+  }
 })
 
 /**

@@ -14,6 +14,7 @@ import { submissionsRoutes } from './routes/submissions'
 import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
+import { shareRoutes } from './routes/share'
 import { schedulesRoutes } from './routes/schedules'
 
 const app = new Hono()
@@ -90,6 +91,13 @@ app.route('/api/auth', authRoutes)
  *    的资源都不能要求鉴权 —— 否则在开发者工具和真机上都是 401。
  */
 app.route('/media', mediaRoutes)
+
+/**
+ * ⭐ 分享出去的链接 —— 同样**不做鉴权**（拿到链接的人可能没有账号）。
+ *    ⚠️ 它的隐私边界在路由自己那一层（录音只在这条提交 is_public 时给地址），
+ *       见 routes/share.ts 开头。
+ */
+app.route('/share', shareRoutes)
 
 // 需鉴权路由
 app.use('/api/articles/*', authMiddleware)

@@ -1,77 +1,87 @@
 <!--
-  全局用户面板 —— 从底部向上滑出**半屏**。
+  全局用户面板 —— 从底部向上滑出（高度跟着内容走，见 wxss 里的说明）。
   它挂在 nav-bar 里，所以三个页面都能从左上角那个头像拉开。
 
   ⚠️ 面板内容全部来自两处，页面上不再有自己的副本：
-     · 战绩（streak / 徽章）来自全局 store 的 streak
+     · 能量 / 解冻卡 / 连续天数来自全局 store 的 profile 与 streak
      · 头像 / 昵称 / 已征服数来自 store 的 profile（打开时向服务端刷一次）
 -->
 <!--
   ⚠️ 遮罩和面板是**兄弟**，不是父子 —— 这不是洁癖：
      catchtouchmove 加在遮罩上是为了挡住底下的页面跟着滚，
-     但它是**冒泡**层面的拦截，遮罩一旦把面板包在里面，
-     面板里那个 scroll-view 的滚动就一起被挡住了（徽章阶梯在小屏上滚不动）。
-     做成兄弟之后：遮罩挡滚动，面板自带滚动，互不干扰。
+     而它是**冒泡**层面的拦截：面板一旦被包进遮罩里，
+     以后面板内部任何要滚动的东西（更长的菜单、公告）都会被一起挡住。
+     做成兄弟之后各管各的：遮罩挡滚动，面板只挡住自己的点击。
 -->
 <view class="us-layer" wx:if="{{mounted}}">
   <view class="us-mask {{entered ? 'us-mask-on' : ''}}" bindtap="onClose" catchtouchmove="noop"></view>
 
-  <view class="us-panel {{entered ? 'us-panel-on' : ''}}" catchtap="noop">
-    <!-- 抓手：整条都可以点，点了就收起来（没有手势拖拽，别假装有） -->
-    <view class="us-grab" bindtap="onClose"></view>
+  <!--
+    ⚠️ 面板自己也要 catchtouchmove：
+      遮罩上那道拦截只在**手指落在遮罩上**时生效，落在面板上根本不经过遮罩 ——
+      结果就是「面板开着，底下的页面还能被拖着滚」。
+    ⚠️ 面板以后要有**可滚动内容**时，这里不能再无脑 catch
+      （那样内容就滚不动了）—— 要改成"没滚到边界时才拦"。
+      遮罩和面板做成兄弟而不是父子，就是为了留这条路。
+    ⚠️ style 只在**拖动期间**有值（见 ts 里的 panelStyle），平时是空串，
+      位置完全交给 .us-panel / .us-panel-on 两个类。
+  -->
+  <view class="us-panel {{entered ? 'us-panel-on' : ''}}" style="{{panelStyle}}" catchtap="noop" catchtouchmove="noop">
+    <!-- 抓手：**点一下**收起；**按住往下拖**也能收起（拖过阈值才算，见 ts） -->
+    <view class="us-grab" bindtap="onClose"
+          bindtouchstart="onGrabStart" bindtouchmove="onGrabMove"
+          bindtouchend="onGrabEnd" bindtouchcancel="onGrabEnd"></view>
 
-    <!-- ⭐ 整块可点 = 改头像 / 改昵称（复用加入页） -->
+    <!-- ⭐ 整块可点 = 补 / 改头像和昵称（没起过名字走加入页，否则走修改资料页） -->
     <view class="us-head" bindtap="onEditProfile" hover-class="us-head-hover">
       <!-- ⚠️ 没配过头像就画占位图，理由见 nav-bar.wxml 里那段说明 -->
       <image class="us-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="us-idcol">
         <text class="us-name">{{nickname}}</text>
-        <text class="us-sub" wx:if="{{streak.badge}}">{{streak.badge.emoji}} {{streak.badge.name}}</text>
-        <text class="us-sub" wx:else>还没有徽章 —— 今天读一句就是第一个</text>
+        <!-- ⭐ 名字下面这一行 = **手上能动用的两样东西**：能量还剩多少、有几张解冻卡。
+             ⚠️ 它们是一类：都回答「我现在能做什么」——
+                能量决定还能挑战几次，解冻卡决定断档后能不能补。
+             ⚠️ 连续天数不在这里（它在首页的状态卡和「我的主页」）；
+                成长值是**累计的荣誉**，属于下面那一排数字。 -->
+        <text class="us-sub">⚡ 能量 {{energy}} 点 · ❄️ 解冻卡 {{streak.unfreezeCards}} 张</text>
       </view>
-      <text class="us-edit">修改</text>
+      <text class="us-edit">{{named ? '修改' : '设置'}}</text>
     </view>
 
+    <!-- ⭐ 这一排 = **三个成长值**（累计的荣誉，只增不减的那部分）。
+         ⚠️ 这里原来放的是「连续 / 历史最长 / 解冻卡 / 能量」：
+            能量和解冻卡挪到名字下面（那是"手上能动用的"），
+            连续天数在首页状态卡与「我的主页」。
+         ⚠️ **不合成总分**：三个数各自回答一个问题，相加之后没人解释得清。 -->
     <view class="us-stats">
       <view class="us-stat">
-        <text class="us-stat-v">{{streak.streakDays}}</text>
-        <text class="us-stat-k">🔥 连续</text>
+        <text class="us-stat-v">{{growth.self}}</text>
+        <text class="us-stat-k">📈 自我超越</text>
       </view>
       <view class="us-stat">
-        <text class="us-stat-v">{{streak.streakBest}}</text>
-        <text class="us-stat-k">历史最长</text>
+        <text class="us-stat-v">{{growth.diligence}}</text>
+        <text class="us-stat-k">🔥 孜孜不倦</text>
       </view>
       <view class="us-stat">
-        <text class="us-stat-v">{{streak.freezeCount}}</text>
-        <text class="us-stat-k">❄️ 冻结卡</text>
-      </view>
-      <view class="us-stat">
-        <text class="us-stat-v">{{conqueredCount}}</text>
-        <text class="us-stat-k">已征服</text>
+        <text class="us-stat-v">{{growth.standout}}</text>
+        <text class="us-stat-k">🏔️ 鹤立鸡群</text>
       </view>
     </view>
 
-    <view class="us-sec">
-      <text class="us-sec-t">等级徽章</text>
-      <text class="us-sec-n">按历史最长连续天数</text>
+    <!-- ⭐ 菜单。
+         ⚠️ 这里原来是一整张「等级徽章」阶梯（ladder），已按产品要求去掉：
+            用户拉开面板是来找入口的，不是来读一张等级表的 ——
+            现在那一排放的是**三个成长值**（完整解释在「我的主页」）。
+         ⚠️ 「通知」暂时没有页面：点了给一句「敬请期待」，
+            而不是留一个点了没反应的死链接（那看起来就像坏了）。 -->
+    <view class="us-menu">
+      <view class="us-menu-item" wx:for="{{menu}}" wx:key="key"
+            data-key="{{item.key}}" bindtap="onMenuTap" hover-class="us-menu-hover">
+        <text class="us-menu-icon">{{item.icon}}</text>
+        <text class="us-menu-label">{{item.label}}</text>
+        <text class="us-menu-arrow">›</text>
+      </view>
     </view>
-
-    <scroll-view class="us-scroll" scroll-y>
-      <view class="us-item {{item.earned ? '' : 'us-item-off'}}" wx:for="{{ladder}}" wx:key="code">
-        <text class="us-item-emoji">{{item.emoji}}</text>
-        <view class="us-item-col">
-          <text class="us-item-name">{{item.name}}</text>
-          <text class="us-item-note">{{item.note}}</text>
-        </view>
-        <text class="us-item-days">{{item.days}} 天</text>
-      </view>
-
-      <view class="us-foot">
-        <text class="us-foot-t" wx:if="{{streak.nextBadge}}">下一个 {{streak.nextBadge.emoji}} {{streak.nextBadge.name}}，再连续 {{streak.daysToNext}} 天</text>
-        <text class="us-foot-t" wx:else>已经是最高等级徽章了</text>
-        <text class="us-foot-n">每连续 7 天得 1 张冻结卡，断档时自动补上</text>
-      </view>
-    </scroll-view>
   </view>
 </view>
 

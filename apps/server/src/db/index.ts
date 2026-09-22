@@ -306,6 +306,21 @@ export async function initDatabase(): Promise<void> {
    *    报错只落在 migrateError 里，而那句「已灌种子 N 篇」的日志压根没打印过。
    *    ⇒ 失败要分开、要互相不连坐：迁移坏了句子还能用，句子坏了也不必回滚迁移。
    */
+  /**
+   * ⭐ 奖励规则：**每次启动都补一次**（幂等，只在缺的时候插）。
+   *
+   * ⚠️ 刻意**不放在 SEED_ON_START 里面**：规则表不是「种子数据」，是**配置** ——
+   *    空表的后果是「什么都不发」，而那是**静默**的（没有任何东西会报错，
+   *    用户只是永远拿不到奖励，谁也不知道）。所以它跟迁移一样属于"服务能正常工作的前提"。
+   * ⚠️ 只在**缺**的时候插：运营改过的阈值不会被启动覆盖（改配置不追溯）。
+   */
+  try {
+    const { ensureDefaultRules } = await import('../services/rewards')
+    await ensureDefaultRules()
+  } catch (err) {
+    console.error('[db] 奖励规则初始化失败（不影响服务启动）：', (err as Error).message)
+  }
+
   if (env.SEED_ON_START) {
     try {
       try {
@@ -333,3 +348,14 @@ export async function initDatabase(): Promise<void> {
     }
   }
 }
+
+/**
+ * ⭐ 数据库执行体的两种形态：连接池本身，或一个事务。
+ *
+ * ⚠️ 为什么要这个类型：余额、流水、发放记录这些**必须在同一个事务里写**，
+ *    于是很多 service 函数既要能被直接调用、也要能塞进别人的事务里。
+ *    参数统一写成 Executor 就不会出现"某个 helper 偷偷开了第二个事务"。
+ */
+export type Db = typeof db
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
+export type Executor = Db | Tx

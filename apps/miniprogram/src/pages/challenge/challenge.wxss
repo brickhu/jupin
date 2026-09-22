@@ -1,0 +1,26 @@
+/**
+ * 「挑战结果」页自己的小块样式。
+ *
+ * ⚠️ 其余一律用 UnoCSS 工具类写在 WXML 上（见 app.wxss 的说明）。
+ *    这里留下的两块是工具类表达不了的：
+ *      · 分享按钮：小程序里能被点开的分享入口必须是 <button open-type="share">，
+ *        而 button 自带一整套默认样式（灰底、边框、内外边距、min-height）——
+ *        要把它变成卡片右上角那个小圆钮，只能手写覆盖。
+ */
+.cl-share {
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  background: #eeecfd; /* 与 uno.config.mjs 的 brand 同色系浅底 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ⚠️ button 的 ::after 是微信自带的边框，不干掉就会有一圈灰边 */
+.cl-share::after {
+  border: none;
+}

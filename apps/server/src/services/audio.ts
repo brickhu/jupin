@@ -1,5 +1,16 @@
 import { spawn } from 'node:child_process'
-import { AUDIO_SPEC } from '@jushuo/shared'
+import { AUDIO_SPEC, sniffAudioContainer } from '@jushuo/shared'
+import type { AudioContainer } from '@jushuo/shared'
+
+/**
+ * ⚠️ `sniffAudioContainer` / `AudioContainer` 的**实现在 @jushuo/shared 里**
+ *    （packages/shared/src/audio/sniff.ts）—— 小程序那边要用同一份判据
+ *    判断「手里的帧能不能画成波形」（见朗读页的帧分类）。
+ *    这里只是**转出去**，好让本服务的其它文件继续 `from './audio'` 取用，
+ *    同时保证两端永远只有一份实现。
+ */
+export { sniffAudioContainer }
+export type { AudioContainer }
 
 /**
  * ⭐ 音频归一化 —— 把「上传上来的任何东西」变成讯飞要的 16kHz / 16bit / 单声道裸 PCM。
@@ -20,86 +31,10 @@ import { AUDIO_SPEC } from '@jushuo/shared'
  *    整条链路对「设备给了什么」就彻底免疫了。
  */
 
-/** 上传内容的容器类型 —— 只认 magic，不猜 */
-export type AudioContainer =
-  | 'raw-pcm'
-  | 'wav'
-  | 'webm'
-  | 'ogg'
-  | 'mp4'
-  | 'mp3'
-  | 'aac'
-  | 'flac'
-
 /** 16kHz / 16bit / 单声道下每秒的字节数 —— 时长与字节数之间的唯一换算系数 */
 export const PCM_BYTES_PER_SEC =
   (AUDIO_SPEC.sampleRate * AUDIO_SPEC.channels * AUDIO_SPEC.bitDepth) / 8
 
-function ascii(bytes: Uint8Array, offset: number, len: number): string {
-  let s = ''
-  for (let i = 0; i < len; i++) s += String.fromCharCode(bytes[offset + i] as number)
-  return s
-}
-
-/**
- * 判断上传的字节到底是什么容器。
- *
- * ⚠️ 默认值是 `raw-pcm`：真机链路 `format:'PCM'` 直出无头裸 PCM，
- *    这是**唯一**「没有任何 magic」的情况，所以只能把它当兜底。
- *    其余签名（EBML / RIFF / OggS / ID3 / ftyp / fLaC）都极不可能出现在裸 PCM 开头
- *    （那几个字节必须恰好拼成一个负数样本且拼成这些 ASCII，概率可忽略）。
- *
- * ⚠️ 唯一有真实误判风险的是**裸 MPEG 帧同步**（`FF Ex`）——
- *    裸 PCM 里一个 ≤ -8192 的样本就会长这样。
- *    所以还会校验**后续字节里的位率/采样率索引**，把 `FF FF 00`（PCM 的 -1, 0）挡掉。
- *
- * ⚠️ 残余风险如实记录：`FF FF 10` 这类字节串既能当 PCM（-1, 16）也能通过 mp3 的字段校验，
- *    单凭前几字节**分不开**。真正可行的判据是「后面还有没有第二个帧同步」，
- *    但那需要完整的位率/采样率表，收益不抵复杂度。
- *    这里选择接受这个风险 —— 因为它的失败方式是**报一个清晰的解码错误**，
- *    而不是静默地把一次正常录音毁掉；且实际录音以近似静音开头，首样本为 0xFFFF 的概率极低。
- */
-export function sniffAudioContainer(bytes: Uint8Array): AudioContainer {
-  if (bytes.length >= 8) {
-    if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
-      return 'webm' // EBML → WebM / Matroska（开发者工具走这条）
-    }
-    const head4 = ascii(bytes, 0, 4)
-    if (head4 === 'RIFF') return 'wav'
-    if (head4 === 'OggS') return 'ogg'
-    if (head4 === 'fLaC') return 'flac'
-    if (ascii(bytes, 0, 3) === 'ID3') return 'mp3'
-    if (ascii(bytes, 4, 4) === 'ftyp') return 'mp4'
-  }
-
-  if (bytes.length >= 3 && bytes[0] === 0xff && ((bytes[1] as number) & 0xe0) === 0xe0) {
-    const b1 = bytes[1] as number
-    const b2 = bytes[2] as number
-
-    // ① ADTS AAC：layer 字段恒为 00，b1 ∈ {F0, F1, F8, F9}
-    if ((b1 & 0xf6) === 0xf0) {
-      const rateIndex = (b2 >> 2) & 0x0f
-      if (rateIndex <= 12) return 'aac'
-    } else {
-      // ② MPEG 音频（mp3）：版本与层都不能是保留值，位率索引必须有效（0=free，15=非法）
-      const version = (b1 >> 3) & 0x03
-      const layer = (b1 >> 1) & 0x03
-      const bitrateIndex = (b2 >> 4) & 0x0f
-      const rateIndex = (b2 >> 2) & 0x03
-      if (
-        version !== 1 &&
-        layer !== 0 &&
-        bitrateIndex >= 1 &&
-        bitrateIndex <= 14 &&
-        rateIndex <= 2
-      ) {
-        return 'mp3'
-      }
-    }
-  }
-
-  return 'raw-pcm'
-}
 
 export interface NormalizedAudio {
   /** 16kHz / 16bit / 单声道裸 PCM —— 直接可喂讯飞 */

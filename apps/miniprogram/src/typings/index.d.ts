@@ -2,8 +2,7 @@
 interface IAppOption {
   globalData: {
     ready: boolean
-    isMember: boolean
-    // ⚠️ 原来这里还有 nextFreeAt（24 小时冷却的"下次可免费提交时间"）——
+      // ⚠️ 原来这里还有 nextFreeAt（24 小时冷却的"下次可免费提交时间"）——
     //    冷却已下线，改成「每人每天 N 次」，端侧不再需要记任何时间戳
   }
   onLaunch?: () => void

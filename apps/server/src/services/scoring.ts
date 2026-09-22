@@ -1,17 +1,19 @@
 import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import { CONQUEST_THRESHOLD, dayKey, latestBadge, scoreSentence, speechGaps } from '@jushuo/shared'
+import { scoreSentence, speechGaps } from '@jushuo/shared'
 import type { StreakDelta } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { getEngine } from '../engines'
 import { getStorage } from '../storage'
-import { trackInvalid } from './quota'
+import { trackInvalid } from './submission'
+import { releaseChallengeEnergy } from './energy'
+import { settle } from './settle'
 import { generateCoachFeedback } from './coach'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
 import { normalizeAudio, PCM_BYTES_PER_SEC } from './audio'
-import { recordRead } from './streak'
+import { archiveRecording } from './recording'
 
 /**
  * ⭐ 打分任务 —— 全产品唯一花钱的地方，也是唯一「慢」的地方。
@@ -145,6 +147,8 @@ export async function runScoring(submissionId: string): Promise<void> {
     // ---- 归一化 + 评测 ----
     let audioBytes = audio.byteLength
     let audioDurationMs = Math.round((audio.byteLength / PCM_BYTES_PER_SEC) * 1000)
+    /** 归一化后的 16k PCM —— 打分用它，打完之后再拿它编一份 mp3 存档 */
+    let pcmForArchive: Uint8Array | null = null
     let result
 
     try {
@@ -153,6 +157,9 @@ export async function runScoring(submissionId: string): Promise<void> {
       //    真机直出无头裸 PCM。设备产出什么格式，客户端说了不算，
       //    所以只能在服务端（唯一装得起解码器的地方）统一。
       const normalized = await normalizeAudio(audio)
+      // ⭐ 留着给打完分之后存档用（见下面 archiveRecording）——
+      //    编 mp3 要用**解码后的** PCM，而不是上传上来的那份原始字节。
+      pcmForArchive = normalized.pcm
       if (normalized.transcoded) {
         console.log(
           `[scoring] 音频归一化 id=${submissionId} ${normalized.container} ${audio.byteLength} 字节` +
@@ -226,7 +233,15 @@ export async function runScoring(submissionId: string): Promise<void> {
           },
         )
       : null
-    const isConquered = score >= CONQUEST_THRESHOLD
+    /**
+     * ⭐ 攻克 = **这一句拿到分数了**（不再有 85 分门槛 —— 那条线已废除）。
+     *
+     * ⚠️ 能走到这里就说明分数已经算出来了，所以恒为 true：
+     *    这一列现在的含义就是「这条提交出了分」，与 submissions.status 同义。
+     *    ⚠️ 统计一律以 status = 'scored' 为准（见 services/conquest.ts），
+     *       因为老数据里的 is_conquered 是按 85 线写的，会漏掉真实的攻克。
+     */
+    const isConquered = true
 
     // 是否第一次提交 / 第一次征服（用于更新 articles 的冗余计数）
     const isFirstSubmission = seq === 1
@@ -240,6 +255,7 @@ export async function runScoring(submissionId: string): Promise<void> {
           eq(submissions.isConquered, true),
         ),
       )
+    // 「这个用户在这条句子上第一次拿到分」—— 文章的攻克人数按它累加
     const isFirstConquer = isConquered && Number(priorConquer?.n ?? 0) === 0
 
     // ⚠️ 这里只是**打日志**用的。结果页要的 previousBest / isPersonalBest
@@ -255,6 +271,8 @@ void previousBest
       .update(submissions)
       .set({
         status: 'scored',
+        // ⭐ 能量**结算**：打分成功 → 受理时锁住的那 2 点变成实扣
+        energyState: 'charged',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）；数值本身是一位小数
         score: score.toFixed(1),
         isConquered,
@@ -274,6 +292,33 @@ void previousBest
     if ((header as unknown as { affectedRows?: number })?.affectedRows !== 1) {
       console.warn(`[scoring] 结果未写入（状态已变）id=${submissionId}`)
       return
+    }
+
+    /**
+     * ⭐⭐ 存档：把这次录音转成 mp3 存下来，删掉原件。
+     *
+     * ⚠️ 位置在「分数已经落库」**之后**：存档是省存储的动作，
+     *    它失败不该影响任何一条已经成立的成绩（所以整块 try 住、只 warn）。
+     * ⚠️ 用**归一化后的 PCM** 编码（上传上来的可能是 PCM、也可能是 WebM）。
+     * ⚠️ 重跑时会重新读一次 audioKey —— 那时它已经指向 mp3 了，
+     *    解码出来照样能打分（只会有极微小的差别，而这种情况极少发生）。
+     * ⚠️ 换 key 之后 audioUrl（客户端上传时给的签名地址）就作废了，一并清掉：
+     *    留着它，下次重跑会先去试那个已经指向**被删掉的原件**的地址。
+     */
+    if (pcmForArchive) {
+      try {
+        const stored = await archiveRecording(audioKey ?? '', pcmForArchive)
+        if (stored) {
+          await db
+            .update(submissions)
+            .set({ audioKey: stored, audioUrl: null })
+            .where(eq(submissions.id, submissionId))
+        }
+      } catch (err) {
+        console.warn(
+          '[scoring] 录音存档失败（保留原件）id=' + submissionId + '：' + (err as Error).message,
+        )
+      }
     }
 
     // ---- 文章的参与/征服计数 ----
@@ -311,28 +356,18 @@ void previousBest
     //        跨零点时会把一次 23:59 的提交记到第二天；
     //        更糟的是打分被接管重跑时，可能已经过去好几个小时、甚至跨天。
     //        用户「实际提交的时间」是受理那一刻，它不随时间流逝而改变。
-    const read = await recordRead(userId, dayKey(row.createdAt))
-
-    // ⚠️ streak 的变化量必须**落库**：结果由轮询取回，
-    //    而「+1 / 用掉几张冻结卡 / 解锁了哪个徽章」只在 recordRead 这一刻算得出来。
-    //    不存下来，结果页就只剩一个光秃秃的天数 ——
-    //    用户根本不知道冻结卡刚刚救了他一次。
-    await db
-      .update(submissions)
-      .set({
-        streakDelta: JSON.stringify({
-          streakDays: read.state.streakDays,
-          streakBest: read.state.streakBest,
-          freezeCount: read.state.freezeCount,
-          counted: read.counted,
-          delta: read.delta,
-          freezeUsed: read.freezeUsed,
-          freezeEarned: read.freezeEarned,
-          newBadges: read.newBadges,
-          badge: latestBadge(read.state.streakBest),
-        } satisfies StreakDelta),
-      })
-      .where(eq(submissions.id, submissionId))
+    // ⭐⭐ 打分成功之后的**唯一结算入口**：streak + 三个成长指标 + 奖励规则，
+  //    全在 services/settle.ts 里（轮询 / 重放 / 接管都不结算）。
+  //    ⚠️ 位置必须在「分数已经落库」之后 —— 成长值要拿这个分去跟历史比。
+  const settled = await settle(userId, submissionId)
+  if (settled) {
+    console.log(
+      '[scoring] 结算 id=' + submissionId +
+        ' streak=' + settled.streakDays +
+        ' growth=' + settled.growth.self + '/' + settled.growth.diligence + '/' + settled.growth.standout +
+        ' rewards=' + settled.rewards.length,
+    )
+  }
 
     console.log(`[scoring] 完成 id=${submissionId} score=${score}`)
   } catch (err) {
@@ -362,6 +397,28 @@ async function fail(submissionId: string, reason: string): Promise<void> {
   if ((row as unknown as { affectedRows?: number })?.affectedRows !== 1) return
 
   const [failed] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
+
+  /**
+   * ⭐ 能量**结算**：失败就退回受理时锁住的那 2 点。
+   *
+   * ⚠️ 用户可见的说法是「这次检测没通过，**能量已退回**」——
+   *    讯飞那边失败也可能计费，那是我们承担的成本，不转嫁给用户。
+   * ⚠️ 整块 try 住：退回失败不能影响"判定 failed"这件已经成立的事，
+   *    但它也**不能静默** —— 那会变成"能量凭空少了"。
+   */
+  if (failed) {
+    try {
+      if (await releaseChallengeEnergy(failed.userId, submissionId)) {
+        await db
+          .update(submissions)
+          .set({ energyState: 'released' })
+          .where(eq(submissions.id, submissionId))
+      }
+    } catch (err) {
+      console.warn('[scoring] 退回能量失败 id=' + submissionId + '：' + (err as Error).message)
+    }
+  }
+
   if (failed?.audioKey) {
     await getStorage()
       .remove(failed.audioKey)

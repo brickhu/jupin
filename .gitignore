@@ -28,6 +28,9 @@ private.key
 # ---- 内容流水线中间产物 ----
 tools/pipeline/data/drafts/
 tools/pipeline/data/out/
+# fish-audio 合成缓存（同文本不重复烧额度）。⚠️ 是**缓存不是产物** ——
+# 成品在 content/audio/，这里只是「别再请求一次引擎」的中间层，不该进仓库。
+tools/pipeline/data/cache/
 
 # ---- 日志与系统 ----
 *.log
@@ -36,6 +39,11 @@ npm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
+# ⚠️ settings.json 放行的原因：它固定了 typescript.tsdk = 工作区的 TS（v5.9.3）。
+#    不固定的话，编辑器可能用更旧的 TS，而本仓库的 tsconfig 用了
+#    moduleResolution: "bundler"（5.0+）与 lib ES2022（4.6+）——
+#    旧 TS 会把它们当不认识而忽略，于是满屏「找不到 Boolean / Error / Promise」。
 
 # ---- 编辑器/工具 ----
 .trae/

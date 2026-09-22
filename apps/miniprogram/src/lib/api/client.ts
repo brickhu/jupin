@@ -1,8 +1,12 @@
 import type {
   ApiResult,
+  ChallengesResponse,
   MeResponse,
+  ParticipationsResponse,
   ScheduleDetail,
+  ChallengeShareResponse,
   SchedulesResponse,
+  SubmissionAudioResponse,
   SubmissionStatusResponse,
 } from '@jushuo/shared'
 
@@ -502,6 +506,24 @@ export function fetchSchedules(days = 7): Promise<SchedulesResponse> {
  * ⚠️ 容器通道下 login() 内部也调了一次同一个接口（它只要 id）——
  *    那一次是**必须**的（uid 拿不到就没法上传），这一次是顺带取展示数据。
  */
+/**
+ * ⭐ 我的挑战记录（全部，按时间倒序）。
+ * ⚠️ 它和 /api/user/me 一样属于「启动路径」—— 从用户面板点进来，
+ *    冷启动时同样会等，所以给同一份宽预算。
+ */
+export function fetchChallenges(): Promise<ChallengesResponse> {
+  return request<ChallengesResponse>('/api/user/challenges', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 参与场次（一句 = 一场，最近参与的在前）。
+ * ⚠️ 与 fetchChallenges 的区别：那个是**每一次提交**，这个是**每一句的汇总**
+ *    （次数 / 最高 / 最低 / 名次）。两者服务端各一条 SQL，别互相拼。
+ */
+export function fetchParticipations(): Promise<ParticipationsResponse> {
+  return request<ParticipationsResponse>('/api/user/participations', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
 export function fetchMe(): Promise<MeResponse> {
   // ⚠️ 它也承担启动时的「我是谁」（见 lib/join.ts 的 refreshMe），同样给足预算；
   //    用户面板里那次刷新失败只是拿旧数据，多等几秒也无害。
@@ -605,4 +627,28 @@ export function setSubmissionVisibility(
 
 export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionStatusResponse> {
   return request<SubmissionStatusResponse>('/api/submissions/' + submissionId)
+}
+
+/**
+ * ⭐ 别人**分享出来的**那次挑战 —— 走公开路径，不需要登录、也不校验归属。
+ *
+ * ⚠️ 结果页两个视角共用一套渲染：本人走上面那个（服务端会校验归属），
+ *    不是本人（或没登录）时落到这里 —— 服务端只给公开信息，
+ *    录音地址也只在这条提交是公开的时候才给。
+ * ⚠️ 路径不在 /api 下面：那条路径上全是鉴权中间件（见服务端 routes/share.ts）。
+ */
+export function fetchSubmissionShare(submissionId: string): Promise<ChallengeShareResponse> {
+  return request<ChallengeShareResponse>('/share/challenge/' + submissionId)
+}
+
+/**
+ * ⭐ 拿这段录音的**可播地址** —— 「我的挑战」列表里那个播放按钮。
+ *
+ * ⚠️ 地址是**单独授权、会过期**的，所以不能缓存、也不能提前批量取：
+ *    每一步都按用户真正点下去那一下来（理由见服务端那条路由）。
+ * ⚠️ 云端那条路第一次播放可能在服务端转一次码，给它正常预算就够了；
+ *    转好的副本会留在对象存储里，之后就只是一次元数据查询。
+ */
+export function fetchSubmissionAudio(submissionId: string): Promise<SubmissionAudioResponse> {
+  return request<SubmissionAudioResponse>('/api/submissions/' + submissionId + '/audio')
 }

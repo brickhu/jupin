@@ -1,15 +1,16 @@
 import {
-  AUDIO_SPEC,
   MS_PER_WORD,
   PREFLIGHT,
-  formatScore,
-  type LeaderboardRow,
-  type ScoreParts,
+  RECORD_SPEC,
   WORD_GREEN_LINE,
-  pcmToWav,
+  formatScore,
+  WORD_RED_LINE,
+  peakBars,
+  samplesFromPcm16,
+  sniffAudioContainer,
   today,
 } from '@jushuo/shared'
-import type { ScoreDimensions, StreakDelta, SubmitResponse } from '@jushuo/shared'
+import type { SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
 import {
@@ -20,9 +21,11 @@ import {
   submitReading,
 } from '../../lib/api/client'
 import { uploadAudio } from '../../lib/api/upload'
+import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
+import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { Recorder, type RecordResult } from '../../lib/audio/recorder'
 import { fetchArticleContent } from '../../lib/content'
-import { ensureJoined } from '../../lib/join'
+import { CHALLENGE_PAGE } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import { refreshPreviousPage } from '../../lib/refresh-previous'
@@ -30,7 +33,6 @@ import {
   clearLastRecording,
   loadLastRecording,
   recordingKeyOf,
-  replayPathOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -58,38 +60,36 @@ const WAVE_CANVAS_ID = '#wave'
  *    看起来像音量一直很小 —— 而用户盯着这条波形就是要看"我声音够不够大"。
  */
 const WAVE_MAX_BARS = 64
+
+/**
+ * ⭐ 连续解码失败几次才认定「这个环境解不开帧」。
+ *
+ * ⚠️ 不能一帧失败就下结论：帧是**流**，某一帧恰好在编码边界上解不开是正常的。
+ *    取 3：既有容错，又不会让开发者工具里白等太久（每帧还带 1.5 秒超时）。
+ */
+const FRAME_DECODE_TRIES = 3
 /** 柱条填充色 —— 与 uno.config.mjs 的 theme.colors.brand 保持一致（手写 CSS 取不到那个 token） */
 const WAVE_COLOR = '#4f46e5'
 
 /**
- * ⚠️⚠️ 这一帧看着像**音频容器**（WebM / WAV / Ogg / mp3-ID3）而不是裸 PCM 吗？
+ * ⚠️⚠️ 这一帧里装的是**采样**（能画波形），还是**编码后的码流**（画不了）？
  *
- *    这件事必须认出来，否则声波会**看起来像坏了**：
- *    开发者工具给的帧是 **WebM/Opus 压缩块**（本项目实测并记录在
- *    docs/research/recorder-output-formats.md），按 16bit PCM 读出来的
- *    恰好是"接近满量程的噪声"（RMS ≈ -4.8dB）—— 于是每根柱子都被拉满、
- *    一动不动，用户看到的就是一整条不响应的色块。
+ *    ⭐ 判据直接复用 @jushuo/shared 的 `sniffAudioContainer` —— **服务端解码前
+ *    用的是同一个函数**。两端各写一份的话，会出现「服务端解得开、客户端却认定
+ *    它不能画」这种谁也说不清的状态。
  *
- *    ⚠️ 只认 magic，不认"像不像"：真机链路**没有任何 magic**（裸 PCM 就是裸的），
- *       所以这里判不出来是正常的、也是对的 —— 判出来了才说明帧根本不是 PCM。
- *    ⚠️ 服务端有同一件事的完整版（services/audio.ts 的 sniffAudioContainer，
- *       认出来之后交给 ffmpeg 解码）。这里只做"要不要画柱子"这一个判断，
- *       所以只覆盖容器头，不做任何解码。
+ *    ⚠️ 为什么非要认这一步：`frameBuffer` 官方只写了「录音分片数据」四个字，
+ *       而本项目**实测**同一个 API 会给两种完全不同的东西 ——
+ *       真机（format:'PCM'）是裸 PCM，开发者工具是 WebM/Opus 压缩块
+ *       （见 docs/research/recorder-output-formats.md）。
+ *       把压缩字节按 16bit PCM 读，得到的是「接近满量程的噪声」（RMS ≈ -4.8dB）——
+ *       每根柱子都被拉满、一动不动，用户看到的就是一整条不响应的色块。
+ *
+ *    ⚠️ `raw-pcm` 是**兜底**值（裸 PCM 没有任何 magic）：判不出来是正常的，
+ *       那正是真机的情况 —— 照画。
  */
-function looksLikeContainer(pcm: ArrayBuffer): boolean {
-  const b = new Uint8Array(pcm)
-  if (b.byteLength < 4) return false
-  const [b0, b1, b2, b3] = [b[0], b[1], b[2], b[3]]
-  return (
-    // EBML（WebM / Matroska）—— 开发者工具给的就是它
-    (b0 === 0x1a && b1 === 0x45 && b2 === 0xdf && b3 === 0xa3) ||
-    // RIFF（WAV）
-    (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46) ||
-    // OggS
-    (b0 === 0x4f && b1 === 0x67 && b2 === 0x67 && b3 === 0x53) ||
-    // ID3（mp3 带标签）
-    (b0 === 0x49 && b1 === 0x44 && b2 === 0x33)
-  )
+function framesAreSamples(pcm: ArrayBuffer): boolean {
+  return sniffAudioContainer(new Uint8Array(pcm)) === 'raw-pcm'
 }
 
 /**
@@ -126,17 +126,32 @@ function looksLikeContainer(pcm: ArrayBuffer): boolean {
 
 type Phase = 'loading' | 'ready' | 'recording' | 'recorded' | 'submitting' | 'done'
 
-/** 逐词着色阈值 —— 只影响展示，不影响分数 */
+/** 分项 / 逐词的着色阈值 —— 只影响展示，不影响分数 */
 /**
- * ⭐ 标绿的分界线直接取自共享常量：**算分用的「绿词」就是用户看到的绿字**。
+ * ⭐ 两条线都取自共享常量：**算分用的「绿词」就是用户看到的绿字**。
  * ⚠️ 两处各写一个 85 的话，一旦哪天只改了一边，
  *    用户就会看到「这几个词明明是绿的，为什么没上 90」—— 解释链当场断掉。
+ * ⚠️ 逐词那一档的**判断本身**（绿 / 红 / 墨）在 shared 的 wordLevel() 里，
+ *    因为「我的挑战」列表也要把同一句重新上色（见那里的说明）。
  */
 const WORD_GOOD = WORD_GREEN_LINE
-const WORD_BAD = 60 // < 标红：明显有问题
+/** < 标红：明显有问题 */
+const WORD_BAD = WORD_RED_LINE
 
 /** 只在开发者工具里为真 */
 const IS_DEVTOOLS = PLATFORM === 'devtools'
+
+/**
+ * ⭐ **实时波形有没有数据源** —— 由录音格式决定（见 RECORD_SPEC）。
+ *
+ * ⚠️ `onFrameRecorded` 只在 `format` 是 **mp3 / pcm** 时才回调（官方文档）：
+ *    选 mp3 就是为了「压缩」和「有帧」两个都要 —— 见 RECORD_SPEC 里那张对照表。
+ *
+ * ⚠️ 它只是**初始值**：真机上一旦发现帧其实是压缩块（不是 PCM），
+ *    会当场把 waveOn 置 false（见 handleFrame 的三种结局）—— 宁可没有波形，
+ *    也不能拿压缩字节当振幅画一条骗人的柱子。
+ */
+const WAVE_ON = RECORD_SPEC.frames
 
 /**
  * 实时进度用的「每词多少毫秒」—— **可自适应**。
@@ -225,6 +240,7 @@ Page({
     phase: 'loading' as Phase,
     error: '',
 
+
     translation: '',
 
     /** 逐词渲染（提交后由云端结果着色） */
@@ -242,6 +258,11 @@ Page({
      *    而提交前横一个开关，等于让每个用户先做一个与「读好这句」无关的决定。
      */
     isPublic: true,
+    /**
+     * ⚡ 能量点数 —— 提交按钮下面那行要用它。
+     * ⚠️ 只从服务端给的 profile 里读（每次 /me 顺手补足到 3 点），端侧不自己算。
+     */
+    energy: 0,
 
     /**
      * ⭐ 能不能播标准音。
@@ -276,22 +297,28 @@ Page({
      *    波形不出来的原因有好几种，它们屏幕上长得一模一样，只能靠这行字区分。
      */
     waveDebug: '',
+    /**
+     * ⭐ 这一轮要不要画实时波形 —— 由录音格式决定（见 WAVE_ON）。
+     * ⚠️ 它必须是 data：WXML 里读不到模块常量，而画布在 wx:if 里。
+     */
+    // ⚠️ 显式标成 boolean：RECORD_SPEC.frames 是 `as const` 的 true，
+    //    不标的话这个字段会被推断成字面量类型 true，而运行时还要能置成 false（见 handleFrame）。
+    waveOn: WAVE_ON as boolean,
     uploadPercent: 0,
     /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
     scoringSeconds: 0,
 
-    result: null as SubmitResponse | null,
-    /** 本次提交带来的 streak 变化；幂等重放时为 null（不渲染这一块） */
-    streak: null as StreakDelta | null,
-    gapText: '—',
-    /** 四维得分（引擎没返回时为空数组，整块不渲染） */
-    /** 总分（展示用，一位小数）—— 别直接渲染 result.score，那会把 78 显示成 78 */
+    /**
+     * ⭐ 简版结果反馈（打完分停留的那一屏）—— 只有三样东西：
+     *    大号总分、AI 的一句话点评、AI 的提升建议。
+     *
+     * ⚠️⚠️ 详细结果（五个分项、逐词上色、榜单、分享）在 pages/challenge。
+     *    这一屏刻意只做刚读完那一下的反馈：分数够大、点评够短、下一步够清楚
+     *    （再次挑战 / 查看详情）。把详情塞回这一屏，读完看一眼就会变成读完读一屏。
+     */
     scoreText: '',
-    /** 榜单行（多带一个 scoreText，见 applyResult） */
-    leaderboard: [] as (LeaderboardRow & { scoreText: string })[],
-    dimensions: [] as DimensionView[],
-    /** 给四个数字配的一句「所以呢」—— 光有数字用户不知道该练什么 */
-    dimensionHint: '',
+    aiComment: '',
+    aiAdvice: '',
   },
 
   recorder: null as Recorder | null,
@@ -299,11 +326,20 @@ Page({
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
   gone: false,
 
-  /** 帧的格式只看**第一帧**就够了（只为了那条日志，见 drawWave） */
-  waveChecked: false,
+  /**
+   * ⭐ 这一轮的帧**走哪条路**：
+   *   'decoding' …… 还没定，正在试解码；
+   *   'decoded'  …… 平台解码器能用（真机 mp3 的正常路径）；
+   *   'pcm'      …… 这一片本来就是裸 PCM，按 16bit 读；
+   *   'off'      …… 解不开又不是 PCM → 不画了。
+   * ⚠️ 定下来之后不再反复改判：每帧都重新试一遍会让波形忽有忽无。
+   */
+  frameMode: 'deciding' as 'deciding' | 'decoded' | 'pcm' | 'off',
+  /** 连续解码失败次数 —— 到 FRAME_DECODE_TRIES 次才认定这条路走不通 */
+  frameFails: 0,
 
   /**
-   * canvas 2d 的绘制上下文 —— 没拿到之前 drawWave 直接跳过。
+   * canvas 2d 的绘制上下文 —— 没拿到之前 drawSamples 直接跳过。
    * ⚠️ 类型来自小程序自己的命名空间：小程序的 tsconfig 不含 DOM lib，
    *    全局的 CanvasRenderingContext2D 在这里根本不存在。
    */
@@ -315,8 +351,8 @@ Page({
   waveFrames: 0,
   /** 「一帧都没收到」只提示一次，别每 100ms 刷一遍 */
   waveWarned: false,
-  /** 这一轮的帧是压缩容器而非 PCM —— 用来把诊断行钉在那句话上（见 drawWave） */
-  waveContainer: false,
+  // ⚠️ 这里原来有一个 waveContainer（标记「帧是压缩块」）—— 已经不需要了：
+  //    帧走哪条路由 frameMode 记着，诊断行也是从它推出来的。
 
   /**
    * ⭐ 拿画布节点。
@@ -374,84 +410,124 @@ Page({
   },
 
   /**
-   * ⭐ 把一帧 PCM 画成波形。
+   * ⭐ 收到一帧「录音分片」—— 先解码，再画。
    *
-   * 形状：**以中线对称的实心柱条**，左边是这一帧最早的声音、右边是最新的。
-   * 幅度取每个柱条覆盖范围内的**峰值**（理由见 WAVE_MAX_BARS）。
+   * ⚠️⚠️ mp3 格式下帧里装的是 **mp3 码流**，不是采样，所以必须先解码：
+   *    用平台自带的 WebAudioContext.decodeAudioData（见 lib/audio/frame-decode.ts）。
+   *    那条路**只在真机上成立**（开发者工具里那个 API 直接不工作）。
+   *
+   * 三种结局，各自都有明确退路：
+   *   ① 解得出采样 → 照画（真机上的正常路径）；
+   *   ② 解不出来、而这一片本来就是裸 PCM → 按 16bit 小端读着画（老链路）；
+   *   ③ 解不出来、而这一片是压缩块 → **停掉波形**（宁可没有，也不画假的）。
    */
-  drawWave(pcm: ArrayBuffer) {
+  handleFrame(frame: ArrayBuffer) {
     // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
     //    页面销毁之后一帧都不该画（见 onUnload）
     if (this.gone || this.data.phase !== 'recording') return
+    if (this.frameMode === 'off') return
 
+    // 已经确认是裸 PCM：直接读，不再走解码（省一次异步往返）
+    if (this.frameMode === 'pcm') {
+      this.drawSamples(samplesFromPcm16(new Uint8Array(frame)), frame.byteLength)
+      return
+    }
+
+    void this.drawDecodedFrame(frame)
+  },
+
+  /**
+   * 解一帧再画。解不出来时，**只有在还没定下模式的情况下**才去决定退路 ——
+   * 已经确认能解码之后再偶发失败，丢掉这一帧就好，不必把整条波形关掉。
+   */
+  async drawDecodedFrame(frame: ArrayBuffer) {
+    const samples = await decodeFrameToSamples(frame)
+    if (this.gone) return
+
+    if (samples && samples.length > 0) {
+      this.frameMode = 'decoded'
+      this.frameFails = 0
+      this.drawSamples(samples, frame.byteLength)
+      return
+    }
+
+    /**
+     * ⚠️ 解码失败不立刻改判：帧是**流**，某一帧恰好在边界上解不开是正常的。
+     *    连续几帧都解不开，才说明这个环境 / 这个格式根本解不了。
+     */
+    this.frameFails++
+    if (this.frameMode !== 'deciding' || this.frameFails < FRAME_DECODE_TRIES) return
+
+    if (framesAreSamples(frame)) {
+      this.frameMode = 'pcm'
+      console.warn('[wave] 解码这条路走不通，但这一片本身就是裸 PCM —— 按 PCM 画')
+      this.drawSamples(samplesFromPcm16(new Uint8Array(frame)), frame.byteLength)
+      return
+    }
+
+    this.frameMode = 'off'
+    console.warn(
+      '[wave] 帧是编码后的音频，而这个环境解不开它（开发者工具的 WebAudio 不工作）—— ' +
+        '已停掉波形。见 docs/research/recorder-output-formats.md',
+    )
+    // ⭐ 这件事必须**同时写在屏幕上**：一块不动的空画布比没有更糟 ——
+    //    用户会以为是自己手机 / 麦克风的问题。
+    this.setData({
+      waveOn: false,
+      waveDebug: IS_DEVTOOLS ? '模拟器不提供音频解码通路 —— 波形只在真机上有意义' : '',
+    })
+  },
+
+  /**
+   * ⭐ 把一段**采样**画成波形。
+   *
+   * 形状：**以中线对称的实心柱条**，左边是这一帧最早的声音、右边是最新的。
+   * 幅度取每个柱条覆盖范围内的**峰值**（理由见 WAVE_MAX_BARS）。
+   *
+   * ⚠️ 柱高算在 @jushuo/shared 的 peakBars 里（纯函数、有单测）——
+   *    采样有两个来源（解码 / 裸 PCM），但「每根柱子多高」只能有一份实现。
+   */
+  drawSamples(samples: Float32Array, byteLength = 0) {
+    const ctx = this.waveCtx
     // ⚠️ 画布还没准备好（第一帧常常比它早到几十毫秒）→ 丢这一帧，
     //    下一帧就画得上；**不要**在这里重试查询，那会变成每帧一次 selectorQuery
-    const ctx = this.waveCtx
-    if (!ctx) return
-
-    const view = new DataView(pcm)
-    const total = pcm.byteLength >> 1
-    if (total < 2) return
-
-    this.waveFrames++
-
-    // 只看这一轮的第一帧一眼：如果它根本不是 PCM，画出来的是"压缩字节的噪声"。
-    // ⚠️ 只记日志、**不拦绘制**：开发者工具里就该看到它在动（虽然那波动没有物理意义），
-    //    拦掉只会让人以为功能坏了。真机上是裸 PCM，这条日志也不会出现。
-    if (!this.waveChecked) {
-      this.waveChecked = true
-      if (looksLikeContainer(pcm)) {
-        console.warn(
-          '[wave] 这一轮的帧不是裸 PCM（像压缩容器），波形画的是压缩字节 —— ' +
-            '开发者工具没有 PCM 通路，要看真实波形请用真机。' +
-            '见 docs/research/recorder-output-formats.md',
-        )
-        // ⭐ 这件事必须**写在屏幕上**：不然用户看到一条乱跳的波形，
-        //    会以为"波形没跟着我的声音走"，而真相是这个通路上根本没有 PCM
-        if (IS_DEVTOOLS) {
-          this.setData({ waveDebug: '模拟器给的是压缩块（不是 PCM）—— 波形只在真机上有意义' })
-        }
-        this.waveContainer = true
-      }
-    }
+    if (!ctx || samples.length === 0) return
 
     const w = this.waveW
     const h = this.waveH
     const mid = h / 2
-    const bars = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
-    const perBar = total / bars
-    const step = w / bars
-    const barW = Math.max(1, step * 0.6)
+    const barCount = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
+    const heights = peakBars(samples, barCount)
+    if (heights.length === 0) return
 
+    const step = w / heights.length
+    const barW = Math.max(1, step * 0.6)
     ctx.clearRect(0, 0, w, h)
     ctx.fillStyle = WAVE_COLOR
 
     let maxPeak = 0
-    for (let i = 0; i < bars; i++) {
-      const from = Math.floor(i * perBar)
-      const to = Math.min(total, Math.floor((i + 1) * perBar))
-      let peak = 0
-      for (let s = from; s < to; s++) {
-        const v = Math.abs(view.getInt16(s * 2, true))
-        if (v > peak) peak = v
-      }
-      // ⚠️ 最低 2px：静音时也留一条细线，不然整条波形会"消失"，
+    for (let i = 0; i < heights.length; i++) {
+      const peak = heights[i] as number
+      // ⚠️ 最低 2px：静音时也留一条细线，不然整条波形会消失，
       //    看起来像画布没渲染出来（与参考实现里的 Math.max(2, ...) 同理）
-      const barH = Math.max(2, (peak / 32768) * h * 0.92)
+      const barH = Math.max(2, peak * h * 0.92)
       ctx.fillRect(i * step + (step - barW) / 2, mid - barH / 2, barW, barH)
       if (peak > maxPeak) maxPeak = peak
     }
 
+    this.waveFrames++
     /**
-     * ⚠️ 开发者工具里把「收到几帧、多少字节、峰值多少」写在画布下方。
+     * ⚠️ 开发者工具里把「收到几帧、这一帧多少字节、峰值多少、走的哪条路」写在画布下方。
      *
      *    这一条不是装饰：波形不显示的原因有好几种（帧没来 / 画布没就绪 /
-     *    数据是压缩字节），它们在屏幕上**长得一模一样**。
-     *    没有这行字，只能靠反复猜 —— 本次就为此白跑了两轮。
+     *    解码不可用 / 数据是压缩字节），它们在屏幕上**长得一模一样**。
+     *    没有这行字，只能靠反复猜 —— 本项目为此白跑过两轮。
      *    真机上不显示（IS_DEVTOOLS 为假）。
      */
-    if (IS_DEVTOOLS && !this.waveContainer) {
-      const next = '第 ' + this.waveFrames + ' 帧 · ' + pcm.byteLength + ' 字节 · 峰值 ' + maxPeak
+    if (IS_DEVTOOLS) {
+      const next =
+        '第 ' + this.waveFrames + ' 帧 · ' + byteLength + ' 字节 · 峰值 ' + maxPeak.toFixed(2) +
+        ' · ' + (this.frameMode === 'pcm' ? '裸 PCM' : '解码后')
       // 每帧都 setData 太浪费，隔几帧写一次就够看
       if (this.waveFrames % 5 === 1) this.setData({ waveDebug: next })
     }
@@ -467,7 +543,8 @@ Page({
     ctx.fillRect(0, Math.round(h / 2) - 1, this.waveW, 2)
   },
 
-  audio: null as WechatMiniprogram.InnerAudioContext | null,
+  // ⚠️ 这里原来有一个页面私有的 InnerAudioContext —— 已搬到 lib/audio/play.ts，
+  //    因为「我的挑战」列表也要播录音，两个实例会互相抢（见那个文件的说明）。
   timer: null as ReturnType<typeof setInterval> | null,
   /** 原始词表（不带样式），渲染时再套 cls */
   plainWords: [] as string[],
@@ -477,6 +554,7 @@ Page({
    *    id 是协议层的，由受理/轮询那一步记下来更直接）。
    */
   submissionId: '',
+
   /**
    * ⭐ 这句录音的**缓存键** = hash(句子原文) + uid（见 last-recording 的边界 ①）。
    *
@@ -508,7 +586,12 @@ Page({
 
   onLoad(query: Record<string, string | undefined>) {
     this.msPerWord = loadMsPerWord()
-    this.setData({ articleId: Number(query.id) || 1, navTop: navPadTop() })
+    this.setData({
+      articleId: Number(query.id) || 1,
+      navTop: navPadTop(),
+      // ⚠️ 先拿缓存里的值画出来（store 里有上次 /me 的结果），不必等一次往返
+      energy: me.getState().profile?.energy ?? 0,
+    })
     // ⚠️ 用服务端的 day.ts 而不是本地时钟：手机时间可以随便改
     this.scheduleDate = query.date ?? today()
     void this.loadContent()
@@ -539,7 +622,9 @@ Page({
      *      · 用户在结果页上还能回听自己刚读的；
      *      · 下次进这一句不会再恢复出旧录音（防「隔天点一下提交」白拿 streak）。
      */
-    if (this.data.phase === 'done' && this.recordingKey) clearLastRecording(this.recordingKey)
+    if (this.data.phase === 'done' && this.recordingKey) {
+      clearLastRecording(this.recordingKey)
+    }
 
     /**
      * ⭐ 先立旗子再停录音。
@@ -553,14 +638,17 @@ Page({
      */
     this.gone = true
     this.recorder?.stop()
+    // ⚠️ 还要把它从「当前那个录音器」上摘下来：RecorderManager 是全局单例、
+    //    监听器摘不掉，留着它下一帧还会往这个已经没了的页面上写（见 recorder.ts）
+    this.recorder?.dispose()
     this.waveCtx = null
     this.stopTimer()
     if (this.stopWatchdog !== null) {
       clearTimeout(this.stopWatchdog)
       this.stopWatchdog = null
     }
-    this.audio?.destroy()
-    this.audio = null
+    // ⚠️ 停掉正在播的声音：用户已经离开这一页了，声音不该跟着走
+    stopAudio()
   },
 
   // ----------------------------------------------------------------
@@ -590,6 +678,7 @@ Page({
       // ⭐ 内容一到就**后台**把标准音拉到本地 —— 用户点喇叭时就不用等网络了
       this.prefetchStandardAudio()
 
+
       // ⭐ 这句子上次录的那段还在吗？在就**直接进入「已录好」**——
       //    用户不必为了接个电话就重读一遍。
       //    ⚠️ 按**句子**匹配：同一句换个日期再轮到，参考文本一字不差，
@@ -614,6 +703,8 @@ Page({
     void this.loadContent()
   },
 
+
+
   // ----------------------------------------------------------------
   // 录音
   // ----------------------------------------------------------------
@@ -627,7 +718,7 @@ Page({
     if (!this.recorder) {
       this.recorder = new Recorder({
         // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接画
-        onFrame: (pcm) => this.drawWave(pcm),
+        onFrame: (frame) => this.handleFrame(frame),
         onStop: (r) => this.handleRecorded(r),
         onError: (e) => {
           this.stopTimer()
@@ -637,16 +728,16 @@ Page({
     }
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
-    this.waveChecked = false
+    this.frameMode = 'deciding'
+    this.frameFails = 0
     this.waveWarned = false
-    this.waveContainer = false
 
     this.setData(
       {
         phase: 'recording',
         error: '',
         elapsed: '0.0',
-        waveDebug: IS_DEVTOOLS ? '准备画布…' : '',
+        waveDebug: WAVE_ON && IS_DEVTOOLS ? '准备画布…' : '',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
         audioPath: '',
@@ -659,7 +750,9 @@ Page({
        *    那正是"视图已经更新完"的时刻。放在 start() 之前还有个好处：
        *    等第一批帧到达（约 64ms 后）时画布多半已经就绪了。
        */
-      () => this.prepareWaveCanvas(),
+      () => {
+        if (WAVE_ON) this.prepareWaveCanvas()
+      },
     )
 
     const startedAt = Date.now()
@@ -715,7 +808,15 @@ Page({
     }
     this.stopTimer()
 
-    const playPath = this.writePlayableWav(r.pcm)
+    /**
+     * ⭐ 试听播的就是**录音落地的那个文件**，不再从帧拼 WAV。
+     *
+     * ⚠️ 原来要拼 WAV 是因为：真机落盘的是**裸 PCM**（没有文件头），
+     *    InnerAudioContext 播不了，只能拿帧自己造一个。
+     *    现在落盘的是 aac（微信接口的默认格式），**两个平台都能直接播** ——
+     *    那一整套绕法连同它的坑一起没了。
+     */
+    const playPath = ''
 
     // ⭐ 落盘 —— 万一片子丢了、页面退了，下次进同一天的挑战还能捡回来
     if (this.recordingKey) {
@@ -731,8 +832,8 @@ Page({
       phase: 'recorded',
       restored: false,
       // ⚠️ 两个路径是两个用途，别混：
-      //    audioPath → 原始文件，**上传**给对象存储用
-      //    playPath  → 加了 WAV 头的副本，**试听**用
+      //    audioPath → 录音落地文件：**上传**给对象存储 + **试听**都是它
+      //    playPath  → 老版本留下的「帧拼 WAV」副本，新录音恒为空串
       audioPath: r.tempFilePath,
       playPath,
       durationMs: r.durationMs,
@@ -741,47 +842,17 @@ Page({
     })
   },
 
-  /**
-   * 把裸 PCM 包上 WAV 头写成可播放文件。
-   *
-   * ⚠️⚠️ 为什么必须这么做：录音用的是 `format: 'PCM'`，落盘的是**没有文件头的裸 PCM**，
-   *    而 `wx.createInnerAudioContext` 只认 mp3 / aac / wav 这类**容器格式**，
-   *    直接播录音文件在真机上必然失败。
-   *    开发者工具里看不出来（它自己能"调试播放"），所以这个 bug 只在真机暴露。
-   */
-  writePlayableWav(pcm: ArrayBuffer): string {
-    // ⚠️ 路径来自 last-recording 的 replayPathOf(key)，别在这里再写一份字面量 ——
-    //    两边各写一份，改路径时必然漏一处，而症状是「试听没声音」，
-    //    一个看起来像音频格式问题、其实是路径问题的故障。
-    // ⚠️ 内容还没加载出来时没有键 —— 那就没有试听文件可写（也就不会有缓存）
-    if (!this.recordingKey) return ''
-    const path = replayPathOf(this.recordingKey)
-    try {
-      const wav = pcmToWav(pcm, AUDIO_SPEC.sampleRate, AUDIO_SPEC.channels, AUDIO_SPEC.bitDepth)
-      wx.getFileSystemManager().writeFileSync(path, wav)
-      return path
-    } catch (err) {
-      // 写不出来不该让录音白录 —— 只是不能试听而已，提交照旧
-      console.error('[reading] 生成试听文件失败：', (err as Error).message)
-      return ''
-    }
-  },
 
   /**
    * 试听。
    *
-   * ⚠️⚠️ **两个环境要播的不是同一个东西** —— 这是实测出来的，不是猜的：
+   * ⭐ 录音格式改成微信接口的默认值（aac）之后，这一件事**变简单了**：
+   *    落盘的那个文件本身就是能播的容器，两个平台播的都是它。
    *
-   *   |            | tempFilePath（录音文件）      | onFrameRecorded（帧）        |
-   *   | 开发者工具 | ✅ 工具自己的格式，**真声音**  | ❌ Opus 裸包，按 PCM 读是噪声 |
-   *   | 真机       | ❌ 裸 PCM，播放器不认         | ✅ 真 PCM                    |
-   *
-   *   所以：模拟器播**文件**，真机播**帧拼的 WAV**。
-   *
-   * ⚠️ 别改成「两个音源按顺序试，播不动就换下一个」——
-   *    帧拼出来的 WAV 是**合法可播的**，只是内容为噪声。
-   *    「能播」区分不了「播的是对的音频」和「播的是垃圾」，
-   *    按"能不能播"兜底一定先播垃圾、且永远不会往下退（模拟器里试听全噪音）。
+   * ⚠️ 但**老缓存**还得照顾：以前录的是裸 PCM，真机播不了，
+   *    那份「帧拼 WAV」的副本还在槽位目录里（playPath）——
+   *    所以下面那套「主音源播不出来就换备用」的逻辑留着，
+   *    它现在的唯一用途就是把老录音放出来。
    */
   async onReplay() {
     const primary = IS_DEVTOOLS ? this.data.audioPath : this.data.playPath
@@ -826,78 +897,23 @@ Page({
   },
 
   /**
-   * ⭐ 播一个音频地址 —— **整页共用一个 InnerAudioContext**。
+   * ⭐ 播一个音频地址 —— 实现已搬到 lib/audio/play.ts（**全站共用一个播放器**）。
    *
-   * ⚠️ 不要每次点击都 createInnerAudioContext：
-   *    小程序对同时存在的音频实例数量有限制，反复建而不 destroy，
-   *    点到第七八个词就会静默不播。共用一个、播前先 stop，天然只有一个。
+   * ⚠️ 为什么不再各页自建 InnerAudioContext：小程序对同时存在的实例数有限制，
+   *    反复建而不 destroy，点到第七八个词就会静默不播。
+   *    「我的挑战」列表也要播录音，那份逻辑必须是**同一份**。
    *
-   * ⚠️ 不上来就 play() —— 某些机型上 src 还没就绪，play() 会被静默忽略，
-   *    表现就是「点了没反应、也不报错」。等 canplay 再播。
+   * ⚠️ 这里只把「播完清掉正在播的标记」这件事接上来。
    */
   playUrl(src: string, what: string): Promise<void> {
-    if (!src) return Promise.reject(new Error('没有音频源'))
-
-    let audio = this.audio
-    if (!audio) {
-      audio = wx.createInnerAudioContext()
-      audio.volume = 1
-      audio.onEnded(() => this.setData({ playingWord: -1 }))
-      this.audio = audio
-    }
-
-    /**
-     * ⚠️ 返回 Promise 而不是 void：调用方要能知道「到底是播出来了，还是失败了」。
-     *    试听的备用音源逻辑完全依赖这一点（见 onReplay）。
-     * ⚠️ 成功以 **onPlay** 为准，不是「设了 src」——
-     *    设 src 只是告诉播放器「有这么个东西」。
-     */
-    return new Promise<void>((resolve, reject) => {
-      let settled = false
-      const settle = (fn: () => void) => {
-        if (settled) return
-        settled = true
-        fn()
-      }
-
-      // ⚠️ 每次播放都重挂：这些回调捕获的是**这一次**的状态，
-      //    不换掉的话上一次的闭包还会继续跑（表现为「上一次的失败提示又弹出来」）
-      audio.offCanplay?.()
-      audio.offPlay?.()
-      audio.offError?.()
-
-      audio.onCanplay(() => {
-        try {
-          audio.play()
-        } catch {
-          // 交给下面的超时兜底
-        }
-      })
-      audio.onPlay(() => settle(() => {
-        this.setData({ error: '' })
-        resolve()
-      }))
-      audio.onError((err) => settle(() => {
-        // ⚠️ 把 errCode 也带上 —— errMsg 有时很含糊，errCode 才分得清
-        //    是「文件不存在」「格式不支持」还是「解码失败」
-        console.error('[reading] ' + what + ' 播放失败', err)
-        reject(new Error(`${what}失败（${err.errCode}）：${err.errMsg}`))
-      }))
-
-      audio.stop()
-      audio.src = src
-      // ⚠️ 兜底：部分机型不触发 canplay
-      setTimeout(() => {
-        try {
-          audio.play()
-        } catch {
-          /* ignore */
-        }
-      }, 300)
-      // ⚠️ 兜底：万一 onPlay / onError 都不来，别让调用方永远挂着
-      setTimeout(() => settle(resolve), 4_000)
+    // ⚠️ 播成功就把上一次的错误提示清掉 —— 这是原来那个实现里的一句
+    //    `setData({ error: '' })`，搬走之后漏了它的话，
+    //    症状是「重试成功了，红框还挂在那儿」。
+    return playAudioUrl(src, what, () => this.setData({ playingWord: -1 })).then(() => {
+      if (this.data.error) this.setData({ error: '' })
     })
   },
+
 
   /**
    * ⭐ 进页面就**后台预拉取**这一段的标准音（整句 + 逐词）。
@@ -956,26 +972,8 @@ Page({
     }
   },
 
-  /**
-   * ⭐ 公开 / 不公开这次录音 —— **提交之后**在结果页改。
-   *
-   * ⚠️ 先乐观更新再发请求，失败回滚：一个开关等两秒才动，
-   *    用户会以为坏了并再点一次，而那一次点的是刚翻过来的状态 —— 结果什么都没变。
-   */
-  async onTogglePublic(e: WechatMiniprogram.SwitchChange) {
-    const next = e.detail.value
-    const prev = this.data.isPublic
-    if (!this.submissionId) return
-
-    this.setData({ isPublic: next })
-    try {
-      await setSubmissionVisibility(this.submissionId, next)
-    } catch (err) {
-      // ⚠️ 失败必须回滚开关：显示的和服务端不一致，比操作失败本身更糟 ——
-      //    用户会以为「关了」，而其实那段声音还是公开的
-      this.setData({ isPublic: prev, error: '设置失败：' + (err as Error).message })
-    }
-  },
+  // ⚠️ 「公开我的录音」开关已经搬到结果页（pages/challenge 的 onTogglePublic）——
+  //    提交之后才问，而提交之后用户已经在那一页上了。
 
   // ----------------------------------------------------------------
   // 提交检测
@@ -985,10 +983,10 @@ Page({
     if (!audioPath) return
     if (phase === 'submitting') return // 连点会重复上传（服务端有幂等，但白烧一次上传流量）
 
-    // ⚠️ 兜底拦截：正常路径在 index/arena 进门前就拦了，但朗读页可以被直接打开
-    //    （分享、扫码）。成绩要挂到账号上，所以这里再判一次。
-    //    ⚠️ 不要清掉录音 —— 加入完回来还能接着提交，白录一次比多问一句更贵。
-    if (!(await ensureJoined())) return
+    // ⚠️ 这里**不拦「加入过没有」**：身份（openid）是静默拿到的，而服务端在
+    //    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）。
+    //    本页可以被分享 / 扫码直接打开，那些人也一样 —— 先让他读。
+    //    昵称 / 头像只是榜上显示成什么，不是任何功能的前置条件。
 
     // ⭐ 本地预检 —— 刻意极度宽松：放行垃圾的成本极低，误伤用户的成本是流失。
     //    这里只拦「明显没录上」，真正的语音检测在引擎侧。
@@ -1029,21 +1027,19 @@ Page({
     } catch (err) {
       const e = err as ApiError
       /**
-       * ⚠️⚠️ 额度用完**不是错误，是业务规则**。
+       * ⚠️⚠️ 能量不够**不是错误，是业务规则**。
        *    所以提示语要说「接下来怎么办」，而不是「请求失败」——
        *    后者会让用户以为小程序坏了，然后反复重试（那正是要拦的行为）。
        *
-       * ⚠️ 提示语里必须带上**明天**：这是他会再回来的唯一理由。
-       *    只说"次数用完了"听着像封号，说"明天再来"才是可预期的。
+       * ⚠️ 提示语里必须带上**明天**：这是他会再回来的唯一理由（每日补足到 3 点）。
+       *    只说「能量不够」听着像封号，说「明天会补到 3 点」才是可预期的。
+       * ⚠️ 服务端已经把余额放在 payload.energy 里，直接用它，不要在端侧自己减。
        */
-      if (e.code === 'QUOTA_EXHAUSTED') {
-        const p = e.payload as { reason?: 'free' | 'cap'; dailyLimit?: number } | undefined
+      if (e.code === 'ENERGY_EXHAUSTED') {
+        const p = e.payload as { energy?: number } | undefined
         this.setData({
           phase: 'recorded',
-          error:
-            p?.reason === 'cap'
-              ? `今天已经挑战满 ${p.dailyLimit ?? 50} 次了，明天再来`
-              : '今天的 1 次免费挑战已经用完了，明天再来',
+          error: '能量不够了（还差 ' + Math.max(0, 2 - (p?.energy ?? 0)) + ' 点）—— 明天会补到 3 点，也可以充值',
         })
       } else {
         this.setData({ phase: 'recorded', error: e.message })
@@ -1111,11 +1107,17 @@ Page({
     }
   },
 
-  /** 云端权威结果：绿 = 读对，红 = 有问题 */
+  /**
+   * ⭐ 云端权威结果到手的这一刻：写 store、刷新上一页、**切到简版结果反馈**。
+   *
+   * ⚠️ 不再自动跳走：刚读完那一下用户只想看到多少分、一句点评、接下来干嘛，
+   *    所以这一屏停在原地，详情由他自己点「查看详情」进 pages/challenge。
+   * ⚠️ 顺序不能换：store 与刷新必须在这里做完 —— 用户可能直接点「再次挑战」离开，
+   *    那时再想补写就没有机会了（首页会一直停在旧数据上）。
+   */
   applyResult(result: SubmitResponse) {
     // ⭐⭐ 把结果写进全局 store —— **这一步就是「提交完返回首页会更新」的保证**。
-    //     首页/详情页订阅着它，此刻数据已经是新的了，
-    //     不用等 onShow、不用管页面还在不在栈里、也不用再刷新一次网络。
+    //     首页订阅着它，此刻数据已经是新的了，不用等 onShow、不用再刷新一次网络。
     //     ⚠️ 分数与 streak 全部用服务端给的，端侧一个数都不算。
     me.applySubmissionResult({
       // ⚠️⚠️ 键是**句子**（服务端回传的 articleId），不是日期。
@@ -1132,96 +1134,53 @@ Page({
 
     // ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**，本地这份必须清。
     //
-    //    ⚠️⚠️ 但它**不能在这里清** —— 结果页现在有「试听我的录音」，
-    //       而 clearLastRecording 会**把槽位目录整个删掉**（录音原件 + 试听 WAV），
-    //       删在这儿等于用户点开结果页，试听按钮指向的文件已经没了。
-    //    ⇒ 改成**离开这一页时**再清（见 onUnload 的说明）：
-    //      反滥用要的是「下次进这一句时不能恢复出这段录音」，
-    //      而这一页还开着的时候，用户本来就该能把刚提交的那段听一遍。
+    //    ⚠️ 结果屏上有「试听」，但它播的是**服务端那份录音**（见 pages/challenge）；
+    //       而本机这段录音是**反滥用**要防的东西（隔天点一下提交就能白拿 streak），
+    //       所以离开这一页时就清掉 —— 见 onUnload 的说明。
 
+    /**
+     * ⭐ 切到**简版结果反馈** —— 这一屏只有：大号总分 + AI 一句话点评 + AI 建议，
+     *    外加「再次挑战 / 查看详情」两个按钮。
+     *
+     * ⚠️ 为什么不再自动跳走：刚读完那一下用户要的是「多少分、哪儿不行、接下来干嘛」，
+     *    而详情（五个分项、逐词上色、榜单）属于「我想再研究一下」—— 由他自己点进去。
+     * ⚠️ 状态先落好再让用户操作：onUnload 靠 phase === 'done' 判断
+     *    这次录音已经被消费掉了（见那一段说明）。
+     */
     this.setData({
       phase: 'done',
       error: '',
-      result,
-      // ⚠️ 用服务端回传的值，不是本地猜的：用户可能已经改过，而结果会被反复拉到
-      isPublic: result.isPublic,
-      // ⚠️ 幂等重放（同一段音频重复提交）不带 streak —— 交给 wx:if 不渲染。
-      //    绝不能在端侧自己算一个「+1」补上：那会把「重发一次」显示成「又来读了一天」。
-      streak: result.streak ?? null,
-      gapText: result.gapToPrev === null ? '已是第一' : result.gapToPrev + ' 分',
-      words: this.renderScore(this.plainWords, result.words ?? []),
-      dimensions: this.renderParts(result.parts),
-      dimensionHint: this.partHint(result.parts),
       scoreText: formatScore(result.score),
-      leaderboard: result.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
+      // ⚠️ 拿不到就是空串（没配大模型 / 那次调用失败）—— 界面上整块不渲染，
+      //    而不是显示一个空标签（那看起来像坏了）。
+      aiComment: result.aiComment ?? '',
+      aiAdvice: result.aiAdvice ?? '',
     })
   },
 
   /**
-   * 分项明细 → 展示视图。
+   * 「查看详情」—— 详细结果在 pages/challenge（分项 / 逐词 / 榜单 / 分享）。
    *
-   * ⚠️ 拿不到时必须返回空数组，让整块**不渲染** ——
-   *    绝不能补 0：界面上出现「完整 0」会被理解成「我一个词都没读」。
-   *    （老成绩没有这个字段，正好走这条路。）
+   * ⚠️ 用 redirectTo 而不是 navigateTo：从详情页返回应该回到**进入朗读页之前**那一页
+   *    （首页 / 竞技场 / 我的挑战），而不是退回来对着一个已经交掉的录音界面。
    */
-  renderParts(p?: ScoreParts): DimensionView[] {
-    if (!p) return []
-    return PART_META.map(({ key, label }) => {
-      const v = p[key]
-      const level = v < WORD_BAD ? 'bad' : v < WORD_GOOD ? 'warn' : 'ok'
-      return {
-        key,
-        label,
-        // ⚠️ 统一一位小数（formatScore）—— 和总分、榜单同一口径
-        value: formatScore(v),
-        pct: Math.max(0, Math.min(100, v)),
-        textCls: `text-${level}`,
-        barCls: `bg-${level}`,
-      }
-    })
+  onOpenDetail() {
+    const url = CHALLENGE_PAGE + '?sid=' + encodeURIComponent(this.submissionId)
+    wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
   },
 
   /**
-   * 给分项配一句「所以呢」—— 说出**最拖后腿的那一项**。
-   *
-   * ⭐ 为什么值得算这一句：五个数字摆在那儿，用户不知道该练哪个。
-   *    挑出最低的那一项单独说，才是可行动的信息。
-   *
-   * ⚠️ 完整性要**优先说**：它一旦掉下来，说明句子没读完或读成了别的词 ——
-   *    那不是「某一项弱」，是这次朗读本身不成立（分数还被封了顶）。
+   * 「再次挑战」—— 另开一次干净的朗读（同一句、算今天）。
+   * ⚠️ 也用 redirectTo：这一页手上那段录音已经交掉了，留着它没有任何意义。
    */
-  partHint(p?: ScoreParts): string {
-    if (!p) return ''
-    if (p.completeness < 90) {
-      return '这次有漏读或读成了别的词 —— 先把整句读完，再谈发音'
-    }
-    // 剩下的四项里挑最低的那个说
-    const items: { key: PartKey; v: number; text: string }[] = [
-      { key: 'prosody', v: p.prosody, text: '语调偏平：重音和升降调还没出来，听着像在念字' },
-      { key: 'weakness', v: p.weakness, text: '咬字不匀：大部分词清楚，但有几个词明显没读准' },
-      { key: 'accuracy', v: p.accuracy, text: '发音有硬伤：有几个音素不对，跟着音标单独纠' },
-      { key: 'fluency', v: p.fluency, text: '流利度偏低：词与词之间卡顿多，先顺下来再求准' },
-    ]
-    const worst = items.reduce((a, b) => (b.v < a.v ? b : a))
-    return worst.v < WORD_GOOD ? worst.text : ''
+  onChallengeAgain() {
+    const url = '/pages/reading/reading?id=' + this.data.articleId + '&date=' + today()
+    wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
   },
 
-  renderScore(plain: string[], scored: SubmitWord[]): WordView[] {
-    return plain.map((text, i) => {
-      const w = scored[i]
-      if (!w) return { i, text, cls: 'text-ink' }
-      const cls =
-        w.dp !== 'normal' || w.score < WORD_BAD
-          ? 'text-bad'
-          : w.score >= WORD_GOOD
-            ? 'text-ok'
-            : 'text-ink'
-      return { i, text, cls }
-    })
-  },
 
   /**
-   * 再来一次 / 重录。
+   * 重录（录完之后那个「重录」按钮）。
    *
    * ⚠️ 必须**一起清掉缓存**：用户的意图就是「不要这一段了」。
    *    不清的话，下次再进这一页又会被恢复回来 —— 点重录等于没点。
@@ -1235,37 +1194,15 @@ Page({
       restored: false,
       audioPath: '',
       playPath: '',
-      result: null,
       durationMs: 0,
-      dimensions: [],
-      dimensionHint: '',
       words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
     })
   },
 
-  /**
-   * 返回。
-   *
-   * ⚠️⚠️ 不能直接 `wx.navigateBack()` —— 本页可能**是页面栈里的唯一一页**：
-   *      · 开发者工具「编译」时如果正停在朗读页，就是这种情况
-   *      · 真机上从分享卡片 / 扫码直达朗读页，也是这种情况
-   *    那时 navigateBack 什么都不会发生（栈里没有上一页可回），
-   *    用户会被**卡死在朗读页**。
-   *
-   *    而这正是「提交完返回首页，首页没更新」的真正原因：
-   *    首页压根不在栈里，它的 onShow 永远不会触发，
-   *    于是没有任何一次「重新拉数据」发生 —— 服务端分数早就写好了，
-   *    只是没有任何人去取。
-   *
-   *    所以栈空时改用 reLaunch：它会**新建**首页，onLoad 天然会重新拉一次。
-   */
-  onBack() {
-    if (getCurrentPages().length > 1) {
-      wx.navigateBack({ delta: 1 })
-      return
-    }
-    wx.reLaunch({ url: '/pages/index/index' })
-  },
+  // ⚠️ 这里原来有个 onBack()（结果屏的「返回」按钮用的）——
+  //    结果屏搬去 pages/challenge 之后，返回按钮也跟着走了：
+  //    那一页要应付「从分享链接直接打开」的情况（栈里只有它自己），
+  //    所以回退逻辑应当跟结果屏在一起。
 
   // ----------------------------------------------------------------
   // 工具

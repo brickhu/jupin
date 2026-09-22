@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@jushuo/shared": "workspace:*"
+    "@jushuo/shared": "workspace:*",
+    "socks-proxy-agent": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

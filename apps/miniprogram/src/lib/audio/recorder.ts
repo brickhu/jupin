@@ -1,22 +1,18 @@
-import {
-  AUDIO_SPEC,
-  detectPcmByteOrder,
-  estimateSampleRateFromFrames,
-  normalizePcmRate,
-  type PcmByteOrder,
-} from '@jushuo/shared'
+import { AUDIO_SPEC, RECORD_SPEC } from '@jushuo/shared'
 
 /**
- * 录音适配层 —— 只做「收帧 → 归一化采样率 → 转发给 Worker」，不做任何算法。
- * ⚠️ 所有音频算法都在 @jushuo/shared/audio 里（纯函数，可在 Node 里单测）。
+ * 录音适配层 —— 只做「挂监听 → 原样转发帧 → 转发停止/错误」，不做任何加工。
+ *
+ * ⚠️⚠️ 这里曾经是个「音频归一化」层（测设备采样率、逐帧重采样到 16kHz、
+ *    合并成整段 PCM）。那一套随录音格式换成 mp3 而**整段删除** ——
+ *    帧里装的是压缩码流，再按 16bit 重采样只会静默毁掉它（见 acceptFrame 的说明）。
+ *    现在帧的唯一去处是「解码成采样画波形」（lib/audio/frame-decode.ts）。
  */
 /** 一段录完的音频 */
 export interface RecordResult {
-  /**
-   * 合并后的裸 PCM（端侧分析 + 上传都给这一份）。
-   * ⭐ **已经归一化到 AUDIO_SPEC.sampleRate（16kHz）** —— 调用方不必再关心设备采样率。
-   */
-  pcm: ArrayBuffer
+  // ⚠️ 这里原来还有 pcm / sourceSampleRate / sourceByteOrder 三个字段（端侧归一化的产物）。
+  //    mp3 格式下帧是压缩码流、上传走的又是落盘文件，它们已经没有任何用处 —— 删掉，
+  //    免得下次有人以为「手里有一份现成的 16k PCM」而拿它去算别的东西。
   /**
    * ⭐ 录音落地的**本地临时文件路径** —— 上传对象存储必须要它。
    * ⚠️ 早先这里把 onStop 的参数丢了、只回传合并后的 PCM，
@@ -36,286 +32,141 @@ export interface RecordResult {
    *    而它不会报错，只会安静地给出荒谬的数字。
    */
   fileSizeBytes: number
-  /**
-   * 设备**实际**采样率（归一化之前的估计值）。
-   * ⚠️ 录音 API 的 sampleRate 只是请求值 —— 真机自检实测到过 8kHz（请求 16kHz 未生效）。
-   *    暴露出来是为了让自检页能一眼看见「到底给了多少」。
-   */
-  sourceSampleRate: number
-  /**
-   * 设备给的是**大端**还是小端 16bit。
-   *
-   * ⚠️ 这个字段值得单独暴露：实测开发者工具给的是**大端**，
-   *    而按小端读出来恰好是"满量程 + 过零率 0.5"，一度被误判成"工具给的是随机噪声"。
-   *    见 detectPcmByteOrder 的注释。
-   */
-  sourceByteOrder: PcmByteOrder
-}
-
-/**
- * ⭐ 设备音频的**实况**，在探测完成后回一次。
- *
- * ⚠️ 为什么单独开一个回调：这两个数（采样率、字节率）是判断「喂给对齐器的音频对不对」
- *    的**唯一依据**，而它们只在录音开始后的前几帧才确定。
- *    没有它们，"跟随不准"就只能靠猜 —— 而"设备其实是 8k 被当 16k 用"
- *    会让整条时间轴差整整 2 倍，症状正是"完全不准确"。
- */
-export interface RecorderInfo {
-  /**
-   * 反推出来的设备采样率。
-   * ⚠️ **0 表示测不准** —— 那时按请求值放行、不做任何重采样（保守）。
-   *    所以 0 本身就意味着"我们不知道设备给了什么"，这是要看的第一件事。
-   */
-  sourceRate: number
-  byteOrder: PcmByteOrder
-  /**
-   * 由前几帧实测的字节率（B/s）。
-   * ⭐ 16kHz / 16bit / 单声道 应当是 **32000** —— 这是不依赖"有没有说话"的硬判据。
-   */
-  bytesPerSec: number
-  /** 用了几帧得出结论 */
-  frames: number
 }
 
 export interface RecorderCallbacks {
-  /** ⚠️ 回调拿到的帧**已经归一化到 16kHz**，Worker 侧无需再做任何换算 */
-  onFrame?: (pcm: ArrayBuffer) => void
-  /** 设备音频实况（探测完成后回一次）—— 见 RecorderInfo */
-  onInfo?: (info: RecorderInfo) => void
+  /**
+   * ⭐ 一帧**原始**的录音分片（mp3 码流），**未经任何加工**。
+   * ⚠️ 想拿振幅就得先解码（见 lib/audio/frame-decode.ts）；
+   *    把它当 16bit PCM 读会得到一条满量程的假波形。
+   */
+  onFrame?: (frame: ArrayBuffer) => void
   onStop?: (result: RecordResult) => void
   onError?: (err: Error) => void
 }
 
 /**
- * 采样率探测需要至少 2 帧：只有一帧时，我们不知道这一帧跨了多少毫秒，
- * 就算不出「字节/毫秒」。所以前两帧先攒着，测出来再一起补发。
+ * ⭐ 全局唯一的录音管理器 —— **监听只挂一次**，事件路由给「当前那个 Recorder」。
+ *
+ * ⚠️⚠️ 为什么不能每个 Recorder 实例各挂一次（原来就是这么写的）：
+ *    `wx.getRecorderManager()` 返回的是**全局唯一**的单例（官方文档原话），
+ *    而它能注册的都是 `on*`，**没有任何 `off*`** —— 监听器一旦挂上就摘不掉。
+ *    于是「进朗读页 → 录音 → 退出 → 再进朗读页」会挂上第二组监听：
+ *    同一帧被处理两遍、同一次停止回调两次，而旧那一组还在往**已经销毁的页面**上写。
+ *    ⇒ 管理器与监听挂在这里（模块级），谁在录就把事件给谁。
  */
-const PRIMING_FRAMES = 2
+let manager: WechatMiniprogram.RecorderManager | null = null
+/** 当前正在录的那个实例 —— 事件只发给它 */
+let active: Recorder | null = null
 
-/**
- * ⚠️⚠️ 探测的**硬上限**。攒到这个帧数还测不准，就必须放弃、按请求值放行。
- *
- *    没有这个上限会造成一个很隐蔽的故障：`acceptFrame` 会一直攒、一直 return，
- *    **一帧都不往下发** —— 实时反馈全死、合并后的 PCM 是空的、试听也是空的，
- *    而界面上看起来只是"没有反应"，完全联想不到采样率。
- *
- *    实测：真机的字节率反推出来是 4256 / 9343 这类**不在任何合法档位上**的值，
- *    于是"测不准"是常态而不是例外 —— 必须有退出条件。
- *    4 帧 ≈ 0.5 秒，是"多等一会儿"和"别卡住"之间的折中。
- */
-const PRIMING_MAX_FRAMES = 4
+function managerOf(): WechatMiniprogram.RecorderManager {
+  if (manager) return manager
+  const m = wx.getRecorderManager()
+  m.onFrameRecorded((res) => active?.acceptFrame(res.frameBuffer))
+  m.onStop((res) => active?.handleStop(res))
+  m.onError((err) => active?.handleError(err))
+  manager = m
+  return m
+}
 
 export class Recorder {
-  /** 已归一化的帧（合并后就是上传用的 PCM） */
-  private chunks: ArrayBuffer[] = []
+  /** 这一轮录音的开始时刻 —— 时长用本地计时，不用系统回调给的值 */
   private startedAt = 0
-  private manager = wx.getRecorderManager()
-  private wired = false
-
-  /**
-   * 探测采样率期间暂存的原始帧。
-   * ⚠️ 必须连**到达时刻**一起存 —— 采样率是「字节数 ÷ 时间跨度」，
-   *    而跨度是首末时刻之差，分子不能含第一帧（见 estimateSampleRateFromFrames）。
-   */
-  private priming: { buf: ArrayBuffer; t: number }[] = []
-  /** 探测到的设备采样率；0 表示还没测出来 */
-  private sourceRate = 0
-  /** 探测到的字节序 —— 见 detectPcmByteOrder 的注释（这个坑把"字节序反了"误判成了"噪声"） */
-  private byteOrder: PcmByteOrder = 'le'
-  /** 设备实况只回一次 */
-  private infoReported = false
 
   constructor(private readonly cb: RecorderCallbacks = {}) {}
 
-  private wire(): void {
-    if (this.wired) return
-    this.wired = true
-
-    // ⭐ 实时 PCM 帧：端侧分析的数据源
-    this.manager.onFrameRecorded((res) => this.acceptFrame(res.frameBuffer))
-
-    this.manager.onStop((res) => {
-      const durationMs = Date.now() - this.startedAt
-      // ⚠️ 帧数不足（极短录音 / 设备干脆不回帧）时，用「总字节数 ÷ 录音时长」兜底；
-      //    若连兜底都测不准，就保持请求值 —— 也就是不做重采样，回到改动前的行为。
-      this.flushPriming()
-      this.sourceRate ||= AUDIO_SPEC.sampleRate
-
-      const total = this.chunks.reduce((n, b) => n + b.byteLength, 0)
-      const merged = new Uint8Array(total)
-      let off = 0
-      for (const b of this.chunks) {
-        merged.set(new Uint8Array(b), off)
-        off += b.byteLength
-      }
-      this.cb.onStop?.({
-        pcm: merged.buffer,
-        tempFilePath: res.tempFilePath,
-        durationMs,
-        fileSizeBytes: res.fileSize ?? 0,
-        sourceSampleRate: this.sourceRate,
-        sourceByteOrder: this.byteOrder,
-      })
-      this.chunks = []
-      this.priming = []
-      this.sourceRate = 0
-    })
-
-    this.manager.onError((err) => this.cb.onError?.(new Error(err.errMsg)))
-  }
-
   /**
-   * 收一帧：先在头两帧里测出设备真实采样率，之后逐帧归一化到 16kHz。
-   *
-   * ⭐ 为什么必须在**入口**就归一化：下游（VAD 计时、基频、上传给讯飞）
-   *    全都按 16kHz 硬编码。在入口转一次，整条链路就不用再知道设备给了什么。
+   * 录音结束 —— 由模块级监听转过来（见 managerOf 的说明）。
+   * ⚠️ 只有 active === this 时才会被调，所以这里不必再判自己是不是那个在录的。
    */
-  private acceptFrame(buf: ArrayBuffer): void {
-    if (this.sourceRate === 0) {
-      this.priming.push({ buf, t: Date.now() })
-      if (this.priming.length < PRIMING_FRAMES) return
-      if (this.detectRate()) {
-        this.flushPriming()
-        return
-      }
-      // ⚠️ 还没到上限就再等等；到了上限必须放行 —— 见 PRIMING_MAX_FRAMES 的注释
-      if (this.priming.length < PRIMING_MAX_FRAMES) return
-      this.sourceRate = AUDIO_SPEC.sampleRate
-      this.flushPriming()
-      return
-    }
-    this.emit(buf)
-  }
+  // ⚠️ 这一组不标 private：模块级的那几个监听器（managerOf）要调它们，
+  //    而 TS 的 private 是**类作用域**，同模块的普通函数也访问不到。
+  //    对外不需要用它们 —— 注释里写清楚「内部用」就够了。
+  /** @internal 模块级监听器转发过来的停止事件 */
+  handleStop(res: WechatMiniprogram.OnStopListenerResult): void {
+    const durationMs = Date.now() - this.startedAt
 
-  /**
-   * 反推采样率 + 判定字节序。
-   *
-   * ⚠️ 只在**攒够 PRIMING_MAX_FRAMES 帧之前**被调用，所以这里的入参永远只有几帧 ——
-   *    绝不要让它去扫一个不断增长的数组：那是 O(n²)，
-   *    而且会掩盖"其实早就该放弃"这件事。
-   */
-  private detectRate(): boolean {
-    const frames = this.priming
-    if (frames.length < 2) return false
-
-    // ⭐ 顺手定字节序：设备不会中途换，两帧（4~8KB）足够判断
-    const total = frames.reduce((n, f) => n + f.buf.byteLength, 0)
-    const merged = new Uint8Array(total)
-    let off = 0
-    for (const f of frames) {
-      merged.set(new Uint8Array(f.buf), off)
-      off += f.buf.byteLength
-    }
-    this.byteOrder = detectPcmByteOrder(merged)
-
-    /**
-     * ⚠️⚠️ 采样率**只能**用 estimateSampleRateFromFrames 算，别在这里手搓 ——
-     *    它里面那个「分子不含第一帧」的细节是一个真实毁掉过真机录音的坑：
-     *    含第一帧会把 16kHz 算成 32kHz，于是音频被重采样成一半长，
-     *    试听快一倍、高一个八度，听起来根本不像本人。
-     *    详见 packages/shared/src/audio/resample.ts 的注释与 sample-rate.test.ts。
-     */
-    const rate = estimateSampleRateFromFrames(
-      frames.map((f) => ({ bytes: f.buf.byteLength, t: f.t })),
-      AUDIO_SPEC.channels,
-      AUDIO_SPEC.bitDepth,
-    )
-    if (rate === 0) return false
-    this.sourceRate = rate
-    return true
-  }
-
-  /**
-   * 把暂存帧按测出的采样率归一化后补发。
-   *
-   * ⚠️ sourceRate 为 0（测不准）时保持请求值 —— 等价于**不做任何重采样**，
-   *    也就是回到引入归一化之前的行为。宁可不动数据，也不要按一个瞎猜的比例毁掉音频。
-   */
-  private flushPriming(): void {
-    if (this.priming.length === 0) return
-    this.sourceRate ||= AUDIO_SPEC.sampleRate
-    this.reportInfo() // ⚠️ 必须在清空 priming 之前
-    for (const f of this.priming) this.emit(f.buf)
-    this.priming = []
-  }
-
-  /**
-   * 把设备实况回给上层 —— 只回一次。
-   *
-   * ⚠️ 字节率用的是**第 2 帧起**的字节数除以首末时刻之差，
-   *    与 estimateSampleRateFromFrames 同一口径（分子不能含第一帧）。
-   */
-  private reportInfo(): void {
-    if (this.infoReported) return
-    this.infoReported = true
-
-    const frames = this.priming
-    let bytesPerSec = 0
-    if (frames.length >= 2) {
-      const first = frames[0] as { buf: ArrayBuffer; t: number }
-      const last = frames[frames.length - 1] as { buf: ArrayBuffer; t: number }
-      const spanMs = last.t - first.t
-      const payload = frames.slice(1).reduce((n, f) => n + f.buf.byteLength, 0)
-      if (spanMs > 0) bytesPerSec = Math.round((payload / spanMs) * 1000)
-    }
-
-    this.cb.onInfo?.({
-      sourceRate: this.sourceRate,
-      byteOrder: this.byteOrder,
-      bytesPerSec,
-      frames: frames.length,
+    this.cb.onStop?.({
+      tempFilePath: res.tempFilePath,
+      durationMs,
+      fileSizeBytes: res.fileSize ?? 0,
     })
   }
 
-  private emit(buf: ArrayBuffer): void {
-    // ⚠️ 恒等变换只在「采样率一致 **且** 字节序本来就是小端」时成立 ——
-    //    大端设备必须走一遍转换，把数据归一化成小端（下游一律按小端处理）
-    const identity = this.sourceRate === AUDIO_SPEC.sampleRate && this.byteOrder === 'le'
-    const out = identity
-      ? buf
-      : (normalizePcmRate(
-          new Uint8Array(buf),
-          this.sourceRate,
-          AUDIO_SPEC.sampleRate,
-          this.byteOrder,
-        ).buffer as ArrayBuffer)
-    this.chunks.push(out)
-    this.cb.onFrame?.(out)
+  /** @internal 模块级监听器转发过来的错误事件 */
+  handleError(err: WechatMiniprogram.GeneralCallbackResult): void {
+    this.cb.onError?.(new Error(err.errMsg))
+  }
+  /**
+   * ⭐ 收到一帧，**原样**交给上层。
+   *
+   * ⚠️⚠️ 这里原来有一整套「测设备采样率 → 逐帧重采样到 16kHz → 合并成整段 PCM」，
+   *    已经整段删掉，因为它的前提**不成立了**：
+   *      · 那时帧是裸 PCM（format:'PCM'），而下游要 16kHz；
+   *      · 现在的录音格式是 mp3（见 RECORD_SPEC），帧里装的是**压缩码流** ——
+   *        再按 16bit 去重采样，等于把码流按错误的采样率又采一遍，
+   *        解出来必然是噪声，而且是**静默**的（波形照样有柱子，只是与声音无关）；
+   *      · 上传给讯飞的音频也不再来自帧：现在传的是录音落地的那个文件
+   *        （见 reading 页的 handleRecorded），帧只服务实时波形。
+   *    ⇒ 帧的唯一去处是「解码成采样画波形」（lib/audio/frame-decode.ts），
+   *      解码器要的是**原始分片**，任何加工都是破坏。
+   */
+  /** @internal 模块级监听器转发过来的一帧（见 managerOf 的说明） */
+  acceptFrame(buf: ArrayBuffer): void {
+    this.cb.onFrame?.(buf)
   }
 
   /**
-   * @param opts.frameSizeKb 覆盖 frameSize（真机自检的扫描测试用）。
+   * 开始录音（参数见 @jushuo/shared 的 RECORD_SPEC）。
+   *
+   * ⚠️ 只有 mp3 / pcm 支持帧回调（官方文档），所以只有这两种格式才传 frameSize ——
+   *    给不支持的格式传它，轻则被忽略、重则整个 start 失败，
+   *    而后者表现为「点了开始朗读没反应」，极难定位。
+   *
+   * @param opts.frameSizeKb 覆盖 frameSize（仅 mp3/pcm 用得上）。
+   *
+   * @param opts.frameSizeKb 覆盖 frameSize（仅 mp3/pcm 用得上）。
    *        ⚠️ frameSize 只是**请求值**，设备可能不严格采纳 —— 见 AUDIO_SPEC 的注释。
-   * @param opts.format 覆盖录音格式（**仅自检用**）。
-   *        ⚠️ 正式链路必须用 PCM：讯飞要裸 PCM，且端侧实时分析也要原始帧。
-   *        开放它只是为了回答一个问题 —— **mp3 模式下 onFrameRecorded 给的帧
-   *        到底是压缩块还是原始 PCM**。若是 PCM，整条存储方案都能简化。
+   * @param opts.format 覆盖录音格式（仅试验 / 自检用）。
    */
-  start(opts: { frameSizeKb?: number; format?: 'PCM' | 'mp3' } = {}): void {
-    this.wire()
-    this.chunks = []
-    this.priming = []
-    this.sourceRate = 0
-    this.infoReported = false
+  start(opts: { frameSizeKb?: number; format?: 'PCM' | 'mp3' | 'aac' | 'wav' } = {}): void {
+    // ⭐ 从现在起事件归我 —— 模块级监听只认 active（见 managerOf 的说明）
+    active = this
     this.startedAt = Date.now()
-    this.manager.start({
+
+    const format = opts.format ?? RECORD_SPEC.format
+    /**
+     * ⚠️ 只有 mp3 / pcm 支持帧回调（官方文档）。给不支持的格式传 frameSize，
+     *    轻则被忽略、重则整个 start 失败 —— 而后者表现为「点了开始朗读没反应」，
+     *    极难定位。所以不支持就干脆不传这个参数。
+     */
+    const framesSupported = format === 'mp3' || format === 'PCM'
+
+    managerOf().start({
       // ⚠️ 官方限制：duration 最大 600000（10 分钟）
       duration: 60_000,
       // ⚠️ sampleRate 只是**请求值**：实测在 PC 上无效，真机自检也量到过 8kHz。
-      //    真正的采样率由 Recorder 从字节流反推，并逐帧归一化到 16kHz。
+      //    帧链路上，真正的采样率由 Recorder 从字节流反推、逐帧归一化到 16kHz。
       sampleRate: AUDIO_SPEC.sampleRate,
       // ⚠️ 默认值是 2（双声道）！不显式传 1 会拿到立体声，与引擎要求不符
       numberOfChannels: AUDIO_SPEC.channels,
       // ⚠️ 必须落在 sampleRate 对应的合法区间：16000Hz → 24000 ~ 96000
-      encodeBitRate: 48_000,
-      // ⭐ 直出裸 PCM，与引擎零转码
-      // ⚠️ frameSize 单位是 KB 且必须是整数；官方限定「暂仅支持 mp3、pcm 格式」
-      format: opts.format ?? 'PCM',
-      frameSize: opts.frameSizeKb ?? AUDIO_SPEC.frameSizeKb,
+      encodeBitRate: RECORD_SPEC.encodeBitRate,
+      format,
+      ...(framesSupported ? { frameSize: opts.frameSizeKb ?? RECORD_SPEC.frameSizeKb } : {}),
     })
   }
 
   stop(): void {
-    this.manager.stop()
+    managerOf().stop()
+  }
+
+  /**
+   * ⚠️ 页面销毁时**必须**调：不清掉的话，active 还指着这个已经没了的页面，
+   *    下一帧会往它身上写（`setData on destroyed page`）。
+   *    ⚠️ 只清「自己还是 active」的情况 —— 别把新页面刚接上的那一个清掉。
+   */
+  dispose(): void {
+    if (active === this) active = null
   }
 }
