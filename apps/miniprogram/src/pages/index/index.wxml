@@ -175,15 +175,27 @@
          连战记录页（日历 + 领奖）的入口因此只留状态卡那一处。
     -->
 
-    <!-- ══ 成长榜 ═══════════════════════════════════════════
+    <!-- ══ 荣誉榜 ═══════════════════════════════════════════
          ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板里那三个数**完全一致**
             （直接读 users.growth_*，不从 submissions 现算 —— 否则会出现
              「榜上的数和面板里的数不一样」这种没法解释的差）。
          ⚠️ 数据单独一个接口（/api/leaderboards/growth）、**不 await**：
-            它在页面最下方，首页上半段没理由等它；拉不到就是这三块不出现。
+            它在页面最下方，首页上半段没理由等它；拉不到就是这一整块不出现。
          ⚠️ 图标与用户面板里那三个数一致（📈 自我超越 / 🔥 孜孜不倦 / 🏔️ 鹤立鸡群）。 -->
     <block wx:if="{{boardsLoaded}}">
-      <view class="bg-white rounded-2.5 p-4 mt-4" wx:for="{{boardList}}" wx:key="key">
+      <!--
+        ⚠️ 分割标题与「今日挑战」「历史挑战」是同一套：
+           同一档字号（text-28rpx font-semibold）+ 同一处缩进（px-1）+ 靠左 ——
+           三个分组标题长得一样，用户才知道它们是并列的三段。
+        ⚠️ 它在这块**里面**（跟着 boardsLoaded 一起出现）：
+           数据没回来就先亮一个标题、底下空着，比晚半秒出现更难解释。
+      -->
+      <view class="pt-6 pb-2 px-1">
+        <text class="text-28rpx font-semibold text-ink">荣誉榜</text>
+      </view>
+      <!-- ⚠️ 卡片类名与「历史挑战」那串**一字不差**（连间距也一致）：
+           两者的差异只该是内容，不该是排版 -->
+      <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{boardList}}" wx:key="key">
         <text class="text-28rpx font-semibold text-ink">{{item.title}}</text>
 
         <view class="flex items-center py-2" wx:for="{{item.rows}}" wx:for-item="row" wx:key="rank">
