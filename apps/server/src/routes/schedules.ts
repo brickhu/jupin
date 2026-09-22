@@ -72,21 +72,10 @@ schedulesRoutes.get('/', async (c) => {
    *    展示层**」，竞技数据的单位永远是**句子**（排名/人数/最高分全按 article_id 查）。
    *    ⇒ 首页下半段要列的是「句库里还有哪些竞技场」，不是「过去哪几天排过」。
    *
-   * ⚠️ 但 arena 页目前仍按**日期**寻址，所以每个句子还要带上「它最近一次排在过去的哪一天」；
-   *    没排过期的句子先不列（点进去会打开另一句的竞技场，比不显示更糟）。
+   * ⚠️ 每个句子点进去走的是**按句子寻址**的 arena 路由（/api/arenas/:articleId），
+   *    所以这里既不需要「它最近排在哪天」，也不需要「必须排过期的才列」。
    *    挑选规则在 services/schedule-shape.ts（有单测）。
    */
-  const latestRows = await db
-    .select({ date: schedules.date, articleId: schedules.articleId, source: schedules.source })
-    .from(schedules)
-    .where(lt(schedules.date, date))
-    .orderBy(desc(schedules.date))
-  /** 每个句子只留最近一次 —— 结果已按日期倒序，第一条命中的就是最近的 */
-  const latestOf = new Map<number, { date: string; source: string }>()
-  for (const r of latestRows) {
-    if (!latestOf.has(r.articleId)) latestOf.set(r.articleId, { date: r.date, source: r.source })
-  }
-
   const candidateRows = await db
     .select({
       articleId: articles.id,
@@ -96,17 +85,12 @@ schedulesRoutes.get('/', async (c) => {
     .from(articles)
     .where(eq(articles.isActive, true))
     .orderBy(desc(articles.id))
-  const candidates = candidateRows.flatMap((a) => {
-    const s = latestOf.get(a.articleId)
-    /**
-     * ⚠️ 只列**排过期**的句子：arena 页是按日期寻址的（/api/schedules/:date），
-     *    没排过期的句子点进去会打开**另一句**的竞技场 —— 那比不显示更糟。
-     *    ⇒ 新句要等它第一次排期过去之后才会出现在这里（轮转保证几天内必到）。
-     *    正解是给 arena 页加「按句子寻址」的路由，那是另一件事。
-     */
-    return s ? [{ ...a, date: s.date, source: s.source }] : []
-  })
-  const historyRows = pickHistoryArticles(candidates, todayPick.article.id, limit)
+  /**
+   * ⚠️ **不再要求「排过期」**：arena 页现在按句子寻址（/api/arenas/:articleId），
+   *    所以刚上线、还没轮到过的新句也能直接点进去看它的竞技场（当时是空的）。
+   *    （这一条以前是个真实限制：新句要等第一次排期过去才出现。）
+   */
+  const historyRows = pickHistoryArticles(candidateRows, todayPick.article.id, limit)
 
   /** 今日 + 历史涉及的全部句子 —— 统计/正文/音频都按句子算一次 */
   const articleById = new Map<
@@ -118,7 +102,7 @@ schedulesRoutes.get('/', async (c) => {
     contentJson: todayPick.article.contentJson,
     standardAudio: todayPick.article.standardAudio,
   })
-  for (const c of candidates) {
+  for (const c of historyRows) {
     articleById.set(c.articleId, {
       id: c.articleId,
       contentJson: c.contentJson,
@@ -158,18 +142,12 @@ schedulesRoutes.get('/', async (c) => {
     }),
   )
 
-  /** 一行排期 → 一张卡片。⚠️ 文章查不到（被删/被归档）时返回 null，由调用方丢掉 */
-  const toEntry = (d: string, articleId: number, source: string): ScheduleEntry | null => {
-    const a = articleById.get(articleId)
-    if (!a) return null
+  /** 卡片里与「哪一天」无关的那部分 —— 今日和历史共用 */
+  const commonOf = (articleId: number, contentJson: string): Omit<ScheduleEntry, 'articleId'> | null => {
     const st = stats.get(articleId)
     return {
-      date: d,
-      articleId,
-      text: byContentJson.get(a.contentJson)?.text ?? '',
-      translation: byContentJson.get(a.contentJson)?.translation ?? '',
-      isScheduled: source === 'scheduled',
-      isToday: d === date,
+      text: byContentJson.get(contentJson)?.text ?? '',
+      translation: byContentJson.get(contentJson)?.translation ?? '',
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
       myBest: st?.myBest ?? null,
@@ -178,13 +156,34 @@ schedulesRoutes.get('/', async (c) => {
     }
   }
 
-  const todayCard = toEntry(date, todayPick.article.id, todayPick.source)
-  if (!todayCard) {
+  /**
+   * ⭐ 今日那一张：**只有它有**日期 / 是不是运营排的 / 是不是今天
+   *    （「日期只是编辑精选的容器」，这三个字段描述的正是那个容器）。
+   */
+  const todayArticle = todayPick.article
+  const common = commonOf(todayArticle.id, todayArticle.contentJson)
+  if (!common) {
     return c.json({ ok: false, error: '今天的排期指向了不存在的句子' }, 503)
   }
-  const history = historyRows
-    .map((r) => toEntry(r.date, r.articleId, r.source))
-    .filter((x): x is ScheduleEntry => x !== null)
+  const todayCard: ScheduleEntry = {
+    date,
+    articleId: todayArticle.id,
+    isScheduled: todayPick.source === 'scheduled',
+    isToday: true,
+    ...common,
+  }
+
+  /**
+   * ⭐ 历史卡片：来自**句库**，与「哪一天」无关 —— 所以一个日期字段都不带。
+   *    点进去走按句子寻址的 arena（/api/arenas/:articleId）。
+   *    ⚠️ 内容查不到的句子直接丢掉（理论上不会，取数时已经带了 contentJson）。
+   */
+  const history: ScheduleEntry[] = []
+  for (const row of historyRows) {
+    const c = commonOf(row.articleId, row.contentJson)
+    if (!c) continue
+    history.push({ articleId: row.articleId, ...c })
+  }
 
   return c.json({ ok: true, data: { date, today: todayCard, history, streak } })
 })
@@ -223,6 +222,8 @@ schedulesRoutes.get('/:date', async (c) => {
 
   const detail: ScheduleDetail = {
     date,
+    // ⚠️ 按日期进来 = 「回到那一天再挑战一次」⇒ 归到那一天
+    submissionDate: date,
     articleId: pick.article.id,
     text: content?.text ?? '',
     translation: content?.translation ?? '',

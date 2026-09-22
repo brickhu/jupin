@@ -75,7 +75,7 @@
 
     <!-- ── 入口 ──────────────────────────────────────────── -->
     <view class="mt-4 text-center py-[30rpx] rounded-full bg-brand text-white text-32rpx font-medium" bindtap="onStart">{{action}}</view>
-    <text class="text-22rpx text-faint block text-center mt-2.5" wx:if="{{isToday}}">读完今天这一句，连续天数就接上了</text>
+    <text class="text-22rpx text-faint block text-center mt-2.5" wx:if="{{isToday}}">今天读一句，连续天数就接上了</text>
     <text class="text-22rpx text-faint block text-center mt-2.5" wx:else>这是过去某一天的挑战 —— 重读的成绩会算进那一天</text>
   </block>
 </view>

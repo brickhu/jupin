@@ -93,7 +93,7 @@
               不是把日期横在句子旁边。
            ⚠️ 箭头是「点卡片进详情」的**唯一提示** —— 卡片底部还有一个按钮，
               不给提示的话「点哪儿都一样」的错觉会让人以为自己点错了。 -->
-      <view class="flex items-center mb-3" data-date="{{today.date}}" bindtap="onOpenDetail">
+      <view class="flex items-center mb-3" data-article="{{today.articleId}}" bindtap="onOpenDetail">
         <!-- ⭐ 圆形播放按钮 + 时长。
              ⚠️ catchtap 是必须的：不 catch 会冒泡到整张卡片，变成「点播放却进了详情页」。
              ⚠️ 没有标准音（audio 为 null）时整块不渲染 —— 而不是给一个点了没反应的图标。
@@ -113,11 +113,11 @@
         <text class="text-36rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
       </view>
 
-      <view class="flex items-start" data-date="{{today.date}}" bindtap="onOpenDetail">
+      <view class="flex items-start" data-article="{{today.articleId}}" bindtap="onOpenDetail">
         <text class="text-44rpx leading-[1.5] font-semibold text-ink flex-1">{{today.text}}</text>
       </view>
 
-      <view class="mt-3" data-date="{{today.date}}" bindtap="onOpenDetail">
+      <view class="mt-3" data-article="{{today.articleId}}" bindtap="onOpenDetail">
         <text class="text-26rpx text-faint leading-[1.6] block">{{today.translation}}</text>
       </view>
 
@@ -145,8 +145,8 @@
          ⚠️ 刻意不放按钮：历史是一串同构卡片，每张都挂一个实心按钮，
             整页会变成一片按钮墙，反而看不出哪一张是今天。
             要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="date"
-          data-date="{{item.date}}" bindtap="onOpenDetail">
+    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="articleId"
+          data-article="{{item.articleId}}" bindtap="onOpenDetail">
       <view class="flex items-center mb-2">
         <!-- ⭐ 圆形播放按钮 + 时长（与今日卡片同构，理由见上面那段注释） -->
         <view class="idx-play {{playingArticle === item.articleId ? 'idx-play-on' : ''}}"

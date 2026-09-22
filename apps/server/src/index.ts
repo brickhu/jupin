@@ -18,6 +18,7 @@ import { mediaRoutes } from './routes/media'
 import { shareRoutes } from './routes/share'
 import { schedulesRoutes } from './routes/schedules'
 import { shopRoutes } from './routes/shop'
+import { arenasRoutes } from './routes/arenas'
 import { payRoutes } from './routes/pay'
 
 const app = new Hono()
@@ -151,6 +152,7 @@ app.use('/api/uploads/*', authMiddleware)
 app.use('/api/user/*', authMiddleware)
 app.use('/api/schedules/*', authMiddleware)
 app.use('/api/shop/*', authMiddleware)
+app.use('/api/arenas/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
@@ -160,6 +162,8 @@ app.route('/api/user', userRoutes)
 app.route('/api/schedules', schedulesRoutes)
 // ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）
 app.route('/api/shop', shopRoutes)
+// ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
+app.route('/api/arenas', arenasRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

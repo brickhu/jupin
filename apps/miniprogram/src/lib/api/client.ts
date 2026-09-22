@@ -1,5 +1,6 @@
 import type {
   ApiResult,
+  ArenaDetail,
   ChallengesResponse,
   EnergyResponse,
   MeResponse,
@@ -615,6 +616,19 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
     data: { goodsCode, code },
     budgetMs: LAUNCH_BUDGET_MS,
   })
+}
+
+/**
+ * ⭐ 竞技场详情 —— **按句子**寻址（/api/arenas/:articleId）。
+ *
+ * ⚠️⚠️ 这才是竞技场的正经地址：日期只是「编辑精选的容器」，和竞技场无关
+ *    （排名 / 人数 / 最高分 / 我的最好成绩全部按 article_id 查）。
+ * ⚠️ 与 fetchScheduleDetail 的分工：
+ *    · 这个：我看**这一句**的竞技场 —— 挑战它算**今天**（用响应里的 submissionDate）
+ *    · 那个：回到**某一天**的挑战再读一次 —— 挑战它算**那一天**
+ */
+export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
+  return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function fetchMe(): Promise<MeResponse> {

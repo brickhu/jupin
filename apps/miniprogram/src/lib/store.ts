@@ -267,8 +267,15 @@ export function applySchedules(res: SchedulesResponse): void {
   commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile })
 }
 
-/** 用排期详情接口的返回值刷新 */
-export function applyScheduleDetail(d: ScheduleDetail): void {
+/**
+ * 用竞技场详情的返回值刷新。
+ * ⚠️ 只取三个与「哪一天」无关的字段 —— 所以**两种详情都能喂进来**：
+ *    ScheduleDetail（按日期寻址）与 ArenaDetail（按句子寻址）。
+ *    这里刻意不收 `date`：竞技数据的键从来是 articleId（见文件头）。
+ */
+export function applyScheduleDetail(
+  d: Pick<ScheduleDetail, 'articleId' | 'myBest' | 'myAttempts'>,
+): void {
   const arena = { ...state.arena }
   arena[d.articleId] = { myBest: d.myBest, myAttempts: d.myAttempts }
   commit({ ...state, arena })

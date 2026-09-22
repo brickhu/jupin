@@ -1,6 +1,6 @@
 import { startButtonLabel } from '@jushuo/shared'
-import type { ScheduleDetail } from '@jushuo/shared'
-import { fetchScheduleDetail } from '../../lib/api/client'
+import type { ArenaDetail, ScheduleDetail } from '@jushuo/shared'
+import { fetchArenaDetail, fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -12,9 +12,17 @@ import * as me from '../../lib/store'
  * ⭐ 与首页卡片的分工：卡片是「一眼扫过去」，本页是「看进去」：
  *    完整的排行榜、我的名次、以及从这里进入朗读。
  *
- * ⚠️ 日期由首页原样带过来（/pages/arena/arena?date=2026-09-21）。
- *    不在本页自己算「今天」—— 手机时钟可以随便改，
- *    而这是一个**指着某一天**的页面，日期错了整页内容都是错的。
+ * ⚠️⚠️ **两种进法，两个地址**：
+ *    · `?article=12` —— ⭐ 正路：**按句子**看一个竞技场（首页卡片点进来）
+ *      日期只是「编辑精选的容器」，和竞技场无关；挑战它算**今天**
+ *    · `?date=2026-09-21` —— 「回到那一天再读一次」（参与场次 / 挑战结果页点进来），
+ *      挑战它算**那一天**（否则昨天那张卡片的数字会变）
+ *
+ * ⚠️⚠️ 页面必须记住**是从哪条路进来的**（见 this.entry）：
+ *    比如按日期进来的，重新加载时必须仍然按日期 —— 只按「已经拿到的 articleId」
+ *    重新请求的话，submissionDate 会被服务端算成**今天**，
+ *    于是「回到那一天的挑战」被悄悄记成了今天，而昨天那张卡的数字跟着变。
+ *    这种错在界面上完全看不出来（分数、榜单都对），所以只能靠这条约定守住。
  */
 Page({
   data: {
@@ -24,8 +32,10 @@ Page({
     loading: true,
     error: '',
 
-    date: '',
+    /** ⭐ 这一句的 id —— 竞技场的**地址** */
     articleId: 0,
+    /** ⭐ 从这里发起的挑战该记到哪一天（服务端给的，端侧不自己算） */
+    submissionDate: '',
     text: '',
     translation: '',
     isToday: false,
@@ -46,22 +56,31 @@ Page({
   },
 
   /** 服务端给的详情；「我」的部分渲染时从 store 取 */
-  detail: null as ScheduleDetail | null,
+  detail: null as ScheduleDetail | ArenaDetail | null,
+
+  /**
+   * ⭐ 页面是**从哪条路进来的**（见文件头那段）：
+   *    重新加载必须沿同一条路，否则 submissionDate 会被算错。
+   */
+  entry: { articleId: 0, date: '' },
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
 
   onLoad(query: Record<string, string | undefined>) {
+    /** ⭐ 优先按句子（正路）；没有 article 才退回按日期（老入口） */
+    const articleId = Number(query.article ?? 0)
     const date = query.date ?? ''
-    this.setData({ date, navTop: navPadTop() })
+    this.entry = articleId ? { articleId, date: '' } : { articleId: 0, date }
+    this.setData({ navTop: navPadTop() })
     // ⭐ 订阅全局「我的记录」：在朗读页打完分，回到这里名次与成绩立刻是新的
     this.unsubStore = me.subscribe(() => this.render())
-    void this.load(date)
+    void this.load()
   },
 
   /** 从朗读页返回时刷新 —— 刚打完的分与名次必须立刻出现在榜单上 */
   onShow() {
-    if (this.data.date && !this.data.loading) void this.load(this.data.date)
+    if (!this.data.loading) void this.load()
   },
 
   /**
@@ -81,20 +100,25 @@ Page({
     this.unsubStore = null
   },
 
-  async load(date: string) {
-    if (!date) {
-      this.setData({ loading: false, error: '缺少挑战日期' })
+  /**
+   * 拉详情。⚠️ 用 `this.entry` 决定走哪条路 —— 不传参，免得调用方漏掉（见文件头）。
+   */
+  async load() {
+    const { articleId, date } = this.entry
+    if (!articleId && !date) {
+      this.setData({ loading: false, error: '缺少竞技场地址' })
       return
     }
     this.setData({ loading: true, error: '' })
     try {
-      const d = await fetchScheduleDetail(date)
+      const d = articleId ? await fetchArenaDetail(articleId) : await fetchScheduleDetail(date)
       // ⭐ 把「我的记录」广播出去（首页那份也跟着更新）
       me.applyScheduleDetail(d)
       this.detail = d
       this.setData({
         loading: false,
         articleId: d.articleId,
+        submissionDate: d.submissionDate,
         text: d.text,
         translation: d.translation,
         isToday: d.isToday,
@@ -130,25 +154,30 @@ Page({
   },
 
   onRetry() {
-    void this.load(this.data.date)
+    void this.load()
   },
 
   /**
    * ⚠️ 没人参与过时**不要**写「0 人参与，最高得分 0」——
    *    那读起来像「这题已经凉了」，而真相是「你是第一个」。
    */
-  statText(d: ScheduleDetail): string {
+  statText(d: ScheduleDetail | ArenaDetail): string {
     if (d.participantCount === 0) return ''
     const top = d.topScore === null ? '' : '，最高得分 ' + formatScore(d.topScore)
     return d.participantCount + ' 人参与' + top
   },
 
-  /** 去朗读 —— 把这一天的日期原样带过去 */
+  /**
+   * 去朗读。
+   * ⚠️ `date` 传的是 **submissionDate**（服务端给的「这次挑战算哪天」）——
+   *    按句子进来就是今天、按日期进来就是那一天。端侧**不自己算**：
+   *    手机时钟可以随便改，而这个日期决定成绩归到哪一天。
+   */
   onStart() {
-    const { articleId, date } = this.data
-    if (!articleId || !date) return
+    const { articleId, submissionDate } = this.data
+    if (!articleId || !submissionDate) return
     // ⚠️ 不拦「加入过没有」：能不能挑战由服务端说了算，
     //    昵称/头像只是展示字段（见 pages/index/index.ts 的 onStart）。
-    wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
+    wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + submissionDate })
   },
 })

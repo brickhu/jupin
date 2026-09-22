@@ -375,9 +375,22 @@ export interface ScheduleAudio {
   durationMs: number | null
 }
 
+/**
+ * ⭐ 首页/列表上的一张竞技场卡片。
+ *
+ * ⚠️⚠️ `date` / `isScheduled` / `isToday` **只有今日那一张有** ——
+ *    因为「日期只是一个编辑精选的容器，和竞技场无关」（db/schema.ts）。
+ *    历史卡片来自**句库**：它回答的是「还有哪些竞技场」，不是「过去哪几天」，
+ *    所以那三个字段对整个历史列表都没有意义。
+ *    ⇒ 点进竞技场一律按 **articleId** 寻址（/api/arenas/:articleId），不再用日期。
+ */
 export interface ScheduleEntry {
-  /** 挑战日期 'YYYY-MM-DD'（北京时间） */
-  date: string
+  /**
+   * 这一条**排给哪一天** 'YYYY-MM-DD'（北京时间）。
+   * ⚠️ 只有今日那一张有（历史卡片来自句库，与日期无关）。
+   * ⚠️ 它**不是**竞技场的地址 —— 那个是 articleId。
+   */
+  date?: string
   articleId: number
   /** 句子原文 */
   text: string
@@ -395,17 +408,21 @@ export interface ScheduleEntry {
    *    （渲染一个点了 404 的按钮比不渲染更糟）。
    */
   audio: ScheduleAudio | null
-  /** 这条句子是不是专门排给那一天的（false = 从池子按天轮转来的） */
-  isScheduled: boolean
-  isToday: boolean
-  /** 参与人数（当日去重用户数） */
+  /**
+   * 这条句子是不是**运营专门排给那一天**的（false = 从池子按天轮转来的）。
+   * ⚠️ 只有今日那一张有。
+   */
+  isScheduled?: boolean
+  /** ⚠️ 只有今日那一张有（历史卡片与「今天」无关） */
+  isToday?: boolean
+  /** 参与人数（按句子去重的用户数） */
   participantCount: number
-  /** 当日最高分；无人参与为 null */
+  /** 最高分；无人参与为 null */
   topScore: number | null
   /** 我的最好成绩；没参与为 null */
   myBest: number | null
   /**
-   * ⭐ 我在这天**打过几次分**（0 = 还没挑战）。
+   * ⭐ 我在这一句**打过几次分**（0 = 还没挑战）。
    *
    * ⚠️ 只数 status='scored' 的，与参与人数同一口径：
    *    把「音频读不出来 / 引擎判无效」也算进去的话，用户会看到
@@ -423,6 +440,12 @@ export interface ScheduleEntry {
 export interface ScheduleDetail {
   date: string
   articleId: number
+  /**
+   * ⭐ 从这里发起的挑战该**记到哪一天**。
+   * ⚠️ 按日期寻址时就是那个日期（历史挑战的「再次挑战」必须归到那一天，
+   *    否则昨天那张卡片的数字会变）；按句子寻址时是**今天**（见 ArenaDetail）。
+   */
+  submissionDate: string
   text: string
   translation: string
   isScheduled: boolean
@@ -435,6 +458,36 @@ export interface ScheduleDetail {
   /** 我的名次；没参与为 null */
   myRank: number | null
   /** 我击败了多少人；没参与为 null */
+  myBeatenCount: number | null
+  /** 完整榜单（从头往下数，最多 20 条） */
+  leaderboard: LeaderboardRow[]
+}
+
+/**
+ * ⭐⭐ 竞技场详情 —— **按句子**寻址（`/api/arenas/:articleId`）。
+ *
+ * ⚠️⚠️ 这才是竞技场的正经地址。db/schema.ts 里写着：排期「不是竞技单位，
+ *    只是一个按日组织的展示层」，**日期只是编辑精选的容器，和竞技场无关** ——
+ *    排名 / 参与人数 / 最高分 / 我的最好成绩，全部按 article_id 查。
+ *
+ * ⚠️ 与 ScheduleDetail 的差别只有「日期」那一块：
+ *    按句子进来的挑战**算今天**（submissionDate = 服务端的今天），
+ *    页面也据此显示「今天读一句，连战就接上了」。
+ *    而按日期进来的是「回到那一天再挑战一次」，submissionDate 就是那一天。
+ */
+export interface ArenaDetail {
+  articleId: number
+  text: string
+  translation: string
+  /** ⭐ 这次挑战该记到哪一天 —— 按句子寻址时是服务端的**今天** */
+  submissionDate: string
+  /** submissionDate 是不是今天（页面据此显示连战提示） */
+  isToday: boolean
+  participantCount: number
+  topScore: number | null
+  myBest: number | null
+  myAttempts: number
+  myRank: number | null
   myBeatenCount: number | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]

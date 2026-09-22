@@ -11,11 +11,11 @@ import type { ArenaRecord } from '../../lib/store'
 
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
 interface CardView {
+  /** 只有今日那一张有（见 toView 的说明） */
   date: string
   articleId: number
   text: string
   translation: string
-  isToday: boolean
   /**
    * '23 人参与' —— 空场次留空（见 statText）。
    *
@@ -407,11 +407,15 @@ Page({
     // ⭐ 「我」的部分一律来自 store
     const mine = me.arenaOf(card.articleId)
     return {
-      date: card.date,
+      /**
+       * ⚠️ 只有今日那一张有日期（它的按钮要把它带给朗读页）；
+       *    历史卡片来自句库、与日期无关，这里就是空串 —— 而它们也不需要它，
+       *    点进去走的是按句子寻址的 arena（data-article）。
+       */
+      date: card.date ?? '',
       articleId: card.articleId,
       text: card.text,
       translation: card.translation,
-      isToday: card.isToday,
       stat: statText(card.participantCount),
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
       durationText: durationText(card.audio ? card.audio.durationMs : null),
@@ -450,9 +454,14 @@ Page({
    *    否则「点哪儿都一样」的错觉会让人以为自己点错了。
    */
   onOpenDetail(e: WechatMiniprogram.BaseEvent) {
-    const date = (e.currentTarget.dataset as { date?: string }).date
-    if (!date) return
-    wx.navigateTo({ url: '/pages/arena/arena?date=' + date })
+    /**
+     * ⚠️⚠️ 竞技场按**句子**寻址，不按日期：
+     *    日期只是「编辑精选的容器」，同一句会被排到很多天 ——
+     *    按日期进等于把「这一句的榜单」绑在某一天上，而那件事从来没成立过。
+     */
+    const articleId = Number((e.currentTarget.dataset as { article?: string }).article ?? 0)
+    if (!articleId) return
+    wx.navigateTo({ url: '/pages/arena/arena?article=' + articleId })
   },
 
   /** 开始/再次挑战 —— 必须把**这一天的日期**带过去 */

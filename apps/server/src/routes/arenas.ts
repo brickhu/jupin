@@ -1,0 +1,67 @@
+import { eq } from 'drizzle-orm'
+import { Hono } from 'hono'
+import { today } from '@jushuo/shared'
+import type { ArenaDetail } from '@jushuo/shared'
+
+import { db } from '../db'
+import { articles } from '../db/schema'
+import type { Variables } from '../middleware/auth'
+import { loadArticleContent } from '../services/content'
+import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
+
+/**
+ * ⭐⭐ 竞技场详情 —— **按句子**寻址。
+ *
+ * ⚠️⚠️ 这才是竞技场的正经地址，理由写在 db/schema.ts 里：
+ *    排期「**不是竞技单位，只是一个按日组织的展示层**」，
+ *    而「日期只是一个编辑精选的容器，和竞技场无关」。
+ *    排名 / 参与人数 / 最高分 / 我的最好成绩，全部按 article_id 查。
+ *
+ * ⚠️ 与 GET /api/schedules/:date 的分工：
+ *    · 这个：`我看这一句的竞技场` —— 挑战它算**今天**
+ *    · 那个：`回到某一天的挑战再读一次` —— 挑战它算**那一天**
+ *      （历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变）
+ *
+ * ⚠️ 不校验 isActive：下架只是「不再排进每日挑战」，它的竞技场与成绩还在，
+ *    用户从自己的参与记录点进来仍应看得到。
+ */
+export const arenasRoutes = new Hono<{ Variables: Variables }>()
+
+arenasRoutes.get('/:articleId', async (c) => {
+  const userId = c.get('userId')
+  const articleId = Number(c.req.param('articleId'))
+  if (!Number.isInteger(articleId) || articleId <= 0) {
+    return c.json({ ok: false, error: 'articleId 不合法' }, 400)
+  }
+
+  const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
+  if (!article) return c.json({ ok: false, error: '这一句不存在' }, 404)
+
+  const content = await loadArticleContent(article.contentJson)
+  const [stats, leaderboard, rankInfo] = await Promise.all([
+    getArenaStatsBatch([articleId], userId).then((m) => m.get(articleId)),
+    getTopLeaderboard(articleId, userId),
+    getRank(articleId, userId),
+  ])
+
+  /** ⚠️ 服务端的今天 —— 端侧手机时钟可以随便改（同 shared/day.ts 的口径） */
+  const submissionDate = today()
+
+  const detail: ArenaDetail = {
+    articleId,
+    text: content?.text ?? '',
+    translation: content?.translation ?? '',
+    // ⭐ 按句子进来的挑战算**今天**（用户在读，就是今天这一句）
+    submissionDate,
+    isToday: true,
+    participantCount: stats?.participantCount ?? 0,
+    topScore: stats?.topScore ?? null,
+    myBest: stats?.myBest ?? null,
+    myAttempts: stats?.myAttempts ?? 0,
+    // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
+    myRank: rankInfo.rank > 0 ? rankInfo.rank : null,
+    myBeatenCount: rankInfo.rank > 0 ? rankInfo.beatenCount : null,
+    leaderboard,
+  }
+  return c.json({ ok: true, data: detail })
+})
