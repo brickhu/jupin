@@ -1,6 +1,6 @@
 # 成长体系与能量值（设计稿）
 
-> **状态：待确认 —— 确认后才开工。**
+> **状态：已确认，已实施。**（奖励/解冻卡那部分见 docs/design/reward-system.md）
 > 本文是这两个改动的**唯一规格来源**：公式、边界、落库、契约都在这里。
 > 与它冲突的旧描述（AGENT.md 的「等级徽章」、schema 注释里的「streakBest 是徽章的唯一依据」）
 > 在实施时一并改掉。
@@ -230,18 +230,24 @@ standout = round(f(score − m) * w)
 |---|---|
 | 头部 | 头像 + 昵称 + 连战天数 / 历史最长 |
 | ⭐ **成长值** | 三行：自我超越 / 孜孜不倦 / 鹤立鸡群，每行带一句「这是什么」 |
-| 战绩入口 | 参与场次 / 我的挑战（现在散在用户面板菜单里的那两项） |
+| 战绩入口 | 参与场次 / 我的挑战 / **连战记录**（前两项原来散在用户面板菜单里） |
 
 ⚠️ **不显示「总成长值」** —— 分开展示是明确的产品决定（三个数各自回答一个问题，
 相加之后没人解释得清那个数怎么来的）。
+
+⭐ 另外新增 **pages/me/streak（连战记录）** —— 一个月的连战日历（连战日黄底 / 解冻日蓝底）
++ 领取待领取的解冻卡。⚠️ 它在 me/ 下（**只给自己看**），与对外展示的 pages/profile 刚好相反：
+那一页是「我在这个场上是什么水平」，这一页是「我自己走到哪了」。
+详见 docs/design/reward-system.md 7.4。
 
 **其它两处跟着改**：
 
 | 位置 | 变更 |
 |---|---|
 | user-sheet 菜单 | 「我的主页」从「敬请期待」改成真跳转（「通知」保持敬请期待） |
-| user-sheet 头像下那行 | 现在显示徽章 → 换成一句成长值摘要（点进主页看全部） |
-| 首页 streak 卡 | 徽章区块删掉（位置留白，不塞成长值 —— 首页已经有四个数了） |
+| user-sheet 头像下那行 | 现在显示徽章 → 换成**手上能动用的两样东西**：⚡ 能量 N 点 · ❄️ 解冻卡 N 张 |
+| user-sheet 原来「连续 / 历史最长 / 解冻卡」那一排 | 换成**三个成长值**（自我超越 / 孜孜不倦 / 鹤立鸡群） |
+| 首页 streak 卡 | 徽章区块删掉 → 换成**连战天数**，且**整张卡可点**进连战记录页 |
 | 结果页 | 「这次拿到多少」：三行，各自带一句为什么（比上句最高分高 X / 跨过连续 30 天 / 场上中位数 Y） |
 
 ---
@@ -438,12 +444,13 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 |---|---|
 | pages/reading/reading.ts:1027 | QUOTA_EXHAUSTED 分支 → ENERGY_EXHAUSTED；文案改成「还差 N 点能量 —— 明天会补到 3 点，也可以充值」 |
 | pages/reading/reading.wxml | 提交按钮旁显示能量：「⚡ N 点」+ 差多少才能挑战 |
-| pages/index/index.wxml:149-162 | 徽章区块 → 成长值 |
-| components/user-sheet/user-sheet.wxml:29 | 徽章那行 → 成长值 |
+| pages/index/index.wxml:149-162 | 徽章区块 → 连战天数 + 待领取提示，**整张卡可点**进连战记录 |
+| components/user-sheet/user-sheet.wxml | 徽章那行 → ⚡ 能量 + ❄️ 解冻卡；原来那排数字 → 三个成长值 |
+| **pages/me/streak（新增）** | **连战记录**：统计 + 月历（连战日/解冻日）+ 领取奖励；在 app.json 注册 |
 | **pages/profile/profile（新增，根目录）** | **用户主页**：成长值三行 + 战绩入口；在 app.json 注册。⚠️ 对外展示，故不在 me/ 下 |
 | pages/profile-edit/profile-edit | 原 pages/profile（修改资料）—— 给上面那页让出 profile 这个名字 |
 | components/user-sheet/user-sheet.ts:212 | 「我的主页」从「敬请期待」改成真跳转 |
-| lib/challenges.ts（或新建 lib/profile.ts） | 加 PROFILE_HOME_PAGE 常量与 openProfileHomePage() |
+| lib/challenges.ts | 加 PROFILE_HOME_PAGE / STREAK_PAGE 常量与 openProfileHomePage() / openStreakPage() |
 | pages/challenge/challenge.wxml | 结果页：本次成长值三行 + 各自的解释 |
 | lib/store.ts | Profile 里加 growth / energy；删 badge / nextBadge / daysToNext |
 
