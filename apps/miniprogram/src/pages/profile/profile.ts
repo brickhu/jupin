@@ -154,10 +154,14 @@ Page({
       error: '',
       hasProfile: true,
       nickname: (p.nickname ?? '').trim() || '未设置昵称',
-      // ⭐ 服务端只对本人给这两项（别人的主页是 null）—— 见 shared 的 UserProfileResponse
-      hasEnergy: p.energy !== null,
-      energy: p.energy ?? 0,
-      unfreezeCards: p.unfreezeCards ?? 0,
+      /**
+       * ⚠️ 能量 / 解冻卡是**账号余额**，不在公开主页那一条里（公开接口只给公开数据）。
+       *    所以看自己主页时，这两个数从「我是谁」那一份取（store 里的 /api/user/me）；
+       *    看别人的主页时没有这一份 —— 那一行不显示（hasEnergy=false）。
+       */
+      hasEnergy: me.getState().profile?.id === p.id,
+      energy: me.getState().profile?.energy ?? 0,
+      unfreezeCards: me.getState().streak?.unfreezeCards ?? 0,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,

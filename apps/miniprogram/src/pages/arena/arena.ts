@@ -1,6 +1,6 @@
 import { startButtonLabel } from '@jushuo/shared'
 import type { ArenaDetail, ScheduleDetail } from '@jushuo/shared'
-import { fetchArenaDetail, fetchScheduleDetail } from '../../lib/api/client'
+import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -112,8 +112,15 @@ Page({
     this.setData({ loading: true, error: '' })
     try {
       const d = articleId ? await fetchArenaDetail(articleId) : await fetchScheduleDetail(date)
-      // ⭐ 把「我的记录」广播出去（首页那份也跟着更新）
-      me.applyScheduleDetail(d)
+      /**
+       * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
+       *    公开详情里**不含**我的成绩与名次。
+       * ⚠️ ranks=1 —— 名次是**跨用户**算的，只有服务端算得出来（公开榜单只给前 20）。
+       * ⚠️ 同一次响应既喂 store（首页卡片跟着更新），也喂本页「我的战绩」那一卡。
+       */
+      const recs = await fetchArenaRecords([d.articleId], true)
+      me.applyArenaRecords(recs.items)
+      const mine = recs.items.find((r) => r.articleId === d.articleId)
       this.detail = d
       this.setData({
         loading: false,
@@ -125,6 +132,9 @@ Page({
         stat: this.statText(d),
         topScore: d.topScore,
         participantCount: d.participantCount,
+        // ⚠️ 名次/击败来自**个人接口**（见上面），不是公开详情
+        myRank: mine?.rank ?? null,
+        myBeatenCount: mine?.beatenCount ?? null,
         // ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径
         leaderboard: d.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
       })
@@ -145,8 +155,8 @@ Page({
     this.setData({
       myBest: mine.myBest,
       myBestText: formatScore(mine.myBest),
-      myRank: this.detail.myRank,
-      myBeatenCount: this.detail.myBeatenCount,
+      // ⚠️ myRank / myBeatenCount 不在这里：它们来自个人接口那次响应（见 load），
+      //    这里只管「刚打完分」后跟着 store 变的那两个数（成绩与按钮文案）
       // ⚠️ 与首页共用同一份实现（@jushuo/shared 的 startButtonLabel）——
     //    同一个状态在两个页面上必须长成同一句话
     action: startButtonLabel(mine.myBest !== null),
