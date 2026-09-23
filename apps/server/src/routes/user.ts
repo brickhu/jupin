@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, count, desc, eq, lt, max, min } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, lt, max, min } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, submissions, users } from '../db/schema'
 import { env } from '../env'
@@ -176,6 +176,65 @@ userRoutes.get('/participations', async (c) => {
     }),
   )
 
+  return c.json({ ok: true, data: { items } })
+})
+
+/**
+ * ⭐ 「我在这几句上的战绩」—— **鉴权接口**（/api/user/*）。
+ *
+ * ⚠️⚠️ 公开的句子列表 / 竞技场**不含任何「我的」字段**；端侧把这份数据按
+ *    articleId 融合进去：卡片上的描边、「已参与 N 次 · 最高 X 分」、按钮文案，
+ *    以及竞技场里「我的战绩」那一卡，全部由它来。
+ *    这样公开接口对所有人返回同一份（可缓存），而「我的」永远只有一个来源。
+ *
+ * ⚠️ 只查**被问到的那几个 id**（首页一次最多 6 个），不是「把我的全量记录拉下来」：
+ *    读了几百次的人，全量会有几千行，而首屏只用到那几张卡片。
+ *
+ * @param ids   逗号分隔的 articleId（端侧把当前屏上的 id 一起带过来）
+ * @param ranks '1' 时额外算名次 —— 名次是**跨用户**的（公开榜单只给前 20，
+ *              客户端自己算不出第 500 名），所以只能服务端算，也只在这一场算一次。
+ */
+userRoutes.get('/arena-records', async (c) => {
+  const userId = c.get('userId')
+  const ids = (c.req.query('ids') ?? '')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .slice(0, 20)
+  if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
+  const wantRanks = c.req.query('ranks') === '1'
+
+  const rows = await db
+    .select({
+      articleId: submissions.articleId,
+      attempts: count(),
+      best: max(submissions.score),
+    })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        // ⚠️ 只数打分成功的：与「参与人数」同一口径（读失败那几次不算）
+        eq(submissions.status, 'scored'),
+        inArray(submissions.articleId, ids),
+      ),
+    )
+    .groupBy(submissions.articleId)
+
+  const items = await Promise.all(
+    rows.map(async (r) => {
+      const rankInfo = wantRanks ? await getRank(r.articleId, userId) : null
+      // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
+      const ranked = rankInfo && rankInfo.rank > 0 ? rankInfo : null
+      return {
+        articleId: r.articleId,
+        bestScore: r.best === null ? null : Number(r.best),
+        attempts: Number(r.attempts ?? 0),
+        rank: ranked ? ranked.rank : null,
+        beatenCount: ranked ? ranked.beatenCount : null,
+      }
+    }),
+  )
   return c.json({ ok: true, data: { items } })
 })
 

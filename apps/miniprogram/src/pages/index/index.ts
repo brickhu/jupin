@@ -6,7 +6,7 @@ import type {
   SchedulesResponse,
   StreakView,
 } from '@jushuo/shared'
-import { fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
+import { fetchArenaRecords, fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
@@ -431,6 +431,16 @@ Page({
       const d = await fetchSchedules()
       // ⭐ 先把「我的记录」写进 store（广播给所有页面），再本地重画一次
       me.applySchedules(d)
+      /**
+       * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
+       *    myBest / myAttempts 属于「我的」，按页面模型走鉴权接口，端侧按 articleId
+       *    融合（见 store 的 applyArenaRecords）—— 公开列表只管公开数据。
+       * ⚠️ 只问**这一屏上的 id**（最多 6 个），不是把我的全量记录拉下来。
+       * ⚠️ 不 await：列表先出来；个人那份到了会走 store 广播重画。
+       */
+      void fetchArenaRecords([d.today.articleId, ...d.history.map((x) => x.articleId)]).then((r) =>
+        me.applyArenaRecords(r.items),
+      )
       /**
        * ⭐ 顺带刷一次「我是谁」—— 状态卡上那两个累计数（挑战几句 / 一共几回）
        *    只有 /me 有，而它们**刚在朗读页变过**。

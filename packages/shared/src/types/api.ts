@@ -415,6 +415,34 @@ export interface ArticleListItem {
 }
 
 /**
+ * ⭐ 「我在这句上的战绩」—— GET /api/user/arena-records（**鉴权接口**）。
+ *
+ * ⚠️⚠️ 公开接口（句子列表 / 竞技场）**不含任何「我的」字段**；
+ *    端侧把这一份按 articleId 融进公开列表 —— 卡片描边、「已参与 N 次 · 最高 X 分」、
+ *    按钮文案、竞技场里的「我的战绩」都从它来。这样公开响应人人一样（可缓存），
+ *    而「我的」永远只有一个来源。
+ *
+ * ⚠️ rank / beatenCount 只在请求时带 `ranks=1` 才有：名次是**跨用户**算出来的
+ *    （公开榜单只给前 20，客户端自己算不出第 500 名），所以只在该算的那一屏算。
+ */
+export interface ArenaRecord {
+  articleId: number
+  /** 我的最好成绩；没参与过为 null */
+  bestScore: number | null
+  /** 我在这句打过几次分（只数打分成功的，与「参与人数」同口径） */
+  attempts: number
+  /** 我的名次；没参与过、或没要 ranks 时为 null */
+  rank: number | null
+  /** 我击败了多少人；同上为 null */
+  beatenCount: number | null
+}
+
+/** GET /api/user/arena-records 的响应 */
+export interface ArenaRecordsResponse {
+  items: ArenaRecord[]
+}
+
+/**
  * ⭐ 首页/列表上的一张竞技场卡片。
  *
  * ⚠️⚠️ `date` / `isScheduled` / `isToday` **只有今日那一张有** ——

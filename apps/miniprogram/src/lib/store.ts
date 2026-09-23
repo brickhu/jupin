@@ -274,6 +274,28 @@ export function applySchedules(res: SchedulesResponse): void {
 }
 
 /**
+ * ⭐ 用「我在这几句上的战绩」（鉴权接口 /api/user/arena-records）刷新。
+ *
+ * ⚠️⚠️ 这是「我的」数据的**唯一来源**：公开接口（首页列表 / 竞技场）不含「我的」字段，
+ *    端侧拿公开那一份渲染内容、拿这一份渲染「我读过没有 / 最好多少分 / 我第几名」。
+ * ⚠️ 保守合并（理由同 applySchedules）：端侧可能已经有更高的分（刚打完分那次
+ *    applySubmit 先落了地），不能被一次旧快照盖回去。
+ */
+export function applyArenaRecords(
+  items: { articleId: number; bestScore: number | null; attempts: number }[],
+): void {
+  const arena = { ...state.arena }
+  for (const r of items) {
+    const prev = arena[r.articleId]
+    arena[r.articleId] = {
+      myBest: mergeBest(prev?.myBest ?? null, r.bestScore),
+      myAttempts: Math.max(prev?.myAttempts ?? 0, r.attempts),
+    }
+  }
+  commit({ ...state, arena })
+}
+
+/**
  * 用竞技场详情的返回值刷新。
  * ⚠️ 只取三个与「哪一天」无关的字段 —— 所以**两种详情都能喂进来**：
  *    ScheduleDetail（按日期寻址）与 ArenaDetail（按句子寻址）。

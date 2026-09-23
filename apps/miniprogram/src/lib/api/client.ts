@@ -7,6 +7,7 @@ import type {
   MeResponse,
   ParticipationsResponse,
   UserProfileResponse,
+  ArenaRecordsResponse,
   ScheduleDetail,
   ChallengeShareResponse,
   SchedulesResponse,
@@ -642,6 +643,19 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
  */
 export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
   return request<GrowthRankResponse>('/api/leaderboards/growth', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 「我在这几句上的战绩」—— **鉴权接口**（/api/user/*）。
+ *
+ * ⚠️ 公开的句子列表 / 竞技场不带「我的」字段，端侧把这一份按 articleId 融进去
+ *    （见 store 的 applyArenaRecords）。⚠️ 只传当前屏上的 id：不是把我的全量记录拉下来。
+ * ⚠️ ranks 只在需要「我的名次」的那一屏传 true（名次要服务端跨用户算）。
+ */
+export function fetchArenaRecords(ids: number[], ranks = false): Promise<ArenaRecordsResponse> {
+  if (ids.length === 0) return Promise.resolve({ items: [] })
+  const q = '/api/user/arena-records?ids=' + ids.join(',') + (ranks ? '&ranks=1' : '')
+  return request<ArenaRecordsResponse>(q, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
