@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto'
-
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { users } from '../db/schema'
@@ -56,28 +54,6 @@ async function withLocalDevPrivilege(user: User): Promise<User> {
   return { ...user, energy: DEV_ENERGY }
 }
 
-/**
- * ⭐ 生成一个分享标识 —— 24 位十六进制，与 submissions.id 同一种形状。
- * ⚠️ 必须用 randomBytes 而不是 Math.random：它是**凭据**，可猜就等于公开。
- */
-export function newShareKey(): string {
-  return randomBytes(12).toString('hex')
-}
-
-/**
- * 给还没有分享标识的用户补一个（已有就原样返回，一次库都不碰）。
- *
- * ⚠️ 为什么不能只靠建号时生成：这一列是**后加的** —— 迁移能回填存量行，
- *    但任何绕过建号那条路的行（种子脚本直接 insert、将来别处再插）都会是 NULL，
- *    而 NULL 的人分享不出去。挂在「每次取用户」这条必经之路上，
- *    就不需要谁记得跑一次补数脚本。
- */
-export async function ensureShareKey(user: User): Promise<string> {
-  if (user.shareKey) return user.shareKey
-  const key = newShareKey()
-  await db.update(users).set({ shareKey: key }).where(eq(users.id, user.id))
-  return key
-}
 
 /**
  * 按 openid 取用户，没有就建。
@@ -91,16 +67,11 @@ export async function ensureShareKey(user: User): Promise<string> {
  */
 export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
   const [existing] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
-  if (existing) {
-    // ⚠️ 老行 / 种子行可能是 NULL —— 补上，再用同一份返回值往下走
-    const shareKey = await ensureShareKey(existing)
-    return withLocalDevPrivilege({ ...existing, shareKey })
-  }
+  if (existing) return withLocalDevPrivilege(existing)
 
   await db.insert(users).ignore().values({
     openid,
-    // ⭐ 建号时就把分享标识与本地能量发好，省掉一次 UPDATE
-    shareKey: newShareKey(),
+    // ⭐ 建号时就把本地能量发好，省掉一次 UPDATE
     ...(isLocalDevEnv() ? { energy: DEV_ENERGY } : {}),
   })
 

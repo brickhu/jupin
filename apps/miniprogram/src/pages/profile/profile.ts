@@ -1,31 +1,28 @@
-import type { GrowthView, PublicProfileResponse } from '@jushuo/shared'
+import type { GrowthView, UserProfileResponse } from '@jushuo/shared'
 
-import { fetchPublicProfile } from '../../lib/api/client'
+import { fetchUserProfile } from '../../lib/api/client'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import {
-  openChallengesPage,
-  openEnergyPage,
-  openParticipationsPage,
-  openStreakPage,
-} from '../../lib/challenges'
+import { openEnergyPage } from '../../lib/challenges'
 import { openJoinPage, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 
 /**
- * ⭐ 「用户主页」—— 只读的展示页。
+ * ⭐ 「个人主页」—— **按用户 id 取一份数据**，一页一套渲染。
  *
- * ⚠️⚠️ 它**放在 pages 根目录、而不是 pages/me/ 下**：这一页是**对外展示**的
- *    （能被分享、被陌生人打开），和挑战结果页同一个理由。
- *    「修改资料」是私有表单，它让出了 profile 这个名字、改叫 pages/profile-edit。
- * ⚠️ 两页是两件事，别混：一个是成绩墙（只读），一个是表单（改头像昵称）。
+ * ⚠️⚠️ 没有「本人视角 / 访客视角」之分：`?u=<id>` 就是这一页的地址，
+ *    转发出去谁打开看到的都是同一个人的主页（包括我自己那份）：
+ *      · 带 ?u=<id> → 看那一份
+ *      · 不带       → 看自己的（我的 id 来自 store 里的 profile）
+ * ⚠️ 数据只有**一个来源**：GET /share/profile/:id（服务端按 id 给一份快照），
+ *    所以每次 onShow 都现取 —— 刚读完一句回到这一页，数字必然是新的。
+ *    （之前这里是「自己读 store、别人走接口」两条路，那等于两套真相。）
+ * ⚠️ 唯一的例外是**还没有我的 id**（服务端还不认识我）：没有主页可取，
+ *    头部画「加入」（见 wxml），其余不画 —— 那不是错误，是还没加入。
  *
- * ⭐⭐ **两种视角**，靠 URL 上的 `?u=<shareKey>` 区分：
- *    · 没有 u → **我自己的**主页：数据全部来自全局 store（这一页不自己发请求，
- *      只在 onShow 时让 store 去刷一次，见 lib/join.ts 的 refreshMe）。
- *    · 有 u   → **别人分享出来的**主页：走公开接口取一份只读快照（不需要登录），
- *      并且**不碰 store** —— store 里那些数字是「我」的，画上去就把别人的主页
- *      变成了我的。能量 / 解冻卡同理：那是账号余额，不对外（见服务端 share.ts）。
+ * ⚠️ 这一页**不放**「连战记录 / 参与场次 / 我的挑战」入口：
+ *    它们是**看的人的私有列表**，而这一页是给所有人看的。
+ *    入口在用户面板的菜单里（那里本来就有这三项）。
  */
 
 /** 当前已换址的 fileID —— 用来丢弃「换到一半又被换掉」的旧结果 */
@@ -73,36 +70,27 @@ function toGrowthRows(growth: GrowthView | undefined): GrowthRow[] {
 Page({
   data: {
     navTop: 0,
-    /** ⭐ 看的是**别人**分享出来的主页（见文件头）—— 决定隐藏什么、哪几格能点 */
-    visitor: false,
-    /**
-     * ⭐ 服务端认识我吗（store 的 hasJoined）—— 头部头像那一格的判据。
-     * ⚠️ 与**导航栏那一格完全相同**：不认识我时它画的是「加入」按钮。
-     *    两处各判一套，就会出现「导航栏让我加入、主页却已经给我画了头像」。
-     */
-    joined: false,
-    /** 访客视角：正在取那份公开快照 */
-    loadingPublic: false,
-    /** 访客视角取不到时的文案（链接失效 / 账号被关 —— 服务端一律 404） */
+    /** 正在取那一份主页 */
+    loading: true,
+    /** 取不到时的文案（id 不存在 / 账号被关 / 网络失败） */
     error: '',
-    /** 拼分享路径用的标识（自己的或正在看的那个主页的）；空 ⇒ 不显示分享按钮 */
-    shareKey: '',
-    nickname: '未设置昵称',
+    /** 有没有主页可画（false = 还没有我的 id ⇒ 还没加入） */
+    hasProfile: true,
+    nickname: '',
     avatarSrc: '',
     avatarPlaceholder: '/assets/avatar-placeholder.png',
-    streakDays: 0,
-    unfreezeCards: 0,
     energy: 0,
+    unfreezeCards: 0,
+    streakDays: 0,
     conqueredCount: 0,
     rounds: 0,
     growthRows: [] as GrowthRow[],
   },
 
-  /** URL 里的 `u`：正在看的**别人**的主页标识；空 = 看自己的 */
-  viewedKey: '',
-
-  /** 访客视角取到的那份公开数据（重画时用它，不再发请求） */
-  publicProfile: null as PublicProfileResponse | null,
+  /** 这一页要看谁的：URL 里的 `u`；0 = 不带参数（看自己的） */
+  targetId: 0,
+  /** 这次真正取的是谁 —— 分享路径用它（targetId 或我自己的 id） */
+  viewId: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({ navTop: navPadTop() })
@@ -114,87 +102,58 @@ Page({
      */
     wx.showShareMenu?.({ menus: ['shareAppMessage', 'shareTimeline'] })
 
-    const key = query.u ?? ''
-    if (!key) return
-    this.viewedKey = key
-    this.setData({ visitor: true, shareKey: key })
-    void this.loadPublic()
-  },
-
-  /**
-   * 取**别人**分享出来的主页 —— 公开接口，不需要登录。
-   * ⚠️ 服务端只认 24 位标识、且账号必须 normal，取不到就是**这一页不存在**。
-   */
-  async loadPublic() {
-    this.setData({ loadingPublic: true, error: '' })
-    try {
-      const p = await fetchPublicProfile(this.viewedKey)
-      this.publicProfile = p
-      this.renderPublic()
-    } catch (err) {
-      this.setData({ error: (err as Error).message || String(err) })
-    } finally {
-      this.setData({ loadingPublic: false })
-    }
+    this.targetId = Number(query.u ?? '') || 0
   },
 
   /**
    * ⚠️ 用 onShow 而不是 onLoad：从朗读页挑战完回来时，这一页的数字必须是新的。
-   * ⚠️ 先用缓存画一遍（store 里有上次的值），再向服务端刷 —— 否则每次进来先白一下。
-   * ⚠️ 访客视角**不碰 store**，只重画手里那份公开快照。
    */
   onShow() {
-    if (this.viewedKey) {
-      this.renderPublic()
-      return
-    }
-    this.render()
-    void refreshMe().then(() => this.render())
+    void this.load()
   },
 
   onPageScroll(e: WechatMiniprogram.Page.IPageScrollOption) {
     notifyNavScroll(this, e.scrollTop)
   },
 
-  render() {
-    const st = me.getState()
-    const p = st.profile
-    /**
-     * ⚠️ 没有 profile = **服务端还不认识我**（大多是后端没答上来）——
-     *    这一态下「未设置昵称 / 能量 0 点」都是**有账号**的口吻，会把人带偏：
-     *    它其实还没有账号，而账号是点「加入」那次请求顺手建出来的。
-     */
-    const joined = me.hasJoined()
-    this.setData({
-      joined,
-      // ⭐ 我自己的分享标识（store 里落着上次 /me 的结果）—— 没有就不显示分享按钮
-      shareKey: p?.shareKey ?? '',
-      nickname: joined ? (p?.nickname ?? '').trim() || '未设置昵称' : '还没加入句拼',
-      streakDays: st.streak?.streakDays ?? 0,
-      unfreezeCards: st.streak?.unfreezeCards ?? 0,
-      energy: p?.energy ?? 0,
+  /** 取这一页要看的那一份（同一个 id 对所有人都返回同一份） */
+  async load() {
+    if (!this.targetId) {
       /**
-       * ⚠️ 参与场次数的是 conqueredCount（**拿到过分数的句子数**），与首页状态卡同口径 ——
-       *    参与场次页筛的正是「拿到过分」那条，用它才对得上点进去看到的条数。
-       *    原来用的是 challengedCount（挑战过几句，含打分失败那次），两个页面会差数。
+       * 不带参数 = 看自己的：id 来自 store 里那份 /me。
+       * ⚠️ 顺手让 store 刷一次（用户面板与导航栏都靠它）；刷到了 id 就补取一次 ——
+       *    否则这一页会停在「加入」上，要等用户离开再进来才看得到自己的主页。
        */
-      conqueredCount: p?.conqueredCount ?? 0,
-      rounds: p?.challengedRounds ?? 0,
-      growthRows: toGrowthRows(p?.growth),
-    })
-    this.loadAvatar(p?.avatarUrl ?? '')
+      void refreshMe().then(() => {
+        if (!this.viewId && me.getState().profile?.id) void this.load()
+      })
+    }
+
+    const id = this.targetId || me.getState().profile?.id || 0
+    this.viewId = id
+    if (!id) {
+      // ⚠️ 没有 id 不是「取不到」：那是「还没加入」，画「加入」，其余不画
+      this.setData({ loading: false, hasProfile: false, error: '', nickname: '还没加入句拼' })
+      return
+    }
+
+    this.setData({ loading: true, error: '' })
+    try {
+      this.render(await fetchUserProfile(id))
+    } catch (err) {
+      this.setData({ loading: false, error: (err as Error).message || String(err) })
+    }
   },
 
-  /**
-   * 访客视角：只画公开的那几格（字段清单见 shared 的 PublicProfileResponse）。
-   * ⚠️ 能量 / 解冻卡**不在**那份数据里，所以这里根本不写它们 ——
-   *    而不是「写了再藏起来」：藏起来那版，下一个人加字段时会顺手带上去。
-   */
-  renderPublic() {
-    const p = this.publicProfile
-    if (!p) return
+  /** 服务端那一份 → 展示视图（**唯一的渲染入口**） */
+  render(p: UserProfileResponse) {
     this.setData({
+      loading: false,
+      error: '',
+      hasProfile: true,
       nickname: (p.nickname ?? '').trim() || '未设置昵称',
+      energy: p.energy,
+      unfreezeCards: p.unfreezeCards,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,
@@ -215,68 +174,26 @@ Page({
     })
   },
 
-  /**
-   * 头部那个「加入」—— 进补昵称 / 头像那一页（同导航栏那一格的说法）。
-   * ⚠️ 判据是 hasJoined（服务端认不认识我），**不是**「有没有昵称」。
-   */
+  /** 头部那个「加入」—— 进补昵称 / 头像那一页（判据见 load()：还没有我的 id） */
   onJoin() {
     openJoinPage()
   },
 
-  /**
-   * 昵称下面那行小字里的「⚡ 能量」—— 与用户面板同一个去处。
-   * ⚠️ 解冻卡没有独立页面，所以整行点下去也只去能量页（入口在连战记录里）。
-   */
+  /** 能量那一行 —— 与用户面板同一个去处（解冻卡没有独立页面，入口在连战记录里） */
   onEnergy() {
     openEnergyPage()
   },
 
-  /**
-   * ⭐ 下面三格在**访客视角下只做展示**（见文件头）：点进去打开的是「我」的私有列表，
-   *    那不是这一页的主语 —— 所以这三个方法都先看这一步。
-   */
-  onStreak() {
-    if (this.data.visitor) return
-    openStreakPage()
-  },
-
-  onParticipations() {
-    if (this.data.visitor) return
-    openParticipationsPage()
-  },
-
-  onChallenges() {
-    if (this.data.visitor) return
-    openChallengesPage()
-  },
-
-  /** 分享用的标识：正在看的那个主页优先，否则是我自己的 */
-  shareTarget(): string {
-    return this.viewedKey || this.data.shareKey
-  },
-
-  shareTitle(): string {
-    return this.data.visitor ? this.data.nickname + ' 的句拼主页' : '来看看我的句拼主页'
-  },
-
-  /**
-   * ⭐ 转发给好友 —— 路径指向**当前正在看的这个主页**。
-   *
-   * ⚠️⚠️ 标识为空时不能就这么发出去：不带参数的分享路径会让对方打开后看到
-   *    **他自己的**主页。所以那种情况下分享按钮不显示（见 wxml 的 wx:if），
-   *    标题也退化成一句不带指代的话。
-   */
+  /** ⭐ 转发给好友 —— 路径就是**这一页**（带 ?u=<id>） */
   onShareAppMessage() {
-    const key = this.shareTarget()
     return {
-      title: this.shareTitle(),
-      path: '/pages/profile/profile' + (key ? '?u=' + key : ''),
+      title: this.data.nickname + ' 的句拼主页',
+      path: '/pages/profile/profile?u=' + this.viewId,
     }
   },
 
   /** ⭐ 分享到朋友圈 —— 朋友圈只能用 query 带参数 */
   onShareTimeline() {
-    const key = this.shareTarget()
-    return { title: this.shareTitle(), query: key ? 'u=' + key : '' }
+    return { title: this.data.nickname + ' 的句拼主页', query: 'u=' + this.viewId }
   },
 })

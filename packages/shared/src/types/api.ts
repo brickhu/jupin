@@ -612,28 +612,29 @@ export interface MeResponse {
   /** ⭐ 三个成长值（分开展示） */
   growth: GrowthView
   streak: StreakView
-  /**
-   * ⭐ 分享主页用的不可猜标识（24 位十六进制）—— 拼分享路径用：
-   *    `/pages/profile/profile?u=<shareKey>`
-   * ⚠️ 它是**链接的一部分**，不是登录凭据，也不要拿它当用户 id 用。
-   */
-  shareKey: string
 }
 
 /**
- * ⭐⭐ 别人分享出来的「个人主页」—— **不需要登录**（GET /share/profile/:key）。
+ * ⭐⭐ 「个人主页」的数据 —— 按**用户 id** 取一份
+ *    （GET /share/profile/:id，不需要登录）。
  *
- * ⚠️⚠️ 这份契约就是**隐私边界**，加字段前先想清楚：
- *    · 给的是这一页要画的**公开成绩**：昵称 / 头像 / 三个成长值 / 连续天数 / 场次 / 回合
- *    · ⛔ 不给**能量与解冻卡**：那是「我手上能动用的资产」，与成绩无关；
- *      分享给陌生人看一个余额，既没用又只是泄漏
- *    · ⛔ 不给 id / openid / status：链接即凭据，凭据里不该再夹身份
- * ⚠️ 与 MeResponse 刻意**不同构**：同构会让下一个人顺手把新字段加进分享包，
- *    而分享包每多一个字段都是在替用户做一次公开决定。
+ * ⚠️⚠️ 这一页对**所有人**都长一样，包括我自己：一份数据、一套渲染。
+ *    链接就是这一页的地址，转发出去谁打开看到的都是同一个人的主页。
+ *    所以这里给的是**这一页要画的全部字段**（含能量 / 解冻卡）——
+ *    不再是「本人一套、访客一套」。
+ *
+ * ⚠️ 代价讲清楚：这一份是**公开数据**，加字段前先问一句
+ *    「它值不值得给陌生人看」。openid / status / 榜单明细这些与主页无关的都不给。
  */
-export interface PublicProfileResponse {
+export interface UserProfileResponse {
+  /** 用户 id —— 拼分享路径用：/pages/profile/profile?u=<id> */
+  id: number
   nickname: string | null
   avatarUrl: string | null
+  /** ⭐ 能量点数（与 MeResponse 同一个数：服务端补足后读出来的余额） */
+  energy: number
+  /** ⭐ 解冻卡张数 */
+  unfreezeCards: number
   /** 连续朗读天数（服务端现算的视图，不是库里那一列） */
   streakDays: number
   /** 参与场次：拿到过分数的去重句子数 */

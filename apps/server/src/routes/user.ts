@@ -12,7 +12,6 @@ import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../service
 import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
-import { ensureShareKey } from '../services/user'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE } from '@jushuo/shared'
 import type { ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
@@ -217,10 +216,6 @@ userRoutes.get('/me', async (c) => {
       challengedRounds: stats.challengedRounds,
       conqueredCount,
       streak,
-      // ⭐ 分享主页的标识（拼 /pages/profile/profile?u=<shareKey> 用）——
-      //    ⚠️ 取用户时已经补过，这里再兜一次：它**必须是非空**，
-      //    空字符串会让分享出去的链接打开就是「主页不存在」
-      shareKey: await ensureShareKey(user),
     },
   })
 })

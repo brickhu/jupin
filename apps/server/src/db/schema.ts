@@ -27,17 +27,6 @@ export const users = mysqlTable('users', {
   nickname: varchar('nickname', { length: 64 }),
   avatarUrl: varchar('avatar_url', { length: 512 }),
 
-  /**
-   * ⭐ 对外分享主页用的**不可猜标识**（24 位十六进制）。
-   *
-   * ⚠️⚠️ 刻意不用自增 id：分享链接**本身就是凭据**（同 submissions.id 那条约定）。
-   *    用 id 的话，1、2、3… 试一遍就能把全站用户的主页与昵称扒下来 ——
-   *    而这一页是专门要**发给陌生人**的。
-   * ⚠️ 它只能读那一页公开的东西（隐私边界见 routes/share.ts），
-   *    不参与任何鉴权、不是登录凭据。
-   * ⚠️ 建号时生成（services/user.ts）；存量行由迁移 0022 回填。
-   */
-  shareKey: varchar('share_key', { length: 24 }).unique(),
 
   /** 账号状态：normal | banned | deleted（防刷只有「当日暂停」是不够的，需要长期维度） */
   status: varchar('status', { length: 16 }).notNull().default('normal'),

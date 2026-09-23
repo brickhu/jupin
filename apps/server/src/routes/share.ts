@@ -9,6 +9,7 @@ import { getTotalConquered } from '../services/conquest'
 import { challengeStats } from '../services/submission'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
+import { readEnergy } from '../services/energy'
 
 export const shareRoutes = new Hono()
 
@@ -75,25 +76,23 @@ shareRoutes.get('/challenge/:sid', async (c) => {
     },
   })
 })
+
 /**
- * ⭐⭐ 分享出去的「个人主页」—— **不需要登录**。
+ * ⭐⭐ 「个人主页」—— 按**用户 id** 取一份，**不需要登录**。
  *
- * ⚠️⚠️ 标识是 users.share_key（24 位十六进制），**不是自增 id** ——
- *    链接本身就是凭据（同上面那条挑战分享）。用 id 的话，1、2、3… 试一遍
- *    就能把全站用户的主页与昵称扒下来，而这一页是专门要发给陌生人的。
+ * ⚠️⚠️ 它对**所有人**都长一样，包括我自己：一份数据、一套渲染。
+ *    链接就是这一页的地址（/pages/profile/profile?u=<id>），
+ *    转发出去谁打开看到的都是同一个人的主页 —— 不分「本人 / 访客」。
  *
- * ⚠️ 隐私边界（改之前先看 packages/shared 的 PublicProfileResponse）：
- *    · 给：昵称 / 头像 / 三个成长值 / 连续天数 / 参与场次 / 挑战回合
- *    · ⛔ 不给：**能量、解冻卡**（用户的资产余额，与成绩无关）、id / openid / status
- *    · ⛔ 也不给任何**可点的列表**：连战记录 / 参与场次 / 我的挑战 都是
- *      「看的人自己的」私有数据，别人的主页上只该出现数字（见端侧 profile 页）
+ * ⚠️ 代价讲清楚：这一份是**公开数据**。加字段前先问一句
+ *    「它值不值得给陌生人看」；账号状态 / openid 这些与主页无关的一律不给。
  *
- * ⚠️ 被禁用的账号一律 404（不是 403）：分享链接不该告诉陌生人「这里有个人被封了」。
+ * ⚠️ 被禁用的账号一律 404（不是 403）：不该告诉陌生人「这里有个人被封了」。
  */
-shareRoutes.get('/profile/:key', async (c) => {
-  const key = c.req.param('key')
-  // ⚠️ 先按形状挡一道：不是 24 位十六进制就不是分享标识，别去查库
-  if (!/^[0-9a-f]{24}$/.test(key)) {
+shareRoutes.get('/profile/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  // ⚠️ 先按形状挡一道：不是正整数就别去查库
+  if (!Number.isInteger(id) || id <= 0) {
     return c.json({ ok: false, error: '这个主页不存在' }, 404)
   }
 
@@ -105,27 +104,34 @@ shareRoutes.get('/profile/:key', async (c) => {
       status: users.status,
     })
     .from(users)
-    .where(eq(users.shareKey, key))
+    .where(eq(users.id, id))
     .limit(1)
   if (!u || u.status !== 'normal') {
     return c.json({ ok: false, error: '这个主页不存在' }, 404)
   }
 
-  // ⚠️ 连续天数取**现算的视图**，不是 users.streak_days 那一列：
-  //    那一列要等下一次提交才会变小，拿它分享出去会出现
-  //    「主页显示连续 9 天、其实早就断了」这种对外说错话的情况。
-  const [conqueredCount, stats, growth, streak] = await Promise.all([
+  /**
+   * ⚠️ 与 /api/user/me 是**同一批事实、同一个算法**，否则同一个人在两个页面两个数：
+   *    · 连续天数取**现算的视图**（不是 users.streak_days 那一列 —— 它要等下一次
+   *      提交才会变小，拿它显示会出现「主页说连续 9 天、其实早就断了」）
+   *    · 能量同样**先补足再读**（readEnergy，惰性 + 幂等）
+   */
+  const [conqueredCount, stats, growth, streak, energy] = await Promise.all([
     getTotalConquered(u.id),
     challengeStats(u.id),
     readGrowth(u.id),
     readStreakView(u.id),
+    readEnergy(u.id),
   ])
 
   return c.json({
     ok: true,
     data: {
+      id: u.id,
       nickname: u.nickname,
       avatarUrl: u.avatarUrl,
+      energy,
+      unfreezeCards: streak.unfreezeCards,
       streakDays: streak.streakDays,
       conqueredCount,
       challengedRounds: stats.challengedRounds,

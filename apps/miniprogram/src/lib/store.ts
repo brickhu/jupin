@@ -57,14 +57,14 @@ export interface ArenaRecord {
  *    这里的东西会随头像一起渲染到导航栏上，多放一个字段就多一份泄露面。
  */
 export interface Profile {
+  /**
+   * ⭐ 用户 id —— 「我的主页」按它取数据，拼分享路径也要它
+   *    （/pages/profile/profile?u=<id>）。来自 /api/user/me。
+   * ⚠️ 0 = 还没有（服务端还没答上来）⇒ 那一页画「加入」，分享按钮也不显示。
+   */
+  id: number
   nickname: string | null
   avatarUrl: string | null
-  /**
-   * ⭐ 分享主页用的不可猜标识（服务端给）—— 拼 /pages/profile/profile?u=<它>。
-   * ⚠️ 它不是凭据、也不用于鉴权，只是链接的一部分；空字符串 = 服务端还没给，
-   *    这时分享按钮不显示（分享一个不带标识的路径，对方打开会看到**他自己**的主页）。
-   */
-  shareKey: string
   /** 已征服的句子数（服务端按去重句子算，只增不减） */
   conqueredCount: number
   /**
@@ -337,9 +337,9 @@ export function applySubmissionResult(input: {
  */
 export function applyProfile(m: MeResponse): void {
   const profile: Profile = {
+    id: m.id,
     nickname: m.nickname,
     avatarUrl: m.avatarUrl,
-    shareKey: m.shareKey,
     conqueredCount: m.conqueredCount,
     challengedCount: m.challengedCount,
     challengedRounds: m.challengedRounds,
@@ -370,8 +370,8 @@ export function applyProfilePatch(patch: { nickname: string | null; avatarUrl: s
       nickname: patch.nickname,
       // ⚠️ 这次没选头像时服务端返回的是**库里存着的那张**，直接采信它
       avatarUrl: patch.avatarUrl,
-      // ⚠️ 分享标识也原样留着：保存接口不返回它，清零会让分享按钮突然消失
-      shareKey: prev?.shareKey ?? '',
+      // ⚠️ id 也原样留着：保存接口不返回它，清零会让「我的主页」取不到数据
+      id: prev?.id ?? 0,
       // ⚠️ 下面三个都是**统计值**，保存接口不返回它们 —— 原样留着，
       //    别顺手清零（那会让首页状态卡闪一下 0）
       conqueredCount: prev?.conqueredCount ?? 0,
