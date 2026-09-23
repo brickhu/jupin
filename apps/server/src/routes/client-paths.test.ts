@@ -29,4 +29,15 @@ describe('端侧请求路径 vs 服务端挂载', () => {
     const missing = [...paths].filter((p) => !mounts.has(p))
     expect(missing, '端侧在请求这些前缀，服务端没有对应挂载：' + missing.join(' ')).toEqual([])
   })
+
+  /**
+   * ⚠️⚠️ 上面那条**只扫 /api/ 字面量** —— 所以它对「改了一半」是**假阴性**：
+   *    路径被写回 /share/schedules 之后，它连扫都扫不到，照样绿。
+   *    （这不是假设：第一版就是这样，我故意改坏它仍然 1 passed —— 现已修。）
+   *    这条补上那个缺口：端侧**不该再出现任何 /share 路径**。
+   */
+  it('端侧不再残留任何 /share 路径（改名字只改了一边的另一种形态）', () => {
+    const leftovers = [...CLIENT.matchAll(/'\/share\/[a-z-]*/g)].map((m) => m[0].slice(1))
+    expect(leftovers, '端侧还在请求 /share：' + leftovers.join(' ')).toEqual([])
+  })
 })
