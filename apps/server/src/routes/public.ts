@@ -12,8 +12,7 @@ import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
 
 /**
- * ⚠️ 这里必须带上 Variables 类型：路由里要读 c.get('userId') 判断「谁在看」
- *    （可选身份由 index.ts 的 `app.use('/share/*', optionalAuth)` 注入）。
+ * ⚠️ 这里必须带上 Variables 类型：Hono 的 c.get 需要它（否则 TS2769）。
  */
 /** ⭐⭐ 公开页面两条路由 —— 分别挂在 /api/challenge 与 /api/profile。
  * ⚠️ 只给公开数据：「我的」那部分走 /api/user/* 下的鉴权接口，端侧按 id 融合。
