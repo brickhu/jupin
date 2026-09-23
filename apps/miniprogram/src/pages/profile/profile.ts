@@ -1,5 +1,6 @@
-import type { GrowthView } from '@jushuo/shared'
+import type { GrowthView, PublicProfileResponse } from '@jushuo/shared'
 
+import { fetchPublicProfile } from '../../lib/api/client'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import {
   openChallengesPage,
@@ -15,12 +16,16 @@ import * as me from '../../lib/store'
  * ⭐ 「用户主页」—— 只读的展示页。
  *
  * ⚠️⚠️ 它**放在 pages 根目录、而不是 pages/me/ 下**：这一页是**对外展示**的
- *    （以后要能被别人打开、能分享），和挑战结果页同一个理由。
+ *    （能被分享、被陌生人打开），和挑战结果页同一个理由。
  *    「修改资料」是私有表单，它让出了 profile 这个名字、改叫 pages/profile-edit。
  * ⚠️ 两页是两件事，别混：一个是成绩墙（只读），一个是表单（改头像昵称）。
- * ⚠️ 数据全部来自全局 store —— 这一页**不自己发请求取数**，
- *    只在 onShow 时让 store 去刷一次（见 lib/join.ts 的 refreshMe）。
- *    自己请求的话，用户面板、导航栏、这一页会各拿一份数据，迟早对不上。
+ *
+ * ⭐⭐ **两种视角**，靠 URL 上的 `?u=<shareKey>` 区分：
+ *    · 没有 u → **我自己的**主页：数据全部来自全局 store（这一页不自己发请求，
+ *      只在 onShow 时让 store 去刷一次，见 lib/join.ts 的 refreshMe）。
+ *    · 有 u   → **别人分享出来的**主页：走公开接口取一份只读快照（不需要登录），
+ *      并且**不碰 store** —— store 里那些数字是「我」的，画上去就把别人的主页
+ *      变成了我的。能量 / 解冻卡同理：那是账号余额，不对外（见服务端 share.ts）。
  */
 
 /** 当前已换址的 fileID —— 用来丢弃「换到一半又被换掉」的旧结果 */
@@ -68,6 +73,14 @@ function toGrowthRows(growth: GrowthView | undefined): GrowthRow[] {
 Page({
   data: {
     navTop: 0,
+    /** ⭐ 看的是**别人**分享出来的主页（见文件头）—— 决定隐藏什么、哪几格能点 */
+    visitor: false,
+    /** 访客视角：正在取那份公开快照 */
+    loadingPublic: false,
+    /** 访客视角取不到时的文案（链接失效 / 账号被关 —— 服务端一律 404） */
+    error: '',
+    /** 拼分享路径用的标识（自己的或正在看的那个主页的）；空 ⇒ 不显示分享按钮 */
+    shareKey: '',
     nickname: '未设置昵称',
     avatarSrc: '',
     avatarPlaceholder: '/assets/avatar-placeholder.png',
@@ -79,15 +92,56 @@ Page({
     growthRows: [] as GrowthRow[],
   },
 
-  onLoad() {
+  /** URL 里的 `u`：正在看的**别人**的主页标识；空 = 看自己的 */
+  viewedKey: '',
+
+  /** 访客视角取到的那份公开数据（重画时用它，不再发请求） */
+  publicProfile: null as PublicProfileResponse | null,
+
+  onLoad(query: Record<string, string | undefined>) {
     this.setData({ navTop: navPadTop() })
+
+    /**
+     * ⭐ 打开右上角「转发 / 分享到朋友圈」菜单。
+     * ⚠️ 菜单只是入口，真正决定分享内容的是 onShareAppMessage / onShareTimeline
+     *    （与 pages/challenge 同一套）。
+     */
+    wx.showShareMenu?.({ menus: ['shareAppMessage', 'shareTimeline'] })
+
+    const key = query.u ?? ''
+    if (!key) return
+    this.viewedKey = key
+    this.setData({ visitor: true, shareKey: key })
+    void this.loadPublic()
+  },
+
+  /**
+   * 取**别人**分享出来的主页 —— 公开接口，不需要登录。
+   * ⚠️ 服务端只认 24 位标识、且账号必须 normal，取不到就是**这一页不存在**。
+   */
+  async loadPublic() {
+    this.setData({ loadingPublic: true, error: '' })
+    try {
+      const p = await fetchPublicProfile(this.viewedKey)
+      this.publicProfile = p
+      this.renderPublic()
+    } catch (err) {
+      this.setData({ error: (err as Error).message || String(err) })
+    } finally {
+      this.setData({ loadingPublic: false })
+    }
   },
 
   /**
    * ⚠️ 用 onShow 而不是 onLoad：从朗读页挑战完回来时，这一页的数字必须是新的。
    * ⚠️ 先用缓存画一遍（store 里有上次的值），再向服务端刷 —— 否则每次进来先白一下。
+   * ⚠️ 访客视角**不碰 store**，只重画手里那份公开快照。
    */
   onShow() {
+    if (this.viewedKey) {
+      this.renderPublic()
+      return
+    }
     this.render()
     void refreshMe().then(() => this.render())
   },
@@ -100,6 +154,8 @@ Page({
     const st = me.getState()
     const p = st.profile
     this.setData({
+      // ⭐ 我自己的分享标识（store 里落着上次 /me 的结果）—— 没有就不显示分享按钮
+      shareKey: p?.shareKey ?? '',
       nickname: (p?.nickname ?? '').trim() || '未设置昵称',
       streakDays: st.streak?.streakDays ?? 0,
       unfreezeCards: st.streak?.unfreezeCards ?? 0,
@@ -113,12 +169,32 @@ Page({
       rounds: p?.challengedRounds ?? 0,
       growthRows: toGrowthRows(p?.growth),
     })
+    this.loadAvatar(p?.avatarUrl ?? '')
+  },
 
-    /**
-     * ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。
-     *    换址期间用户可能又换了头像，回来的是旧地址就不覆盖（比 fileID）。
-     */
-    const fileId = p?.avatarUrl ?? ''
+  /**
+   * 访客视角：只画公开的那几格（字段清单见 shared 的 PublicProfileResponse）。
+   * ⚠️ 能量 / 解冻卡**不在**那份数据里，所以这里根本不写它们 ——
+   *    而不是「写了再藏起来」：藏起来那版，下一个人加字段时会顺手带上去。
+   */
+  renderPublic() {
+    const p = this.publicProfile
+    if (!p) return
+    this.setData({
+      nickname: (p.nickname ?? '').trim() || '未设置昵称',
+      streakDays: p.streakDays,
+      conqueredCount: p.conqueredCount,
+      rounds: p.challengedRounds,
+      growthRows: toGrowthRows(p.growth),
+    })
+    this.loadAvatar(p.avatarUrl ?? '')
+  },
+
+  /**
+   * ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。
+   *    换址期间头像可能又被换掉，回来的是旧地址就不覆盖（比 fileID）。
+   */
+  loadAvatar(fileId: string) {
     if (!fileId || fileId === avatarFileId) return
     avatarFileId = fileId
     void resolveCloudFileUrl(fileId).then((url) => {
@@ -134,15 +210,52 @@ Page({
     openEnergyPage()
   },
 
+  /**
+   * ⭐ 下面三格在**访客视角下只做展示**（见文件头）：点进去打开的是「我」的私有列表，
+   *    那不是这一页的主语 —— 所以这三个方法都先看这一步。
+   */
   onStreak() {
+    if (this.data.visitor) return
     openStreakPage()
   },
 
   onParticipations() {
+    if (this.data.visitor) return
     openParticipationsPage()
   },
 
   onChallenges() {
+    if (this.data.visitor) return
     openChallengesPage()
+  },
+
+  /** 分享用的标识：正在看的那个主页优先，否则是我自己的 */
+  shareTarget(): string {
+    return this.viewedKey || this.data.shareKey
+  },
+
+  shareTitle(): string {
+    return this.data.visitor ? this.data.nickname + ' 的句拼主页' : '来看看我的句拼主页'
+  },
+
+  /**
+   * ⭐ 转发给好友 —— 路径指向**当前正在看的这个主页**。
+   *
+   * ⚠️⚠️ 标识为空时不能就这么发出去：不带参数的分享路径会让对方打开后看到
+   *    **他自己的**主页。所以那种情况下分享按钮不显示（见 wxml 的 wx:if），
+   *    标题也退化成一句不带指代的话。
+   */
+  onShareAppMessage() {
+    const key = this.shareTarget()
+    return {
+      title: this.shareTitle(),
+      path: '/pages/profile/profile' + (key ? '?u=' + key : ''),
+    }
+  },
+
+  /** ⭐ 分享到朋友圈 —— 朋友圈只能用 query 带参数 */
+  onShareTimeline() {
+    const key = this.shareTarget()
+    return { title: this.shareTitle(), query: key ? 'u=' + key : '' }
   },
 })

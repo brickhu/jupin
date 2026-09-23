@@ -1,0 +1,25 @@
+/**
+ * 分享按钮 —— ⚠️ 必须是 <button open-type="share">：
+ *    小程序里只有它能**主动拉起转发**，普通 view 点了不会弹分享面板。
+ *
+ * ⚠️ button 自带一整套默认样式（灰底、圆角、行高、::after 那圈边框），
+ *    不重置的话它在卡片里会像一个坏掉的控件 ——
+ *    与 pages/challenge 的 .cl-share 同一套处理，改一处记得看另一处。
+ */
+.pr-share {
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  background: #eeecfd; /* 与 uno.config.mjs 的 brand 同色系浅底 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ⚠️ ::after 是微信给 button 自带的边框，不干掉就会有一圈灰边 */
+.pr-share::after {
+  border: none;
+}

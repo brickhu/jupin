@@ -2,75 +2,100 @@
   ⭐ 「用户主页」—— 成绩墙（只读，对外展示）。
 
   ⚠️⚠️ 它在 pages 根目录、不在 pages/me/ 下：这一页是**给别人看**的
-     （以后要能被分享、被陌生人打开），和 pages/challenge 同一个理由。
+     （能分享、能被陌生人打开），和 pages/challenge 同一个理由。
   ⚠️ 与 pages/profile-edit（**修改资料**）不是一回事：那一页是私有表单。
   ⚠️ 三个成长值**分开展示、不合成总分** —— 每个数各自回答一个问题，
      相加之后没人解释得清那个数是怎么来的。
+
+  ⭐⭐ 两种视角（见 profile.ts 的文件头）：
+     · 没有 ?u= → 我自己的主页：能量/解冻卡 + 三格可点的入口
+     · 有  ?u= → 别人分享出来的主页：**只有公开成绩** ——
+                 能量/解冻卡不出现（账号余额不对外），
+                 三格只做展示（点进去是「我」的私有列表，不是这一页的主语）
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
-  <nav-bar id="nav" title="我的主页" />
+  <nav-bar id="nav" title="{{visitor ? 'TA 的主页' : '我的主页'}}" />
 
-  <!-- ── 头部：头像 + 昵称 + 一行小字（能量 / 解冻卡）────────────────
-       ⚠️ 这一行与**用户面板**逐字一致（⚡ 能量 N 点 › · ❄️ 解冻卡 M 张）：
-          说的是同一件事，措辞或字号不同，用户就得重新认一遍。
-       ⚠️ 能量那段可点（进能量页），与用户面板同一个去处；
-          解冻卡没有独立页面，入口在「连战记录」里。
-       ⚠️ 这里**不放**连续天数：连战在下面成长值卡的第一格（「连战记录」），
-          同一屏里同一个数出现两次，只会让人怀疑哪一个才算。 -->
-  <view class="bg-white rounded-2.5 p-4 flex items-center">
-    <image class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-    <view class="ml-3 flex-1">
-      <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
-      <text class="text-24rpx text-faint block mt-1" bindtap="onEnergy"
-            hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
-    </view>
+  <!-- ── 访客视角：正在取 / 取不到 ───────────────────────────
+       ⚠️ 取不到就是真的取不到：服务端只认 24 位标识、账号必须 normal，
+          链接失效与被关账号一律 404（见 routes/share.ts）。
+       ⚠️ 这两个状态**只有访客有**：我自己的主页取的是 store，不会「取不到」。 -->
+  <view class="bg-white rounded-2.5 p-5" wx:if="{{visitor && loadingPublic}}">
+    <text class="text-28rpx text-muted">正在取这个主页…</text>
+  </view>
+  <view class="bg-white rounded-2.5 p-5" wx:elif="{{visitor && error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
   </view>
 
-  <!-- ── 成长值（顶部是三个入口的横排）───────────────────────────
-       ⚠️ 三个入口与**首页状态卡同构**：等分 + 竖分隔线 + 数字带单位 + 标签带 ›。
-          同一个东西在两个页面长得不一样，用户会以为它们不是一回事。
-       ⚠️ 数字口径也**逐格对齐首页**（见 profile.ts 的注释）：
-          「参与场次」两边都数**拿到过分数的句子数** —— 参与场次页筛的正是拿过分那条，
-          用它才对得上下方这几格、也对得上点进去看到的条数。 -->
-  <view class="bg-white rounded-2.5 p-4 mt-3">
-    <view class="flex items-center">
-      <view class="flex-1 text-center" bindtap="onStreak" hover-class="active__opacity-60">
-        <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{streakDays}}</text>
-          <text class="text-24rpx text-faint ml-1">天</text>
-        </view>
-        <text class="text-22rpx text-faint block mt-1.5">连战记录 ›</text>
+  <block wx:else>
+    <!-- ── 头部：头像 + 昵称（+ 我自己的能量/解冻卡）+ 分享 ────────
+         ⚠️ 昵称下面那行与**用户面板**逐字一致（⚡ 能量 N 点 › · ❄️ 解冻卡 M 张）：
+            说的是同一件事，措辞或字号不同，用户就得重新认一遍。
+         ⚠️ 能量那段可点（进能量页），与用户面板同一个去处；
+            解冻卡没有独立页面，入口在「连战记录」里。
+         ⚠️ 这一行用 wx:if 挡住访客 —— 它是**账号余额**，不是成绩。 -->
+    <view class="bg-white rounded-2.5 p-4 flex items-center">
+      <image class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+      <view class="ml-3 flex-1">
+        <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
+        <text class="text-24rpx text-faint block mt-1" wx:if="{{!visitor}}" bindtap="onEnergy"
+              hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
       </view>
-      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
-      <view class="flex-1 text-center" bindtap="onParticipations" hover-class="active__opacity-60">
-        <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{conqueredCount}}</text>
-          <text class="text-24rpx text-faint ml-1">场</text>
-        </view>
-        <text class="text-22rpx text-faint block mt-1.5">参与场次 ›</text>
-      </view>
-      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
-      <view class="flex-1 text-center" bindtap="onChallenges" hover-class="active__opacity-60">
-        <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{rounds}}</text>
-          <text class="text-24rpx text-faint ml-1">次</text>
-        </view>
-        <text class="text-22rpx text-faint block mt-1.5">我的挑战 ›</text>
-      </view>
+      <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发。
+           ⚠️ 标识拿不到（store 里还没有 /me 的结果）时**不显示** ——
+              不带参数的分享路径会让对方打开后看到他自己的主页。 -->
+      <button class="pr-share shrink-0" open-type="share" wx:if="{{shareKey}}">
+        <text class="text-32rpx">🔗</text>
+      </button>
     </view>
 
-    <!-- ⚠️ 原来的「成长值」小标题、以及它上面那条分隔线一起去掉了：
-         每行成长值自己带 border-t，**第一行那条线本来就是与上面三格的分界** ——
-         留着标题会变成「线 + 标题 + 线」，两条线之间夹一行字，反而像出了错。 -->
-    <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{growthRows}}" wx:key="key">
+    <!-- ── 成长值（顶部是三个数）────────────────────────────────
+         ⚠️ 自己看时：三格是**入口**（等分 + 竖分隔线 + 数字带单位 + 标签带 ›，
+            与首页状态卡同构）。
+         ⚠️ 看别人的主页时：三格**只做展示** —— 标签换成纯统计说法
+            （连续天数 / 参与场次 / 挑战回合），不带 ›，点了也不跳转：
+            连战记录 / 参与场次 / 我的挑战 打开的都是「我」的私有列表。
+         ⚠️ 数字口径逐格对齐首页（见 profile.ts 的注释）：
+            「参与场次」两边都数**拿到过分数的句子数** —— 参与场次页筛的正是它。 -->
+    <view class="bg-white rounded-2.5 p-4 mt-3">
       <view class="flex items-center">
-        <text class="text-36rpx">{{item.icon}}</text>
-        <text class="text-28rpx text-ink font-medium ml-2 flex-1">{{item.name}}</text>
-        <text class="text-36rpx font-bold text-ink">{{item.value}}</text>
+        <view class="flex-1 text-center" bindtap="onStreak" hover-class="active__opacity-60">
+          <view class="flex items-baseline justify-center">
+            <text class="text-40rpx font-bold text-ink">{{streakDays}}</text>
+            <text class="text-24rpx text-faint ml-1">天</text>
+          </view>
+          <text class="text-22rpx text-faint block mt-1.5">{{visitor ? '连续天数' : '连战记录 ›'}}</text>
+        </view>
+        <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+        <view class="flex-1 text-center" bindtap="onParticipations" hover-class="active__opacity-60">
+          <view class="flex items-baseline justify-center">
+            <text class="text-40rpx font-bold text-ink">{{conqueredCount}}</text>
+            <text class="text-24rpx text-faint ml-1">场</text>
+          </view>
+          <text class="text-22rpx text-faint block mt-1.5">{{visitor ? '参与场次' : '参与场次 ›'}}</text>
+        </view>
+        <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+        <view class="flex-1 text-center" bindtap="onChallenges" hover-class="active__opacity-60">
+          <view class="flex items-baseline justify-center">
+            <text class="text-40rpx font-bold text-ink">{{rounds}}</text>
+            <text class="text-24rpx text-faint ml-1">次</text>
+          </view>
+          <text class="text-22rpx text-faint block mt-1.5">{{visitor ? '挑战回合' : '我的挑战 ›'}}</text>
+        </view>
       </view>
-      <text class="text-22rpx text-faint block mt-1 leading-[1.6]">{{item.blurb}}</text>
+
+      <!-- ⚠️ 每行成长值自己带 border-t，**第一行那条线本来就是与上面三格的分界** ——
+           所以这里不放分隔线、也不放「成长值」小标题（留着会变成线 + 标题 + 线）。 -->
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{growthRows}}" wx:key="key">
+        <view class="flex items-center">
+          <text class="text-36rpx">{{item.icon}}</text>
+          <text class="text-28rpx text-ink font-medium ml-2 flex-1">{{item.name}}</text>
+          <text class="text-36rpx font-bold text-ink">{{item.value}}</text>
+        </view>
+        <text class="text-22rpx text-faint block mt-1 leading-[1.6]">{{item.blurb}}</text>
+      </view>
     </view>
-  </view>
+  </block>
 
 </view>

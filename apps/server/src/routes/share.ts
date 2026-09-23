@@ -5,6 +5,10 @@ import { db } from '../db'
 import { submissions, users } from '../db/schema'
 import { playbackRefOf } from '../services/recording'
 import { describe } from '../services/submission-view'
+import { getTotalConquered } from '../services/conquest'
+import { challengeStats } from '../services/submission'
+import { readGrowth } from '../services/growth'
+import { readStreakView } from '../services/streak'
 
 export const shareRoutes = new Hono()
 
@@ -68,6 +72,64 @@ shareRoutes.get('/challenge/:sid', async (c) => {
       // ⚠️ 只有公开的录音才给播放地址（见上面那段隐私边界）
       audio: row.isPublic ? await playbackRefOf(sid, row.audioKey) : null,
       at: (row.scoredAt ?? row.createdAt).toISOString(),
+    },
+  })
+})
+/**
+ * ⭐⭐ 分享出去的「个人主页」—— **不需要登录**。
+ *
+ * ⚠️⚠️ 标识是 users.share_key（24 位十六进制），**不是自增 id** ——
+ *    链接本身就是凭据（同上面那条挑战分享）。用 id 的话，1、2、3… 试一遍
+ *    就能把全站用户的主页与昵称扒下来，而这一页是专门要发给陌生人的。
+ *
+ * ⚠️ 隐私边界（改之前先看 packages/shared 的 PublicProfileResponse）：
+ *    · 给：昵称 / 头像 / 三个成长值 / 连续天数 / 参与场次 / 挑战回合
+ *    · ⛔ 不给：**能量、解冻卡**（用户的资产余额，与成绩无关）、id / openid / status
+ *    · ⛔ 也不给任何**可点的列表**：连战记录 / 参与场次 / 我的挑战 都是
+ *      「看的人自己的」私有数据，别人的主页上只该出现数字（见端侧 profile 页）
+ *
+ * ⚠️ 被禁用的账号一律 404（不是 403）：分享链接不该告诉陌生人「这里有个人被封了」。
+ */
+shareRoutes.get('/profile/:key', async (c) => {
+  const key = c.req.param('key')
+  // ⚠️ 先按形状挡一道：不是 24 位十六进制就不是分享标识，别去查库
+  if (!/^[0-9a-f]{24}$/.test(key)) {
+    return c.json({ ok: false, error: '这个主页不存在' }, 404)
+  }
+
+  const [u] = await db
+    .select({
+      id: users.id,
+      nickname: users.nickname,
+      avatarUrl: users.avatarUrl,
+      status: users.status,
+    })
+    .from(users)
+    .where(eq(users.shareKey, key))
+    .limit(1)
+  if (!u || u.status !== 'normal') {
+    return c.json({ ok: false, error: '这个主页不存在' }, 404)
+  }
+
+  // ⚠️ 连续天数取**现算的视图**，不是 users.streak_days 那一列：
+  //    那一列要等下一次提交才会变小，拿它分享出去会出现
+  //    「主页显示连续 9 天、其实早就断了」这种对外说错话的情况。
+  const [conqueredCount, stats, growth, streak] = await Promise.all([
+    getTotalConquered(u.id),
+    challengeStats(u.id),
+    readGrowth(u.id),
+    readStreakView(u.id),
+  ])
+
+  return c.json({
+    ok: true,
+    data: {
+      nickname: u.nickname,
+      avatarUrl: u.avatarUrl,
+      streakDays: streak.streakDays,
+      conqueredCount,
+      challengedRounds: stats.challengedRounds,
+      growth,
     },
   })
 })

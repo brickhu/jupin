@@ -12,8 +12,10 @@ import {
  * ⭐ 内容不入库：articles 只是**索引**——正文 / 技巧 / 标准音都是静态资源引用，
  *    库里只留「能被索引和排序」的字段（排期 / 竞技统计）。
  *
- * ⚠️ 难度、分类已经**整体下线**（做减法后的产品只有三条核心：得分 / 排名 / Streak）。
- *    历史迁移 0003 / 0004 里能看到它们的删除过程，别再按老文档把它们加回来。
+ * ⚠️ 分类已经**整体下线**；难度则是**作为正文属性重新加回来的**
+ *    （写在 content/articles/*.json 里，见 shared/difficulty.ts）——
+ *    ⚠️ 它**不落库**：正文的属性留在正文里，表里再来一列就是第二份真相。
+ *    历史迁移 0003 / 0004 能看到当年那两列的删除过程。
  *
  * ⚠️ MySQL 的 DATETIME 不存时区 —— 全链路按 UTC 读写（见 db/index.ts 的 timezone 设置）。
  */
@@ -24,6 +26,18 @@ export const users = mysqlTable('users', {
   unionid: varchar('unionid', { length: 64 }),
   nickname: varchar('nickname', { length: 64 }),
   avatarUrl: varchar('avatar_url', { length: 512 }),
+
+  /**
+   * ⭐ 对外分享主页用的**不可猜标识**（24 位十六进制）。
+   *
+   * ⚠️⚠️ 刻意不用自增 id：分享链接**本身就是凭据**（同 submissions.id 那条约定）。
+   *    用 id 的话，1、2、3… 试一遍就能把全站用户的主页与昵称扒下来 ——
+   *    而这一页是专门要**发给陌生人**的。
+   * ⚠️ 它只能读那一页公开的东西（隐私边界见 routes/share.ts），
+   *    不参与任何鉴权、不是登录凭据。
+   * ⚠️ 建号时生成（services/user.ts）；存量行由迁移 0022 回填。
+   */
+  shareKey: varchar('share_key', { length: 24 }).unique(),
 
   /** 账号状态：normal | banned | deleted（防刷只有「当日暂停」是不够的，需要长期维度） */
   status: varchar('status', { length: 16 }).notNull().default('normal'),

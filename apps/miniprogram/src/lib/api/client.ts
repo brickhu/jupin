@@ -6,6 +6,7 @@ import type {
   GrowthRankResponse,
   MeResponse,
   ParticipationsResponse,
+  PublicProfileResponse,
   ScheduleDetail,
   ChallengeShareResponse,
   SchedulesResponse,
@@ -757,6 +758,16 @@ export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionS
  */
 export function fetchSubmissionShare(submissionId: string): Promise<ChallengeShareResponse> {
   return request<ChallengeShareResponse>('/share/challenge/' + submissionId)
+}
+
+/**
+ * ⭐ 别人**分享出来的个人主页** —— 同样走公开路径、不需要登录。
+ *
+ * ⚠️ 服务端只给公开成绩（昵称 / 头像 / 三个成长值 / 连续天数 / 场次 / 回合）；
+ *    **能量与解冻卡不在其中** —— 那是账号余额，不是成绩（见 routes/share.ts 的隐私边界）。
+ */
+export function fetchPublicProfile(shareKey: string): Promise<PublicProfileResponse> {
+  return request<PublicProfileResponse>('/share/profile/' + shareKey)
 }
 
 /**
