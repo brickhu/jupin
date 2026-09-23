@@ -399,6 +399,22 @@ export interface ScheduleAudio {
 }
 
 /**
+ * ⭐ 句库**列表**里的一条（瘦）—— GET /api/articles。
+ *
+ * ⚠️ 刻意**不含词级数据**（音标 / 释义 / 逐词音频）：那是详情页的事
+ *    （GET /api/articles/:id）。要塞进列表，首屏就得为全站句子付一遍这个代价。
+ */
+export interface ArticleListItem {
+  id: number
+  text: string
+  translation: string
+  difficulty: ArticleDifficulty | null
+  tags: string[]
+  /** 标准音（可播引用 + 时长）；这一句没有标准音时是 null ⇒ 端侧不画播放入口 */
+  audio: ScheduleAudio | null
+}
+
+/**
  * ⭐ 首页/列表上的一张竞技场卡片。
  *
  * ⚠️⚠️ `date` / `isScheduled` / `isToday` **只有今日那一张有** ——

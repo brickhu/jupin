@@ -66,17 +66,22 @@ const ROUTES = scan(/app\.route\('(\/api\/[a-z-]+)'/)
 const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
 
 /**
- * ⭐ 唯一允许不鉴权的两个 /api 前缀。
+ * ⭐ 允许不鉴权的 /api 前缀 —— **全是公开数据，一条「我的」字段都没有**。
  *
- * ⚠️⚠️ 它们不是「忘了挂鉴权」，而是**结构上安全**的两种公开路径**：
- *    · /api/auth —— 要拿 code 换 token，鉴权无从谈起（而且它只能改自己那一行的 session_key）
- *    · /api/pay  —— 虚拟支付的**发货推送**，来自微信平台、带不了 token ⇒
- *                   鉴权只能做在路由自己那一层（单号存在 + 金额相等 + 归属匹配 + 幂等）
+ * ⚠️⚠️ 公开的标准不是「看起来不敏感」，而是这两个条件同时成立：
+ *    ① 响应里不含任何「仅本人可见」的字段（我的名次 / 我的能量 / 本人录音…）；
+ *    ② 「我的」那部分由**另一个鉴权接口**给，端侧按 id 融合（见各页面）。
+ *
+ *    · /api/auth         —— 要拿 code 换 token，鉴权无从谈起（而且它只能改自己那一行的 session_key）
+ *    · /api/pay          —— 虚拟支付的**发货推送**，来自微信平台、带不了 token ⇒
+ *                           鉴权只能做在路由自己那一层（单号存在 + 金额相等 + 归属匹配 + 幂等）
+ *    · /api/articles     —— 句库：正文 / 译文 / 难度标签 / 标准音（静态内容，无用户数据）
+ *    · /api/leaderboards —— 成长榜 TOP10（榜上的昵称与分数本来就是公开的）
  *
  * ⚠️ 往 /api/pay 下加业务接口 = 直接开一个免鉴权的洞，要加就另开前缀。
  */
-const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay'])
-const EXPECTED_PUBLIC = ['/api/auth', '/api/pay']
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/leaderboards'])
+const EXPECTED_PUBLIC = ['/api/articles', '/api/auth', '/api/leaderboards', '/api/pay']
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {
   it('扫到了路由（别让正则悄悄失配，那会让下面几条变成空转）', () => {

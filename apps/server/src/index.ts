@@ -15,7 +15,7 @@ import { submissionsRoutes } from './routes/submissions'
 import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
-import { shareRoutes } from './routes/share'
+import { publicRoutes } from './routes/public'
 import { schedulesRoutes } from './routes/schedules'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
@@ -143,7 +143,7 @@ app.route('/media', mediaRoutes)
  *    那会让没登录的人打不开首页。
  */
 app.use('/share/*', optionalAuth)
-app.route('/share', shareRoutes)
+app.route('/share', publicRoutes)
 // ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak（+ 登录时的「我的」字段）
 app.route('/share/schedules', schedulesRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
@@ -160,12 +160,10 @@ app.route('/share/arenas', arenasRoutes)
 app.route('/api/pay', payRoutes)
 
 // 需鉴权路由
-app.use('/api/articles/*', authMiddleware)
 app.use('/api/submissions/*', authMiddleware)
 app.use('/api/uploads/*', authMiddleware)
 app.use('/api/user/*', authMiddleware)
 app.use('/api/shop/*', authMiddleware)
-app.use('/api/leaderboards/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
