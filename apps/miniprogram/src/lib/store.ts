@@ -248,25 +248,16 @@ function mergeBest(a: number | null, b: number | null): number | null {
 }
 
 /**
- * 用排期列表接口的返回值刷新。
+ * 用排期列表接口（**公开**）的返回值刷新。
  *
- * ⚠️ 两种情形都要能处理（服务端正在收尾，字段可能已经没有了）：
- *    · 还带着「我的」字段 → 顺手落进 arena / streak（保守合并，别覆盖更高的分）
- *    · 已经不带了 → 只更新 serverDate；「我的」那些数由 applyArenaRecords 与
- *      /api/user/me 负责（那才是它们唯一该有的来源）
- * ⚠️ 所以这里对 myBest/myAttempts/streak 一律**可缺省**，缺了就不动。
+ * ⚠️⚠️ 这里刻意**不碰** arena 与 streak —— 公开接口不带「我的」字段了：
+ *    · 「我在这句上的战绩」→ applyArenaRecords（鉴权接口 /api/user/arena-records）
+ *    · 「连续天数 / 解冻卡」→ /api/user/me（写进 profile/streak 的是 applyProfile）
+ *    一份数据一个写入方，才不会有「两个来源对不上」。
  */
 export function applySchedules(res: SchedulesResponse): void {
-  const arena = { ...state.arena }
-  for (const e of [res.today, ...res.history]) {
-    const prev = arena[e.articleId]
-    arena[e.articleId] = {
-      myBest: mergeBest(prev?.myBest ?? null, e.myBest ?? null),
-      myAttempts: Math.max(prev?.myAttempts ?? 0, e.myAttempts ?? 0),
-    }
-  }
-  // ⚠️ profile 原样带着走：它只有 /api/user/me 会写，这张列表不碰它
-  commit({ serverDate: res.date, arena, streak: res.streak ?? state.streak, profile: state.profile })
+  // ⚠️ 其余字段原样带着走（各有各的写入方，见上）
+  commit({ ...state, serverDate: res.date })
 }
 
 /**
