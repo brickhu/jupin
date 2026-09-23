@@ -491,7 +491,7 @@ export interface ScheduleEntry {
   /** 最高分；无人参与为 null */
   topScore: number | null
   /** 我的最好成绩；没参与为 null */
-  myBest: number | null
+  myBest?: number | null
   /**
    * ⭐ 我在这一句**打过几次分**（0 = 还没挑战）。
    *
@@ -499,7 +499,7 @@ export interface ScheduleEntry {
    *    把「音频读不出来 / 引擎判无效」也算进去的话，用户会看到
    *    「你已挑战 3 次」却只有一条成绩，而其中两次他根本没读成 —— 没法解释。
    */
-  myAttempts: number
+  myAttempts?: number
 }
 
 /**
@@ -527,13 +527,13 @@ export interface ScheduleDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
-  myBest: number | null
+  myBest?: number | null
   /** 我在这天打过几次分（0 = 还没挑战） */
-  myAttempts: number
+  myAttempts?: number
   /** 我的名次；没参与为 null */
-  myRank: number | null
+  myRank?: number | null
   /** 我击败了多少人；没参与为 null */
-  myBeatenCount: number | null
+  myBeatenCount?: number | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
@@ -564,10 +564,10 @@ export interface ArenaDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
-  myBest: number | null
-  myAttempts: number
-  myRank: number | null
-  myBeatenCount: number | null
+  myBest?: number | null
+  myAttempts?: number
+  myRank?: number | null
+  myBeatenCount?: number | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }

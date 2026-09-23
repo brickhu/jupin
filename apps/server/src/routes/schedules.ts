@@ -8,8 +8,7 @@ import { loadArticleContent } from '../services/content'
 import { ensureSchedules, scheduleAhead } from '../services/schedules'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
 import { pickHistoryArticles } from '../services/schedule-shape'
-import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
-import { readStreakView } from '../services/streak'
+import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
 import { MAX_BACKFILL_DAYS, resolveScheduleDate } from '../services/schedule-date'
 import type { Variables } from '../middleware/auth'
 
@@ -37,7 +36,6 @@ const MAX_HISTORY = 50
  *    -5 号会轮回到今天那一句 —— 历史里必然出现一张和上面一模一样的卡。
  */
 schedulesRoutes.get('/', async (c) => {
-  const userId = c.get('userId')
   const date = today()
 
   const requested = Number(c.req.query('history'))
@@ -110,10 +108,9 @@ schedulesRoutes.get('/', async (c) => {
     })
   }
   const articleIds = [...articleById.keys()]
-  const [stats, streak] = await Promise.all([
-    getArenaStatsBatch(articleIds, userId),
-    readStreakView(userId, date),
-  ])
+  // ⚠️ 公开接口：只取公开统计（参与人数 / 最高分）。第二个参数 0 = 匿名，
+  //    不会去查「我的最好成绩」—— 那走鉴权接口 /api/user/arena-records。
+  const stats = await getArenaStatsBatch(articleIds, 0)
 
   // ⚠️ 正文按 contentJson 去重后一次性读：轮转池只有几句，反复出现同一条内容
   // ⚠️ 这里的 type 必须与 loadArticleContent 的解析口径一致：
@@ -167,8 +164,6 @@ schedulesRoutes.get('/', async (c) => {
       tags: c?.tags ?? [],
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
-      myBest: st?.myBest ?? null,
-      myAttempts: st?.myAttempts ?? 0,
       audio: audioOf.get(articleId) ?? null,
     }
   }
@@ -202,7 +197,7 @@ schedulesRoutes.get('/', async (c) => {
     history.push({ articleId: row.articleId, ...c })
   }
 
-  return c.json({ ok: true, data: { date, today: todayCard, history, streak } })
+  return c.json({ ok: true, data: { date, today: todayCard, history } })
 })
 
 /**
@@ -213,7 +208,6 @@ schedulesRoutes.get('/', async (c) => {
  *    · 列表不带「我的名次」（7 天各算一次名次太贵），详情只算一天，随便算
  */
 schedulesRoutes.get('/:date', async (c) => {
-  const userId = c.get('userId')
   const date = resolveScheduleDate(c.req.param('date'))
   if (!date) {
     return c.json(
@@ -231,10 +225,10 @@ schedulesRoutes.get('/:date', async (c) => {
   // ⚠️ 统计、榜单、名次全部按**句子**（句子 = 竞技场），日期只决定进哪一个
   const articleId = pick.article.id
   const content = await loadArticleContent(pick.article.contentJson)
-  const [stats, leaderboard, rankInfo] = await Promise.all([
-    getArenaStatsBatch([articleId], userId).then((m) => m.get(articleId)),
-    getTopLeaderboard(articleId, userId),
-    getRank(articleId, userId),
+  // ⚠️ 公开接口：统计与榜单都传 0（匿名）
+  const [stats, leaderboard] = await Promise.all([
+    getArenaStatsBatch([articleId], 0).then((m) => m.get(articleId)),
+    getTopLeaderboard(articleId, 0),
   ])
 
   const detail: ScheduleDetail = {
@@ -250,11 +244,6 @@ schedulesRoutes.get('/:date', async (c) => {
     isToday: date === now,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
-    myBest: stats?.myBest ?? null,
-    myAttempts: stats?.myAttempts ?? 0,
-    // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
-    myRank: rankInfo.rank > 0 ? rankInfo.rank : null,
-    myBeatenCount: rankInfo.rank > 0 ? rankInfo.beatenCount : null,
     leaderboard,
   }
   return c.json({ ok: true, data: detail })

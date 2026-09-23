@@ -282,19 +282,6 @@ export function applyArenaRecords(
   commit({ ...state, arena })
 }
 
-/**
- * 用竞技场详情的返回值刷新。
- * ⚠️ 只取三个与「哪一天」无关的字段 —— 所以**两种详情都能喂进来**：
- *    ScheduleDetail（按日期寻址）与 ArenaDetail（按句子寻址）。
- *    这里刻意不收 `date`：竞技数据的键从来是 articleId（见文件头）。
- */
-export function applyScheduleDetail(
-  d: Pick<ScheduleDetail, 'articleId' | 'myBest' | 'myAttempts'>,
-): void {
-  const arena = { ...state.arena }
-  arena[d.articleId] = { myBest: d.myBest, myAttempts: d.myAttempts }
-  commit({ ...state, arena })
-}
 
 /**
  * ⭐⭐ 一次打分成功后写入 —— **这条是整个 store 存在的理由**。

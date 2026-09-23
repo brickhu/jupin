@@ -7,7 +7,7 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import type { Variables } from '../middleware/auth'
 import { loadArticleContent } from '../services/content'
-import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/leaderboard'
+import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
 
 /**
  * ⭐⭐ 竞技场详情 —— **按句子**寻址。
@@ -28,7 +28,6 @@ import { getArenaStatsBatch, getRank, getTopLeaderboard } from '../services/lead
 export const arenasRoutes = new Hono<{ Variables: Variables }>()
 
 arenasRoutes.get('/:articleId', async (c) => {
-  const userId = c.get('userId')
   const articleId = Number(c.req.param('articleId'))
   if (!Number.isInteger(articleId) || articleId <= 0) {
     return c.json({ ok: false, error: 'articleId 不合法' }, 400)
@@ -38,10 +37,10 @@ arenasRoutes.get('/:articleId', async (c) => {
   if (!article) return c.json({ ok: false, error: '这一句不存在' }, 404)
 
   const content = await loadArticleContent(article.contentJson)
-  const [stats, leaderboard, rankInfo] = await Promise.all([
-    getArenaStatsBatch([articleId], userId).then((m) => m.get(articleId)),
-    getTopLeaderboard(articleId, userId),
-    getRank(articleId, userId),
+  // ⚠️ 公开接口：统计与榜单都传 0（匿名）—— 榜单里不标「你」
+  const [stats, leaderboard] = await Promise.all([
+    getArenaStatsBatch([articleId], 0).then((m) => m.get(articleId)),
+    getTopLeaderboard(articleId, 0),
   ])
 
   /** ⚠️ 服务端的今天 —— 端侧手机时钟可以随便改（同 shared/day.ts 的口径） */
@@ -59,11 +58,6 @@ arenasRoutes.get('/:articleId', async (c) => {
     isToday: true,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
-    myBest: stats?.myBest ?? null,
-    myAttempts: stats?.myAttempts ?? 0,
-    // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
-    myRank: rankInfo.rank > 0 ? rankInfo.rank : null,
-    myBeatenCount: rankInfo.rank > 0 ? rankInfo.beatenCount : null,
     leaderboard,
   }
   return c.json({ ok: true, data: detail })
