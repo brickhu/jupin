@@ -81,7 +81,7 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  * ⚠️ 往 /api/pay 下加业务接口 = 直接开一个免鉴权的洞，要加就另开前缀。
  */
 const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/leaderboards'])
-const EXPECTED_PUBLIC = ['/api/articles', '/api/auth', '/api/leaderboards', '/api/pay']
+const EXPECTED_PUBLIC = [...PUBLIC_PREFIXES].sort()
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {
   it('扫到了路由（别让正则悄悄失配，那会让下面几条变成空转）', () => {
