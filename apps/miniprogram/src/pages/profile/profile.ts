@@ -72,7 +72,6 @@ Page({
     unfreezeExpiresOn: '' as string,
     energy: 0,
     conqueredCount: 0,
-    participated: 0,
     rounds: 0,
     growthRows: [] as GrowthRow[],
   },
@@ -104,8 +103,12 @@ Page({
       unfreezeCards: st.streak?.unfreezeCards ?? 0,
       unfreezeExpiresOn: st.streak?.unfreezeExpiresOn ?? '',
       energy: p?.energy ?? 0,
+      /**
+       * ⚠️ 参与场次数的是 conqueredCount（**拿到过分数的句子数**），与首页状态卡同口径 ——
+       *    参与场次页筛的正是「拿到过分」那条，用它才对得上点进去看到的条数。
+       *    原来用的是 challengedCount（挑战过几句，含打分失败那次），两个页面会差数。
+       */
       conqueredCount: p?.conqueredCount ?? 0,
-      participated: p?.challengedCount ?? 0,
       rounds: p?.challengedRounds ?? 0,
       growthRows: toGrowthRows(p?.growth),
     })
