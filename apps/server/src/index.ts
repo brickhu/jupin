@@ -8,14 +8,14 @@ import { probeStorage } from './storage'
 import { probeContent } from './services/content'
 import { probeStandardAudio } from './services/standard-audio'
 import { goodsPriceMap, productIdStatus } from './services/goods'
-import { authMiddleware, optionalAuth } from './middleware/auth'
+import { authMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
 import { submissionsRoutes } from './routes/submissions'
 import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
-import { publicRoutes } from './routes/public'
+import { challengeRoutes, profileRoutes } from './routes/public'
 import { schedulesRoutes } from './routes/schedules'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
@@ -142,12 +142,13 @@ app.route('/media', mediaRoutes)
  *    所有「我的」数据自然查不到。所以这里**绝不能**换成 authMiddleware：
  *    那会让没登录的人打不开首页。
  */
-app.use('/share/*', optionalAuth)
-app.route('/share', publicRoutes)
-// ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak（+ 登录时的「我的」字段）
-app.route('/share/schedules', schedulesRoutes)
+// ⭐ 首页那一次请求：今日挑战 + 历史挑战（**纯公开**）
+app.route('/api/schedules', schedulesRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
-app.route('/share/arenas', arenasRoutes)
+app.route('/api/arenas', arenasRoutes)
+// ⭐ 公开页面：个人主页 /api/profile/:id、挑战详情 /api/challenge/:sid
+app.route('/api/challenge', challengeRoutes)
+app.route('/api/profile', profileRoutes)
 
 /**
  * ⭐⭐ 虚拟支付的**发货推送** —— 全站唯一一个公开的**写**接口。
@@ -159,18 +160,19 @@ app.route('/share/arenas', arenasRoutes)
  */
 app.route('/api/pay', payRoutes)
 
-// 需鉴权路由
-app.use('/api/submissions/*', authMiddleware)
-app.use('/api/uploads/*', authMiddleware)
+/**
+ * ⭐⭐ 需要鉴权的接口 —— **全部在 /api/user/* 下**（一条铁律）。
+ * ⚠️ 只有我自己能看的数据都在这里（明细列表 / 能量 / 提交 / 录音 / 上传 / 下单），
+ *    公开接口绝不塞这些字段。
+ */
 app.use('/api/user/*', authMiddleware)
-app.use('/api/shop/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
-app.route('/api/submissions', submissionsRoutes)
-app.route('/api/uploads', uploadsRoutes)
 app.route('/api/user', userRoutes)
-// ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）
-app.route('/api/shop', shopRoutes)
+app.route('/api/user/submissions', submissionsRoutes)
+app.route('/api/user/uploads', uploadsRoutes)
+// ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）—— 下单是我的行为
+app.route('/api/user/shop', shopRoutes)
 // ⭐ 成长榜：三个成长指标各 TOP10（首页那三块）
 app.route('/api/leaderboards', leaderboardsRoutes)
 

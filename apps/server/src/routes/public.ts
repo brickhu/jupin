@@ -15,7 +15,11 @@ import type { Variables } from '../middleware/auth'
  * ⚠️ 这里必须带上 Variables 类型：路由里要读 c.get('userId') 判断「谁在看」
  *    （可选身份由 index.ts 的 `app.use('/share/*', optionalAuth)` 注入）。
  */
-export const publicRoutes = new Hono<{ Variables: Variables }>()
+/** ⭐⭐ 公开页面两条路由 —— 分别挂在 /api/challenge 与 /api/profile。
+ * ⚠️ 只给公开数据：「我的」那部分走 /api/user/* 下的鉴权接口，端侧按 id 融合。
+ */
+export const challengeRoutes = new Hono<{ Variables: Variables }>()
+export const profileRoutes = new Hono<{ Variables: Variables }>()
 
 /**
  * ⭐ 分享出去的「一次挑战结果」 —— **不需要登录**。
@@ -35,7 +39,7 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
  *
  * ⛔ 不要为了「省一次查询」把它挂到 /api 下面 —— 那条路径上全是鉴权中间件。
  */
-publicRoutes.get('/challenge/:sid', async (c) => {
+challengeRoutes.get('/:sid', async (c) => {
   const sid = c.req.param('sid')
   // ⚠️ 先按形状挡一道：不是 24 位十六进制就不是提交 id，别去查库
   if (!/^[0-9a-f]{24}$/.test(sid)) {
@@ -104,7 +108,7 @@ publicRoutes.get('/challenge/:sid', async (c) => {
  *
  * ⚠️ 被禁用的账号一律 404（不是 403）：不该告诉陌生人「这里有个人被封了」。
  */
-publicRoutes.get('/profile/:id', async (c) => {
+profileRoutes.get('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   // ⚠️ 先按形状挡一道：不是正整数就别去查库
   if (!Number.isInteger(id) || id <= 0) {

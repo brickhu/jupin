@@ -121,27 +121,4 @@ export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (
   await next()
 })
 
-/**
- * ⭐⭐ **可选身份** —— 给公开页面用（/share/*）。
- *
- * ⚠️⚠️ 公开页面的模型（个人主页 / 挑战详情 / 竞技场 / 首页）：
- *    **一份数据人人（包括我自己）都一样**，按 id 从公开接口取；
- *    谁在看只影响「**哪些模块给**」—— 比如我的名次、我的能量、本人录音。
- *    所以这类接口必须能**同时**服务匿名与登录用户，而判据只有一处：这里。
- *
- * ⚠️ 认不出身份时**不报错、不拦截**，只是 userId = 0：
- *    0 是「匿名」，不是某个用户 —— 所有按 userId 查「我的」数据的地方
- *    自然查不到（见 getArenaStatsBatch / readStreakView 的处理）。
- * ⚠️ 但**不能**让 0 落进「按 openid 建号」那条路：token 过期不代表要新账号，
- *    这里一律降级成匿名，注册仍然只发生在 authMiddleware 那条路径上。
- */
-export const optionalAuth = createMiddleware<{ Variables: Variables }>(async (c, next) => {
-  const id = await resolveUser(c)
-  if (id.ok) {
-    c.set('userId', id.user.id)
-    c.set('user', id.user)
-  } else {
-    c.set('userId', 0)
-  }
-  await next()
-})
+

@@ -522,7 +522,7 @@ export async function login(): Promise<void> {
  */
 export function fetchSchedules(): Promise<SchedulesResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
-  return request<SchedulesResponse>('/share/schedules', { budgetMs: LAUNCH_BUDGET_MS })
+  return request<SchedulesResponse>('/api/schedules', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
@@ -603,7 +603,7 @@ export function fetchEnergy(before?: number): Promise<EnergyResponse> {
  *    而不是让用户点了才失败。
  */
 export function fetchShopGoods(): Promise<ShopGoodsResponse> {
-  return request<ShopGoodsResponse>('/api/shop/goods', { budgetMs: LAUNCH_BUDGET_MS })
+  return request<ShopGoodsResponse>('/api/user/shop/goods', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
@@ -618,7 +618,7 @@ export function fetchShopGoods(): Promise<ShopGoodsResponse> {
  */
 export async function createShopOrder(goodsCode: string): Promise<ShopOrderResponse> {
   const code = await wxLoginCode().catch(() => '')
-  return request<ShopOrderResponse>('/api/shop/order', {
+  return request<ShopOrderResponse>('/api/user/shop/order', {
     method: 'POST',
     data: { goodsCode, code },
     budgetMs: LAUNCH_BUDGET_MS,
@@ -659,7 +659,7 @@ export function fetchArenaRecords(ids: number[], ranks = false): Promise<ArenaRe
 }
 
 export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
-  return request<ArenaDetail>('/share/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
+  return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function fetchMe(): Promise<MeResponse> {
@@ -694,7 +694,7 @@ export function saveProfile(input: {
  * ⚠️ 同样走公开路径：挑战详情页/竞技场页都是公开页面（见 /share/schedules 的说明）。
  */
 export function fetchScheduleDetail(date: string): Promise<ScheduleDetail> {
-  return request<ScheduleDetail>('/share/schedules/' + date)
+  return request<ScheduleDetail>('/api/schedules/' + date)
 }
 
 /**
@@ -734,7 +734,7 @@ export function submitReading(
   /** ⭐ 是否公开这次录音（别人能不能听到）—— 默认公开 */
   isPublic = true,
 ): Promise<SubmissionStatusResponse> {
-  return request<SubmissionStatusResponse>('/api/submissions', {
+  return request<SubmissionStatusResponse>('/api/user/submissions', {
     method: 'POST',
     // ⚠️ audioUrl 一并带上：服务端读音频本来要靠「开放接口服务」，
     //    而它在 dev 环境实测没生效 —— 给了签名地址就不必依赖它。
@@ -761,13 +761,13 @@ export function setSubmissionVisibility(
   isPublic: boolean,
 ): Promise<{ submissionId: string; isPublic: boolean }> {
   return request<{ submissionId: string; isPublic: boolean }>(
-    '/api/submissions/' + submissionId + '/visibility',
+    '/api/user/submissions/' + submissionId + '/visibility',
     { method: 'POST', data: { isPublic } },
   )
 }
 
 export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionStatusResponse> {
-  return request<SubmissionStatusResponse>('/api/submissions/' + submissionId)
+  return request<SubmissionStatusResponse>('/api/user/submissions/' + submissionId)
 }
 
 /**
@@ -779,7 +779,7 @@ export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionS
  * ⚠️ 路径不在 /api 下面：那条路径上全是鉴权中间件（见服务端 routes/share.ts）。
  */
 export function fetchSubmissionShare(submissionId: string): Promise<ChallengeShareResponse> {
-  return request<ChallengeShareResponse>('/share/challenge/' + submissionId)
+  return request<ChallengeShareResponse>('/api/challenge/' + submissionId)
 }
 
 /**
@@ -789,7 +789,7 @@ export function fetchSubmissionShare(submissionId: string): Promise<ChallengeSha
  *    没有「本人 / 访客」两套数据（见服务端 routes/share.ts）。
  */
 export function fetchUserProfile(userId: number): Promise<UserProfileResponse> {
-  return request<UserProfileResponse>('/share/profile/' + userId)
+  return request<UserProfileResponse>('/api/profile/' + userId)
 }
 
 /**
@@ -801,5 +801,5 @@ export function fetchUserProfile(userId: number): Promise<UserProfileResponse> {
  *    转好的副本会留在对象存储里，之后就只是一次元数据查询。
  */
 export function fetchSubmissionAudio(submissionId: string): Promise<SubmissionAudioResponse> {
-  return request<SubmissionAudioResponse>('/api/submissions/' + submissionId + '/audio')
+  return request<SubmissionAudioResponse>('/api/user/submissions/' + submissionId + '/audio')
 }
