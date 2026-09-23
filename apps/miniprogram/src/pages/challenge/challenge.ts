@@ -194,13 +194,14 @@ Page({
   applyShare(share: ChallengeShareResponse, result: SubmitResponse) {
     this.audioRef = share.audio
     this.setData({
-      isOwner: share.isOwner,
+      // ⚠️ 走到这里就是**公开那一半**：看的人不是主人（本人那条走 applyOwner）
+      isOwner: false,
       owner: { nickname: share.owner.nickname, avatarSrc: share.owner.avatarUrl ?? '' },
       ago: agoText(share.at),
       isPublic: result.isPublic,
       canPlay: !!share.audio,
     })
-    this.renderResult(result, { isOwner: share.isOwner })
+    this.renderResult(result, { isOwner: false })
   },
 
   /** 两种视角**共用**的渲染 —— 同一份结果，两屏长得一样 */
