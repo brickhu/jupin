@@ -9,7 +9,6 @@ import { getTotalConquered } from '../services/conquest'
 import { challengeStats } from '../services/submission'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
-import { readEnergy } from '../services/energy'
 import type { Variables } from '../middleware/auth'
 
 /**
@@ -56,8 +55,8 @@ publicRoutes.get('/challenge/:sid', async (c) => {
     .limit(1)
   if (!row) return c.json({ ok: false, error: '这条挑战不存在' }, 404)
 
-  /** ⭐ 「谁在看」只决定**哪些模块给**，不决定数据本身（同 /profile/:id） */
-  const isOwner = c.get('userId') === row.userId
+  // ⚠️ 公开接口：只给公开数据（成绩 / 主人 / 公开的录音）。
+  //    「是不是我的」「我的录音」「还没出分」走 /api/user/submissions/:id（鉴权）
 
   const [owner] = await db
     .select({ nickname: users.nickname, avatarUrl: users.avatarUrl })
@@ -76,32 +75,19 @@ publicRoutes.get('/challenge/:sid', async (c) => {
    *    公开链接不该暴露「这个 id 存在、但还没成绩」；
    *    而本人必须看得到「还在检测中」—— 那不是错误，是中间态。
    */
+  // ⚠️ 没出分就 404（对所有人）：「这个 id 存在但还没成绩」不该从公开链接漏出去
   if (!status || status.status !== 'scored' || !status.result) {
-    if (!isOwner) return c.json({ ok: false, error: '这条挑战不存在' }, 404)
-    return c.json({
-      ok: true,
-      data: {
-        owner: ownerView,
-        status: status?.status === 'failed' ? 'failed' : 'scoring',
-        result: null,
-        audio: null,
-        at: (row.scoredAt ?? row.createdAt).toISOString(),
-        isOwner: true,
-      },
-    })
+    return c.json({ ok: false, error: '这条挑战不存在' }, 404)
   }
 
   return c.json({
     ok: true,
     data: {
       owner: ownerView,
-      status: 'scored' as const,
       result: status.result,
-      // ⭐ 录音：公开的给所有人；**本人的不管公开没公开都给** ——
-      //    自己的录音没理由因为没开公开就连自己也听不到
-      audio: row.isPublic || isOwner ? await playbackRefOf(sid, row.audioKey) : null,
+      // ⚠️ 录音只在**公开**时给（我的录音走 /api/user/submissions/:id/audio）
+      audio: row.isPublic ? await playbackRefOf(sid, row.audioKey) : null,
       at: (row.scoredAt ?? row.createdAt).toISOString(),
-      isOwner,
     },
   })
 })
@@ -151,14 +137,13 @@ publicRoutes.get('/profile/:id', async (c) => {
    *    · 能量 / 解冻卡 → **只给本人**：那是账号余额，不是主页该给别人看的东西
    *      （所以对别人连读都不读，而不是「读了再藏起来」）
    */
-  const isMe = c.get('userId') === u.id
+  // ⚠️ 公开接口：只给公开成绩。能量 / 解冻卡是账号余额，走 /api/user/*（端侧融合）
 
-  const [conqueredCount, stats, growth, streak, energy] = await Promise.all([
+  const [conqueredCount, stats, growth, streak] = await Promise.all([
     getTotalConquered(u.id),
     challengeStats(u.id),
     readGrowth(u.id),
     readStreakView(u.id),
-    isMe ? readEnergy(u.id) : Promise.resolve(null),
   ])
 
   return c.json({
@@ -167,8 +152,6 @@ publicRoutes.get('/profile/:id', async (c) => {
       id: u.id,
       nickname: u.nickname,
       avatarUrl: u.avatarUrl,
-      energy,
-      unfreezeCards: isMe ? streak.unfreezeCards : null,
       streakDays: streak.streakDays,
       conqueredCount,
       challengedRounds: stats.challengedRounds,
