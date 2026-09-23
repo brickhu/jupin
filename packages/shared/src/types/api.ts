@@ -490,16 +490,6 @@ export interface ScheduleEntry {
   participantCount: number
   /** 最高分；无人参与为 null */
   topScore: number | null
-  /** 我的最好成绩；没参与为 null */
-  myBest?: number | null
-  /**
-   * ⭐ 我在这一句**打过几次分**（0 = 还没挑战）。
-   *
-   * ⚠️ 只数 status='scored' 的，与参与人数同一口径：
-   *    把「音频读不出来 / 引擎判无效」也算进去的话，用户会看到
-   *    「你已挑战 3 次」却只有一条成绩，而其中两次他根本没读成 —— 没法解释。
-   */
-  myAttempts?: number
 }
 
 /**
@@ -527,13 +517,6 @@ export interface ScheduleDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
-  myBest?: number | null
-  /** 我在这天打过几次分（0 = 还没挑战） */
-  myAttempts?: number
-  /** 我的名次；没参与为 null */
-  myRank?: number | null
-  /** 我击败了多少人；没参与为 null */
-  myBeatenCount?: number | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
@@ -564,10 +547,6 @@ export interface ArenaDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
-  myBest?: number | null
-  myAttempts?: number
-  myRank?: number | null
-  myBeatenCount?: number | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
@@ -588,15 +567,6 @@ export interface SchedulesResponse {
    *    规则与单测见 services/schedule-shape.ts。
    */
   history: ScheduleEntry[]
-  /**
-   * 我的连续天数与解冻卡。
-   *
-   * ⚠️⚠️ 它**和这张列表没有任何关系** —— 只是搭个顺风车省一次往返。
-   *    streak 按**用户实际提交的时间**算（见 services/scoring.ts），
-   *    不看这张列表上的日期，也不看提交挂在哪一天的挑战上：
-   *    用户可以回到往日的挑战点「再次挑战」，那不该让他补签、也不该把今天的读记成上周的。
-   */
-  streak: StreakView
 }
 
 /* ---------- 其他 ---------- */
@@ -675,14 +645,6 @@ export interface UserProfileResponse {
   id: number
   nickname: string | null
   avatarUrl: string | null
-  /**
-   * ⭐ 能量点数 —— **只对本人给**（别人的主页不返回这个模块）。
-   * ⚠️ 它是账号余额，不是「主页」该给陌生人看的东西；null = 端侧不展示这一行。
-   * ⚠️ 同样地，服务端对别人连读都不读（见 routes/share.ts）。
-   */
-  energy: number | null
-  /** ⭐ 解冻卡张数 —— 同上，只对本人给 */
-  unfreezeCards: number | null
   /** 连续朗读天数（服务端现算的视图，不是库里那一列） */
   streakDays: number
   /** 参与场次：拿到过分数的去重句子数 */
@@ -737,20 +699,12 @@ export interface ChallengeWordScore {
 export interface ChallengeShareResponse {
   /** 这条挑战是谁读的 */
   owner: { nickname: string; avatarUrl: string | null }
-  /**
-   * ⭐ 打分状态。⚠️ **未出分时只有本人拿得到**（别人一律 404）：
-   *    公开链接不该暴露「这个 id 存在、但还没成绩」，
-   *    而本人必须看得到「还在检测中」——那不是错误，是中间态。
-   */
-  status: 'scored' | 'scoring' | 'failed'
   /** 与本人看到的 result 同构（同一处 describe() 产出）—— **只有 status='scored' 才有** */
-  result: SubmitResponse | null
+  result: SubmitResponse
   /** 这段录音的可播地址；**不公开时为 null**（本人不受此限）—— 同上，只有出分了才有 */
   audio: SubmissionAudioRef | null
   /** 提交时刻（ISO）—— 分享页只显示到分钟 */
   at: string
-  /** ⭐ 看的人就是这条挑战的主人（本人专属模块据此显示） */
-  isOwner: boolean
 }
 
 export interface ChallengeRecord {
