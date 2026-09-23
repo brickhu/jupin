@@ -23,3 +23,26 @@
 .pr-share::after {
   border: none;
 }
+/**
+ * 还没加入时，头像那一格画的是「加入」按钮 —— 与导航栏那一格同一套判据
+ *（服务端认不认识我，见 store 的 hasJoined）。
+ *
+ * ⚠️ 尺寸与头像**完全一致**（112rpx 圆）：两种形态共用一格位置，
+ *    换形态时布局不跳，用户的视线也不用重新找。
+ * ⚠️ 用品牌色实心圆而不是描边：这是这一页唯一「要你动手」的地方，
+ *    描边那版看起来像一个未激活的控件。
+ */
+.pr-join {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 500;
+  line-height: 1;
+}

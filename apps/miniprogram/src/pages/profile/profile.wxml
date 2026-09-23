@@ -36,10 +36,18 @@
             解冻卡没有独立页面，入口在「连战记录」里。
          ⚠️ 这一行用 wx:if 挡住访客 —— 它是**账号余额**，不是成绩。 -->
     <view class="bg-white rounded-2.5 p-4 flex items-center">
-      <image class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+      <!-- ⭐ 头像那一格有两种形态，判据与**导航栏那一格完全相同**（hasJoined）：
+           服务端认识我 → 头像；还不认识我 → 「加入」按钮。
+           ⚠️ 尺寸刻意与头像一样（112rpx）：换形态时布局不跳，视线不用重新找位置。
+           ⚠️ 访客视角永远画头像 —— 那是被访问的那个人，与「我加没加入」无关。 -->
+      <view class="pr-join" wx:if="{{!visitor && !joined}}" bindtap="onJoin"
+            hover-class="active__opacity-60">加入</view>
+      <image wx:else class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="ml-3 flex-1">
         <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
-        <text class="text-24rpx text-faint block mt-1" wx:if="{{!visitor}}" bindtap="onEnergy"
+        <!-- ⚠️ 能量 / 解冻卡只在**已加入**时出现：还没有账号的人没有余额，
+             「⚡ 能量 0 点」会被读成「我的点数花光了」。 -->
+        <text class="text-24rpx text-faint block mt-1" wx:if="{{!visitor && joined}}" bindtap="onEnergy"
               hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发。

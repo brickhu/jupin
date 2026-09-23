@@ -8,7 +8,7 @@ import {
   openParticipationsPage,
   openStreakPage,
 } from '../../lib/challenges'
-import { refreshMe } from '../../lib/join'
+import { openJoinPage, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -75,6 +75,12 @@ Page({
     navTop: 0,
     /** ⭐ 看的是**别人**分享出来的主页（见文件头）—— 决定隐藏什么、哪几格能点 */
     visitor: false,
+    /**
+     * ⭐ 服务端认识我吗（store 的 hasJoined）—— 头部头像那一格的判据。
+     * ⚠️ 与**导航栏那一格完全相同**：不认识我时它画的是「加入」按钮。
+     *    两处各判一套，就会出现「导航栏让我加入、主页却已经给我画了头像」。
+     */
+    joined: false,
     /** 访客视角：正在取那份公开快照 */
     loadingPublic: false,
     /** 访客视角取不到时的文案（链接失效 / 账号被关 —— 服务端一律 404） */
@@ -153,10 +159,17 @@ Page({
   render() {
     const st = me.getState()
     const p = st.profile
+    /**
+     * ⚠️ 没有 profile = **服务端还不认识我**（大多是后端没答上来）——
+     *    这一态下「未设置昵称 / 能量 0 点」都是**有账号**的口吻，会把人带偏：
+     *    它其实还没有账号，而账号是点「加入」那次请求顺手建出来的。
+     */
+    const joined = me.hasJoined()
     this.setData({
+      joined,
       // ⭐ 我自己的分享标识（store 里落着上次 /me 的结果）—— 没有就不显示分享按钮
       shareKey: p?.shareKey ?? '',
-      nickname: (p?.nickname ?? '').trim() || '未设置昵称',
+      nickname: joined ? (p?.nickname ?? '').trim() || '未设置昵称' : '还没加入句拼',
       streakDays: st.streak?.streakDays ?? 0,
       unfreezeCards: st.streak?.unfreezeCards ?? 0,
       energy: p?.energy ?? 0,
@@ -200,6 +213,14 @@ Page({
     void resolveCloudFileUrl(fileId).then((url) => {
       if (avatarFileId === fileId) this.setData({ avatarSrc: url })
     })
+  },
+
+  /**
+   * 头部那个「加入」—— 进补昵称 / 头像那一页（同导航栏那一格的说法）。
+   * ⚠️ 判据是 hasJoined（服务端认不认识我），**不是**「有没有昵称」。
+   */
+  onJoin() {
+    openJoinPage()
   },
 
   /**
