@@ -10,8 +10,13 @@ import { challengeStats } from '../services/submission'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
 import { readEnergy } from '../services/energy'
+import type { Variables } from '../middleware/auth'
 
-export const shareRoutes = new Hono()
+/**
+ * ⚠️ 这里必须带上 Variables 类型：路由里要读 c.get('userId') 判断「谁在看」
+ *    （可选身份由 index.ts 的 `app.use('/share/*', optionalAuth)` 注入）。
+ */
+export const shareRoutes = new Hono<{ Variables: Variables }>()
 
 /**
  * ⭐ 分享出去的「一次挑战结果」 —— **不需要登录**。
@@ -51,28 +56,52 @@ shareRoutes.get('/challenge/:sid', async (c) => {
     .limit(1)
   if (!row) return c.json({ ok: false, error: '这条挑战不存在' }, 404)
 
-  const status = await describe(row.userId, sid)
-  if (!status || status.status !== 'scored' || !status.result) {
-    return c.json({ ok: false, error: '这条挑战还没有成绩' }, 404)
-  }
+  /** ⭐ 「谁在看」只决定**哪些模块给**，不决定数据本身（同 /profile/:id） */
+  const isOwner = c.get('userId') === row.userId
 
   const [owner] = await db
     .select({ nickname: users.nickname, avatarUrl: users.avatarUrl })
     .from(users)
     .where(eq(users.id, row.userId))
     .limit(1)
+  const ownerView = {
+    nickname: (owner?.nickname ?? '').trim() || '挑战者',
+    avatarUrl: owner?.avatarUrl ?? null,
+  }
+
+  const status = await describe(row.userId, sid)
+
+  /**
+   * ⚠️⚠️ 未出分时**只有本人**拿得到状态，别人一律 404：
+   *    公开链接不该暴露「这个 id 存在、但还没成绩」；
+   *    而本人必须看得到「还在检测中」—— 那不是错误，是中间态。
+   */
+  if (!status || status.status !== 'scored' || !status.result) {
+    if (!isOwner) return c.json({ ok: false, error: '这条挑战不存在' }, 404)
+    return c.json({
+      ok: true,
+      data: {
+        owner: ownerView,
+        status: status?.status === 'failed' ? 'failed' : 'scoring',
+        result: null,
+        audio: null,
+        at: (row.scoredAt ?? row.createdAt).toISOString(),
+        isOwner: true,
+      },
+    })
+  }
 
   return c.json({
     ok: true,
     data: {
+      owner: ownerView,
+      status: 'scored' as const,
       result: status.result,
-      owner: {
-        nickname: (owner?.nickname ?? '').trim() || '挑战者',
-        avatarUrl: owner?.avatarUrl ?? null,
-      },
-      // ⚠️ 只有公开的录音才给播放地址（见上面那段隐私边界）
-      audio: row.isPublic ? await playbackRefOf(sid, row.audioKey) : null,
+      // ⭐ 录音：公开的给所有人；**本人的不管公开没公开都给** ——
+      //    自己的录音没理由因为没开公开就连自己也听不到
+      audio: row.isPublic || isOwner ? await playbackRefOf(sid, row.audioKey) : null,
       at: (row.scoredAt ?? row.createdAt).toISOString(),
+      isOwner,
     },
   })
 })
@@ -116,12 +145,20 @@ shareRoutes.get('/profile/:id', async (c) => {
    *      提交才会变小，拿它显示会出现「主页说连续 9 天、其实早就断了」）
    *    · 能量同样**先补足再读**（readEnergy，惰性 + 幂等）
    */
+  /**
+   * ⭐⭐ 「谁在看」只决定**哪些模块给**，不决定数据本身：
+   *    · 成绩（连续天数 / 参与场次 / 挑战回合 / 成长值）→ 给所有人
+   *    · 能量 / 解冻卡 → **只给本人**：那是账号余额，不是主页该给别人看的东西
+   *      （所以对别人连读都不读，而不是「读了再藏起来」）
+   */
+  const isMe = c.get('userId') === u.id
+
   const [conqueredCount, stats, growth, streak, energy] = await Promise.all([
     getTotalConquered(u.id),
     challengeStats(u.id),
     readGrowth(u.id),
     readStreakView(u.id),
-    readEnergy(u.id),
+    isMe ? readEnergy(u.id) : Promise.resolve(null),
   ])
 
   return c.json({
@@ -131,7 +168,7 @@ shareRoutes.get('/profile/:id', async (c) => {
       nickname: u.nickname,
       avatarUrl: u.avatarUrl,
       energy,
-      unfreezeCards: streak.unfreezeCards,
+      unfreezeCards: isMe ? streak.unfreezeCards : null,
       streakDays: streak.streakDays,
       conqueredCount,
       challengedRounds: stats.challengedRounds,

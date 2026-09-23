@@ -50,8 +50,13 @@ export async function readStreakView(userId: number, date: string = today()): Pr
     db.select().from(users).where(eq(users.id, userId)).limit(1),
     unfreezeStatus(userId),
   ])
-  // 用户一定存在（鉴权中间件已经保证），这里只是给一个语义明确的兜底
-  const state: StreakState = row
+  /**
+   * ⚠️⚠️ 兜底条件必须看 **row[0]**，不能看 row —— 查不到时拿到的是**空数组**，
+   *    而空数组是真值，写 `row ? ...` 这条兜底永远不会生效（会直接崩）。
+   *    公开页面把它踩出来了：匿名（userId 0）时确实没有这一行。
+   * ⚠️ 匿名不是错误：**userId 0 = 匿名**，所有「我的」数据一律为零值。
+   */
+  const state: StreakState = row[0]
     ? stateOf(row[0] as User)
     : { streakDays: 0, streakBest: 0, lastReadDate: null }
   return streakView(state, date, unfreeze)

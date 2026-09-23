@@ -15,13 +15,7 @@ import type {
   SubmitResponse,
 } from '@jushuo/shared'
 
-import {
-  ApiError,
-  fetchSubmissionAudio,
-  fetchSubmissionShare,
-  fetchSubmissionStatus,
-  setSubmissionVisibility,
-} from '../../lib/api/client'
+import { fetchSubmissionShare } from '../../lib/api/client'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
@@ -30,10 +24,12 @@ import { agoText } from '../../lib/time'
 /**
  * ⭐ 「挑战结果」页 —— **一屏装下一次挑战的全部结果**。
  *
- * 三个入口，同一屏：
- *   · 朗读页打完分 → redirect 到这里（本人视角）；
- *   · 「我的挑战」列表点某一条 → 这里（本人视角，看过去某一次）；
- *   · **别人分享出来的链接** → 也是这里，但只有公开信息（见 load()）。
+ * ⭐⭐ 它是**公开页面**（同个人主页 / 竞技场 / 首页）：`?sid=<提交 id>` 就是地址，
+ *    谁来打开都走**同一个公开接口**取同一份数据 —— 不分「本人视角 / 访客视角」两条取数路径。
+ *    「谁在看」只影响**哪些模块给**（由服务端在同一次请求里决定）：
+ *      · 录音：公开的给所有人；**本人的不管公开没公开都给**
+ *      · isOwner：导航栏标题与按钮文案据此显示（本人是「挑战结果 / 再次挑战」）
+ *      · 未出分的状态**只有本人**拿得到（别人拿到 404）
  *
  * ⚠️⚠️ 为什么单独一页，而不是塞在朗读页里：
  *    朗读页是「录音 → 提交」的状态机（麦克风、波形、上传进度、轮询）；
@@ -130,62 +126,46 @@ Page({
   },
 
   /**
-   * ⭐ 取结果：先按「本人」试，失败再按「别人分享的」取。
+   * ⭐ 取结果 —— **一条路径**：公开接口按提交 id 取那一份。
    *
-   * ⚠️ 为什么不看 URL 参数决定走哪条：分享链接与本人打开是**同一条 URL** ——
-   *    自己点开自己的分享也是这种链接。服务端只对本人开放 /api/submissions/:id
-   *    （不是本人一律 404），所以「先本人、再公开」既简单又不会把两种视角混起来。
+   * ⚠️ 无论是我自己打开的、还是别人转发来的，走的都是这个接口、同一条 URL；
+   *    「我是不是这条挑战的主人」由服务端在**同一个响应**里给出（isOwner），
+   *    录音也一样（公开的给所有人，本人的不管公开没公开都给）。
+   * ⚠️ 未出分时只有**本人**能拿到状态（别人拿到的是 404）——
+   *    所以「还在检测中」这句话只会出现在自己的屏幕上。
    */
   async load() {
     this.setData({ loading: true, error: '' })
 
     try {
-      const status = await fetchSubmissionStatus(this.sid)
-      if (status.status === 'scored' && status.result) {
-        this.applyOwner(status.result)
+      const share = await fetchSubmissionShare(this.sid)
+      if (!share.result) {
+        this.setData({
+          loading: false,
+          error: share.status === 'failed' ? '这次挑战没有成绩' : '这次挑战还在检测中，稍后再看',
+        })
         return
       }
-      if (status.status === 'failed') {
-        this.setData({ loading: false, error: status.error ?? '这次挑战没有成绩' })
-        return
-      }
-      this.setData({ loading: false, error: '这次挑战还在检测中，稍后再看' })
-      return
-    } catch (err) {
-      /**
-       * ⚠️ 走到这里通常是「不是本人」（服务端 404）或「没登录」。
-       *    这不是错误，而是**分享页的正常路径** —— 往下走公开接口。
-       */
-      const e = err as ApiError
-      console.log('[challenge] 本人视角取不到（' + e.message + '），按分享视角取')
-    }
-
-    try {
-      this.applyShare(await fetchSubmissionShare(this.sid))
+      this.applyShare(share, share.result)
     } catch (err) {
       this.setData({ loading: false, error: (err as Error).message })
     }
   },
 
-  /** 本人视角：可见性开关、再读一次都可用 */
-  applyOwner(result: SubmitResponse) {
-    this.renderResult(result, { isOwner: true })
-    // ⚠️ 本人的音频地址**现取**（服务端要校验归属），这里先不给地址
-    this.audioRef = null
-    this.setData({ canPlay: true, isPublic: result.isPublic })
-  },
-
-  /** 分享视角：只有公开信息，录音只在 isPublic 时才有地址 */
-  applyShare(share: ChallengeShareResponse) {
+  /**
+   * 公开接口那一份 → 展示视图（**唯一的渲染入口**）。
+   * ⚠️ 录音地址一并给了（本人不受 is_public 限制），所以不再有「本人现取一次」那条分支。
+   */
+  applyShare(share: ChallengeShareResponse, result: SubmitResponse) {
     this.audioRef = share.audio
     this.setData({
-      isOwner: false,
+      isOwner: share.isOwner,
       owner: { nickname: share.owner.nickname, avatarSrc: share.owner.avatarUrl ?? '' },
       ago: agoText(share.at),
-      isPublic: share.result.isPublic,
+      isPublic: result.isPublic,
       canPlay: !!share.audio,
     })
-    this.renderResult(share.result, { isOwner: false })
+    this.renderResult(result, { isOwner: share.isOwner })
   },
 
   /** 两种视角**共用**的渲染 —— 同一份结果，两屏长得一样 */
@@ -289,8 +269,9 @@ Page({
    * ⭐ 试听。
    *
    * ⚠️ 播的是**服务端那份录音**，不是本机文件 —— 分享给别人的那一屏也要能听，
-   *    而对方的手机里根本没有这段录音（地址按需向服务端要）。
-   * ⚠️ 非公开的录音：本人仍能听（服务端校验归属），**别人的链接里没有地址**。
+   *    而对方的手机里根本没有这段录音。
+   * ⚠️ 地址就来自**同一个公开响应**（本人不受 is_public 限制，见 routes/share.ts）——
+   *    所以这里不再有「本人现取一次」那条分支。
    */
   async onPlay() {
     if (this.data.playing) {
@@ -300,7 +281,7 @@ Page({
     }
     this.setData({ playing: true })
     try {
-      const ref = this.data.isOwner ? await fetchSubmissionAudio(this.sid) : this.audioRef
+      const ref = this.audioRef
       if (!ref) throw new Error('这段录音没有公开')
       const path = await ensureLocalAudio(ref.src, ref.kind)
       if (!path) throw new Error('取不到这段录音')

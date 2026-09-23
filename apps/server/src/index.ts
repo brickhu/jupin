@@ -8,7 +8,7 @@ import { probeStorage } from './storage'
 import { probeContent } from './services/content'
 import { probeStandardAudio } from './services/standard-audio'
 import { goodsPriceMap, productIdStatus } from './services/goods'
-import { authMiddleware } from './middleware/auth'
+import { authMiddleware, optionalAuth } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
 import { submissionsRoutes } from './routes/submissions'
@@ -130,11 +130,24 @@ app.route('/api/auth', authRoutes)
 app.route('/media', mediaRoutes)
 
 /**
- * ⭐ 分享出去的链接 —— 同样**不做鉴权**（拿到链接的人可能没有账号）。
- *    ⚠️ 它的隐私边界在路由自己那一层（录音只在这条提交 is_public 时给地址），
- *       见 routes/share.ts 开头。
+ * ⭐⭐ **公开页面** —— 首页 / 个人主页 / 挑战详情 / 竞技场。
+ *
+ * ⚠️⚠️ 这是全站页面模型的正中间：这些页面**人人（包括我自己）看到的数据都一样**，
+ *    按 id 从公开接口取；「谁在看」只影响**哪些模块给** ——
+ *    我的名次 / 我的能量 / 本人录音，由服务端在**同一次请求里**决定，
+ *    而不是让客户端分「本人视角 / 访客视角」两条取数路径。
+ *    （判据只有一处：middleware/auth.ts 的 optionalAuth。）
+ *
+ * ⚠️ 认不出身份 = **匿名**（userId 0），不是错误 —— 不拦、不报错，
+ *    所有「我的」数据自然查不到。所以这里**绝不能**换成 authMiddleware：
+ *    那会让没登录的人打不开首页。
  */
+app.use('/share/*', optionalAuth)
 app.route('/share', shareRoutes)
+// ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak（+ 登录时的「我的」字段）
+app.route('/share/schedules', schedulesRoutes)
+// ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
+app.route('/share/arenas', arenasRoutes)
 
 /**
  * ⭐⭐ 虚拟支付的**发货推送** —— 全站唯一一个公开的**写**接口。
@@ -151,21 +164,15 @@ app.use('/api/articles/*', authMiddleware)
 app.use('/api/submissions/*', authMiddleware)
 app.use('/api/uploads/*', authMiddleware)
 app.use('/api/user/*', authMiddleware)
-app.use('/api/schedules/*', authMiddleware)
 app.use('/api/shop/*', authMiddleware)
-app.use('/api/arenas/*', authMiddleware)
 app.use('/api/leaderboards/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
 app.route('/api/submissions', submissionsRoutes)
 app.route('/api/uploads', uploadsRoutes)
 app.route('/api/user', userRoutes)
-// ⭐ 首页那一次请求：今日挑战 + 历史挑战 + streak
-app.route('/api/schedules', schedulesRoutes)
 // ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）
 app.route('/api/shop', shopRoutes)
-// ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
-app.route('/api/arenas', arenasRoutes)
 // ⭐ 成长榜：三个成长指标各 TOP10（首页那三块）
 app.route('/api/leaderboards', leaderboardsRoutes)
 

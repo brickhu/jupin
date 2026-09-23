@@ -514,10 +514,14 @@ export async function login(): Promise<void> {
  *    · history = **全库**今天之前的排期，按日期倒序、同一句只留最近一次，
  *                并剔除与今日重复的那一句
  *    端侧不该用「列几天」这种参数去描述它 —— 历史那一段按的是**竞技场**，不是天数。
+ *
+ * ⚠️ 路径在 /share 那个公开前缀下：首页是**公开页面**（谁都能打开），
+ *    登录与否只影响响应里那些「我的」字段（我的最好成绩 / 我的参与次数）——
+ *    身份由请求头带上，服务端在同一份数据里决定给不给，见 middleware/auth.ts 的 optionalAuth。
  */
 export function fetchSchedules(): Promise<SchedulesResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
-  return request<SchedulesResponse>('/api/schedules', { budgetMs: LAUNCH_BUDGET_MS })
+  return request<SchedulesResponse>('/share/schedules', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
@@ -621,10 +625,11 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
 }
 
 /**
- * ⭐ 竞技场详情 —— **按句子**寻址（/api/arenas/:articleId）。
+ * ⭐ 竞技场详情 —— **按句子**寻址（/share/arenas/:articleId，公开页面）。
  *
  * ⚠️⚠️ 这才是竞技场的正经地址：日期只是「编辑精选的容器」，和竞技场无关
  *    （排名 / 人数 / 最高分 / 我的最好成绩全部按 article_id 查）。
+ * ⚠️ 与首页同理：竞技场也是**公开页面**，登录与否只影响「我的名次」那几格。
  * ⚠️ 与 fetchScheduleDetail 的分工：
  *    · 这个：我看**这一句**的竞技场 —— 挑战它算**今天**（用响应里的 submissionDate）
  *    · 那个：回到**某一天**的挑战再读一次 —— 挑战它算**那一天**
@@ -640,7 +645,7 @@ export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
 }
 
 export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
-  return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
+  return request<ArenaDetail>('/share/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function fetchMe(): Promise<MeResponse> {
@@ -668,11 +673,14 @@ export function saveProfile(input: {
 }
 
 /**
- * ⭐ 单个挑战的详情（完整榜单 + 我的名次）。
+ * ⭐ 某一天那一场的详情（完整榜单 + 我的名次）—— 与 fetchArenaDetail 同一个页面，
+ *    只是入口不同：这个是「回到那一天的挑战再读一次」。
+ *
  * @param date 'YYYY-MM-DD' —— 由调用页面**原样带过来**，不要在客户端重算「今天」
+ * ⚠️ 同样走公开路径：挑战详情页/竞技场页都是公开页面（见 /share/schedules 的说明）。
  */
 export function fetchScheduleDetail(date: string): Promise<ScheduleDetail> {
-  return request<ScheduleDetail>('/api/schedules/' + date)
+  return request<ScheduleDetail>('/share/schedules/' + date)
 }
 
 /**

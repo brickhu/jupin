@@ -79,6 +79,8 @@ Page({
     nickname: '',
     avatarSrc: '',
     avatarPlaceholder: '/assets/avatar-placeholder.png',
+    /** ⭐ 能量 / 解冻卡只有本人才有（别人的主页服务端返回 null）—— 决定那一行显不显示 */
+    hasEnergy: false,
     energy: 0,
     unfreezeCards: 0,
     streakDays: 0,
@@ -152,8 +154,10 @@ Page({
       error: '',
       hasProfile: true,
       nickname: (p.nickname ?? '').trim() || '未设置昵称',
-      energy: p.energy,
-      unfreezeCards: p.unfreezeCards,
+      // ⭐ 服务端只对本人给这两项（别人的主页是 null）—— 见 shared 的 UserProfileResponse
+      hasEnergy: p.energy !== null,
+      energy: p.energy ?? 0,
+      unfreezeCards: p.unfreezeCards ?? 0,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,

@@ -26,7 +26,8 @@
 
   <block wx:else>
     <!-- ── 头部：头像 / 「加入」 + 昵称 + 能量 ────────────────────
-         ⚠️ 昵称下面那行与**用户面板**逐字一致（⚡ 能量 N 点 › · ❄️ 解冻卡 M 张）。
+         ⚠️ 昵称下面那行与**用户面板**逐字一致（⚡ 能量 N 点 › · ❄️ 解冻卡 M 张），
+            它是**只有本人能看到的模块**：服务端对别人的主页不给这两项（见 share.ts）。
          ⚠️ 还没有我的 id（= 还没加入）时这一格画「加入」按钮：
             没有账号就没有主页可看，而「未设置昵称 / 能量 0 点」都是**有账号**的口吻。
          ⚠️ 两种形态尺寸一样（112rpx），换形态时布局不跳。 -->
@@ -36,7 +37,7 @@
       <image wx:else class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="ml-3 flex-1">
         <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
-        <text class="text-24rpx text-faint block mt-1" wx:if="{{hasProfile}}" bindtap="onEnergy"
+        <text class="text-24rpx text-faint block mt-1" wx:if="{{hasEnergy}}" bindtap="onEnergy"
               hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->

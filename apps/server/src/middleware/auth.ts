@@ -1,3 +1,4 @@
+import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
@@ -51,26 +52,37 @@ export interface Variables {
  *
  * ⚠️ header 名大小写不敏感，Hono 的 c.req.header() 已做归一化，写小写即可。
  */
-export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (c, next) => {
-  let user: User | undefined
+/**
+ * 解析这次请求是谁；解析不出来时**返回原因，不抛也不响应**。
+ *
+ * ⚠️ 抽出来是为了让 authMiddleware（认不出就 401）与 optionalAuth
+ *    （认不出就当匿名）共用**同一套**身份规则 —— 两套规则必然会分叉，
+ *    而分叉的地方恰好是安全边界。
+ */
+type Resolved =
+  | { ok: true; user: User }
+  /** 什么都没带 */
+  | { ok: false; reason: 'anonymous' }
+  /** 带了 token 但验不过 */
+  | { ok: false; reason: 'expired' }
+  /** 老 token 里的 userId 已经不存在了 */
+  | { ok: false; reason: 'gone' }
 
+async function resolveUser(c: Context<{ Variables: Variables }>): Promise<Resolved> {
   // ---- 路径 ①：微信云托管内网调用 ----
   if (c.req.header('x-wx-source')) {
     // 资源复用场景没有 x-wx-openid，OpenID 在 x-wx-from-openid
     const openid = c.req.header('x-wx-openid') ?? c.req.header('x-wx-from-openid')
-    if (openid) user = await getOrCreateUserByOpenid(openid)
+    if (openid) return { ok: true, user: await getOrCreateUserByOpenid(openid) }
   }
 
   // ---- 路径 ②：Bearer token ----
-  if (!user) {
-    const header = c.req.header('Authorization')
-    if (!header?.startsWith('Bearer ')) {
-      return c.json({ ok: false, error: '未登录' }, 401)
-    }
-    const payload = verifyToken(header.slice(7))
-    if (!payload) {
-      return c.json({ ok: false, error: '登录已过期' }, 401)
-    }
+  const header = c.req.header('Authorization')
+  if (!header?.startsWith('Bearer ')) return { ok: false, reason: 'anonymous' }
+  const payload = verifyToken(header.slice(7))
+  if (!payload) return { ok: false, reason: 'expired' }
+
+  {
 
     /**
      * ⭐⭐ token 里带 openid 时，**一律走「没有就创建」**，而不是「按 userId 查、查不到就 401」。
@@ -87,17 +99,49 @@ export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (
      * ⚠️ 老 token（这次改动之前签发的）里没有 openid —— 退回按 userId 查，
      *    查不到才 401。至少不会静默地把一个老用户变成另一个人。
      */
-    if (payload.openid) {
-      user = await getOrCreateUserByOpenid(payload.openid)
-    } else {
-      const [found] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1)
-      if (!found) return c.json({ ok: false, error: '用户不存在' }, 401)
-      user = found
-    }
+    if (payload.openid) return { ok: true, user: await getOrCreateUserByOpenid(payload.openid) }
+    const [found] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1)
+    return found ? { ok: true, user: found } : { ok: false, reason: 'gone' }
   }
+}
+
+const REASON_MESSAGE: Record<'anonymous' | 'expired' | 'gone', string> = {
+  anonymous: '未登录',
+  expired: '登录已过期',
+  gone: '用户不存在',
+}
+
+export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (c, next) => {
+  const id = await resolveUser(c)
+  if (!id.ok) return c.json({ ok: false, error: REASON_MESSAGE[id.reason] }, 401)
 
   // ⚠️ Hono 的 Variables 类型必须显式声明，否则 c.get('userId') 会报 TS2769
-  c.set('userId', user.id)
-  c.set('user', user)
+  c.set('userId', id.user.id)
+  c.set('user', id.user)
+  await next()
+})
+
+/**
+ * ⭐⭐ **可选身份** —— 给公开页面用（/share/*）。
+ *
+ * ⚠️⚠️ 公开页面的模型（个人主页 / 挑战详情 / 竞技场 / 首页）：
+ *    **一份数据人人（包括我自己）都一样**，按 id 从公开接口取；
+ *    谁在看只影响「**哪些模块给**」—— 比如我的名次、我的能量、本人录音。
+ *    所以这类接口必须能**同时**服务匿名与登录用户，而判据只有一处：这里。
+ *
+ * ⚠️ 认不出身份时**不报错、不拦截**，只是 userId = 0：
+ *    0 是「匿名」，不是某个用户 —— 所有按 userId 查「我的」数据的地方
+ *    自然查不到（见 getArenaStatsBatch / readStreakView 的处理）。
+ * ⚠️ 但**不能**让 0 落进「按 openid 建号」那条路：token 过期不代表要新账号，
+ *    这里一律降级成匿名，注册仍然只发生在 authMiddleware 那条路径上。
+ */
+export const optionalAuth = createMiddleware<{ Variables: Variables }>(async (c, next) => {
+  const id = await resolveUser(c)
+  if (id.ok) {
+    c.set('userId', id.user.id)
+    c.set('user', id.user)
+  } else {
+    c.set('userId', 0)
+  }
   await next()
 })

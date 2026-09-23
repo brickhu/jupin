@@ -631,10 +631,14 @@ export interface UserProfileResponse {
   id: number
   nickname: string | null
   avatarUrl: string | null
-  /** ⭐ 能量点数（与 MeResponse 同一个数：服务端补足后读出来的余额） */
-  energy: number
-  /** ⭐ 解冻卡张数 */
-  unfreezeCards: number
+  /**
+   * ⭐ 能量点数 —— **只对本人给**（别人的主页不返回这个模块）。
+   * ⚠️ 它是账号余额，不是「主页」该给陌生人看的东西；null = 端侧不展示这一行。
+   * ⚠️ 同样地，服务端对别人连读都不读（见 routes/share.ts）。
+   */
+  energy: number | null
+  /** ⭐ 解冻卡张数 —— 同上，只对本人给 */
+  unfreezeCards: number | null
   /** 连续朗读天数（服务端现算的视图，不是库里那一列） */
   streakDays: number
   /** 参与场次：拿到过分数的去重句子数 */
@@ -677,15 +681,32 @@ export interface ChallengeWordScore {
  *    所以这里只放**公开信息**：分数、分项、逐词、榜单、这条录音是否公开；
  *    录音地址只在 isPublic 时给（成绩永远进榜，公开与否只管**声音**）。
  */
+/**
+ * ⭐⭐ 「一次挑战」的公开数据 —— 按**提交 id** 取一份
+ *    （GET /share/challenge/:sid，不需要登录）。
+ *
+ * ⚠️ 与 UserProfileResponse 是同一个模型：**一份数据人人（包括本人）都一样**，
+ *    「谁在看」只决定**哪些模块给**：
+ *      · 录音 —— 公开的给所有人看，**本人的（不管公开没公开）也给**
+ *      · isOwner —— 本人专属的模块（可见性开关等）据此显示
+ */
 export interface ChallengeShareResponse {
-  /** 与本人看到的 result 同构（同一处 describe() 产出），所以两屏能共用一套渲染 */
-  result: SubmitResponse
   /** 这条挑战是谁读的 */
   owner: { nickname: string; avatarUrl: string | null }
-  /** 这段录音的可播地址；**不公开时为 null** */
+  /**
+   * ⭐ 打分状态。⚠️ **未出分时只有本人拿得到**（别人一律 404）：
+   *    公开链接不该暴露「这个 id 存在、但还没成绩」，
+   *    而本人必须看得到「还在检测中」——那不是错误，是中间态。
+   */
+  status: 'scored' | 'scoring' | 'failed'
+  /** 与本人看到的 result 同构（同一处 describe() 产出）—— **只有 status='scored' 才有** */
+  result: SubmitResponse | null
+  /** 这段录音的可播地址；**不公开时为 null**（本人不受此限）—— 同上，只有出分了才有 */
   audio: SubmissionAudioRef | null
   /** 提交时刻（ISO）—— 分享页只显示到分钟 */
   at: string
+  /** ⭐ 看的人就是这条挑战的主人（本人专属模块据此显示） */
+  isOwner: boolean
 }
 
 export interface ChallengeRecord {
