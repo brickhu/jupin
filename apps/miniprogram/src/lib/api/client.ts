@@ -516,9 +516,8 @@ export async function login(): Promise<void> {
  *                并剔除与今日重复的那一句
  *    端侧不该用「列几天」这种参数去描述它 —— 历史那一段按的是**竞技场**，不是天数。
  *
- * ⚠️ 路径在 /share 那个公开前缀下：首页是**公开页面**（谁都能打开），
- *    登录与否只影响响应里那些「我的」字段（我的最好成绩 / 我的参与次数）——
- *    身份由请求头带上，服务端在同一份数据里决定给不给，见 middleware/auth.ts 的 optionalAuth。
+ * ⚠️ 首页是**公开页面**：这一份对所有人一样，**不含任何「我的」字段**
+ *    （我的成绩/次数走 /api/user/arena-records，端侧按 articleId 融合）。
  */
 export function fetchSchedules(): Promise<SchedulesResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）

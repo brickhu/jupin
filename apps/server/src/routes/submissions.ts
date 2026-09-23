@@ -328,5 +328,5 @@ submissionsRoutes.post('/:id/visibility', async (c) => {
 })
 
 // ⚠️ describe() 已经搬到 services/submission-view.ts ——
-//    因为分享页（GET /share/challenge/:id，任何人可看）要用**同一份**结果，
+//    因为分享页（GET /api/challenge/:sid，任何人可看）要用**同一份**结果，
 //    两处各写一份的话，「本人看到的」和「分享出去看到的」迟早不一致。

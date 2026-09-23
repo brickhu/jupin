@@ -13,7 +13,7 @@ import type { SubmissionStatusResponse } from '@jushuo/shared'
  * ⚠️⚠️ 为什么要抽成服务（原来它埋在 routes/submissions.ts 里）：
  *    现在有**两个**入口要给出同一份结果 ——
  *      · `GET /api/submissions/:id`（本人看自己的，要鉴权）；
- *      · `GET /share/challenge/:id`（分享出去的链接，任何人可看）。
+ *      · `GET /api/challenge/:sid`（分享出去的链接，任何人可看）。
  *    两个入口各写一份的话，「本人看到的」和「分享出去看到的」迟早不一致 ——
  *    而分享页恰恰是最不能让两边打架的地方。
  *
