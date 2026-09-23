@@ -66,11 +66,11 @@
       </view>
       <view class="us-stat">
         <text class="us-stat-v">{{growth.diligence}}</text>
-        <text class="us-stat-k">🔥 孜孜不倦</text>
+        <text class="us-stat-k">🔥 坚持不懈</text>
       </view>
       <view class="us-stat">
         <text class="us-stat-v">{{growth.standout}}</text>
-        <text class="us-stat-k">🏔️ 鹤立鸡群</text>
+        <text class="us-stat-k">🏔️ 人中翘楚</text>
       </view>
     </view>
 

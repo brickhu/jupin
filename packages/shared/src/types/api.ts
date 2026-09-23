@@ -350,7 +350,7 @@ export interface GrowthRankRow {
   isMe: boolean
 }
 
-/** 首页那三块成长榜（自我超越 / 孜孜不倦 / 鹤立鸡群，各 TOP10） */
+/** 首页那三块成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10） */
 export interface GrowthRankResponse {
   self: GrowthRankRow[]
   diligence: GrowthRankRow[]
@@ -583,8 +583,8 @@ export interface MyStats {
  *
  * ⚠️ 三个数各自回答一个问题，相加之后没人解释得清那个数是怎么来的：
  *    · self      自我超越（跟自己的历史比）
- *    · diligence 孜孜不倦（坚持的里程碑）
- *    · standout  鹤立鸡群（跟榜单比）
+ *    · diligence 坚持不懈（坚持的里程碑）
+ *    · standout  人中翘楚（跟榜单比）
  */
 export interface GrowthView {
   self: number

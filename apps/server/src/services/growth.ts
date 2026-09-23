@@ -96,7 +96,7 @@ export interface GrowthComputation {
 /**
  * ⭐ 三个指标一起算。**纯函数级**的输入输出，方便单测与落快照。
  *
- * ⚠️ 孜孜不倦用的是**跨档**（before/after），不是「现在到没到」——
+ * ⚠️ 坚持不懈用的是**跨档**（before/after），不是「现在到没到」——
  *    见 shared/growth.ts 里那段说明。
  * ⚠️ 只在**打分成功**时才走到这里：读不出来的录音不该给成长值
  *    （「我明明没读成功，怎么算我进步了」）。
@@ -127,11 +127,11 @@ export function computeGrowth(input: {
       highestInUser: input.highestInUser,
       n1: surpass.n1,
       n2: surpass.n2,
-      // 孜孜不倦
+      // 坚持不懈
       streakBefore: input.streakBefore,
       streakAfter: input.streakAfter,
       crossed: diligence.crossed,
-      // 鹤立鸡群
+      // 人中翘楚
       sampleSize: standout.sampleSize,
       baseline: standout.baseline,
       weight: standout.weight,

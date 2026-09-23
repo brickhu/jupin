@@ -56,7 +56,7 @@ export const users = mysqlTable('users', {
    *
    * ⚠️ 等级徽章已整体废除（见 docs/design/growth-and-energy.md），
    *    它现在的用途只剩展示（我的主页上的「历史最长」）。
-   * ⚠️ **孜孜不倦用的是 streakDays 的跨档，不是它** —— 跨档是事件，只发生一次；
+   * ⚠️ **坚持不懈用的是 streakDays 的跨档，不是它** —— 跨档是事件，只发生一次；
    *    拿 streakBest 判会变成「到过就永远算」，那是另一回事。
    */
   streakBest: int('streak_best').notNull().default(0),
@@ -84,9 +84,9 @@ export const users = mysqlTable('users', {
   // ----------------------------------------------------------------
   /** 自我超越（句子内 + 个人全局，各占一半后取平均） */
   growthSelf: int('growth_self').notNull().default(0),
-  /** 孜孜不倦（跨过 7 / 30 / 180 / 360×k 里程碑） */
+  /** 坚持不懈（跨过 7 / 30 / 180 / 360×k 里程碑） */
   growthDiligence: int('growth_diligence').notNull().default(0),
-  /** 鹤立鸡群（与榜单中位数的差距 × 样本量权重） */
+  /** 人中翘楚（与榜单中位数的差距 × 样本量权重） */
   growthStandout: int('growth_standout').notNull().default(0),
 
   // ----------------------------------------------------------------
@@ -355,9 +355,9 @@ export const submissions = mysqlTable('submissions', {
   // ----------------------------------------------------------------
   /** 本次自我超越（n1 与 n2 取平均后的值） */
   growthSelf: int('growth_self'),
-  /** 本次孜孜不倦（跨过的里程碑之和，通常是 0） */
+  /** 本次坚持不懈（跨过的里程碑之和，通常是 0） */
   growthDiligence: int('growth_diligence'),
-  /** 本次鹤立鸡群 */
+  /** 本次人中翘楚 */
   growthStandout: int('growth_standout'),
   /**
    * 本次成长值的**记账依据**（JSON）：

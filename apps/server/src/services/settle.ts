@@ -53,7 +53,7 @@ export async function settle(userId: number, submissionId: string): Promise<Sett
 
   const score = Number(row.score)
 
-  // ⚠️ streak 的「读之前」必须在 recordRead 之前取 —— 它对孜孜不倦的跨档判定是必需的
+  // ⚠️ streak 的「读之前」必须在 recordRead 之前取 —— 它对坚持不懈的跨档判定是必需的
   const [before] = await db
     .select({ streakDays: users.streakDays, marker: users.unfreezeMarkerStreak })
     .from(users)

@@ -27,15 +27,15 @@ interface BoardView {
 /**
  * 三个成长指标 → WXML 能直接渲染的数组。
  * ⚠️ 标签与顺序只在这里写一次：图标要与用户面板里那三个数一致
- *    （📈 自我超越 / 🔥 孜孜不倦 / 🏔️ 鹤立鸡群）。
- * ⚠️ 顺序固定为「自我超越 / 孜孜不倦 / 鹤立鸡群」—— 与用户面板那一排一致，
+ *    （📈 自我超越 / 🔥 坚持不懈 / 🏔️ 人中翘楚）。
+ * ⚠️ 顺序固定为「自我超越 / 坚持不懈 / 人中翘楚」—— 与用户面板那一排一致，
  *    换个顺序会让人以为漏了一个。
  */
 function boardListOf(b: GrowthRankResponse): BoardView[] {
   return [
     { key: 'self', label: '📈 自我超越', rows: b.self },
-    { key: 'diligence', label: '🔥 孜孜不倦', rows: b.diligence },
-    { key: 'standout', label: '🏔️ 鹤立鸡群', rows: b.standout },
+    { key: 'diligence', label: '🔥 坚持不懈', rows: b.diligence },
+    { key: 'standout', label: '🏔️ 人中翘楚', rows: b.standout },
   ]
 }
 
@@ -242,7 +242,7 @@ Page({
     today: null as CardView | null,
     history: [] as CardView[],
     /**
-     * ⭐ 三块成长榜（自我超越 / 孜孜不倦 / 鹤立鸡群，各 TOP10）。
+     * ⭐ 三块成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10）。
      * ⚠️ 与卡片分开存：它失败**不该**影响首页上半段（顶多这三块不出现）。
      * ⚠️ 只在 TS 里拼成数组、**不另存一份原始响应** —— 同一份数据两种表示迟早对不上。
      */

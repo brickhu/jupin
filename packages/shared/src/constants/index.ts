@@ -171,12 +171,12 @@ export const PRICING = {
  *
  *     f(x) = clamp(round(x), 0, 10)
  *
- * ⚠️ 只有一个例外：鹤立鸡群在 f 之后再乘样本量权重 w，所以它的值域到 12。
+ * ⚠️ 只有一个例外：人中翘楚在 f 之后再乘样本量权重 w，所以它的值域到 12。
  */
 export const GROWTH_STEP_MAX = 10
 
 /**
- * ⭐ 孜孜不倦的**固定档位** —— 跨过就给一次；中断后重新攒，档位从头开始。
+ * ⭐ 坚持不懈的**固定档位** —— 跨过就给一次；中断后重新攒，档位从头开始。
  *
  * ⚠️ 必须按**阈值升序**判定，不是按奖励大小排（360 的长期档是循环，见 growth.ts）。
  * ⚠️ 判定用「跨过」（before <= 阈值 && after > 阈值），不能写成「现在 > 阈值 就给」——
@@ -189,13 +189,13 @@ export const DILIGENCE_MILESTONES: readonly { days: number; points: number }[] =
 ]
 
 /**
- * ⭐ 孜孜不倦的**长期档**：第 k 个 360 天 → basePoints × factor^(k−1)。
+ * ⭐ 坚持不懈的**长期档**：第 k 个 360 天 → basePoints × factor^(k−1)。
  * 指数级上升是刻意的 —— 长期坚持才是这个体系里最重的一块。
  */
 export const DILIGENCE_YEAR = { days: 360, basePoints: 100, factor: 2 } as const
 
 /**
- * ⭐ 鹤立鸡群：**空样本**（场上还没有别人）时的参考基准。
+ * ⭐ 人中翘楚：**空样本**（场上还没有别人）时的参考基准。
  *
  * ⚠️ 这条兜底是真在用的，不是防御 NaN —— 空样本时权重是 0.5（不是 0），
  *    所以新竞技场的第一个参与者就是跟这条 75 的线比。
@@ -203,7 +203,7 @@ export const DILIGENCE_YEAR = { days: 360, basePoints: 100, factor: 2 } as const
 export const STANDOUT_EMPTY_BASELINE = 75
 
 /**
- * ⭐ 鹤立鸡群的样本量权重 —— **左闭右开** [min, max)。
+ * ⭐ 人中翘楚的样本量权重 —— **左闭右开** [min, max)。
  *
  * ⚠️ 0 和 1–9 是同一档（都是 0.5）：所以「做第一个」的好处**只体现在基准上**
  *    （第一个人的基准是固定的 75，从第二个人起基准就被前面的人抬着走了）。

@@ -46,14 +46,14 @@ function toGrowthRows(growth: GrowthView | undefined): GrowthRow[] {
     {
       key: 'diligence',
       icon: '🔥',
-      name: '孜孜不倦',
+      name: '坚持不懈',
       value: String(g.diligence),
       blurb: '坚持的里程碑：连续 7 / 30 / 180 天各给一次，之后每满 360 天再给一次（越久越多）',
     },
     {
       key: 'standout',
       icon: '🏔️',
-      name: '鹤立鸡群',
+      name: '人中翘楚',
       value: String(g.standout),
       blurb: '比这个竞技场的榜单中位数高多少 —— 场上人越多，同样的分越值钱',
     },
