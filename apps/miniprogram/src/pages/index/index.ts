@@ -55,6 +55,15 @@ interface CardView {
    */
   stat: string
   /**
+   * ⭐ 我参与过这一句（拿到过分）—— 卡片加一圈品牌色描边。
+   *
+   * ⚠️ 历史卡片刻意**没有**「已参与」药丸（一串同构卡片每张挂个药丸会变成药丸墙），
+   *    但「哪几句我读过」是这一页最有用的一条信息 ⇒ 用描边说：不占位、不跟句子抢眼。
+   * ⚠️ 判据与 action 一致（myBest !== null）：参与过 = **拿到过分**，
+   *    不用 myAttempts（打分失败那一次不算参与）。
+   */
+  joined: boolean
+  /**
    * ⭐ 标准音的可播引用（null = 这一句没有标准音 ⇒ 不渲染播放按钮）。
    * ⚠️ 端侧不拼地址：full 的形态由 kind 决定（云存储 fileID / 服务端路径），
    *    两条路的解释在 lib/audio/standard.ts 里统一处理。
@@ -474,6 +483,7 @@ Page({
       text: card.text,
       translation: card.translation,
       stat: statText(card.participantCount),
+      joined: mine.myBest !== null,
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
       durationText: durationText(card.audio ? card.audio.durationMs : null),
       hint: hintText(mine),

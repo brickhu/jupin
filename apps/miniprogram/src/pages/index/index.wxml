@@ -86,7 +86,7 @@
               而紧跟着的卡片却是整宽的，观感上脱开。） -->
     <text class="text-28rpx font-semibold text-ink block px-1 pt-1 pb-2">今日挑战</text>
 
-    <view class="bg-white rounded-2.5 p-5">
+    <view class="bg-white rounded-2.5 p-5 {{today.joined ? 'idx-joined' : ''}}">
       <!-- ⭐ 卡片头：播放按钮在左、人数与箭头在右。
            ⚠️ 这里**不放日期**：它紧挨着句子，很容易被读成「这句子的发布日期」，
               而它其实是「这一场排在哪一天」。要表达这个信息得用别的方式，
@@ -145,7 +145,7 @@
          ⚠️ 刻意不放按钮：历史是一串同构卡片，每张都挂一个实心按钮，
             整页会变成一片按钮墙，反而看不出哪一张是今天。
             要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{history}}" wx:key="articleId"
+    <view class="bg-white rounded-2.5 p-4 mb-3 {{item.joined ? 'idx-joined' : ''}}" wx:for="{{history}}" wx:key="articleId"
           data-article="{{item.articleId}}" bindtap="onOpenDetail">
       <view class="flex items-center mb-2">
         <!-- ⭐ 圆形播放按钮 + 时长（与今日卡片同构，理由见上面那段注释） -->
