@@ -11,44 +11,20 @@
 
   <nav-bar id="nav" title="我的主页" />
 
-  <!-- ── 头部：头像 + 昵称，紧跟着能量 / 解冻卡 ────────────────
-       ⚠️ 连战天数从这一行**搬走**了：它现在是一张独立的大卡（见下）。
-          留在昵称旁边会出现两个大小不同、却都叫「连续 N 天」的数。
-       ⚠️ 能量 / 解冻卡原来是独立一张「资产」卡 —— 现在挂在昵称下面，
-          它们本来就是「我是谁」的一部分，不是另一段要单独讲的战绩。 -->
-  <view class="bg-white rounded-2.5 p-4">
-    <view class="flex items-center">
-      <image class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-      <text class="text-34rpx font-semibold text-ink ml-3 flex-1">{{nickname}}</text>
+  <!-- ── 头部：头像 + 昵称 + 一行小字（能量 / 解冻卡）────────────────
+       ⚠️ 这一行与**用户面板**逐字一致（⚡ 能量 N 点 › · ❄️ 解冻卡 M 张）：
+          说的是同一件事，措辞或字号不同，用户就得重新认一遍。
+       ⚠️ 能量那段可点（进能量页），与用户面板同一个去处；
+          解冻卡没有独立页面，入口在「连战记录」里。
+       ⚠️ 这里**不放**连续天数：连战在下面成长值卡的第一格（「连战记录」），
+          同一屏里同一个数出现两次，只会让人怀疑哪一个才算。 -->
+  <view class="bg-white rounded-2.5 p-4 flex items-center">
+    <image class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+    <view class="ml-3 flex-1">
+      <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
+      <text class="text-24rpx text-faint block mt-1" bindtap="onEnergy"
+            hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
     </view>
-
-    <view class="flex mt-4 pt-4 border-t-[1rpx] border-t-solid border-t-line">
-      <view class="flex-1">
-        <text class="text-36rpx font-bold text-ink">{{energy}}</text>
-        <text class="text-22rpx text-faint block mt-1">⚡ 能量点</text>
-        <text class="text-20rpx text-faint block mt-1">每次挑战 2 点 · 每天补到 3 点</text>
-      </view>
-      <view class="flex-1">
-        <text class="text-36rpx font-bold text-ink">{{unfreezeCards}}</text>
-        <text class="text-22rpx text-faint block mt-1">❄️ 解冻卡</text>
-        <text class="text-20rpx text-faint block mt-1" wx:if="{{unfreezeExpiresOn}}">最早一张 {{unfreezeExpiresOn}} 到期</text>
-        <text class="text-20rpx text-faint block mt-1" wx:else>每连续 7 天得 1 张</text>
-      </view>
-    </view>
-  </view>
-
-  <!-- ── 连续战斗：独立一张卡，大号 emoji + 大号数字 ───────────────
-       ⚠️ 整张卡可点 → 连战记录（日历 + 领奖）。
-          一个这么大的数字不给去处，会让人以为它只是装饰。
-       ⚠️ 「历史最长」留在这张小字里：大号数字只回答「现在连到多少」，
-          历史最长是另一件事，抢同样的字号会让两个数互相稀释。 -->
-  <view class="bg-white rounded-2.5 py-5 mt-3 text-center" bindtap="onStreak" hover-class="active__opacity-60">
-    <text class="text-72rpx block leading-[1.1]">🔥</text>
-    <view class="flex items-baseline justify-center mt-1">
-      <text class="text-80rpx font-bold text-ink leading-[1.1]">{{streakDays}}</text>
-      <text class="text-28rpx text-muted ml-2">天</text>
-    </view>
-    <text class="text-22rpx text-faint block mt-2">连续战斗 · 历史最长 {{streakBest}} 天 ›</text>
   </view>
 
   <!-- ── 成长值（顶部是三个入口的横排）───────────────────────────

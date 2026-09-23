@@ -1,7 +1,12 @@
 import type { GrowthView } from '@jushuo/shared'
 
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
+import {
+  openChallengesPage,
+  openEnergyPage,
+  openParticipationsPage,
+  openStreakPage,
+} from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -67,9 +72,7 @@ Page({
     avatarSrc: '',
     avatarPlaceholder: '/assets/avatar-placeholder.png',
     streakDays: 0,
-    streakBest: 0,
     unfreezeCards: 0,
-    unfreezeExpiresOn: '' as string,
     energy: 0,
     conqueredCount: 0,
     rounds: 0,
@@ -99,9 +102,7 @@ Page({
     this.setData({
       nickname: (p?.nickname ?? '').trim() || '未设置昵称',
       streakDays: st.streak?.streakDays ?? 0,
-      streakBest: st.streak?.streakBest ?? 0,
       unfreezeCards: st.streak?.unfreezeCards ?? 0,
-      unfreezeExpiresOn: st.streak?.unfreezeExpiresOn ?? '',
       energy: p?.energy ?? 0,
       /**
        * ⚠️ 参与场次数的是 conqueredCount（**拿到过分数的句子数**），与首页状态卡同口径 ——
@@ -123,6 +124,14 @@ Page({
     void resolveCloudFileUrl(fileId).then((url) => {
       if (avatarFileId === fileId) this.setData({ avatarSrc: url })
     })
+  },
+
+  /**
+   * 昵称下面那行小字里的「⚡ 能量」—— 与用户面板同一个去处。
+   * ⚠️ 解冻卡没有独立页面，所以整行点下去也只去能量页（入口在连战记录里）。
+   */
+  onEnergy() {
+    openEnergyPage()
   },
 
   onStreak() {
