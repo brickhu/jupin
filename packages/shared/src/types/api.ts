@@ -660,7 +660,7 @@ export interface MeResponse {
 
 /**
  * ⭐⭐ 「个人主页」的数据 —— 按**用户 id** 取一份
- *    （GET /share/profile/:id，不需要登录）。
+ *    （GET /api/profile/:id，不需要登录）。
  *
  * ⚠️⚠️ 这一页对**所有人**都长一样，包括我自己：一份数据、一套渲染。
  *    链接就是这一页的地址，转发出去谁打开看到的都是同一个人的主页。
@@ -719,7 +719,7 @@ export interface ChallengeWordScore {
 }
 
 /**
- * ⭐ 分享出去的「一次挑战结果」—— GET /share/challenge/:sid（**不需要登录**）。
+ * ⭐ 分享出去的「一次挑战结果」—— GET /api/challenge/:sid（**不需要登录**）。
  *
  * ⚠️ 它是给别人看的：拿到链接的人可能没有账号、也没读过这句。
  *    所以这里只放**公开信息**：分数、分项、逐词、榜单、这条录音是否公开；
@@ -727,7 +727,7 @@ export interface ChallengeWordScore {
  */
 /**
  * ⭐⭐ 「一次挑战」的公开数据 —— 按**提交 id** 取一份
- *    （GET /share/challenge/:sid，不需要登录）。
+ *    （GET /api/challenge/:sid，不需要登录）。
  *
  * ⚠️ 与 UserProfileResponse 是同一个模型：**一份数据人人（包括本人）都一样**，
  *    「谁在看」只决定**哪些模块给**：

@@ -625,7 +625,7 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
 }
 
 /**
- * ⭐ 竞技场详情 —— **按句子**寻址（/share/arenas/:articleId，公开页面）。
+ * ⭐ 竞技场详情 —— **按句子**寻址（/api/arenas/:articleId，公开页面）。
  *
  * ⚠️⚠️ 这才是竞技场的正经地址：日期只是「编辑精选的容器」，和竞技场无关
  *    （排名 / 人数 / 最高分 / 我的最好成绩全部按 article_id 查）。
@@ -690,7 +690,7 @@ export function saveProfile(input: {
  *    只是入口不同：这个是「回到那一天的挑战再读一次」。
  *
  * @param date 'YYYY-MM-DD' —— 由调用页面**原样带过来**，不要在客户端重算「今天」
- * ⚠️ 同样走公开路径：挑战详情页/竞技场页都是公开页面（见 /share/schedules 的说明）。
+ * ⚠️ 同样走公开路径：挑战详情页/竞技场页都是公开页面（见 /api/schedules 的说明）。
  */
 export function fetchScheduleDetail(date: string): Promise<ScheduleDetail> {
   return request<ScheduleDetail>('/api/schedules/' + date)
