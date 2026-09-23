@@ -26,41 +26,63 @@
        ⚠️ **三格各自可点**：参与场次 → 参与场次页（句子粒度）；
           挑战回合 → 我的挑战（提交粒度）；连战天数 → 连战记录（日历 + 领奖）。
           三格的标签都带一个 ›，就是为了让「能点」这件事**在点之前**看得出来。 -->
-  <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center" wx:if="{{stats}}">
-    <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。
-         攻克线废除之后「攻克」就等于「参与并拿到分」，是同一个数，
-         所以直接用更直白的说法。单位「场」跟着标签走（数的是句子=场次）。 -->
-    <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
-      <view class="flex items-baseline justify-center">
-        <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
-        <text class="text-24rpx text-faint ml-1">场</text>
+  <!-- ⭐ 这一格**两态共用同一张卡**：
+       · 服务端认识我 → 三格数字，各自可点进对应的列表页
+       · 还不认识我 → 居中一句定位语 + 「加入」
+       ⚠️ 判据与**导航栏那一格完全相同**（store 的 hasJoined = profile 非空）。
+          两处各判一套，就会出现「导航栏说没加入、状态条却显示 0 场 0 天」这种自相矛盾。
+       ⚠️ min-h 是两态**共用**的：未登录那版内容更矮，不撑住高度卡片就会塌，
+          下面整页内容跟着上跳 —— 而这是页面第一段，跳一下的代价是
+          用户以为自己点错了什么。 -->
+  <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center box-border min-h-[144rpx]">
+    <block wx:if="{{stats}}">
+      <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。
+           攻克线废除之后「攻克」就等于「参与并拿到分」，是同一个数，
+           所以直接用更直白的说法。单位「场」跟着标签走（数的是句子=场次）。 -->
+      <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
+        <view class="flex items-baseline justify-center">
+          <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
+          <text class="text-24rpx text-faint ml-1">场</text>
+        </view>
+        <text class="text-22rpx text-faint block mt-1.5">参与场次 ›</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">参与场次 ›</text>
-    </view>
 
-    <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-    <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「攻克」分开看：
-         读十次才攻克一句，也是常有的事，这两个数本来就该不一样。 -->
-    <view class="flex-1 text-center" bindtap="onOpenChallenges" hover-class="active__opacity-60">
-      <view class="flex items-baseline justify-center">
-        <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
-        <text class="text-24rpx text-faint ml-1">次</text>
+      <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「攻克」分开看：
+           读十次才攻克一句，也是常有的事，这两个数本来就该不一样。 -->
+      <view class="flex-1 text-center" bindtap="onOpenChallenges" hover-class="active__opacity-60">
+        <view class="flex items-baseline justify-center">
+          <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
+          <text class="text-24rpx text-faint ml-1">次</text>
+        </view>
+        <text class="text-22rpx text-faint block mt-1.5">挑战回合 ›</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">挑战回合 ›</text>
-    </view>
 
-    <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-    <!-- ⚠️ 第三格曾经**没有**对应页面（连战只有天数、没有可看的细节）。
-         连战记录页做出来之后它就有了归属 —— 而「同一屏里长得一样的三格，
-         两格能点、一格点了没反应」比三格都不能点更让人困惑。 -->
-    <view class="flex-1 text-center" bindtap="onOpenStreak" hover-class="active__opacity-60">
-      <view class="flex items-baseline justify-center">
-        <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
-        <text class="text-24rpx text-faint ml-1">天</text>
+      <!-- ⚠️ 第三格曾经**没有**对应页面（连战只有天数、没有可看的细节）。
+           连战记录页做出来之后它就有了归属 —— 而「同一屏里长得一样的三格，
+           两格能点、一格点了没反应」比三格都不能点更让人困惑。 -->
+      <view class="flex-1 text-center" bindtap="onOpenStreak" hover-class="active__opacity-60">
+        <view class="flex items-baseline justify-center">
+          <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
+          <text class="text-24rpx text-faint ml-1">天</text>
+        </view>
+        <text class="text-22rpx text-faint block mt-1.5">连战天数 ›</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1.5">连战天数 ›</text>
+    </block>
+
+    <!-- ⭐ 还没加入（后端没答上来也算这一态）：同一张卡、同一个高度。
+         ⚠️ 卡片**不消失** —— 它一消失，下面所有内容整体上移。
+         ⚠️ 文案取自 brand.pitch（shared/brand.ts 的三个字段之一），
+            不在这里另抄一句：抄了就会和导航栏、项目描述各说各的。
+         ⚠️ 点「加入」进的是补昵称/头像那一页（lib/join 的 openJoinPage），
+            它**不是登录** —— 账号是静默拿到的，这一页只决定「榜上显示成什么」。 -->
+    <view class="flex-1 flex items-center justify-center px-2" wx:else>
+      <text class="text-24rpx text-muted">{{brand.pitch}}</text>
+      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-brand text-white text-24rpx"
+            bindtap="onJoin" hover-class="active__opacity-60">加入</view>
     </view>
   </view>
 

@@ -10,7 +10,7 @@ import { fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
-import { refreshMe } from '../../lib/join'
+import { openJoinPage, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
@@ -329,6 +329,16 @@ Page({
    * ⚠️ 这里不再判「登录了没有」：没登录（服务端不认识我）时整条状态卡根本不渲染，
    *    见 statsOf —— 点不到就没有可点的东西，判据只留一处，免得两处打架。
    */
+  /**
+   * 状态条上那个「加入」—— 进补昵称 / 头像那一页。
+   *
+   * ⚠️ 它**不是登录**：账号（openid）是静默拿到的，不点也照样能读能存分，
+   *    这一页只决定「榜上显示成什么」（同 lib/join.ts 的说明）。
+   */
+  onJoin() {
+    openJoinPage()
+  },
+
   onOpenParticipations() {
     openParticipationsPage()
   },
