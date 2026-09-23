@@ -247,30 +247,17 @@ function mergeBest(a: number | null, b: number | null): number | null {
   return Math.max(a, b)
 }
 
-/** 用排期列表接口的返回值刷新 */
+/**
+ * 用排期列表接口（公开）的返回值刷新 —— ⚠️ 它**只带公开数据**。
+ *
+ * ⚠️⚠️ 这里刻意**不碰** arena 与 streak：
+ *    「我在这句上的战绩」走个人接口 applyArenaRecords，
+ *    「连续天数/解冻卡」走 /api/user/me。
+ *    公开接口不再给「我的」字段 —— 一份数据人人一样，也才能缓存。
+ */
 export function applySchedules(res: SchedulesResponse): void {
-  const arena = { ...state.arena }
-  /**
-   * ⚠️⚠️ 按 **articleId** 落，而不是按日期。
-   *
-   *    竞技数据跟着句子走 —— 同一句排在多天时，它们本来就是同一份战绩，
-   *    这里写的是同一个键，不会出现「几份副本各自为政」。
-   *
-   * ⚠️ 而且必须**保守合并**，不能「后来者覆盖」。
-   *    服务端现在已经把「同一句出现多次」折叠掉了（见 services/schedule-shape.ts），
-   *    但这里**仍然不允许改成直接赋值**：折叠规则在服务端、合并规则在端侧，
-   *    两层各管一件事 —— 哪天服务端少折了一种情况，
-   *    直接赋值就会让「这一句显示什么」取决于列表顺序，而那是随机现象。
-   */
-  for (const e of [res.today, ...res.history]) {
-    const prev = arena[e.articleId]
-    arena[e.articleId] = {
-      myBest: mergeBest(prev?.myBest ?? null, e.myBest),
-      myAttempts: Math.max(prev?.myAttempts ?? 0, e.myAttempts),
-    }
-  }
-  // ⚠️ profile 原样带着走：它只有 /api/user/me 会写，这张列表不碰它
-  commit({ serverDate: res.date, arena, streak: res.streak, profile: state.profile })
+  // ⚠️ 其余字段原样带着走（profile / arena / streak 各有各的写入方，见上）
+  commit({ ...state, serverDate: res.date })
 }
 
 /**

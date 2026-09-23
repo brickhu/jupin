@@ -15,7 +15,11 @@ import type {
   SubmitResponse,
 } from '@jushuo/shared'
 
-import { fetchSubmissionShare } from '../../lib/api/client'
+import {
+  fetchSubmissionAudio,
+  fetchSubmissionShare,
+  fetchSubmissionStatus,
+} from '../../lib/api/client'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
@@ -137,13 +141,32 @@ Page({
   async load() {
     this.setData({ loading: true, error: '' })
 
+    /**
+     * ---- 个人那一半：本人打开时拿得到（服务端校验归属），别人一律 404 ----
+     * ⚠️ 未出分的状态只有本人看得到：那不是错误，是中间态。
+     */
+    try {
+      const status = await fetchSubmissionStatus(this.sid)
+      if (status.status === 'scored' && status.result) {
+        this.applyOwner(status.result)
+        return
+      }
+      if (status.status === 'failed') {
+        this.setData({ loading: false, error: status.error ?? '这次挑战没有成绩' })
+        return
+      }
+      this.setData({ loading: false, error: '这次挑战还在检测中，稍后再看' })
+      return
+    } catch (err) {
+      // ⚠️ 取不到 = 不是本人（或没登录）⇒ 往下走公开那一半 —— 这是**正常路径**，不是错误
+      console.log('[challenge] 个人那一半取不到（' + (err as Error).message + '），按公开那一半取')
+    }
+
+    /** ---- 公开那一半：所有人 ---- */
     try {
       const share = await fetchSubmissionShare(this.sid)
       if (!share.result) {
-        this.setData({
-          loading: false,
-          error: share.status === 'failed' ? '这次挑战没有成绩' : '这次挑战还在检测中，稍后再看',
-        })
+        this.setData({ loading: false, error: '这条挑战还没有成绩' })
         return
       }
       this.applyShare(share, share.result)
@@ -152,10 +175,22 @@ Page({
     }
   },
 
-  /**
-   * 公开接口那一份 → 展示视图（**唯一的渲染入口**）。
-   * ⚠️ 录音地址一并给了（本人不受 is_public 限制），所以不再有「本人现取一次」那条分支。
+/**
+   * 个人那一半 → 展示视图（本人视角）。
+   * ⚠️ 本人的录音地址**现取**（服务端要校验归属），所以这里先不给地址，
+   *    等按下播放再去拿（见 onPlay）。
    */
+  applyOwner(result: SubmitResponse) {
+    this.renderResult(result, { isOwner: true })
+    this.audioRef = null
+    this.setData({ canPlay: true, isPublic: result.isPublic })
+  },
+
+/**
+   * 公开那一半 → 展示视图。
+   * ⚠️ 录音只为**公开**的那条给地址；本人的录音走 onPlay 现取。
+   */
+
   applyShare(share: ChallengeShareResponse, result: SubmitResponse) {
     this.audioRef = share.audio
     this.setData({
@@ -281,7 +316,8 @@ Page({
     }
     this.setData({ playing: true })
     try {
-      const ref = this.audioRef
+      // ⚠️ 本人要**现取**（服务端校验归属）；别人用公开那一半给的地址
+      const ref = this.data.isOwner ? await fetchSubmissionAudio(this.sid) : this.audioRef
       if (!ref) throw new Error('这段录音没有公开')
       const path = await ensureLocalAudio(ref.src, ref.kind)
       if (!path) throw new Error('取不到这段录音')
