@@ -60,9 +60,9 @@
       </view>
     </view>
 
-    <view class="h-[1rpx] bg-line mt-4"></view>
-
-    <text class="text-24rpx text-faint block mt-3">成长值</text>
+    <!-- ⚠️ 原来的「成长值」小标题、以及它上面那条分隔线一起去掉了：
+         每行成长值自己带 border-t，**第一行那条线本来就是与上面三格的分界** ——
+         留着标题会变成「线 + 标题 + 线」，两条线之间夹一行字，反而像出了错。 -->
     <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{growthRows}}" wx:key="key">
       <view class="flex items-center">
         <text class="text-36rpx">{{item.icon}}</text>
