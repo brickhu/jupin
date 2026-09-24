@@ -52,8 +52,6 @@
 - [ ] **B4** `packages/shared/src/streak.ts` 的 `freeze*` 命名统一成 `unfreeze*` —— 卡叫「解冻卡」，代码名还留着一半
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
-- [ ] **B13** 用新口径**重判存量内容**（B12/B14 已完成）—— 只改正文 JSON 的 `pronLevel` / `vocabLevel` / `reason`（`text` 不动 ⇒ **id 不变**），改完刷 `articles` 的派生索引（`pnpm content:regrade --apply`）—— 做完的标志：8 句的两轴与 reason 都是当前提示词判出来的，且 `articles.pron_level` / `vocab_level` 与 JSON 一致
-- [ ] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
   ① 数据上两个档位（`vocabLevel` / `pronLevel`），库里两列（派生索引，供筛选排序）；
   ② `reason` **进正文 JSON 且给用户看**，固定格式：**以「相当于<级别>水平」开头**（级别用考试口径：小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / 雅思 6.5 / GRE），随后是发音难点，`；` 后是词汇与句式点评。例：
      `相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；词都比较常见，只有 sophistication 稍超纲。`
@@ -86,7 +84,9 @@
 - [x] **B10** AGENT.md 写清**「人怎么派活」**—— 四种句型、你只需要决定的三件事、每次任务的固定回路 —— 做完的标志：AGENT.md 有这一节，派活不用再问
 - [x] **B11** 难度定级改为**纯 LLM 判定**：废弃「脚本算特征」方案 —— 改掉步骤说明与注释、在 spec.md 记下这条决策 —— 做完的标志：全仓库没有把它当**现行方案**的地方（注释/文档里的「已废弃」说明不算；docs/archive 不动）
 - [x] **B12** 难度提示词改为**中国学习者视角**：四档重写 + 加「中国学习者最常错的音」清单 + reason 必须点出具体难点 —— 做完的标志：提示词以中国学习者为基准，prd/spec 记下这条口径
+- [x] **B13** 用新口径**重判存量内容**（B12/B14 已完成）—— 只改正文 JSON 的 `pronLevel` / `vocabLevel` / `reason`（`text` 不动 ⇒ **id 不变**），改完刷 `articles` 的派生索引（`pnpm content:regrade --apply`）—— 做完的标志：8 句的两轴与 reason 都是当前提示词判出来的，且 `articles.pron_level` / `vocab_level` 与 JSON 一致
 - [x] **B14** 校准难度提示词的**档位分布** —— 实测（B12 之后重判 8 句）：**7 句上移**、5 句挤在「高级」，出现**天花板效应**。根因：清单写成「**出现即加难度**」，而 `the` 的 /ð/、连读几乎每句都有 → 要改成按**密度与叠加**升档，并写明「`the` 的 /ð/ 太普遍，**不单独**构成升档理由」—— 做完的标志：重判后档位至少覆盖 3 档、不挤在单档
+- [x] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
 - [x] **B7** 把存量按主题拆成带 `plan <ID>` 的 commit —— 做完的标志：工作区干净、`plan:status` 认得出这批提交
 - [x] **B8** plan 改用**统一 checkbox**（`- [ ]` / `- [x]`），`[x]` 由 `pnpm plan:sync` 从 git 派生并归档 —— 做完的标志：plan.md 全是 checkbox、`plan:status` 能报「有 commit 但没勾」、`--write` 幂等
 - [x] **B9** 写清**多任务并行**的冲突规则（四个冲突面 + 各自的消法），并加 `pnpm task:*` worktree 工具 —— 做完的标志：AGENT.md 有这一节、`pnpm task:start/list/remove` 可用
