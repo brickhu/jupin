@@ -548,17 +548,10 @@ function fillDetail(d) {
   if (draft) {
     Object.keys(draft).forEach(function (k) { state.pending[k] = draft[k] })
   }
-  state.detailWords = Array.isArray(state.pending.words)
-    ? state.pending.words
-    : Array.isArray(d.words)
-      ? d.words
-      : []
-
   renderDetailValues(d)
 
   const a = $("#dt-audio")
   a.src = "/api/audio/" + d.id + ".mp3?t=" + Date.now()
-  renderWordInfo($("#dt-words"), $("#dt-wordcount"), state.detailWords, d.links)
   renderDetailPlay()
   renderDetailTime()
   renderUpdateButton()
@@ -588,13 +581,26 @@ function renderDetailValues(d) {
    */
   const sc = curScores()
   const diff = diffFromScores(sc)
-  $("#dt-diff").textContent = diff
-    ? levelLabel(diff.difficulty) + "（" + diff.score.toFixed(1) + "）"
-    : "未定"
+  /**
+   * ⭐ 档位与总分**分两行显示**（用户 2026-09 的要求）：
+   *    档位是给用户看的徽章，总分是内部量（阈值 2.5 / 3.5 / 4.5 才是它真正的作用）。
+   *    挤在一行「中级（3.1）」会让人以为档位带小数。
+   */
+  $("#dt-diff").textContent = diff ? levelLabel(diff.difficulty) : "未定"
+  $("#dt-score").textContent = diff ? diff.score.toFixed(1) : "—"
   const one = function (v) { return v === null || v === undefined || v === "" ? "未定" : String(v) }
   $("#dt-s1").textContent = one(sc && sc[0])
   $("#dt-s2").textContent = one(sc && sc[1])
   $("#dt-s3").textContent = one(sc && sc[2])
+  /**
+   * ⭐ 词表也走同一份「待提交」（对话框改完立刻回显）。
+   *    ⚠️ 必须在这里重画：saveWordDialog 只改 state.detailWords + setPending，
+   *       而 setPending 走的就是 renderDetailValues —— 不在这里画，用户要刷新页面才看得到改动。
+   */
+  const words = pick("words", d.words)
+  state.detailWords = Array.isArray(words) ? words : []
+  renderWordInfo($("#dt-words"), $("#dt-wordcount"), state.detailWords, d.links)
+
   /** ⭐ 给用户看的那句话 —— 运营就是照它审的（"读者能不能看懂这句难在哪"） */
   $("#dt-reason").textContent = pick("reason", d.reason) || "—"
   $("#dt-published").textContent = fmtTime(pick("publishedAt", d.publishedAt))
@@ -850,7 +856,6 @@ function restoreArticle() {
 
 $("#dt-update").addEventListener("click", function () { updateArticle() })
 $("#dt-restore").addEventListener("click", function () { restoreArticle() })
-$("#dt-redo").addEventListener("click", function () { redoAudio() })
 
 /* ---- 朗读卡里的整句播放按钮 ---- */
 
@@ -923,42 +928,52 @@ function renderWordInfo(box, countEl, words, links) {
     li.className = "word-row"
     li.dataset.i = String(i)
 
-    const head = document.createElement("div")
-    head.className = "wi-head"
+    // 左列：单词 + 音标（音节单独一行，方便核对分拍对不对）
+    const left = document.createElement("div")
+    left.className = "wi-left"
     const text = document.createElement("b")
     text.className = "wi-text"
     text.textContent = w.text || ""
-    head.appendChild(text)
-    const st = document.createElement("span")
-    st.className = "wi-stress s" + String(w.stress)
-    st.textContent = STRESS[String(w.stress)] || "?"
-    head.appendChild(st)
-    if (Array.isArray(w.syllables) && w.syllables.length > 1) {
-      const syl = document.createElement("span")
-      syl.className = "wi-syl muted tiny"
-      syl.textContent = w.syllables.join(" · ")
-      head.appendChild(syl)
-    }
+    left.appendChild(text)
     if (w.ipa) {
       const ipa = document.createElement("span")
       ipa.className = "wi-ipa"
       ipa.textContent = w.ipa
-      head.appendChild(ipa)
+      left.appendChild(ipa)
     }
-    li.appendChild(head)
+    if (Array.isArray(w.syllables) && w.syllables.length > 1) {
+      const syl = document.createElement("span")
+      syl.className = "wi-syl muted tiny"
+      syl.textContent = w.syllables.join(" · ")
+      left.appendChild(syl)
+    }
+    li.appendChild(left)
 
-    if (w.meaning) {
-      const m = document.createElement("div")
-      m.className = "wi-meaning"
-      m.textContent = "释义：" + w.meaning
-      li.appendChild(m)
-    }
-    if (w.tip) {
-      const t = document.createElement("div")
-      t.className = "wi-tip muted tiny"
-      t.textContent = "技巧：" + w.tip
-      li.appendChild(t)
-    }
+    // 中列：弱读 / 普通 / 重读
+    const mid = document.createElement("div")
+    mid.className = "wi-mid"
+    const st = document.createElement("span")
+    st.className = "wi-stress s" + String(w.stress)
+    st.textContent = STRESS[String(w.stress)] || "?"
+    mid.appendChild(st)
+    li.appendChild(mid)
+
+    // 右列：技巧（靠右）+ 编辑
+    const right = document.createElement("div")
+    right.className = "wi-right"
+    const tip = document.createElement("span")
+    tip.className = "wi-tip muted tiny"
+    tip.textContent = [w.meaning ? "释义：" + w.meaning : "", w.tip || ""].filter(Boolean).join("；") || "—"
+    right.appendChild(tip)
+    const edit = document.createElement("button")
+    edit.type = "button"
+    edit.className = "edit-icon"
+    edit.textContent = "✎"
+    edit.title = "改这个词的音标 / 句重音 / 音节 / 释义 / 技巧"
+    edit.addEventListener("click", function () { openWordDialog(i) })
+    right.appendChild(edit)
+    li.appendChild(right)
+
     box.appendChild(li)
 
     // ⭐ 连读技巧画在**两行之间** —— 它是两个词之间的关系，不是某一个词的属性
@@ -971,6 +986,63 @@ function renderWordInfo(box, countEl, words, links) {
     }
   })
 }
+
+/* ============================ 改一个词的对话框 ============================ */
+
+/**
+ * ⭐ 打开「改这个词」对话框。
+ *
+ * ⚠️⚠️ 词表是流水线算出来的**派生数据**（音节/音标/句重音/技巧），但模型与规则都会出错 ——
+ *    这是运营唯一能纠正它们的入口。改完和译文/难度一样：先攒进待提交，点底部「更新」才写盘。
+ * ⚠️ `单词` 只读：它必须与正文切出来的那个词**一字不差**（下标要对齐评分引擎的逐词分数），
+ *    改它就不是"改这个词的信息"而是"改正文"了（正文一改 id 就变）。
+ */
+function openWordDialog(i) {
+  const w = state.detailWords[i]
+  if (!w) return
+  state.editWordIndex = i
+  errBox("#wd-error", "")
+  $("#wd-hint").textContent = "第 " + (i + 1) + " 个词（下标必须与正文一致，所以单词本身不可改）"
+  $("#wd-text").value = w.text || ""
+  $("#wd-ipa").value = w.ipa || ""
+  $("#wd-stress").value = String(w.stress === undefined ? 0 : w.stress)
+  $("#wd-syllables").value = (w.syllables || []).join(" ")
+  $("#wd-meaning").value = w.meaning || ""
+  $("#wd-tip").value = w.tip || ""
+  $("#wd-dialog").showModal()
+}
+
+function saveWordDialog() {
+  const i = state.editWordIndex
+  const w = state.detailWords[i]
+  if (!w) return
+  const syllables = $("#wd-syllables").value.split(/\s+/).filter(Boolean)
+  /**
+   * ⚠️ 音节拼回来必须等于原词 —— 这是**不变量**（词表校验与 CI 都查它）。
+   *    在这里就挡住，比存进文件再让 pnpm test 变红好：那时没人记得是谁改的。
+   */
+  if (syllables.join("") !== w.text) {
+    errBox("#wd-error", "音节拼回来是「" + syllables.join("") + "」，原词是「" + w.text + "」——对不上")
+    return
+  }
+  const next = state.detailWords.slice()
+  next[i] = {
+    text: w.text,
+    stress: Number($("#wd-stress").value),
+    syllables: syllables,
+    ipa: $("#wd-ipa").value.trim(),
+    meaning: $("#wd-meaning").value.trim(),
+    tip: $("#wd-tip").value.trim(),
+  }
+  state.detailWords = next
+  // ⭐ 与译文/难度共用一个「更新」按钮：词表也进待提交
+  setPending("words", next)
+  $("#wd-dialog").close()
+  toast("已改「" + w.text + "」（点底部「更新」提交）")
+}
+
+$("#wd-cancel").addEventListener("click", function () { $("#wd-dialog").close() })
+$("#wd-form").addEventListener("submit", function (e) { e.preventDefault(); saveWordDialog() })
 
 /* ============================ 内容编辑抽屉 ============================ */
 
@@ -1349,35 +1421,13 @@ async function publishSelected() {
 
 
 
-/** 重做标准音：正文一个字不动，只重跑 fish 并刷新词级区间 */
 /**
- * 重做这条句子的标准音（正文一个字不动，只重跑 fish 并刷新词级区间）。
- *
- * ⚠️ 这个入口从编辑抽屉搬到了详情页的分词列表上：它是**音频**的修复动作，
- *    而分词列表正是「听出来哪个词不对」的地方。
+ * ⚠️⚠️ 这里**曾经有 redoAudio()**（详情页那个「重做标准音」按钮 →
+ *    POST /api/articles/:id/audio）—— 用户 2026-09 要求去掉：
+ *    那个动作当年是为了**修逐词切片的坏区间**才需要的，而逐词音频已经不存在了
+ *    （点词走微信 TTS）；整句音频坏了，重跑 `pnpm content:audio` 或直接重新生成更干净。
+ *    服务端那个接口（runRegenerateAudio）也一起删了。
  */
-async function redoAudio() {
-  const d = state.detail
-  if (!d || state.busy) return
-  state.busy = true
-  errBox("#detail-error", "")
-  $("#dt-redo").disabled = true
-  toast("重做标准音…")
-  try {
-    const start = await api("/api/articles/" + d.id + "/audio", { method: "POST", body: { force: true } })
-    await pollJob(start.jobId)
-    clearDraft(d.id)
-    state.pending = {}
-    await loadDetail(d.id)
-    toast("标准音已重做")
-  } catch (e) {
-    errBox("#detail-error", e.message)
-    toast(e.message, true)
-  } finally {
-    state.busy = false
-    $("#dt-redo").disabled = false
-  }
-}
 
 
 

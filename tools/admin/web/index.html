@@ -74,10 +74,6 @@
                ⚠️ 内部一律 currentColor + 透明度 —— 与小程序 submission-card / arena-card 同一条约定 -->
           <div id="dt-card" class="read-card">
             <p id="dt-text" class="read-text"></p>
-            <div class="read-zh-row">
-              <p id="dt-translation" class="read-zh"></p>
-              <button type="button" class="edit-icon" data-field="translation" title="改译文">✎</button>
-            </div>
             <div class="read-actions">
               <button type="button" id="dt-play" class="read-play">▶ 播放</button>
               <span id="dt-time" class="read-time">0:00 / 0:00</span>
@@ -91,7 +87,9 @@
           <div class="meta-head"><span>句子信息</span></div>
           <dl class="meta-list">
             <dt>状态</dt><dd><span id="dt-status" class="badge"></span><button type="button" class="edit-icon" data-field="isActive" title="改发布状态">✎</button></dd>
-            <dt>难度<br /><span class="muted tiny">词汇×5 + 发音×3 + 长度×2</span></dt><dd><span id="dt-diff"></span></dd>
+            <dt>译文</dt><dd><span id="dt-translation"></span><button type="button" class="edit-icon" data-field="translation" title="改译文">✎</button></dd>
+            <dt>难度<br /><span class="muted tiny">初级 / 中级 / 高级 / 专家</span></dt><dd><span id="dt-diff"></span></dd>
+            <dt>总分<br /><span class="muted tiny">(词汇×5 + 发音×3 + 长度×2) / 10</span></dt><dd><span id="dt-score"></span></dd>
             <dt>词汇及句式<br /><span class="muted tiny">1–5 分 · 权重 5</span></dt><dd><span id="dt-s1"></span><button type="button" class="edit-icon" data-field="s1" title="改词汇分">✎</button></dd>
             <dt>发音<br /><span class="muted tiny">1–5 分 · 权重 3</span></dt><dd><span id="dt-s2"></span><button type="button" class="edit-icon" data-field="s2" title="改发音分">✎</button></dd>
             <dt>句子长度<br /><span class="muted tiny">1–5 分 · 权重 2</span></dt><dd><span id="dt-s3"></span><button type="button" class="edit-icon" data-field="s3" title="改长度分">✎</button></dd>
@@ -103,12 +101,39 @@
 
           <div class="block words-block">
             <div class="words-head">
-              <span>本文 <b id="dt-wordcount">0</b> 个单词 · 词表（只读，由流水线按正文算出）</span>
-              <span class="grow"></span>
-              <button type="button" id="dt-redo" class="ghost" title="正文不动，只重跑 fish（音频坏了时用）">重做标准音</button>
+              <span>本文 <b id="dt-wordcount">0</b> 个单词 · 词表（点右侧 ✎ 改）</span>
             </div>
             <ul id="dt-words" class="word-list"></ul>
           </div>
+
+          <!-- ⭐ 改一个词的对话框：词表是**派生数据**，但模型/规则都会出错，
+               得留一条人工修正的路（改完和译文/难度一样，点底部「更新」才提交）。
+               ⚠️ 用原生 <dialog>：这个台子是本地工具，跑在 Chrome/Electron 里，不需要自己糊弹层。 -->
+          <dialog id="wd-dialog" class="wd-dialog">
+            <form method="dialog" id="wd-form">
+              <h3>改这个词</h3>
+              <p class="muted tiny" id="wd-hint"></p>
+              <label class="block">单词<input type="text" id="wd-text" readonly /></label>
+              <label class="block">音标<input type="text" id="wd-ipa" placeholder="/səˌfɪstəˈkeɪʃən/" /></label>
+              <label class="block">句重音
+                <select id="wd-stress">
+                  <option value="-1">弱读（轻、含糊）</option>
+                  <option value="0">普通</option>
+                  <option value="1">重读（这句子的重音落点）</option>
+                </select>
+              </label>
+              <label class="block">音节<span class="muted tiny">用空格分开，拼回来必须等于原词</span>
+                <input type="text" id="wd-syllables" placeholder="so phis ti ca tion" />
+              </label>
+              <label class="block">句中义<input type="text" id="wd-meaning" placeholder="精致、考究（此句指格调）" /></label>
+              <label class="block">发音技巧<input type="text" id="wd-tip" placeholder="主重音在第 4 拍，别落到第一个音节" /></label>
+              <p class="error" id="wd-error" hidden></p>
+              <div class="row end">
+                <button type="button" class="ghost" id="wd-cancel">取消</button>
+                <button type="submit" class="primary" id="wd-save">保存</button>
+              </div>
+            </form>
+          </dialog>
 
           <!-- ⭐ 全部改动由**这一个**按钮提交，放在最底部（有改动才亮、没改动是灰的） -->
           <div class="row end meta-foot">

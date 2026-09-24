@@ -225,16 +225,23 @@ label.block > input, label.block > textarea, label.block > select { margin-top: 
 
 .log { background: #0b0d12; border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: #b9c0d0; max-height: 220px; overflow: auto; }
 
-/* ---------- 词表（只读：词｜句重音｜音节｜音标｜句中义｜技巧）----------
+/* ---------- 词表（三列：词+音标 ｜ 弱读/普通/重读 ｜ 释义与技巧 + 编辑）----------
    ⚠️ 这里以前是「逐词播放区间」表（可点改的时间戳 + 试听）——
       点词播放改走微信 TTS 之后，正文里没有时间戳、也没有逐词音频，那张表删了。
-   ⚠️ 词表由流水线按正文算出（派生数据），这个台子只展示：
-      要改就改提示词/规则再整库重跑（pnpm content:regrade --apply）。 */
+   ⚠️ 词表默认由流水线按正文算出（派生数据），但模型/规则都会出错 ⇒
+      右侧 ✎ 打开对话框人工修正（改完和译文一样，点底部「更新」才提交）。 */
 .words-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .words-head b { color: var(--text); }
 .word-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-.word-row { padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.wi-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.word-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 104px minmax(0, 1.5fr);
+  gap: 10px; align-items: center;
+  padding: 8px 10px; border-bottom: 1px solid var(--line);
+}
+.wi-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wi-mid { text-align: center; }
+.wi-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.wi-tip { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wi-text { font-family: var(--mono); font-size: 14px; color: var(--text); }
 .wi-stress { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 /* ⭐ 句重音三档：重读最显眼、弱读最淡 —— 与阅读页"用字重表达节奏"是同一个意思 */
@@ -242,9 +249,20 @@ label.block > input, label.block > textarea, label.block > select { margin-top: 
 .wi-stress.s0 { color: var(--muted); }
 .wi-stress.s-1 { color: var(--muted); opacity: .6; }
 .wi-syl { font-family: var(--mono); }
-.wi-ipa { font-family: var(--mono); color: var(--brand-2); }
-.wi-meaning { font-size: 12px; color: var(--text); margin-top: 3px; }
-.wi-tip { margin-top: 2px; }
+.wi-ipa { font-family: var(--mono); color: var(--brand-2); font-size: 12px; }
+
+/* ---------- 「改这个词」对话框 ---------- */
+.wd-dialog {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text);
+  padding: 18px 20px; min-width: 420px; max-width: 560px;
+}
+.wd-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.wd-dialog h3 { margin: 0 0 4px; font-size: 15px; }
+.wd-dialog .block { margin-bottom: 10px; }
+.wd-dialog input, .wd-dialog select { width: 100%; box-sizing: border-box; }
+.wd-dialog input[readonly] { opacity: .65; }
+.wd-dialog .row.end { margin-top: 14px; margin-bottom: 0; }
 /* 连读技巧画在**两行之间**：它是两个词之间的关系，不是某个词的属性 */
 .link-row { padding: 3px 10px 3px 24px; font-size: 12px; color: var(--brand-2); border-bottom: 1px solid var(--line); }
 

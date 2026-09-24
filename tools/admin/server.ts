@@ -29,7 +29,7 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
-import type { ArticleWordItem, DifficultyScores } from '../../packages/shared/src/types/content'
+import type { ArticleWordItem, ArticleWordStress, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
 import { articleTags, articles, schedules } from '../../apps/server/src/db/schema'
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
@@ -291,9 +291,8 @@ const ADMIN = ensureAdminCredentials()
  */
 const ID_HEX = '[0-9a-f]{' + ARTICLE_ID_LENGTH + '}'
 const RE_ARTICLE = new RegExp('^/api/articles/(' + ID_HEX + ')$')
-const RE_AUDIO = new RegExp('^/api/audio/(' + ID_HEX + ')(?:\\.mp3|/w(\\d+)\\.mp3)?$')
+const RE_AUDIO = new RegExp('^/api/audio/(' + ID_HEX + ')\\.mp3$')
 const RE_SCHEDULE = new RegExp('^/api/articles/(' + ID_HEX + ')/schedule$')
-const RE_REDO = new RegExp('^/api/articles/(' + ID_HEX + ')/audio$')
 
 /* ================================================================
  * HTTP 小工具
@@ -462,6 +461,64 @@ async function listArticles(mode: Mode, q: string, limit: number) {
 function contentAbsPathOf(id: string): string {
   // ⚠️ 相对路径用 shared 的唯一实现；这里只把它钉到本机仓库根
   return resolve(ROOT, contentPathOf(id).replace(/^\/+/, ''))
+}
+
+/**
+ * ⭐ 校验**人工改过**的词表（详情页那个对话框）。
+ *
+ * ⚠️⚠️ 为什么必须严：词表是朗读页逐词渲染与点按的唯一依据 —— 条数错一位、
+ *    或 `text` 与正文切出来的词不一致，就变成「点这个词、看那个词的信息」，
+ *    而**没有任何报错**（界面看起来完全正常）。
+ *    `content-files.test.ts` 在 CI 上查同一组不变量，存进去坏值下一次 pnpm test 就红。
+ */
+function validateWordTable(
+  text: string,
+  raw: unknown,
+  rawLinks: unknown,
+): { words?: ArticleWordItem[]; links?: string[]; error?: string } {
+  if (!Array.isArray(raw)) return { error: 'words 必须是数组' }
+  const tokens = plainWordsOf(text)
+  if (raw.length !== tokens.length) {
+    return { error: 'words 有 ' + raw.length + ' 条，正文是 ' + tokens.length + ' 个词 —— 对不上' }
+  }
+  const out: ArticleWordItem[] = []
+  for (let i = 0; i < raw.length; i++) {
+    const w = raw[i] as Partial<ArticleWordItem> | undefined
+    const at = '第 ' + (i + 1) + ' 个词'
+    if (!w || typeof w !== 'object') return { error: at + '不是对象' }
+    if (String(w.text ?? '') !== tokens[i]) {
+      return {
+        error: at + '是「' + String(w.text ?? '') + '」，正文里是「' + tokens[i] + '」—— 顺序或内容对不上',
+      }
+    }
+    const syllables = Array.isArray(w.syllables) ? w.syllables.map((s) => String(s)).filter(Boolean) : null
+    if (!syllables || syllables.length === 0) return { error: at + '（' + tokens[i] + '）缺少 syllables' }
+    // ⭐ 核心不变量：分拍拼回来必须一字不差（含标点）
+    if (syllables.join('') !== tokens[i]) {
+      return { error: at + '（' + tokens[i] + '）的音节拼回来是「' + syllables.join('') + '」—— 对不上' }
+    }
+    const stress = Number(w.stress)
+    if (stress !== 1 && stress !== 0 && stress !== -1) {
+      return { error: at + ' 的句重音必须是 -1（弱读）/ 0（普通）/ 1（重读）' }
+    }
+    out.push({
+      text: tokens[i]!,
+      stress: stress as ArticleWordStress,
+      syllables,
+      ipa: String(w.ipa ?? '').trim(),
+      meaning: String(w.meaning ?? '').trim(),
+      tip: String(w.tip ?? '').trim(),
+    })
+  }
+  // ⚠️ links 与词界一一对应；调用方不传时会把正文里那份传进来（词数没变，边界还是那些）
+  const links: string[] = []
+  if (Array.isArray(rawLinks)) {
+    if (rawLinks.length !== out.length - 1) {
+      return { error: 'links 有 ' + rawLinks.length + ' 条，应当是 ' + (out.length - 1) + ' 条（词界数）' }
+    }
+    for (const l of rawLinks) links.push(String(l))
+  }
+  return { words: out, links }
 }
 
 /**
@@ -770,29 +827,11 @@ async function setPublishedBatch(
 }
 
 /**
- * 只为一条**已有**的句子重做标准音与词级时间戳。
- *
- * ⚠️ 为什么值得一个独立任务：这是音频出问题（缺文件 / 某个词的区间不对 /
- *    正文的 words 是空的）时**唯一**的修复手段 ——
- *    旧 CLI 的 `audio --id` 就是干这个的，删掉它不能让这个动作消失。
- * ⚠️ 正文一个字都不动，所以 id 不变：这是「重做音」，不是「新增句子」。
+ * ⚠️ 这里**曾经有 runRegenerateAudio**（「重做标准音」的异步任务）——
+ *    用户 2026-09 要求去掉：那个动作当年是为了修**逐词切片的坏区间**才需要的，
+ *    而逐词音频已经不存在（点词走微信 TTS）；整句音频坏了，重跑 `pnpm content:audio`
+ *    或重新生成更干净，不必在管理台里再留一个入口。
  */
-async function runRegenerateAudio(job: Job, id: string, text: string, force: boolean): Promise<void> {
-  job.step = 'fish：整句标准音'
-  const prod = await produceStandardAudio(id, text, { force })
-  job.log.push(
-    '整句 ' + prod.alignment.audioDuration.toFixed(2) + 's，' + prod.wordCount + ' 个词' +
-      (prod.skipped ? '（复用已有音频）' : '（重新合成）'),
-  )
-  job.step = '完成'
-  job.status = 'done'
-  job.result = {
-    id,
-    wordCount: prod.wordCount,
-    durationMs: Math.round(prod.alignment.audioDuration * 1000),
-    words: (await contentOf(id))?.words ?? [],
-  }
-}
 
 /** 把一个后台任务登记进内存表并立刻开跑（HTTP 立刻返回 jobId） */
 function startJob(run: (job: Job) => Promise<void>): string {
@@ -900,13 +939,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   // ---- 环境 ----
   // ---- 音频（预览；与小程序读的是同一份文件）----
-  // ⚠️ 两种形状：/<id>.mp3（整句）与 /<id>/w3.mp3（逐词切片）—— 前端 audio 标签用的是前者
+  // ⚠️ 现在**只有整句**：逐词切片随「点词播放改走微信 TTS」一起删了（2026-09），
+  //    所以这里也只剩 /<id>.mp3 一种形状。
   const audio = RE_AUDIO.exec(path)
   if (audio) {
-    const audioId = audio[1]!
-    const abs = audio[2] === undefined
-      ? resolve(ROOT, 'content/audio', audioId + '.mp3')
-      : resolve(ROOT, 'content/audio', audioId, 'w' + audio[2] + '.mp3')
+    const abs = resolve(ROOT, 'content/audio', audio[1]! + '.mp3')
     if (!existsSync(abs)) return send(res, 404, 'not found')
     return serveFile(req, res, abs)
   }
@@ -1055,6 +1092,23 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const tags = normalizeTags(b.tags ?? c.tags)
 
     /**
+     * ⭐ 词表：**人工修正**用（对话框里改音标 / 句重音 / 音节 / 释义 / 技巧）。
+     *
+     * ⚠️ 必须校验：词表是朗读页逐词渲染与点按的依据，条数错一位就是
+     *    「点这个词、看那个词的信息」，而**没有任何报错**。
+     * ⚠️ `links` 不传就沿用正文里那份（词数没变，边界还是那些边界）。
+     * ⚠️ 音节拼回来必须等于原词 —— 这是词表的核心不变量（CI 也查）。
+     */
+    let words: ArticleWordItem[] | undefined
+    let links: string[] | undefined
+    if (b.words !== undefined) {
+      const check = validateWordTable(String(c.text ?? ''), b.words, b.links ?? c.links)
+      if (check.error) return fail(res, check.error)
+      words = check.words
+      links = check.links
+    }
+
+    /**
      * ⚠️ 发布时间**只由服务端产生**（草稿 → 发布那一刻），客户端不能指定。
      *    这里明确**拒收**而不是静默忽略：不说的话，调用方会以为改成功了。
      */
@@ -1071,6 +1125,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       reason,
       tags,
       publish: b.publish === undefined ? undefined : b.publish === true,
+      words: words,
+      links: links,
     })
     return ok(res, {
       id,
@@ -1141,19 +1197,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     })
   }
 
-  /** ---- 重做某条的标准音（正文不动）---- */
-  const redo = RE_REDO.exec(path)
-  if (redo && req.method === 'POST') {
-    const id = redo[1]!
-    const b = await body(req)
-    const c = await contentOf(id)
-    if (!c || typeof c.text !== 'string' || !c.text) {
-      return fail(res, '这条句子的正文不在本机仓库里（content/articles/' + id + '.json），补不了音')
-    }
-    const text = c.text
-    const jobId = startJob((job) => runRegenerateAudio(job, id, text, b.force !== false))
-    return ok(res, { jobId })
-  }
+  /**
+   * ⚠️ 这里**曾经有「重做标准音」接口**（POST /api/articles/:id/audio）——
+   *    用户 2026-09 要求去掉。它当年是为修**逐词切片的坏区间**而生的，
+   *    而逐词音频已经不存在了；整句音频坏了重跑 pnpm content:audio 更干净。
+   */
 
   return fail(res, '没有这个接口：' + path, 404)
 }
