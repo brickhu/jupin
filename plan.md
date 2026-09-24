@@ -53,8 +53,6 @@
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 
-- [ ] **B22** **部署后标准音全丢、前端所有播放按钮消失**：`seedStandardAudio` 逐行 `storage.put`，**第一次失败即整趟抛出、没有重试、没有逐行隔离**；调用方只 catch 打日志。迁移 0031–0034 清库后 `standard_audio` 全空，接口返回 `audio: null`，前端 `wx:if="{{entry.audio}}"` 于是**一个播放入口都不渲染**（dev 实测 `standardAudioConfigured: 0`、`fileInBucket: false`，而盘上 mp3 与 `/media` 都正常）。**不要**只做「再灌一次」——要让它抗住启动期的瞬时失败 —— 做完的标志：灌音频按行隔离 + 带退避重试，`/health?deep=1` 能报出**真实的上传错误**（现在只有 `fileInBucket: false`，看不出为什么），且失败不再让列留空
-
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
@@ -110,6 +108,8 @@
 - [x] **B20** 难度**收回成一个档位**（`difficulty`）+ `reason`，三个判据分另记进 `scores`：**判据是判据，不是字段**（用户 2026-09 三次纠正 —— 先「词汇 / 发音是两维」，再「输出就是一个难度字段和 reason」，最后「每个纬度的评分也记进去」）—— 撤掉 `pronLevel` / `vocabLevel` 两个字段与库列（迁移 0036），提示词改成「按 词汇×5 / 发音×3 / 长度×2 各打 1–5 分 → **代码**加权合成档位」，把 ECDICT 做成 LLM 的 `dict_lookup` 工具，并按用户给的 6 句锚点校准（**FDR 那句必须是中级**），存量 9 条已按新口径重判 —— 做完的标志：正文 JSON 是 `difficulty` + `scores` + `reason`、库里一列且与 JSON 一致（`content-files.test.ts` 会验算档位）、admin 只有一个徽章（三个分可改、档位实时算）、客户端只有一枚徽章 + 一句话
 
 - [x] **B21** 冷启动「重试到预算用尽」时**抛的是原始错误、不是人话**：`requestWithRetries` 里预算预检查 `break`（client.ts:421）之后直接 `throw lastErr`（:481），绕过了下面那段 COLD_START / SCORING 的友好错误。而 `callContainer` 单次上限 15s、启动预算 25s，冷启动时请求正是「挂在半路直到超时」——几乎必然走 `break` 这条出口，于是用户看到的是 `request:fail timeout`，那段友好提示成了**死代码**。**只改这一处出口**：把「预算耗尽」的翻译抽成一个 `exhaustedError()`，循环内最后一次失败与 `break` 之后都走它；不动重试节奏、不动任何接口行为 —— 做完的标志：冷启动挂起导致预算耗尽时，页面拿到的是 `code: 'COLD_START'`（或 `SCORING`）的人话，而不再是原始超时串；`tsc` 通过
+
+- [x] **B22** **部署后标准音全丢、前端所有播放按钮消失**：`seedStandardAudio` 逐行 `storage.put`，**第一次失败即整趟抛出、没有重试、没有逐行隔离**；调用方只 catch 打日志。迁移 0031–0034 清库后 `standard_audio` 全空，接口返回 `audio: null`，前端 `wx:if="{{entry.audio}}"` 于是**一个播放入口都不渲染**（dev 实测 `standardAudioConfigured: 0`、`fileInBucket: false`，而盘上 mp3 与 `/media` 都正常）。**不要**只做「再灌一次」——要让它抗住启动期的瞬时失败 —— 做完的标志：灌音频按行隔离 + 带退避重试，`/health?deep=1` 能报出**真实的上传错误**（现在只有 `fileInBucket: false`，看不出为什么），且失败不再让列留空
 
 ## 已完成 · 无 commit（手写）
 
