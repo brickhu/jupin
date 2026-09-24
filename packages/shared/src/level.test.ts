@@ -57,9 +57,11 @@ describe('判据分 → 档位（词汇×5 + 发音×4 + 长度×1，除 10）',
       [[2, 1, 2], 1.6, 0],   // 「The best way to predict the future is to invent it.」
       [[3, 2, 3], 2.6, 1],   // 「Although the internet has made it easier…」
       [[2, 4, 2], 2.8, 1],   // FDR 那句 —— **必须是中级**（用户明确不接受专家）
-      [[4, 2, 3], 3.1, 2],   // 「Companies that fail to adapt…」
-      [[5, 3, 4], 4.1, 3],   // 「The assumption that human behavior is governed…」
-      [[1, 5, 2], 2.7, 1],   // 绕口令：词全简单但 /s/ 与 /ʃ/ 反复切换
+      [[4, 3, 3], 3.5, 2],   // 「Companies that fail to adapt…」
+      [[5, 4, 4], 4.5, 3],   // 「The assumption that human behavior is governed…」
+      // ⚠️ 绕口令：词汇 2（高中）+ 发音 5 ⇒ 3.2 —— **必须还是中级**
+      //    （用户 2026-09：我定的五档里，高中词汇也到不了高级）
+      [[2, 5, 2], 3.2, 1],
       [[5, 5, 5], 5.0, 3],   // 全满仍是专家的上限
     ]
     for (const [scores, score, level] of cases) {
@@ -68,11 +70,14 @@ describe('判据分 → 档位（词汇×5 + 发音×4 + 长度×1，除 10）',
     }
   })
 
-  it('恰好的整数分向上归（左闭右开：2.0 中级 / 3.0 高级 / 4.0 专家）', () => {
-    expect(weightedScoreOf([2, 2, 4])).toBe(2.2)
-    expect(difficultyFromScores([2, 3, 1])).toBe(1) // 2.0
-    expect(difficultyFromScores([3, 3, 3])).toBe(2) // 3.0
-    expect(difficultyFromScores([4, 4, 4])).toBe(3) // 4.0
+  it('切分点是 2.5 / 3.5 / 4.5（等价于「score 四舍五入到整数」）', () => {
+    expect(weightedScoreOf([3, 2, 2])).toBe(2.5)
+    expect(difficultyFromScores([2, 3, 1])).toBe(0) // 2.3 → 初级
+    expect(difficultyFromScores([3, 2, 2])).toBe(1) // 2.5 → 中级
+    expect(difficultyFromScores([3, 3, 3])).toBe(1) // 3.0 → 中级
+    expect(difficultyFromScores([4, 3, 3])).toBe(2) // 3.5 → 高级
+    expect(difficultyFromScores([4, 4, 4])).toBe(2) // 4.0 → 高级
+    expect(difficultyFromScores([5, 4, 4])).toBe(3) // 4.5 → 专家
   })
 
   it('三个分必须是 1–5 的整数，认不出就是 null（绝不补齐、绝不夹到边界）', () => {

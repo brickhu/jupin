@@ -120,25 +120,27 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
 【定档锚点】⭐ 判完之后把你的结果和下面这几句**比一比** —— 它们是**基准**：
 如果三个分算出来的档位和这张表不一致，就**回头调三个分**（**以这张表为准**，
 它比你的算术更权威）。同一档的最终 difficulty 必须一致：
-  0 初级：「The best way to predict the future is to invent it.」
-          「Don't count the days, make the days count.」
+  0 初级：「The best way to predict the future is to invent it.」　　　　　（词汇 2）
+          「Don't count the days, make the days count.」　　　　　　　　　（词汇 1）
   1 中级：「Although the internet has made it easier than ever to access information,
-            finding reliable sources requires a high level of critical thinking.」
+            finding reliable sources requires a high level of critical thinking.」（词汇 3）
           「The only thing we have to fear is fear itself, nameless, unreasoning,
-            unjustified terror which paralyzes needed efforts.」
+            unjustified terror which paralyzes needed efforts.」　　　　　　（词汇 3）
   2 高级：「Companies that fail to adapt to the rapidly changing technological landscape
-            risk being left behind by competitors who are quicker to embrace innovation.」
+            risk being left behind by competitors who are quicker to embrace innovation.」（词汇 4）
   3 专家：「The assumption that human behavior is governed entirely by rational choice ignores
             the profound influence of subconscious emotions, which often drive decisions long
-            before logic has had the chance to intervene.」
-  ⚠️ 特别注意倒数第二句（FDR 那句）：它**不是专家**（词汇别给 5）——
-     unreasoning / unjustified 是 un- + 常用词，构词透明；但它也**不是**最简单那一档：
-     nameless / unreasoning / unjustified / paralyzes 叠在一起，确实比
-     「The world is like a mirror…」那种句子重 —— **词汇给 3 左右**，最后落在中级。
+            before logic has had the chance to intervene.」　　　　　　　　（词汇 5）
+  ⚠️ 括号里给的是**词汇档**（发音与长度你按自己的口径判），三个分算出来的档位必须落对上。
+  ⚠️ FDR 那句（中级的第二句）：**词汇别给 5** —— unreasoning / unjustified 是 un- + 常用词，
+     构词透明；但也**别压到 1–2**：nameless / unreasoning / unjustified / paralyzes 叠在一起，
+     确实比「The world is like a mirror…」那种句子重 —— **词汇 3**，最后落中级。
 
 【合成档位】把三个分**原样写进 scores**（顺序固定：词汇、发音、长度），再写难度：
-   score = (5 × 词汇 + 4 × 发音 + 1 × 长度) / 10
-   score < 2 → 0（初级）│ [2, 3) → 1（中级）│ [3, 4) → 2（高级）│ [4, 5] → 3（专家）
+   score = (5 × 词汇 + 4 × 发音 + 1 × 长度) / 10   （落在 1–5）
+   ⚠️ 档位 = 把 score **四舍五入到整数**，然后：1–2 → 初级 │ 3 → 中级 │ 4 → 高级 │ 5 → 专家
+      （切分点是 2.5 / 3.5 / 4.5。⚠️ 别记成「3 分就是高级」——
+       词汇 2（高中）的句子，光靠发音 5 顶多到 3.2 → 还是**中级**，这是用户定的口径。）
    ⚠️ scores **三个都要给**，各是 1–5 的整数 —— 它是你的判据，会被记下来核对。
       给不出某个分就说明你还没想清楚：回头再看一遍那一维的口径。
 
