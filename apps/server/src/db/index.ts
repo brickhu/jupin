@@ -63,6 +63,14 @@ export const dbState = {
   attempts: 0,
   migrated: false,
   migrateError: '' as string,
+  /**
+   * ⭐ 标准音灌入的**最后一条真实错误**（空 = 没失败过）。
+   *
+   * ⚠️ 为什么必须暴露到 /health：云托管 CLI 没有看容器日志的命令、CLS 也没开，
+   *    于是「音频传不上去」在 /health 上只剩 `fileInBucket: false`——连为什么都不知道。
+   *    一次真实事故：部署后所有播放按钮消失，排查全靠猜。
+   */
+  seedAudioError: '' as string,
   existingTables: [] as string[],
   /**
    * articles 表里有多少行。
@@ -476,7 +484,13 @@ export async function initDatabase(): Promise<void> {
         const { seedStandardAudio } = await import('../services/standard-audio')
         const r = await seedStandardAudio()
         console.log(`[db] 标准音：新灌 ${r.uploaded} 个文件，跳过 ${r.skipped} 篇`)
+        // ⭐ 把失败详情带上 /health —— 这是唯一能自查的通道（CLI 看不到容器日志）
+        dbState.seedAudioError = r.failed.length
+          ? `${r.failed.length} 篇失败，首条：#${r.failed[0]!.id} ${r.failed[0]!.error}`
+          : ''
       } catch (err) {
+        // ⚠️ 仍然不阻断启动：服务活着 + /health 能自查，比直接崩好排查
+        dbState.seedAudioError = (err as Error).message
         console.error('[db] 标准音灌入失败：', (err as Error).message)
       }
     } catch (err) {

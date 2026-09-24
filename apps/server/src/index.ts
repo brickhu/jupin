@@ -73,6 +73,8 @@ app.get('/health', async (c) => {
       dbAttempts: dbState.attempts,
       migrated: dbState.migrated,
       migrateError: dbState.migrateError || undefined,
+      /** ⭐ 标准音灌入的最后一条错误 —— 空字符串就是没失败过 */
+      seedAudioError: dbState.seedAudioError || undefined,
       existingTables: dbState.existingTables.length ? dbState.existingTables : undefined,
       /** ⭐ 句库行数 —— 真机朗读页「正文加载失败」的头号原因就是它是 0 */
       articleCount: dbState.articleCount,

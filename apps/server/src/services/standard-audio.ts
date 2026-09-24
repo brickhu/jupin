@@ -90,6 +90,60 @@ export interface SeedAudioResult {
   skipped: number
   /** 盘上根本没有音频的文章 —— 提示要先去跑生成脚本 */
   missing: string[]
+  /**
+   * ⭐ 上传失败的文章（连同**真实错误**）。
+   *
+   * ⚠️⚠️ 加它的原因是一次真实事故：部署后标准音全丢、前端所有播放按钮消失。
+   *    旧代码第一行 `storage.put` 一失败就**整趟抛出**，调用方只 catch 打日志，
+   *    于是「一个瞬时错误 = 全库没有音频」，而且 CLI/CLS 都看不到容器日志，
+   *    只能看到 `fileInBucket: false` —— 连为什么都不知道。
+   *    ⇒ 现在单行失败不连坐、错误带回 /health（见 dbState.seedAudioError）。
+   */
+  failed: { id: string; error: string }[]
+}
+
+/** 上传重试次数与退避 —— 启动期的瞬时网络失败不该让整批音频丢掉 */
+const PUT_ATTEMPTS = 4
+const PUT_BACKOFF_MS = [1_000, 3_000, 8_000]
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+/**
+ * 把错误说清楚 —— Node 的 fetch 失败只给 `TypeError: fetch failed`，
+ * 病因在 `err.cause` 里（ENOTFOUND / ECONNREFUSED / 证书 / 超时）。
+ * 不把 cause 带出来，/health 上就只剩一句「fetch failed」，等于没信息。
+ */
+function describeError(err: unknown): string {
+  const e = err as Error & { cause?: unknown }
+  const cause = e?.cause
+  const detail = cause instanceof Error ? cause.message : cause ? String(cause) : ''
+  return (e?.message ?? String(err)) + (detail ? ` ← ${detail}` : '')
+}
+
+/** 带退避重试的上传 —— 只对 storage.put 重试，不做无差别重试 */
+async function putWithRetry(
+  storage: { put(key: string, data: Uint8Array): Promise<void> },
+  key: string,
+  bytes: Uint8Array,
+  log: (msg: string) => void,
+): Promise<void> {
+  let lastErr: unknown
+  for (let i = 0; i < PUT_ATTEMPTS; i++) {
+    try {
+      await storage.put(key, bytes)
+      return
+    } catch (err) {
+      lastErr = err
+      if (i < PUT_ATTEMPTS - 1) {
+        const wait = PUT_BACKOFF_MS[i] ?? 8_000
+        log(`[audio] 上传 ${key} 第 ${i + 1} 次失败，${wait}ms 后重试：${describeError(err)}`)
+        await sleep(wait)
+      }
+    }
+  }
+  throw lastErr
 }
 
 /**
@@ -105,7 +159,7 @@ export interface SeedAudioResult {
 export async function seedStandardAudio(
   log: (msg: string) => void = console.log,
 ): Promise<SeedAudioResult> {
-  const out: SeedAudioResult = { uploaded: 0, skipped: 0, missing: [] }
+  const out: SeedAudioResult = { uploaded: 0, skipped: 0, missing: [], failed: [] }
   const root = resolveStaticRoot()
   if (!root) {
     log('[audio] 找不到静态资源根目录，跳过标准音灌入')
@@ -127,26 +181,40 @@ export async function seedStandardAudio(
       continue
     }
 
-    if (await storage.exists(audioKeyOf(row.id))) {
-      out.skipped++
-    } else {
-      for (const rel of filesOf(row.id)) {
-        const bytes = await readStaticFile(`${KEY_PREFIX}/${rel}`)
-        if (!bytes) continue
-        await storage.put(`${KEY_PREFIX}/${rel}`, bytes)
-        out.uploaded++
+    /**
+     * ⚠️⚠️ 单行失败**不能连坐** —— 旧代码第一行失败就整趟抛出，
+     *    结果是「一个瞬时错误 ⇒ 全库 audio 为 null ⇒ 前端一个播放入口都不渲染」。
+     *    现在这一行失败只记进 out.failed，后面照灌。
+     */
+    try {
+      if (await storage.exists(audioKeyOf(row.id))) {
+        out.skipped++
+      } else {
+        for (const rel of filesOf(row.id)) {
+          const bytes = await readStaticFile(`${KEY_PREFIX}/${rel}`)
+          if (!bytes) continue
+          await putWithRetry(storage, `${KEY_PREFIX}/${rel}`, bytes, log)
+          out.uploaded++
+        }
+        log(`[audio] 已灌入 #${row.id}（${filesOf(row.id).length} 个文件）`)
       }
-      log(`[audio] 已灌入 #${row.id}（${filesOf(row.id).length} 个文件）`)
-    }
 
-    // ⭐ 把 key 记进库 —— /api/articles/:id/content 要靠它拼 fileID
-    if (row.standardAudio !== audioKeyOf(row.id)) {
-      await db.update(articles).set({ standardAudio: audioKeyOf(row.id) }).where(eq(articles.id, row.id))
+      // ⭐ 把 key 记进库 —— /api/articles/:id/content 要靠它拼 fileID
+      if (row.standardAudio !== audioKeyOf(row.id)) {
+        await db.update(articles).set({ standardAudio: audioKeyOf(row.id) }).where(eq(articles.id, row.id))
+      }
+    } catch (err) {
+      const msg = describeError(err)
+      out.failed.push({ id: row.id, error: msg })
+      log(`[audio] ⚠️ #${row.id} 灌入失败（其余继续）：${msg}`)
     }
   }
 
   if (out.missing.length > 0) {
     log(`[audio] ⚠️ 这些文章盘上没有标准音，请先跑 pnpm content:audio：#${out.missing.join(', ')}`)
+  }
+  if (out.failed.length > 0) {
+    log(`[audio] ⚠️ ${out.failed.length} 篇标准音灌入失败（真实错误见 /health 的 seedAudioError）`)
   }
   return out
 }
