@@ -2,9 +2,13 @@
   "id": "9ec92356e39599e4",
   "text": "The world is like a mirror: Frown at it and it frowns at you; smile, and it smiles too.",
   "translation": "世界就像一面镜子：你对它皱眉，它也对你皱眉；你笑，它也笑。",
-  "pronLevel": 2,
-  "vocabLevel": 1,
-  "reason": "相当于高中水平，world 的 r 和 l 挨着念很绕，mirror 两个 r 也不顺；词都常见，句子短。",
+  "difficulty": 1,
+  "scores": [
+    2,
+    4,
+    2
+  ],
+  "reason": "相当于高中水平，world 的 r 和 l 挨着念，-rld 收尾很别扭；词都很常见。",
   "tags": [
     "名言",
     "哲理",

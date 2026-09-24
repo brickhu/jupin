@@ -91,8 +91,10 @@
           <div class="meta-head"><span>句子信息</span></div>
           <dl class="meta-list">
             <dt>状态</dt><dd><span id="dt-status" class="badge"></span><button type="button" class="edit-icon" data-field="isActive" title="改发布状态">✎</button></dd>
-            <dt>发音难度</dt><dd><span id="dt-pron"></span><button type="button" class="edit-icon" data-field="pronLevel" title="改发音难度">✎</button></dd>
-            <dt>词汇难度</dt><dd><span id="dt-vocab"></span><button type="button" class="edit-icon" data-field="vocabLevel" title="改词汇难度">✎</button></dd>
+            <dt>难度<br /><span class="muted tiny">词汇×5 + 发音×4 + 长度×1</span></dt><dd><span id="dt-diff"></span></dd>
+            <dt>词汇及句式<br /><span class="muted tiny">1–5 分 · 权重 5</span></dt><dd><span id="dt-s1"></span><button type="button" class="edit-icon" data-field="s1" title="改词汇分">✎</button></dd>
+            <dt>发音<br /><span class="muted tiny">1–5 分 · 权重 4</span></dt><dd><span id="dt-s2"></span><button type="button" class="edit-icon" data-field="s2" title="改发音分">✎</button></dd>
+            <dt>句子长度<br /><span class="muted tiny">1–5 分 · 权重 1</span></dt><dd><span id="dt-s3"></span><button type="button" class="edit-icon" data-field="s3" title="改长度分">✎</button></dd>
             <dt>一句话<br /><span class="muted tiny">难在哪（给用户看）</span></dt><dd><span id="dt-reason"></span><button type="button" class="edit-icon" data-field="reason" title="改这句话">✎</button></dd>
             <dt>发布时间</dt><dd><span id="dt-published"></span></dd>
             <dt>标签</dt><dd><span id="dt-tags" class="tags"></span><button type="button" class="edit-icon" data-field="tags" title="改标签">✎</button></dd>
@@ -158,7 +160,7 @@
         </label>
         <div class="row">
           <button type="button" id="ed-split" class="primary">① 拆分并纠错</button>
-          <span class="muted tiny">这一步只调 LLM 出文本 / 译文 / 两个难度 / 标签 —— <b>先不花钱生成语音</b></span>
+          <span class="muted tiny">这一步只调 LLM 出文本 / 译文 / 三个判据分与难度 / 标签 —— <b>先不花钱生成语音</b></span>
         </div>
       </div>
 

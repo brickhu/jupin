@@ -2,14 +2,17 @@
   "id": "06ef2b193b83b3d7",
   "text": "Everything should be made as simple as possible, but not simpler.",
   "translation": "凡事都应尽可能简单，但不能过于简单。",
-  "pronLevel": 2,
-  "vocabLevel": 0,
-  "reason": "相当于初中水平，everything 的 /θ/、/v/ 和 simpler 的 l 和 r 连着念较难；词都很常见。",
+  "difficulty": 0,
+  "scores": [
+    1,
+    2,
+    2
+  ],
+  "reason": "相当于初中水平，simpler 里 m-p-l 连着念不顺；词都很常见。",
   "tags": [
     "名言",
     "哲理",
-    "短句",
-    "发音难点"
+    "短句"
   ],
   "words": [
     {

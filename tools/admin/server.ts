@@ -29,7 +29,7 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
-import type { ArticleWord } from '../../packages/shared/src/types/content'
+import type { ArticleWord, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
 import { articleTags, articles, schedules } from '../../apps/server/src/db/schema'
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
@@ -43,7 +43,15 @@ import { themeFromHash } from '../../packages/shared/src/theme'
 import { ARTICLE_ID_LENGTH } from '../../packages/shared/src/constants'
 import { contentPathOf } from '../../packages/shared/src/content-path'
 import { plainWordsOf } from '../../packages/shared/src/tokenize'
-import { LEVEL_LABEL, LEVEL_ORDER, normalizeLevel } from '../../packages/shared/src/level'
+import {
+  DIFFICULTY_BANDS,
+  DIFFICULTY_WEIGHTS,
+  LEVEL_LABEL,
+  LEVEL_ORDER,
+  difficultyFromScores,
+  normalizeScores,
+  weightedScoreOf,
+} from '../../packages/shared/src/level'
 import { normalizeTags } from '../../packages/shared/src/tags'
 import { addDays, isValidDay, today } from '../../packages/shared/src/day'
 
@@ -381,16 +389,6 @@ async function serveFile(req: IncomingMessage, res: ServerResponse, abs: string)
  * 句库
  * ================================================================ */
 
-/**
- * 档位 → 中文标签。**两条轴共用**（标签一样，刻度一样）。
- * ⚠️ 库里的两列都是裸 int（可能是历史脏值 / null），必须先过 normalizeLevel ——
- *    直接拿它索引 LEVEL_LABEL 会得到 undefined，页面上就是一片空白档位。
- */
-function levelLabelOf(v: unknown): string | null {
-  const d = normalizeLevel(v)
-  return d === null ? null : LEVEL_LABEL[d]
-}
-
 async function contentOf(id: string): Promise<Record<string, unknown> | null> {
   const p = contentAbsPathOf(id)
   if (!existsSync(p)) return null
@@ -419,11 +417,15 @@ async function listArticles(mode: Mode, q: string, limit: number) {
     out.push({
       id: r.id,
       isActive: r.isActive,
-      // ⭐ 两条轴分别给值 + 分别给中文标签（不合成、不互相兜底）
-      pronLevel: r.pronLevel ?? null,
-      pronLabel: levelLabelOf(r.pronLevel),
-      vocabLevel: r.vocabLevel ?? null,
-      vocabLabel: levelLabelOf(r.vocabLevel),
+      // ⭐ 难度对外只有一个档位（库列只是派生索引，真相在正文 JSON）
+      difficulty: r.difficulty ?? null,
+      /**
+       * ⭐ 三个判据分 [词汇, 发音, 长度] + 加权总分 —— **只给运营看**。
+       *    ⚠️ 它们只在正文 JSON 里（库里没有列）：读正文顺手带出来，
+       *       列表上「高级 3.1」比只有一个「高级」更能看出这一档是怎么来的。
+       */
+      scores: normalizeScores(c?.scores),
+      score: weightedScoreOf(c?.scores),
       /** ⭐ 发布时间（草稿为 null）—— 列表里替代原来的标签列展示 */
       publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
       standardAudio: r.standardAudio ?? null,
@@ -549,10 +551,12 @@ async function upsertArticle(
     id: string
     text: string
     translation: string
-    /** 发音难度（0–3） */
-    pronLevel: number
-    /** 词汇难度（0–3） */
-    vocabLevel: number
+    /**
+     * ⭐ 三个判据分 [词汇, 发音, 长度]，各 1–5 —— **档位由它算出来**（见 shared/level.ts）。
+     * ⚠️ 刻意**不接受**调用方直接给 difficulty：那样正文里 difficulty 与 scores
+     *    就可能互相矛盾，而没有任何东西会发现（content-files.test.ts 会查）。
+     */
+    scores: DifficultyScores
     /** 给用户看的一句话（格式见 article-meta.ts 的 SYSTEM）；可手改 */
     reason: string
     tags: string[]
@@ -566,13 +570,16 @@ async function upsertArticle(
     words?: ArticleWord[]
   },
 ): Promise<boolean> {
-  // ⚠️ 不传 words：那是 pipeline 的产物，这里只负责译文/两个档位/标签这几个字段
+  // ⭐ 档位**由判据分算出来**，绝不写传进来的值 —— 正文里两者永远自洽
+  const difficulty = difficultyFromScores(input.scores)
+  if (difficulty === null) throw new Error('三个判据分必须是 1–5 的三个整数')
+  // ⚠️ 不传 words：那是 pipeline 的产物，这里只负责译文/难度/判据分/标签这几个字段
   await writeContentFile(input.id, {
     id: input.id,
     text: input.text,
     translation: input.translation,
-    pronLevel: input.pronLevel,
-    vocabLevel: input.vocabLevel,
+    difficulty,
+    scores: input.scores,
     tags: input.tags,
     // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的时间戳」
     ...(input.words ? { words: input.words } : {}),
@@ -597,9 +604,8 @@ async function upsertArticle(
     isActive: publish,
     theme: themeFromHash(input.id),
     standardAudio: audioKeyOf(input.id),
-    // ⚠️ 两列都是**派生索引**（真相在正文 JSON）—— 这里写，reindex 也会重写
-    pronLevel: input.pronLevel,
-    vocabLevel: input.vocabLevel,
+    // ⚠️ 派生索引（真相在正文 JSON）—— 这里写，reindex 也会重写
+    difficulty,
     /**
      * ⭐ 发布时间只在**草稿 → 已发布**那一刻写，而且**只由这一处写**。
      *
@@ -646,8 +652,10 @@ interface IngestResult {
   id: string
   text: string
   translation: string
-  pronLevel: number
-  vocabLevel: number
+  /** 合成后的档位（0–3）；没有判据分时是 -1（界面据此标红） */
+  difficulty: number
+  /** 三个判据分 [词汇, 发音, 长度]；没给就是 null */
+  scores: DifficultyScores | null
   reason: string
   tags: string[]
   status: 'done' | 'skipped' | 'failed'
@@ -676,9 +684,11 @@ async function runSplit(job: Job, text: string): Promise<void> {
   }
   if (items.length === 0) throw new Error('模型没拆出任何句子 —— 输入是英文吗？')
   for (const it of items) {
-    const lb = (v: typeof it.pronLevel) => (v === null ? '—' : LEVEL_LABEL[v])
-    job.log.push((it.exists ? '⏭ 已存在 ' : '· ') + it.id + '  发音 ' + lb(it.pronLevel) +
-      '｜词汇 ' + lb(it.vocabLevel) + '  ' + it.text)
+    const lb = (v: typeof it.difficulty) => (v === null ? '—' : LEVEL_LABEL[v])
+    const total = weightedScoreOf(it.scores)
+    const sc = it.scores === null ? '判据分缺' : '词汇/发音/长度 ' + it.scores.join('/')
+    job.log.push((it.exists ? '⏭ 已存在 ' : '· ') + it.id + '  ' + lb(it.difficulty) +
+      (total === null ? '' : ' ' + total.toFixed(1)) + '（' + sc + '）  ' + it.text)
     job.log.push('    ' + it.reason)
   }
   job.step = '完成'
@@ -706,7 +716,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
   const results: IngestResult[] = []
   const base = (it: SplitItem): Omit<IngestResult, 'status' | 'error'> => ({
     id: it.id, text: it.text, translation: it.translation,
-    pronLevel: it.pronLevel ?? -1, vocabLevel: it.vocabLevel ?? -1,
+    difficulty: it.difficulty ?? -1, scores: it.scores,
     reason: it.reason, tags: it.tags,
   })
 
@@ -720,18 +730,18 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
       continue
     }
     /**
-     * ⚠️ 两条轴都要有值才敢落盘：正文里它们是并列的事实，缺一个就是「没评过级」。
-     *    界面会拦住，这里再兜一道。
+     * ⚠️ 三个判据分必须在场：**档位是算出来的**，没有分就没有档位。
+     *    界面会拦住（三个下拉里没有「未定」），这里再兜一道。
      */
-    if (it.pronLevel === null || it.vocabLevel === null) {
-      results.push({ ...base(it), status: 'failed', error: '缺少难度档位（发音 / 词汇都要 0–3）' })
-      job.log.push('❌ 缺少难度档位：' + it.text.slice(0, 40))
+    if (it.difficulty === null || it.scores === null) {
+      results.push({ ...base(it), status: 'failed', error: '缺少判据分（词汇 / 发音 / 长度 各 1–5）' })
+      job.log.push('❌ 缺少判据分：' + it.text.slice(0, 40))
       continue
     }
     const created = !existsSync(contentAbsPathOf(it.id))
     await writeContentFile(it.id, {
       id: it.id, text: it.text, translation: it.translation,
-      pronLevel: it.pronLevel, vocabLevel: it.vocabLevel,
+      difficulty: it.difficulty, scores: it.scores,
       reason: it.reason, tags: it.tags, words: [],
     })
     prepared.push({ it, created })
@@ -765,7 +775,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
     try {
       await upsertArticle(mode, {
         id: p.it.id, text: p.it.text, translation: p.it.translation,
-        pronLevel: p.it.pronLevel!, vocabLevel: p.it.vocabLevel!,
+        scores: p.it.scores!,
         reason: p.it.reason, tags: p.it.tags, publish: false,
       })
       results.push({ ...base(p.it), status: 'done' })
@@ -791,7 +801,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
  *
  * ⚠️ `publishedAt` 只在**草稿 → 已发布**那一刻写（与 upsertArticle 同一条规矩）：
  *    反复发布会把它刷成「最后一次编辑时间」，那就答非所问了。
- * ⚠️ 顺手刷一次派生索引：正文可能被手工改过（两个档位 / 标签）。
+ * ⚠️ 顺手刷一次派生索引：正文可能被手工改过（难度 / 标签）。
  */
 async function setPublishedBatch(
   mode: Mode,
@@ -969,8 +979,20 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const q = url.searchParams.get('q') ?? ''
     const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 500)
     const list = await listArticles(S.env, q, limit)
-    // ⚠️ 标签与顺序**两条轴共用**（同一套刻度），所以只给一份
-    return ok(res, { env: S.env, list, levelLabels: LEVEL_LABEL, levelOrder: LEVEL_ORDER })
+    // ⚠️ 标签映射与档位顺序只给一份（服务端是唯一来源，前端不自己抄）
+    return ok(res, {
+      env: S.env,
+      list,
+      levelLabels: LEVEL_LABEL,
+      levelOrder: LEVEL_ORDER,
+      /**
+       * ⭐ 难度公式随 bootstrap 下发（权重 + 切分点）。
+       * ⚠️ 前端要**实时**显示「三个分 → 哪一档」—— 只有这里一处是真相，
+       *    前端自己再写一份阈值的话，调了公式页面就开始说谎。
+       */
+      difficultyWeights: DIFFICULTY_WEIGHTS,
+      difficultyBands: DIFFICULTY_BANDS,
+    })
   }
 
   /**
@@ -1029,11 +1051,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return ok(res, {
       id: row.id,
       isActive: row.isActive,
-      // ⭐ 两条轴分别给值 + 中文标签（库列是派生索引，正文 JSON 才是真相）
-      pronLevel: row.pronLevel ?? null,
-      pronLabel: levelLabelOf(row.pronLevel),
-      vocabLevel: row.vocabLevel ?? null,
-      vocabLabel: levelLabelOf(row.vocabLevel),
+      // ⭐ 难度：档位（库列，派生索引）+ 三个判据分与加权分（正文 JSON 才是真相）
+      difficulty: row.difficulty ?? null,
+      scores: normalizeScores(c?.scores),
+      score: weightedScoreOf(c?.scores),
       /**
        * ⭐ 给用户看的那句话 —— **真相在正文 JSON**（它不进库，见 types/content.ts）。
        *    读出来给运营看：运营就是照它审的（"这句话难在哪"读者能不能看懂）。
@@ -1060,6 +1081,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       words: Array.isArray(c?.words) ? c.words : [],
       contentOnDisk: Boolean(c),
       scheduledDates: sched.map((s) => s.date).sort(),
+      /**
+       * ⚠️ 常量跟着详情一起下发：**直接打开 / 刷新详情页**时不会先经过列表接口，
+       *    没有它们页面会把档位显示成「未定」（前端不硬编码映射与公式，见 app.js）。
+       */
+      levelLabels: LEVEL_LABEL,
+      difficultyWeights: DIFFICULTY_WEIGHTS,
+      difficultyBands: DIFFICULTY_BANDS,
     })
   }
 
@@ -1072,11 +1100,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(res, '这条句子的正文不在本机仓库里（content/articles/' + id + '.json 不存在），改不了')
     }
     const translation = String(b.translation ?? c.translation ?? '').trim()
-    // ⚠️ 两条轴**各读各的**：不传就沿用正文里的旧值，绝不拿一条兜另一条
-    const pronLevel = normalizeLevel(b.pronLevel ?? c.pronLevel)
-    if (pronLevel === null) return fail(res, 'pronLevel（发音难度）必须是 0–3 之一')
-    const vocabLevel = normalizeLevel(b.vocabLevel ?? c.vocabLevel)
-    if (vocabLevel === null) return fail(res, 'vocabLevel（词汇难度）必须是 0–3 之一')
+    /**
+     * ⭐ 判据分：**不传就沿用正文里的旧值** —— 保存译文 / 标签不该把难度弄丢。
+     * ⚠️ 档位**不给直接改**，只给三个分：difficulty 一律由它们算出来（见 upsertArticle），
+     *    这样正文里的 difficulty 与 scores 永远自洽（content-files.test.ts 会验算）。
+     */
+    const scores = normalizeScores(b.scores ?? c.scores)
+    if (scores === null) return fail(res, 'scores（三个判据分）必须是 1–5 的三个整数')
+    const difficulty = difficultyFromScores(scores)!
     /**
      * ⭐ 给用户看的那句话：**可以手改**（它要过运营的眼）。
      * ⚠️ 不传就沿用正文里的旧值 —— 保存译文不该把这句话弄丢。
@@ -1109,8 +1140,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       id,
       text: String(c.text ?? ''),
       translation,
-      pronLevel,
-      vocabLevel,
+      scores,
       reason,
       tags,
       publish: b.publish === undefined ? undefined : b.publish === true,
@@ -1119,8 +1149,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return ok(res, {
       id,
       translation,
-      pronLevel,
-      vocabLevel,
+      difficulty,
+      scores,
       reason,
       tags,
       /** ⭐ 保存后的发布状态 —— 唯一真相是 is_active（content_status 已删） */

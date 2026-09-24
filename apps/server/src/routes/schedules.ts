@@ -114,15 +114,15 @@ schedulesRoutes.get('/', async (c) => {
 
   // ⚠️ 正文按**文章 id**去重后一次性读（id 就是内容 hash，同内容必然同 id）
   // ⚠️ 这里的 type 必须与 loadArticleContent 的解析口径一致：
-  //    两个档位 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
+  //    难度 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
   //    （articles 表只是索引，见 db/schema.ts）。
   const byArticleId = new Map<
     string,
-    { text: string; translation: string; pronLevel: ArticleLevel | null; vocabLevel: ArticleLevel | null; tags: string[] }
+    { text: string; translation: string; difficulty: ArticleLevel | null; tags: string[] }
   >()
   for (const id of articleIds) {
     const a = articleById.get(id)
-    if (a) byArticleId.set(a.id, { text: '', translation: '', pronLevel: null, vocabLevel: null, tags: [] })
+    if (a) byArticleId.set(a.id, { text: '', translation: '', difficulty: null, tags: [] })
   }
   await Promise.all(
     [...byArticleId.keys()].map(async (articleId) => {
@@ -132,8 +132,7 @@ schedulesRoutes.get('/', async (c) => {
         translation: content?.translation ?? '',
         // ⚠️ 内容可能比代码旧（CDN 上的老 JSON 没有这些字段）⇒ 一律过规范化，
         //    认不出就是 null / []，**不补默认档位**（见 shared/level.ts）
-        pronLevel: normalizeLevel(content?.pronLevel),
-        vocabLevel: normalizeLevel(content?.vocabLevel),
+        difficulty: normalizeLevel(content?.difficulty),
         tags: normalizeTags(content?.tags),
       })
     }),
@@ -160,9 +159,8 @@ schedulesRoutes.get('/', async (c) => {
     return {
       text: c?.text ?? '',
       translation: c?.translation ?? '',
-      // ⭐ 两个档位 / 标签跟正文一起走，卡片与详情页共用同一份口径
-      pronLevel: c?.pronLevel ?? null,
-      vocabLevel: c?.vocabLevel ?? null,
+      // ⭐ 难度 / 标签跟正文一起走，卡片与详情页共用同一份口径
+      difficulty: c?.difficulty ?? null,
       tags: c?.tags ?? [],
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
@@ -241,8 +239,7 @@ schedulesRoutes.get('/:date', async (c) => {
     articleId: pick.article.id,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
-    pronLevel: normalizeLevel(content?.pronLevel),
-    vocabLevel: normalizeLevel(content?.vocabLevel),
+    difficulty: normalizeLevel(content?.difficulty),
     tags: normalizeTags(content?.tags),
     isScheduled: pick.source === 'scheduled',
     isToday: date === now,

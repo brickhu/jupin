@@ -8,7 +8,9 @@ import {
   plainWordsOf,
   MAX_ARTICLE_TAGS,
   MAX_ARTICLE_TAG_CHARS,
+  difficultyFromScores,
   normalizeLevel,
+  normalizeScores,
   normalizeTags,
 } from '@jushuo/shared'
 import { resolveStaticRoot } from './content'
@@ -20,8 +22,9 @@ import { resolveStaticRoot } from './content'
  *    档位写错、标签写重复、标签前后带空格，构建与类型检查全都不会吭声 ——
  *    只能靠这道校验出声。
  *
- * ⚠️⚠️ 两个档位都要在场：**它们是两条独立的轴**（2026-09），
- *    只写一个会让「另一条轴没评过」和「评出来是 null」分不清。
+ * ⚠️ 难度档位必须在场：它是**一个**由词汇 / 发音 / 长度合成的值（见 shared/level.ts）。
+ *    三个判据分也记在正文里（scores）—— **就是为了让这里能验算**：
+ *    difficulty 必须能由 scores 按公式算回来（模型自己算加权是会算错的）。
  *
  * ⚠️ 走 resolveStaticRoot() 而不是自己拼路径：顺带证明了正文目录在
  *    容器与本机两种 cwd 下都能解析到（那段路径踩过坑，见 content.ts）。
@@ -29,13 +32,28 @@ import { resolveStaticRoot } from './content'
 const dir = join(resolveStaticRoot() ?? '', 'content/articles')
 
 describe('content/articles/*.json', () => {
-  it('两个档位都必须在场，且各是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
+  it('难度档位必须在场，且是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
     for (const [file, raw] of await loadAll()) {
-      // ⚠️ 两条轴分别断言 —— 绝不能「有一个就算过」
-      expect(normalizeLevel(raw.pronLevel), file + ' 的 pronLevel（发音难度）').not.toBeNull()
-      expect(normalizeLevel(raw.vocabLevel), file + ' 的 vocabLevel（词汇难度）').not.toBeNull()
-      // ⚠️ 旧的 difficulty 字段已改名成 pronLevel —— 留着它就是一份没人读的死数据
-      expect(raw.difficulty, file + ' 还留着旧的 difficulty 字段（已改名成 pronLevel）').toBeUndefined()
+      expect(normalizeLevel(raw.difficulty), file + ' 的 difficulty').not.toBeNull()
+      // ⚠️ 旧的「两条轴各一个字段」不许回来（B20 废弃）：对外只有 difficulty + reason
+      expect(raw.vocabLevel, file + ' 还留着 vocabLevel（已废弃，见 B20）').toBeUndefined()
+      expect(raw.pronLevel, file + ' 还留着 pronLevel（已废弃，见 B20）').toBeUndefined()
+    }
+  })
+
+  /**
+   * ⭐ 判据分记下来是为了**能被验算**：difficulty 必须等于 difficultyFromScores(scores)。
+   *
+   * ⚠️ 这是「模型把加权算错」这类错的**唯一出口** —— 徽章从「高级」变成「专家」
+   *    不会有任何别的地方报错，而正文里 difficulty 和 scores 是互相矛盾的。
+   * ⚠️ 公式与权重一律取自 shared（唯一真相），**不在这里手算一遍** ——
+   *    否则调权重时这条测试会跟着一起错，等于没测。
+   */
+  it('三个判据分 [词汇, 发音, 长度] 在场，且 difficulty 能由它算回来', async () => {
+    for (const [file, raw] of await loadAll()) {
+      const scores = normalizeScores(raw.scores)
+      expect(scores, file + ' 的 scores 不是 1–5 的三元组').not.toBeNull()
+      expect(difficultyFromScores(scores), file + ' 的 difficulty 与 scores 算出来的对不上').toBe(raw.difficulty)
     }
   })
 
@@ -47,7 +65,9 @@ describe('content/articles/*.json', () => {
       // 格式：相当于<级别>水平，<发音难在哪>；<词汇与句式点评>
       expect(String(reason), file + ' 的 reason 没以「相当于…水平」开头').toMatch(/^相当于.+水平[，,]/)
       expect(String(reason), file + ' 的 reason 缺少分号后的词汇点评').toContain('；')
-      expect(String(reason).length, file + ' 的 reason 太长（应 ≤80 字）').toBeLessThanOrEqual(80)
+      // ⚠️ 提示词要求 ≤45 字，这里是**网**不是规格：给模型留一点漂移的余量，
+      //    但 60 已经远超「卡片上一行小字」的容量 —— 撞到它说明提示词没被遵守。
+      expect(String(reason).length, file + ' 的 reason 太长（提示词要求 ≤45 字）').toBeLessThanOrEqual(60)
     }
   })
 

@@ -19,6 +19,46 @@ function levelLabel(v) {
   if (v === null || v === undefined) return "未定"
   return (state.levelLabels && state.levelLabels[String(v)]) || "未定"
 }
+
+/** 判据分的中文名 —— 顺序与 shared 的 DifficultyScores 一致：[词汇, 发音, 长度] */
+const SCORE_NAMES = ["词汇", "发音", "长度"]
+
+/**
+ * ⭐ 三个判据分 → 档位 + 加权分。
+ *
+ * ⚠️⚠️ **权重与切分点由服务端随 bootstrap 下发**（唯一来源是 shared/level.ts）——
+ *    前端绝不自己写一份：那样「改分数实时看档位」显示的结果，
+ *    和入库时服务端算出来的档位就会不一致，而页面看起来完全正常。
+ * @returns {{difficulty:number, score:number}|null} 分不全 / 公式没下发 ⇒ null
+ */
+function diffFromScores(scores) {
+  if (!Array.isArray(scores) || scores.length !== 3) return null
+  const w = state.difficultyWeights
+  const bands = state.difficultyBands
+  if (!Array.isArray(w) || w.length < 3 || !Array.isArray(bands) || bands.length < 3) return null
+  let total = 0
+  let sum = 0
+  for (let i = 0; i < 3; i++) {
+    const n = Number(scores[i])
+    if (!Number.isFinite(n) || n < 1 || n > 5) return null
+    total += n * w[i]
+    sum += w[i]
+  }
+  if (!sum) return null
+  const score = Math.round((total / sum) * 10) / 10
+  let lv = 0
+  bands.forEach(function (b) { if (score >= b) lv += 1 })
+  return { difficulty: lv, score: score }
+}
+
+/** 判据分 → "词汇 4 · 发音 2 · 长度 3 = 3.1 高级"；分不全就是空串 */
+function scoresText(scores) {
+  const r = diffFromScores(scores)
+  if (!r) return ""
+  const parts = scores.map(function (v, i) { return SCORE_NAMES[i] + " " + v })
+  return parts.join(" · ") + " = " + r.score.toFixed(1) + " " + levelLabel(r.difficulty)
+}
+
 const ENV_LABEL = { local: "本机", dev: "dev", prod: "prod" }
 
 const state = {
@@ -287,8 +327,7 @@ async function loadList() {
   try {
     const data = await api("/api/articles?q=" + encodeURIComponent($("#q").value.trim()))
     state.list = data.list
-    // ⭐ 标签映射来自服务端（shared/level.ts）—— 前端不再自己抄一份
-    state.levelLabels = data.levelLabels || {}
+    applyServerConsts(data)
     renderList()
   } catch (e) {
     errBox("#list-error", e.message)
@@ -320,8 +359,11 @@ function renderList() {
 
     tr.appendChild(cell(row.text || row.id.slice(0, 12) + "…", "en"))
     tr.appendChild(cell(row.translation || "—", "zh"))
-    // ⭐ 两条轴分列显示：发音 / 词汇
-    tr.appendChild(cell(levelLabel(row.pronLevel) + " / " + levelLabel(row.vocabLevel), "c-diff nowrap"))
+    // ⭐ 一个档位 + 它的加权分（三个判据分只在详情 / 候选里展开）
+    tr.appendChild(cell(
+      levelLabel(row.difficulty) + (row.score === null || row.score === undefined ? "" : " " + row.score.toFixed(1)),
+      "c-diff nowrap",
+    ))
     tr.appendChild(cell(fmtTime(row.publishedAt), "c-time nowrap"))
 
     const stTd = document.createElement("td")
@@ -434,12 +476,27 @@ function clearDraft(id) {
   writeDraft(id, null)
 }
 
+/**
+ * ⭐ 把服务端随响应下发的**常量**收进 state：档位标签映射 + 难度公式（权重 / 切分点）。
+ *
+ * ⚠️⚠️ 列表与详情**都要调**：只让列表接口下发时，直接打开 / 刷新一个详情页
+ *    （链接分享、书签、F5）会因为 state 里没有这些常量而把档位显示成「未定」——
+ *    页面上看起来完全正常，只是难度那一栏一直空着（用户 2026-09 实测撞到）。
+ * ⚠️ 前端不自己抄一份映射与阈值：调了 shared/level.ts 就该跟着变，否则页面开始说谎。
+ */
+function applyServerConsts(data) {
+  if (data.levelLabels) state.levelLabels = data.levelLabels
+  if (data.difficultyWeights) state.difficultyWeights = data.difficultyWeights
+  if (data.difficultyBands) state.difficultyBands = data.difficultyBands
+}
+
 async function loadDetail(id) {
   errBox("#detail-error", "")
   $("#detail-body").hidden = true
   stopDetailAudio()
   try {
     const d = await api("/api/articles/" + id)
+    applyServerConsts(d)
     state.detail = d
     fillDetail(d)
   } catch (e) {
@@ -453,6 +510,20 @@ async function loadDetail(id) {
 /** 取值：**未提交的改动优先于服务端** —— 刷新后看起来还是你改过的样子 */
 function pick(field, serverValue) {
   return Object.prototype.hasOwnProperty.call(state.pending, field) ? state.pending[field] : serverValue
+}
+
+/**
+ * 当前生效的三个判据分（编辑中的优先）；不是完整的 1–5 三元组就是 null。
+ * ⚠️ 三个分是**一组**：改其中一档时另外两档沿用当前值（见 openInlineEditor 的 s1/s2/s3）。
+ */
+function curScores() {
+  const s = pick("scores", state.detail && state.detail.scores)
+  if (!Array.isArray(s) || s.length !== 3) return null
+  for (let i = 0; i < 3; i++) {
+    const n = Number(s[i])
+    if (!Number.isFinite(n) || n < 1 || n > 5) return null
+  }
+  return s
 }
 
 function fillDetail(d) {
@@ -514,9 +585,19 @@ function renderDetailValues(d) {
   st.className = "badge " + (live ? "live" : "draft")
   st.textContent = live ? "已发布" : "草稿"
 
-  // ⭐ 两条轴分别显示（编辑中的值优先，见 pick）
-  $("#dt-pron").textContent = levelLabel(pick("pronLevel", d.pronLevel))
-  $("#dt-vocab").textContent = levelLabel(pick("vocabLevel", d.vocabLevel))
+  /**
+   * ⭐ 难度是**算出来**的：先看三个判据分（编辑中的优先），档位与加权分都从它推。
+   *    ⚠️ 不直接显示 d.difficulty：手改过分数还没提交时，那句话会与下面三行矛盾。
+   */
+  const sc = curScores()
+  const diff = diffFromScores(sc)
+  $("#dt-diff").textContent = diff
+    ? levelLabel(diff.difficulty) + "（" + diff.score.toFixed(1) + "）"
+    : "未定"
+  const one = function (v) { return v === null || v === undefined || v === "" ? "未定" : String(v) }
+  $("#dt-s1").textContent = one(sc && sc[0])
+  $("#dt-s2").textContent = one(sc && sc[1])
+  $("#dt-s3").textContent = one(sc && sc[2])
   /** ⭐ 给用户看的那句话 —— 运营就是照它审的（"读者能不能看懂这句难在哪"） */
   $("#dt-reason").textContent = pick("reason", d.reason) || "—"
   $("#dt-published").textContent = fmtTime(pick("publishedAt", d.publishedAt))
@@ -659,16 +740,25 @@ function openInlineEditor(field) {
     return
   }
 
-  if (field === "pronLevel" || field === "vocabLevel") {
-    const cur = pick(field, d[field])
-    // ⚠️ 只给四档、没有「未定」：正文 JSON 里的档位必须是 0–3 之一
-    //    （content-files.test.ts 会查），存不了「未定」就别把它做成选项。
-    const levels = [0, 1, 2, 3].map(function (n) { return { v: String(n), t: levelLabel(n) } })
+  /**
+   * ⭐ 判据分（1–5）—— 三行各自可改，**没有「未定」**：档位是算出来的，
+   *    缺一个分就没有档位，所以选项里不能有「空」。
+   *    ⚠️ 改的是**整组**：只回传被改的那一档，另外两档沿用当前值（见 curScores）。
+   */
+  if (field === "s1" || field === "s2" || field === "s3") {
+    const idx = { s1: 0, s2: 1, s3: 2 }[field]
+    const cur = curScores() || [3, 3, 3]
     startInlineEdit(
-      field === "pronLevel" ? $("#dt-pron") : $("#dt-vocab"),
-      selectInput(levels, cur === null || cur === undefined ? "0" : String(cur)),
-      function (el) { return Number(el.value) },
-      function (v) { setPending(field, v) },
+      $("#dt-" + field),
+      scoreSelect(cur[idx]),
+      function (el) {
+        const v = Number(el.value)
+        if (!(v >= 1 && v <= 5)) return null
+        const next = cur.slice()
+        next[idx] = v
+        return next
+      },
+      function (v) { setPending("scores", v) },
     )
     return
   }
@@ -731,8 +821,7 @@ async function updateArticle() {
   const has = function (k) { return Object.prototype.hasOwnProperty.call(p, k) }
   const body = {}
   if (has("translation")) body.translation = p.translation
-  if (has("pronLevel")) body.pronLevel = p.pronLevel
-  if (has("vocabLevel")) body.vocabLevel = p.vocabLevel
+  if (has("scores")) body.scores = p.scores
   if (has("reason")) body.reason = p.reason
   if (has("tags")) body.tags = p.tags
   if (has("isActive")) body.publish = p.isActive
@@ -1077,11 +1166,6 @@ function toggleAll(sel) {
   boxes.forEach(function (b) { b.checked = want })
 }
 
-/** "" ⇒ null（服务端的档位是 0–3 或 null，"未定" 不能变成 0） */
-function numberOrNull(v) {
-  return v === "" || v === null || v === undefined ? null : Number(v)
-}
-
 /**
  * 云环境的提醒。
  *
@@ -1140,23 +1224,24 @@ function openCreate() {
  *    编辑已经全部挪到句子详情页的行内编辑 + 一个「更新」按钮上，
  *    所以这里没有 openEdit。
  */
-/** 填一个档位下拉（两条轴共用；标签来自服务端，见 levelLabel） */
-function fillLevelSelect(sel, value) {
-  sel.textContent = ""
-  const none = document.createElement("option")
-  none.value = ""
-  none.textContent = "未定"
-  sel.appendChild(none)
-  // ⚠️ 不要写成 `[0,1,2,3].forEach(...)`：上一行以 ) 结尾时 ASI 不补分号，
-  //    会被解析成 sel.appendChild(none)[0,1,2,3].forEach(...)（下标访问 + 逗号运算符）。
-  const levels = [0, 1, 2, 3]
-  levels.forEach(function (n) {
+/**
+ * ⭐ 填一个**判据分**下拉（1–5）—— 没有「未定」：档位由分数算出，缺一分就没档位。
+ * ⚠️ 刻度与文案（"1 分"…"5 分"）只在这里；标签映射走 levelLabel（服务端下发）。
+ */
+function scoreSelect(value) {
+  const sel = document.createElement("select")
+  // ⚠️ 不要写成 `[1,2,3,4,5].forEach(...)` 紧跟在赋值后面：ASI 不补分号，
+  //    会被解析成 sel.appendChild(...)[1,2,3,4,5]（下标访问 + 逗号运算符）。
+  const scores = [1, 2, 3, 4, 5]
+  scores.forEach(function (n) {
     const o = document.createElement("option")
     o.value = String(n)
-    o.textContent = levelLabel(n)
+    o.textContent = n + " 分"
     sel.appendChild(o)
   })
-  sel.value = value === null || value === undefined ? "" : String(value)
+  const v = Number(value)
+  sel.value = String(v >= 1 && v <= 5 ? v : 3)
+  return sel
 }
 
 function parseTags(raw) {
@@ -1227,7 +1312,7 @@ async function runSplit() {
   }
 }
 
-/** 一条候选：勾选 + 正文（可改）+ 译文 + 两个档位 + 标签 + 那句话 */
+/** 一条候选：勾选 + 正文（可改）+ 译文 + 三个判据分（档位实时算）+ 标签 + 那句话 */
 function candidateRow(it) {
   const li = document.createElement("li")
   li.className = "cand"
@@ -1267,21 +1352,34 @@ function candidateRow(it) {
 
   const row = document.createElement("div")
   row.className = "row"
-  const mk = function (label, sel) {
+  const mk = function (label, el) {
     const lb = document.createElement("label")
     lb.className = "block"
     lb.textContent = label
-    lb.appendChild(sel)
+    lb.appendChild(el)
     return lb
   }
-  const pron = document.createElement("select")
-  pron.className = "cand-pron"
-  fillLevelSelect(pron, it.pronLevel)
-  const vocab = document.createElement("select")
-  vocab.className = "cand-vocab"
-  fillLevelSelect(vocab, it.vocabLevel)
-  row.appendChild(mk("发音难度", pron))
-  row.appendChild(mk("词汇难度", vocab))
+  /**
+   * ⭐ 三个判据分（1–5），右边的档位是**实时算出来的** —— 用的权重与阈值
+   *    就是服务端下发的那一份（入库时服务端还会再算一次，两处同源）。
+   *    ⚠️ 没有「未定」：档位由这三个分算出，缺一个就没档位，选项里就不能有空。
+   */
+  const picks = []
+  const diffLabel = document.createElement("span")
+  diffLabel.className = "cand-diff-label"
+  const refreshDiff = function () {
+    const r = diffFromScores(picks.map(function (s) { return Number(s.value) }))
+    diffLabel.textContent = r ? levelLabel(r.difficulty) + " " + r.score.toFixed(1) : ""
+  }
+  SCORE_NAMES.forEach(function (name, i) {
+    const sel = scoreSelect(it.scores ? it.scores[i] : 3)
+    sel.className = "cand-s" + (i + 1)
+    sel.addEventListener("change", refreshDiff)
+    picks.push(sel)
+    row.appendChild(mk(name, sel))
+  })
+  refreshDiff()
+  row.appendChild(diffLabel)
   const tags = document.createElement("input")
   tags.type = "text"
   tags.className = "cand-tags grow"
@@ -1320,8 +1418,8 @@ function collectCandidates() {
     out.push({
       text: li.querySelector(".cand-text").value.trim(),
       translation: li.querySelector(".cand-tr").value.trim(),
-      pronLevel: numberOrNull(li.querySelector(".cand-pron").value),
-      vocabLevel: numberOrNull(li.querySelector(".cand-vocab").value),
+      // ⚠️ 三个下拉都没有空选项 ⇒ 这里恒是 1–5 的三个整数
+      scores: [1, 2, 3].map(function (_, i) { return Number(li.querySelector(".cand-s" + (i + 1)).value) }),
       tags: parseTags(li.querySelector(".cand-tags").value),
       reason: li.querySelector(".cand-reason").value.trim(),
     })

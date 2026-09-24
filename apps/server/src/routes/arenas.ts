@@ -51,9 +51,8 @@ arenasRoutes.get('/:articleId', async (c) => {
     articleId,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
-    // ⭐ 两个档位 / 标签都是正文的属性；内容里没写 ⇒ null / []（不补默认档位）
-    pronLevel: normalizeLevel(content?.pronLevel),
-    vocabLevel: normalizeLevel(content?.vocabLevel),
+    // ⭐ 难度 / 标签都是正文的属性；内容里没写 ⇒ null / []（不补默认档位）
+    difficulty: normalizeLevel(content?.difficulty),
     tags: normalizeTags(content?.tags),
     // ⭐ 按句子进来的挑战算**今天**（用户在读，就是今天这一句）
     submissionDate,

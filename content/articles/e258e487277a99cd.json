@@ -2,13 +2,16 @@
   "id": "e258e487277a99cd",
   "text": "Don't count the days, make the days count.",
   "translation": "不要数着日子过，而要让日子过得有意义。",
-  "pronLevel": 1,
-  "vocabLevel": 0,
-  "reason": "相当于小学水平，count 和 don't 的 /nt/ 结尾容易拖音；词都很常见，句子也短。",
+  "difficulty": 0,
+  "scores": [
+    1,
+    2,
+    1
+  ],
+  "reason": "相当于小学水平，count the 连读稍绕口；词都很简单。",
   "tags": [
+    "名言",
     "励志",
-    "口语",
-    "双关",
     "短句"
   ],
   "words": [

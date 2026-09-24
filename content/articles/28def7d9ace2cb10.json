@@ -2,9 +2,13 @@
   "id": "28def7d9ace2cb10",
   "text": "The best way to predict the future is to invent it.",
   "translation": "预测未来最好的方式，就是把它创造出来。",
-  "pronLevel": 1,
-  "vocabLevel": 1,
-  "reason": "相当于高中水平，predict 结尾的 -ct 容易吞掉，后面 it 要连读；词都很常见，句子也短。",
+  "difficulty": 0,
+  "scores": [
+    2,
+    1,
+    1
+  ],
+  "reason": "相当于初中水平，念起来几乎没难音；词都很常见，只有 predict 略正式，句子也短。",
   "tags": [
     "名言",
     "励志",

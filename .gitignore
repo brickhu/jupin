@@ -5,6 +5,9 @@ node_modules/
 .pnpm-store/
 .pnpm-home/
 
+# ---- 临时探针数据（一次性下载的词表等，别进仓库）----
+.tmp-*/
+
 # ---- 并行任务的工作区（pnpm task:start；见 AGENT.md「多任务并行」）----
 .worktrees/
 
@@ -29,6 +32,11 @@ private.key
 #    正常路径下它会自己删；但进程被杀/中断时就会留下 —— 而它接近 100MB，
 #    一旦被提交就永远压在历史里（本仓库踩过：GitHub 单文件上限正好是 100MB）。
 .cloudrun_*.zip
+
+# ---- 内容流水线的本地数据（可重建，别进仓库）----
+# ECDICT 全量索引（pnpm content:ecdict 生成：77 万词条 / 23MB）——
+# ⚠️ 它是**推导数据**：ecdict 包一升级就要重建，提交它只会让仓库里躺一份迟早变质的副本。
+.cache/
 
 # ---- 内容流水线中间产物 ----
 tools/pipeline/data/drafts/

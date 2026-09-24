@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@jushuo/shared": "workspace:*",
+    "ecdict": "^0.0.4",
     "socks-proxy-agent": "^10.1.0"
   },
   "devDependencies": {

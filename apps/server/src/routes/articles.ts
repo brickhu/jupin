@@ -43,9 +43,8 @@ articlesRoutes.get('/', async (c) => {
           id: a.id,
           text: content.text,
           translation: content.translation,
-          // ⭐ 两个档位各归各的（两条独立的轴，不合成分）
-          pronLevel: normalizeLevel(content.pronLevel),
-          vocabLevel: normalizeLevel(content.vocabLevel),
+          // ⭐ 难度只有一个档位（词汇 / 发音 / 长度是判据，合成出来的一个值）
+          difficulty: normalizeLevel(content.difficulty),
           tags: normalizeTags(content.tags),
           audio: await scheduleAudioOf({ id: a.id, standardAudio: a.standardAudio }),
           theme: a.theme,
@@ -123,10 +122,9 @@ articlesRoutes.get('/:id', async (c) => {
     text: content.text,
     translation: content.translation,
     words: content.words,
-    // ⭐ 两个档位各归各的；正文里没写（老 JSON）就是 null，不补默认值
-    pronLevel: normalizeLevel(content.pronLevel),
-    vocabLevel: normalizeLevel(content.vocabLevel),
-    // ⭐ 给用户看的一句话（也是正文属性，与两个档位同源）
+    // ⭐ 正文里没写难度（老 JSON）就是 null，不补默认值
+    difficulty: normalizeLevel(content.difficulty),
+    // ⭐ 给用户看的一句话（也是正文属性，与难度同源）
     reason: typeof content.reason === 'string' && content.reason.trim() !== '' ? content.reason.trim() : null,
     tags: normalizeTags(content.tags),
     audio,

@@ -2,14 +2,17 @@
   "id": "0b71a0cd3016e58b",
   "text": "Simplicity is the ultimate sophistication.",
   "translation": "至简，即是至臻。",
-  "pronLevel": 2,
-  "vocabLevel": 2,
-  "reason": "相当于六级水平，simplicity 和 sophistication 重音难抓，-tion 的 /ʃ/ 易混；词偏抽象，句子很短。",
+  "difficulty": 1,
+  "scores": [
+    3,
+    2,
+    1
+  ],
+  "reason": "相当于高中水平，sophistication 多音节、重音容易念歪；词多为四级，句式极短。",
   "tags": [
     "名言",
-    "哲理",
-    "长词",
-    "发音难点"
+    "难词",
+    "短句"
   ],
   "words": [
     {

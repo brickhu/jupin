@@ -2,14 +2,17 @@
   "id": "a06377bf6de98005",
   "text": "The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.",
   "translation": "我们唯一需要恐惧的，就是恐惧本身——那种无以名状、失去理智、毫无道理的恐惧，它会夺走人前进的动力。",
-  "pronLevel": 3,
-  "vocabLevel": 2,
-  "reason": "相当于六级水平，thing 的 /θ/、efforts 结尾的 -rts 不好念；unreasoning、paralyzes 等词偏难。",
+  "difficulty": 1,
+  "scores": [
+    2,
+    2,
+    2
+  ],
+  "reason": "相当于高中水平，thing 的 /θ/、词尾连读易糊；词多常见，paralyze 略超纲。",
   "tags": [
     "名言",
-    "长句",
-    "难词",
-    "发音难点"
+    "励志",
+    "演讲"
   ],
   "words": [
     {

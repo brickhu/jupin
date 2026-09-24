@@ -16,11 +16,10 @@ import { loadArticleContent } from './content'
 type Database = typeof db
 
 /**
- * ⭐ 两个档位 / 标签的**派生索引** —— 从正文 JSON 物化到
- *    articles.pron_level + articles.vocab_level + article_tags。
+ * ⭐ 难度 / 标签的**派生索引** —— 从正文 JSON 物化到 articles.difficulty + article_tags。
  *
  * ⚠️⚠️ **真相永远是正文 JSON**（见 db/schema.ts 顶部与 spec.md 第九节）。
- *    这里写的三处都是副本，存在的唯一理由是：
+ *    这里写的两处都是副本，存在的唯一理由是：
  *    「按档位 / 标签筛选、排序」能走 SQL，而不用把每篇正文都读一遍。
  *
  *    所以规矩只有一条：**只由这里写，随时可全量重建**。
@@ -34,10 +33,8 @@ type Database = typeof db
 
 export interface ArticleIndexResult {
   articleId: string
-  /** 发音难度（中文母语者读出来有多难念） */
-  pronLevel: ArticleLevel | null
-  /** 词汇难度（小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度） */
-  vocabLevel: ArticleLevel | null
+  /** 朗读难度（三个判据按权重合成的一个档位，见 shared/level.ts） */
+  difficulty: ArticleLevel | null
   tags: string[]
   /**
    * 正文里的 `id` 与 articles.id 不一致 —— 内容被改过却没换 id。
@@ -54,12 +51,10 @@ export interface ArticleIndexResult {
  */
 export function indexOfContent(
   articleId: string,
-  content: { id?: unknown; pronLevel?: unknown; vocabLevel?: unknown; tags?: unknown } | null,
+  content: { id?: unknown; difficulty?: unknown; tags?: unknown } | null,
 ): Omit<ArticleIndexResult, 'articleId'> {
   return {
-    // ⚠️ 两条轴各归各的，**不许**用其中一个兜另一个
-    pronLevel: normalizeLevel(content?.pronLevel),
-    vocabLevel: normalizeLevel(content?.vocabLevel),
+    difficulty: normalizeLevel(content?.difficulty),
     tags: normalizeTags(content?.tags),
     // ⚠️ 正文整个读不到时**不算** mismatch —— 那是「没有正文」，不是「改过没换 id」
     idMismatch: !!content && content.id !== undefined && String(content.id) !== articleId,
@@ -69,16 +64,13 @@ export function indexOfContent(
 /** 把一条文章的正文属性写进索引（幂等） */
 async function applyIndex(
   articleId: string,
-  content: { id?: unknown; pronLevel?: unknown; vocabLevel?: unknown; tags?: unknown } | null,
+  content: { id?: unknown; difficulty?: unknown; tags?: unknown } | null,
   database: Database = db,
 ): Promise<ArticleIndexResult> {
   const idx = indexOfContent(articleId, content)
 
   await database.transaction(async (tx) => {
-    await tx
-      .update(articles)
-      .set({ pronLevel: idx.pronLevel, vocabLevel: idx.vocabLevel })
-      .where(eq(articles.id, articleId))
+    await tx.update(articles).set({ difficulty: idx.difficulty }).where(eq(articles.id, articleId))
     // ⚠️ 先删后插，不做 diff：tags 是**集合**语义，重跑不能累积，
     //    而「猜哪几个要删」正是漂移的来源
     await tx.delete(articleTags).where(eq(articleTags.articleId, articleId))

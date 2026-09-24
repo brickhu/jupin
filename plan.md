@@ -53,6 +53,8 @@
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 
+- [ ] **B20** 难度**收回成一个档位**（`difficulty`）+ `reason`，三个判据分另记进 `scores`：**判据是判据，不是字段**（用户 2026-09 三次纠正 —— 先「词汇 / 发音是两维」，再「输出就是一个难度字段和 reason」，最后「每个纬度的评分也记进去」）—— 撤掉 `pronLevel` / `vocabLevel` 两个字段与库列（迁移 0036），提示词改成「按 词汇×5 / 发音×4 / 长度×1 各打 1–5 分 → **代码**加权合成档位」，把 ECDICT 做成 LLM 的 `dict_lookup` 工具，并按用户给的 6 句锚点校准（**FDR 那句必须是中级**），存量 9 条已按新口径重判 —— 做完的标志：正文 JSON 是 `difficulty` + `scores` + `reason`、库里一列且与 JSON 一致（`content-files.test.ts` 会验算档位）、admin 只有一个徽章（三个分可改、档位实时算）、客户端只有一枚徽章 + 一句话
+
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）

@@ -30,11 +30,23 @@ export interface AudioRef {
 /**
  * ⭐ 句子难度 —— **朗读难度**，四档：0 初级 / 1 中级 / 2 高级 / 3 专家。
  *
- * ⚠️⚠️ 不是阅读难度，两者的区别与依据写在 difficulty.ts（那里有实测例子）。
+ * ⚠️⚠️ 不是阅读难度：量的是「中文母语者念出来有多难」，不是「读起来好不好懂」
+ *    （为什么可读性公式不能用，写在 level.ts 的头注释里）。
  * ⚠️ 值就是**档位数字**：0–3 单调、可排序、可直接落库按档位筛。
  *    中文只在 UI 与运营 CLI 上出现（LEVEL_LABEL），别写进数据里。
  */
 export type ArticleLevel = 0 | 1 | 2 | 3
+
+/**
+ * ⭐ 定难度用的**三个判据分**，顺序固定：**[词汇及句式, 发音, 句子长度]**，各 1–5。
+ *
+ * ⚠️ 它们是**过程数据**，不是给用户看的量：用户看到的是合成后的那一个 difficulty。
+ *    记进正文 JSON 是为了**能被代码验算**（difficulty === difficultyFromScores(scores)，
+ *    见 shared/level.ts）—— 模型自己算加权总会有算错的时候。
+ * ⚠️ 顺序是元组的一部分：换顺序等于换语义，所以不写成对象（三个键太长，
+ *    正文里满屏 'vocabulary' / 'pronunciation' 反而看不清）。
+ */
+export type DifficultyScores = [number, number, number]
 
 /**
  * ⭐ 句子的**视觉主题** —— 卡片配图与配色：{ image, background, foreground }。
@@ -70,28 +82,32 @@ export interface ArticleContent {
   words: ArticleWord[]
 
   /**
-   * ⭐ **发音难度** —— 中文母语者读出来有多难念：易错音（/θ/ /ð/ /v/、r–l）、
-   *    词尾辅音丛、音素反复切换、必须连读才自然的地方。
+   * ⭐ **朗读难度**（0 初级 / 1 中级 / 2 高级 / 3 专家）—— **对外只有这一个档位**。
    *
-   * ⚠️⚠️ 与 vocabLevel **是两条独立的轴，刻意不合成一个加权分**（2026-09 决定）。
-   *    反例就是它们各自的地盘：
-   *      · "She sells seashells by the seashore…" → 词汇**初级** / 发音**专家**
-   *      · "The only thing we have to fear is fear itself, nameless, unreasoning,
-   *         unjustified terror which paralyzes needed efforts." → 词汇**中级** / 发音**专家**
-   *    任何单轴公式都必然牺牲其中一个。
+   * ⚠️⚠️ 定它的时候**分三个判据想**（词汇及句式 ×5 / 发音 ×4 / 长度 ×1），
+   *    由**代码**按公式合成为一个值（公式与权重在 shared/level.ts，
+   *    锚点样本在 tools/pipeline/src/lib/article-meta.ts 的 SYSTEM）。
+   *
+   *    ⚠️ 判据分**不是用户要的量**（用户 2026-09 纠正）：用户看到的是一枚徽章
+   *       + 一句「难在哪」。但它们会随 scores 一起记进这份 JSON —— 好让**代码能验算**
+   *       （模型自己算加权常有算错的；见 scores）。
    *
    * ⚠️ 可选，**这不是省事、是必须的**：正文在静态资源 / CDN 上，可能比代码旧 ——
    *    老 JSON 里没有这个字段。所以一律 fail-soft，并且**不许**补一个默认档位。
    */
-  pronLevel?: ArticleLevel
+  difficulty?: ArticleLevel
   /**
-   * ⭐ **词汇难度** —— 小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / GRE 那套口径，
-   *    **含句式复杂度**（长句、从句会拉高它）。
+   * ⭐ 三个判据分 [词汇, 发音, 长度] —— 与 difficulty **同源、同一次调用产出**。
    *
-   * ⚠️ 与 pronLevel 独立、理由同上。判据与锚点样本写在
-   *    tools/pipeline/src/lib/article-meta.ts 的 SYSTEM 里（代码是真相）。
+   * ⚠️⚠️ 它的用处是**可验算**：difficulty 必须等于 difficultyFromScores(scores)。
+   *    对不上就说明有一次算错了 —— 这种错以前是**静默**的（徽章上只是「高级」变「专家」，
+   *    没有任何地方会报错）。
+   * ⚠️ 一律走 normalizeScores 收口，认不出就是 undefined（绝不补默认分）；
+   *    老正文没有这个字段很正常，**不许**因为它缺失就退回某个档位。
+   * ⚠️ 它**不进公开 API**：ArticleDetail / ArticleListItem 都不带它 ——
+   *    对外只有 difficulty + reason（怎么公开是 shared/types/api.ts 的决定）。
    */
-  vocabLevel?: ArticleLevel
+  scores?: DifficultyScores
   /**
    * ⭐ **给用户看的一句话** —— 固定格式：以「相当于<级别>水平」开头，
    *    随后是发音难点，`；` 后是词汇与句式点评。例：
@@ -101,7 +117,7 @@ export interface ArticleContent {
    *
    * ⚠️ 它是**产品文案**（detail 接口返回给客户端），不是给审核的术语堆：
    *    说人话、可以带音标、**不用语法行话**、不贬低用户、必须点到具体的词或音。
-   * ⚠️ 与两个档位**同源**：同一次 LLM 调用产出，一起写、一起重跑 ——
+   * ⚠️ 与 difficulty / scores **同源**：同一次 LLM 调用产出，一起写、一起重跑 ——
    *    所以它进这份 JSON（真相），而不是单开一列。
    */
   reason?: string
@@ -110,7 +126,7 @@ export interface ArticleContent {
    *
    * ⚠️ 与难度一样是**可选**的，理由同上。
    * ⚠️ 读到的值不必假设干净：入库前一律走 normalizeTags（去空 / 去重 / 限个数）。
-   * ⚠️ tags **会**被物化进 article_tags（和两个档位一起，见 services/article-index.ts）：
+   * ⚠️ tags **会**被物化进 article_tags（和 difficulty 一起，见 services/article-index.ts）：
    *    那份索引只为「按标签/档位筛选」能走 SQL 而存在，**真相永远是这份 JSON**。
    *    规矩只有一条：索引只由 syncArticleIndex 写，随时可从 JSON 全量重建。
    * ⚠️ 顺序有意义（第一个最重要），而 article_tags 是**集合**语义、丢了顺序 ——

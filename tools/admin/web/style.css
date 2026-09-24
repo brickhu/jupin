@@ -297,6 +297,9 @@ audio { width: 100%; margin-top: 6px; }
 .cand-head { margin-bottom: 6px; }
 .cand textarea, .cand input[type=text] { width: 100%; box-sizing: border-box; margin: 4px 0; }
 .cand .row { gap: 8px; margin-top: 4px; }
+/* ⭐ 三个判据分（1–5）下拉 + 实时算出来的档位 —— 分窄一点，档位跟在后面 */
+.cand .row label.block select { width: 76px; }
+.cand-diff-label { font-size: 13px; color: var(--muted); white-space: nowrap; padding-left: 2px; }
 .done .badge { margin-left: auto; }
 .done .en { margin-top: 4px; }
 
