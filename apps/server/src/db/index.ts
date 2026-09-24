@@ -30,6 +30,28 @@ export const db = drizzle(pool, { schema, mode: 'default' })
 export { schema }
 
 /**
+ * ⭐ 按**给定的连接串**再开一个池（供 tools/admin 的多环境切换用）。
+ *
+ * ⚠️ 为什么这个工厂放在 apps/server 而不是 tools/：
+ *    mysql2 与 drizzle schema 只装在 apps/server —— 从仓库根的 tools/ 里
+ *    import 'mysql2/promise' 根本解析不到（TS 和运行时都是）。
+ * ⚠️ 池参数必须与主池**逐字一致**：timezone:'Z' 关系到滚动冷却，
+ *    supportBigNumbers/bigNumberStrings 关系到 bigint 读出来是 number 还是 string。
+ *    两处不一致的后果是「admin 里看着正常，服务里读出来不对」——最难查的那类 bug。
+ */
+export function createDb(url: string, connectionLimit = 4, connectTimeout = 8000): Db {
+  const pooled = mysql.createPool({
+    uri: url,
+    connectionLimit,
+    connectTimeout,
+    timezone: 'Z',
+    supportBigNumbers: true,
+    bigNumberStrings: false,
+  })
+  return drizzle(pooled, { schema, mode: 'default' })
+}
+
+/**
  * 数据库状态 —— 会原样出现在 /health 里。
  * ⭐ 这不是调试残留：云托管 CLI **没有看容器日志的命令**，
  *    部署失败时只能看到「探针 connection refused」。
@@ -70,6 +92,37 @@ export const dbState = {
    *    所以报的是「一共几句可以读」。
    */
   activeArticles: null as number | null,
+}
+
+/**
+ * ⭐ 探一次「这个库能不能用」—— 能用返回 null，不能返回错误信息。
+ *
+ * ⚠️⚠️ 为什么必须用**单连接**而不是池：
+ *    ① 这是一次性探测，池是给持续查询用的；
+ *    ② 探一个坏库不值得在进程里留一个池；
+ *    ③ 更要命的是这个函数的调用方（tools/admin 的环境切换）拿池去探，
+ *       而「拿池」那条路本身要先解析出连接串 —— 一不留神就成了
+ *       probe → pool → resolve → probe 的**无限互递归**（实测把堆吃到 4GB 才崩）。
+ *       单连接没有这层耦合。
+ *
+ * ⚠️ 查的是 `articles` 而不是 `SELECT 1`：调用方（内容管理台）要用的就是这张表，
+ *    这样一次探测同时覆盖两种坏状态 ——
+ *      · 云实例重建后的白纸 → `Unknown database 'jushuo'`
+ *      · 库在但没跑迁移 → `Table 'jushuo.articles' doesn't exist`
+ *    两种对运营说的是同一句话：这个环境还没初始化好（跑一次部署即可）。
+ * ⚠️ 两个 catch 点都要包住：连库失败是 createConnection 抛的，表不存在是 query 抛的。
+ */
+export async function probeDatabase(url: string, timeout = 6000): Promise<string | null> {
+  let conn: Awaited<ReturnType<typeof mysql.createConnection>> | null = null
+  try {
+    conn = await mysql.createConnection({ uri: url, connectTimeout: timeout, timezone: 'Z' })
+    await conn.query('SELECT 1 FROM articles LIMIT 1')
+    return null
+  } catch (err) {
+    return (err as Error).message.slice(0, 200)
+  } finally {
+    if (conn) await conn.end().catch(() => {})
+  }
 }
 
 /** 把连接串里的密码打码，方便核对环境变量解析结果 */

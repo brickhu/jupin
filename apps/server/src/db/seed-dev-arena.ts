@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq } from 'drizzle-orm'
+import { count, eq } from 'drizzle-orm'
 import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
 
 import { unfreezeCards, users } from './schema'
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
 
   // ⭐ 排期交给服务端自己补：没有排期的日子按天号取模自动补一行，与线上同一个函数。
   const sched = await ensureSchedules(dates)
-  const articleOf = new Map<string, number>()
+  const articleOf = new Map<string, string>()
   for (const [date, row] of sched) articleOf.set(date, row.article.id)
 
   const allArticles = await db.select({ id: articles.id }).from(articles)
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     const firstDay = addDays(lastDay, -(c.run - 1))
 
     // 他在该句上的第几次提交 —— 与服务端的 seq 口径一致（按 articleId 计）
-    const seqOf = new Map<number, number>()
+    const seqOf = new Map<string, number>()
 
     for (let d = 0; d < c.run; d++) {
       const date = addDays(firstDay, d)
@@ -224,8 +224,8 @@ async function main(): Promise<void> {
         status: 'scored',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）
         score: Number(score).toFixed(1),
-        // ⚠️ 攻克 = 出分即可（85 分线已废除，见 constants 里的说明）
-        isConquered: true,
+        // ⚠️ 攻克 = 出分即可（85 分线已废除）—— 它由 status='scored' 表达，
+        //    不再单独写一列（is_conquered 已删，迁移 0034）
         audioKey: makeAudioKey(articleId, userId, at.getTime()),
         audioBytes: 40000 + Math.round(rnd() * 60000),
         audioDurationMs: 3200 + Math.round(rnd() * 4200),
@@ -251,34 +251,10 @@ async function main(): Promise<void> {
       .onDuplicateKeyUpdate({ set: { status: 'scored' } })
   }
 
-  // ----------------------------------------------------------------
-  // ③ 把 articles 上那两个冗余计数对齐
-  //    ⚠️ 竞技口径全部从 submissions 现算（见 services/leaderboard.ts），
-  //       这两列**没有任何代码在读**；但留着「39 人参与、实际只有 4 条成绩」
-  //       只会让下一个看库的人以为哪里坏了。
-  // ----------------------------------------------------------------
-  for (const a of allArticles) {
-    // ⚠️ 两个数都必须是**去重人数**（同一句读十遍只算一个人），
-    //    与 services/leaderboard.ts 的 COUNT(DISTINCT user_id) 同一口径。
-    const [p] = await db
-      .select({ n: countDistinct(submissions.userId) })
-      .from(submissions)
-      .where(and(eq(submissions.articleId, a.id), eq(submissions.status, 'scored')))
-    const [c] = await db
-      .select({ n: countDistinct(submissions.userId) })
-      .from(submissions)
-      .where(
-        and(
-          eq(submissions.articleId, a.id),
-          eq(submissions.status, 'scored'),
-          eq(submissions.isConquered, true),
-        ),
-      )
-    await db
-      .update(articles)
-      .set({ participantCount: Number(p?.n ?? 0), conqueredCount: Number(c?.n ?? 0) })
-      .where(eq(articles.id, a.id))
-  }
+  // ⚠️ 这里原来还有一步「把 articles 上那两个冗余计数对齐」。
+  //    那两个列已经删了（迁移 0034）—— 竞技口径**只有一个来源**：
+  //    submissions 表现算（见 services/leaderboard.ts 的 COUNT(DISTINCT user_id)）。
+  //    脚本自己早就写着「这两列没有任何代码在读」，那就是删除它的理由。
 
   const [mock] = await db
     .select({ n: count() })

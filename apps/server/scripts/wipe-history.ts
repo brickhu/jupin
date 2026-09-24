@@ -12,12 +12,14 @@ import mysql from 'mysql2/promise'
  *
  * ⚠️ 默认**只看不改**；真的要删必须带 WIPE_APPLY=1。
  *
- * ⚠️⚠️ 为什么"清 submissions"要连 users / articles 一起动：
- *    users 上的 streak_* / growth_* / energy_* 和 articles 上的
- *    participant_count / conquered_count **都是从 submissions 推出来的**。
+ * ⚠️⚠️ 为什么"清 submissions"要连 users 一起动：
+ *    users 上的 streak_* / growth_* / energy_* **都是从 submissions 推出来的**。
  *    只删 submissions 的话，它们会变成孤儿 ——
- *    「连战 12 天」而一条提交都查不到、竞技场显示「19 人参与」而底下一条成绩都没有。
- *    后者正是「两个数对不上」那一类最难查的问题。
+ *    「连战 12 天」而一条提交都查不到，正是「两个数对不上」那一类最难查的问题。
+ *
+ * ⚠️ articles 的 participant_count / conquered_count 曾经也在这里被归零，
+ *    但两列已删（迁移 0034）—— 参与人数现在**只从 submissions 现算**，
+ *    成绩删干净了它自然就是 0，不需要、也不可能再去"对齐"一份副本。
  */
 
 const url = process.env.DATABASE_URL
@@ -50,12 +52,6 @@ const targets: { label: string; table: string; where?: string; note: string }[] 
   { label: '解冻卡', table: 'unfreeze_cards', note: '卡表本来就是新的，这里是兜底' },
   { label: '奖励发放流水', table: 'reward_grants', note: '' },
   { label: '能量流水', table: 'energy_ledger', note: '' },
-  {
-    label: '被污染的冗余计数',
-    table: 'articles',
-    where: 'participant_count <> 0 OR conquered_count <> 0',
-    note: '⚠️ 最容易漏的一条：不清的话竞技场会显示"19 人参与"却没有成绩',
-  },
 ]
 
 console.log('')
@@ -115,9 +111,6 @@ try {
       ' growth_self = 0, growth_diligence = 0, growth_standout = 0,' +
       ' energy = 0, energy_date = NULL',
   )
-
-  // ⚠️ 冗余计数必须跟着成绩一起归零（见文件头）
-  await conn.query('UPDATE articles SET participant_count = 0, conquered_count = 0')
 
   const [del] = await conn.query("DELETE FROM users WHERE openid LIKE 'probe%'")
 

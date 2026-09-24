@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm'
 import {
-  mysqlTable, int, varchar, boolean, datetime, decimal, text, index, uniqueIndex,
+  mysqlTable, int, varchar, boolean, datetime, decimal, text, json, index, uniqueIndex,
 } from 'drizzle-orm/mysql-core'
+import { ARTICLE_ID_LENGTH, SUBMISSION_ID_LENGTH, type ArticleTheme } from '@jushuo/shared'
 
 /**
  * 数据模型（与用户对齐后的最终版）。
@@ -12,10 +13,15 @@ import {
  * ⭐ 内容不入库：articles 只是**索引**——正文 / 技巧 / 标准音都是静态资源引用，
  *    库里只留「能被索引和排序」的字段（排期 / 竞技统计）。
  *
- * ⚠️ 分类已经**整体下线**；难度则是**作为正文属性重新加回来的**
- *    （写在 content/articles/*.json 里，见 shared/difficulty.ts）——
- *    ⚠️ 它**不落库**：正文的属性留在正文里，表里再来一列就是第二份真相。
- *    历史迁移 0003 / 0004 能看到当年那两列的删除过程。
+ * ⚠️ 分类已经**整体下线**；难度作为**正文属性**重新加回来了
+ *    （写在 content/articles/*.json 里，见 shared/difficulty.ts）。
+ *
+ * ⭐ 难度与标签**另有一份派生索引**：articles.difficulty + article_tags。
+ *    · **真相永远是正文 JSON**；这两处只是「能被 SQL 筛选 / 排序」用的副本；
+ *    · 由 services/article-index.ts 的 syncArticleIndex 从正文物化（幂等）；
+ *    · 内容改了要重跑（CLI 的 reindex；导入 / 新增句会自动跑）。
+ *    ⚠️ 不要手写这两处 —— 与正文不一致时，以正文为准重跑 reindex。
+ *    历史迁移 0003 / 0004 是当年分类那两列的删除过程。
  *
  * ⚠️ MySQL 的 DATETIME 不存时区 —— 全链路按 UTC 读写（见 db/index.ts 的 timezone 设置）。
  */
@@ -26,6 +32,13 @@ export const users = mysqlTable('users', {
   unionid: varchar('unionid', { length: 64 }),
   nickname: varchar('nickname', { length: 64 }),
   avatarUrl: varchar('avatar_url', { length: 512 }),
+
+  /** 性别：'male' | 'female'；null = 未填 */
+  gender: varchar('gender', { length: 16 }),
+  /** 年龄（岁）：6–120；null = 未填 */
+  age: int('age'),
+  /** 简介：最多 200 字；null = 未填 */
+  bio: varchar('bio', { length: 200 }),
 
 
   /** 账号状态：normal | banned | deleted（防刷只有「当日暂停」是不够的，需要长期维度） */
@@ -128,30 +141,103 @@ export const users = mysqlTable('users', {
 
 /** 朗读单元（文章 = 句子）。内容走静态资源，这里只放索引与竞技状态/统计 */
 export const articles = mysqlTable('articles', {
-  /** 由内容流水线分配，稳定不变 */
-  id: int('id').primaryKey(),
-  /** 正文静态 JSON 地址（句子原文 + 词级数据 + 句群切分） */
-  contentJson: varchar('content_json', { length: 512 }).notNull(),
-  /** 朗读技巧 JSON 地址 */
-  tipsJson: varchar('tips_json', { length: 512 }),
+  /**
+   * ⭐ 文章 ID = **内容 hash**（`sha256(text)` 的十六进制**前 ARTICLE_ID_LENGTH 位**）。
+   *    content-addressed：同一段文本在任何环境都是同一个 ID；
+   *    内容一改就是**新文章**（老提交/排期仍指向老正文，逐词对齐不会被改后的正文带偏）。
+   *    ⚠️ 长度是 16（64 bit）—— 取多少、为什么，写在 shared 的 constants。
+   */
+  id: varchar('id', { length: ARTICLE_ID_LENGTH }).primaryKey(),
+/**
+   * ⚠️⚠️ 这里**曾经有一列 `content_json`**（正文的静态路径），已删除。
+   *
+   *    它是**第二个真相**：两个写入方（后台发布 / 部署灌库）都写
+   *    `'/content/articles/' + id + '.json'`，而这个式子里的 id 就是内容 hash ——
+   *    路径**完全可推导**（见 services/content.ts 的 contentPathOf）。
+   *    存下来的唯一后果是：它能跟 id 漂移，而没有任何东西检查两者一致。
+   *
+   *    当初加它的理由是「正文将来可能放 CDN 绝对地址」。但 CDN 会镜像同一套
+   *    相对路径，变的只是**根**（STATIC_ROOT / CDN base），不是每条记录的路径 ——
+   *    所以这个理由也不成立。
+   */
+  /**
+   * ⚠️⚠️ 这里**曾经有一列 `tips_json`**（朗读技巧 JSON 地址），已删除。
+   *
+   *    它和 content_json 是同一种病：一个**没有任何写入方的声明**。
+   *    技巧流水线一直没建，全仓库没有一处读、也没有一处写（spec.md 自己都标着
+   *    「该流水线未建，全链路没人读写」）。JSON 地址又是 `content/tips/<id>.json`
+   *    这种完全可推导的形状 —— 真做起来也该按 id 推导，不该存。
+   *    ⇒ 与其留一列等人去猜「它是不是有用」，不如删掉；要用时按 id 推导即可。
+   */
   /** 标准发音 MP3 地址 */
   standardAudio: varchar('standard_audio', { length: 512 }),
   /**
-   * 内容发布状态：draft | published | archived。
-   * ⚠️ 与 is_active（竞技开关）是两回事：内容是先发布、再决定开不开竞技。
+   * ⭐ 视觉主题 —— { image, background, foreground }（见 shared 的 ArticleTheme）。
+   * ⚠️ 整份可空：老内容没有主题，端侧退回默认配色。
    */
-  contentStatus: varchar('content_status', { length: 16 }).notNull().default('draft'),
-  /** 内容指纹 —— 流水线重跑时判断要不要重新发布 */
-  contentHash: varchar('content_hash', { length: 64 }),
-
-  /** 竞技状态：是否开放 */
+  theme: json('theme').$type<ArticleTheme>(),
+  /**
+   * ⭐ **朗读难度**的派生索引（0 初级 / 1 中级 / 2 高级 / 3 专家）。
+   *
+   * ⚠️ 真相在正文 JSON 的 difficulty 里（见 shared/difficulty.ts）——
+   *    这一列只是让「按难度筛选 / 排序」能走 SQL，**不是第二份真相**：
+   *    正文改了要重跑 syncArticleIndex（CLI: reindex），它是幂等的。
+   * ⚠️ 可空：正文没写难度（或还没评过级）就是 NULL ——
+   *    **绝不填默认档位**（见 normalizeDifficulty 的说明）。
+   */
+  difficulty: int('difficulty'),
+  /**
+   * ⭐⭐ **发布状态 —— 全仓库唯一的那个真相**（列名 is_active，语义是「已发布 / 在线」）。
+   *
+   * ⚠️⚠️ 这里**曾经有两列**：content_status 与 is_active，注释说它们「是两回事：
+   *    内容先发布、再决定开不开竞技」。但那个区分**从来没有被实现过**：
+   *      · 两个写入方（后台 upsertArticle / 部署灌库）永远把两列写成**同一个值**；
+   *      · 产品侧（客户端、排期轮转、后台列表与详情）**只读 is_active**；
+   *      · apps/server 的运行时**一次都没读过 content_status**。
+   *    于是它只是一份同义的副本，代价却是实打实的：两列各有 DB 默认值，
+   *    而默认值互相矛盾（content_status 默认 'draft'、is_active 默认 true）——
+   *    灌库路径插出来的行就是「草稿但在线」，后台按 content_status 判会拒绝一条
+   *    明明在线的句子（tools/admin 里踩过，见那里的注释）。
+   *    ⇒ 删掉 content_status（迁移 0033）。将来真需要「发布」与「开竞技」分开，
+   *      那是一个**新概念**，要带着它自己的语义与约束出现，而不是这个名字的副本。
+   */
   isActive: boolean('is_active').notNull().default(true),
-  /** 参与人数（冗余计数，可排序） */
-  participantCount: int('participant_count').notNull().default(0),
-  /** 攻克人数 —— 在这条句子上**拿到过分数**的去重用户数（85 分线已废除） */
-  conqueredCount: int('conquered_count').notNull().default(0),
+  /**
+   * ⚠️⚠️ 这里**曾经有两列** `participant_count` / `conquered_count`
+   *    （「参与人数」「攻克人数」的冗余计数），已删除（迁移 0034）。
+   *
+   *    它们**没有任何代码在读**：竞技口径一律从 submissions 表**现算**
+   *    （services/leaderboard.ts 的 `COUNT(DISTINCT user_id)`，
+   *      routes 里所有 participantCount 都走它）。
+   *    写入方却有两个：scoring 打分成功时自增、dev 种子脚本按 submissions 重算
+   *    （那个脚本的注释自己就写着「这两列没有任何代码在读」）。
+   *
+   *    于是它们是一份**只写不读**的副本，唯一的下场是在库里慢慢和真相分叉 ——
+   *    而且 scoring 里那次自增读的还是 submissions.is_conquered
+   *    （一个全仓库别处都因为「老数据按已废除的 85 线写」而拒绝读的列）。
+   *    ⇒ 「几个人参与 / 几个人攻克」只有一个来源：**submissions 表**。
+   */
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-  updatedAt: datetime('updated_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+  /**
+   * ⚠️ 这里**曾经有一列 `updated_at`**，已删除。
+   *
+   *    它没有 ON UPDATE 子句 —— 只有代码显式写才会变，而全仓库**没有一处写它**，
+   *    于是每一行的 updated_at 恒等于 created_at：一列在**说谎**的时间戳。
+   *    它也从没被读过（唯一的读者是这条注释）。下面 publishedAt 的注释里
+   *    早就写着「为什么不用 updatedAt：它实际等于 createdAt」，那就是删除的理由。
+   */
+  /**
+   * ⭐ **发布时间**（首次/最近一次从草稿变成已发布的那一刻）。
+   *
+   * ⚠️ 为什么不复用 createdAt：两者不是一回事 ——
+   *    草稿可以在生成后很久才发布，而 createdAt 是「生成了这一句」的时间。
+   *    内容管理台的列表要按「什么时候上的线」看，用 createdAt 会答非所问。
+   * ⚠️ 为什么不用 updatedAt：它**没有** ON UPDATE 子句，只有代码显式写才会变，
+   *    实际等于 createdAt，同样答非所问。
+   * ⚠️ 下架（isActive=false）**不清空**它：它记录的是「最近一次上线的时刻」，
+   *    草稿状态另有 content_status / is_active 两列表达。
+   */
+  publishedAt: datetime('published_at', { mode: 'date', fsp: 3 }),
 })
 
 /**
@@ -194,7 +280,7 @@ export const schedules = mysqlTable('schedules', {
   /** 展期 'YYYY-MM-DD'（北京时间）—— 一天一条，所以直接做主键 */
   date: varchar('date', { length: 10 }).primaryKey(),
   /** 那天展示哪一句 */
-  articleId: int('article_id').notNull().references(() => articles.id),
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
   /**
    * scheduled = 运营明确排的；rotation = 按天号自动轮的。
    * ⚠️ 存下来是为了**能区分**：运营漏排和自动补上，排查时要一眼看出来。
@@ -206,9 +292,16 @@ export const schedules = mysqlTable('schedules', {
   index('schedules_article_idx').on(t.articleId),
 ])
 
-/** 标签关联表 —— 独立成表才能按单个标签索引 */
+/**
+ * 标签关联表 —— 独立成表才能**按单个标签索引**（这是它不做成 JSON 列的唯一理由）。
+ *
+ * ⚠️ 与 articles.difficulty 同一条规矩：真相在正文 JSON 的 tags 里，
+ *    这张表是 syncArticleIndex 物化出来的**派生索引**，可随时重建。
+ * ⚠️ 它丢掉了标签顺序（JSON 里第一个最重要）：这里只有集合语义。
+ *    要展示顺序就读正文 —— 接口目前正是这么做的（见 routes/schedules.ts）。
+ */
 export const articleTags = mysqlTable('article_tags', {
-  articleId: int('article_id').notNull().references(() => articles.id),
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
   tag: varchar('tag', { length: 32 }).notNull(),
 }, (t) => [
   uniqueIndex('article_tags_uniq_idx').on(t.articleId, t.tag),
@@ -217,10 +310,15 @@ export const articleTags = mysqlTable('article_tags', {
 
 /** 提交记录 —— 每次一条，永久保留 */
 export const submissions = mysqlTable('submissions', {
-  /** hash(userId, articleId, seq)，由服务端算（services/audio-key.ts） */
-  id: varchar('id', { length: 40 }).primaryKey(),
+  /**
+   * submissionId = sha256(`jushuo:<userId>:<articleId>:<seq>`) 的**前 SUBMISSION_ID_LENGTH 位**，
+   * 由服务端算（services/audio-key.ts）。
+   * ⚠️ 长度在 shared 的 constants 里定义一处：派生函数、这个列宽、
+   *    以及路由里校验 sid 的正则都引用它（这三处曾经漂过：派生 24、列宽 40）。
+   */
+  id: varchar('id', { length: SUBMISSION_ID_LENGTH }).primaryKey(),
   userId: int('user_id').notNull().references(() => users.id),
-  articleId: int('article_id').notNull().references(() => articles.id),
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
   /** 该用户在该文章的第几次提交，从 1 开始 */
   seq: int('seq').notNull(),
 
@@ -287,11 +385,19 @@ export const submissions = mysqlTable('submissions', {
    */
   score: decimal('score', { precision: 5, scale: 1 }),
   /**
-   * 这条提交算不算「攻克」—— **拿到分数就算**（85 分线已废除，见 services/conquest.ts）。
-   * ⚠️ 这一列现在是 status = 'scored' 的同义词，保留只为留痕；
-   *    统计一律以 status 为准 —— 老数据这一列是按旧线写的，会漏。
+   * ⚠️⚠️ 这里**曾经有一列 `is_conquered`**，已删除（迁移 0034）。
+   *
+   *    它的语义被改过两次，最后退化成 status 的同义词：
+   *    攻克原本是「85 分以上」，那条线废除后改成「出分即可」——
+   *    **能走到写 score 的地方就说明已经出分**，所以写入方一律写 true。
+   *    但**老数据是按 85 线写的 false**，于是这一列对历史提交是错的。
+   *
+   *    全仓库其它地方早就改成按 `status === 'scored'` 判定了
+   *    （submission-view / user.ts / conquest.ts 都留了「不要读那一列」的注释），
+   *    只剩 scoring 里还在读它来数「是不是第一次攻克」——
+   *    一个大家都声明不可信的列，不该还留着让人再去读一次。
+   *    ⇒ 攻克的口径只有一条：**submissions.status = 'scored'**。
    */
-  isConquered: boolean('is_conquered'),
 
   /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.{aac|mp3|pcm}（永久保留）。失败时对象会删，但这里仍记 key 留痕 */
   audioKey: varchar('audio_key', { length: 255 }),
@@ -316,11 +422,21 @@ export const submissions = mysqlTable('submissions', {
   audioDurationMs: int('audio_duration_ms'),
 
   /**
-   * ⭐ 这次录音是否**公开**（别人能不能听）。
+   * ⭐ 这次录音是否**公开**（卡片之外的入口能不能听）。
    * ⚠️ 与「有没有上榜」是两回事 —— 成绩永远进榜，这只是**音频**的可见性。
-   *    默认 true：不设隐私开关的产品，用户的声音会在不知情的情况下被听见。
+   * ⚠️ 默认 false：公开必须是用户自己打开开关的结果。
+   *    从挑战详情分享卡片进来的任何人本来就能听（链接即凭据），不受这一位影响。
    */
-  isPublic: boolean('is_public').notNull().default(true),
+  isPublic: boolean('is_public').notNull().default(false),
+
+  /**
+   * ⭐ 这次提交**继承自 articles.theme** 的视觉主题**快照**。
+   *
+   * ⚠️ 为什么留快照而不是每次 join 回 articles：主题是**内容**，
+   *    内容改版后应该只影响之后的新卡；历史成绩卡片要保留当时的样子。
+   * ⚠️ 可空：老提交没有主题，端侧退回默认配色。
+   */
+  theme: json('theme').$type<ArticleTheme>(),
 
   /** ① 点赞数（冗余计数 —— 要能排序，每次 COUNT 会随点赞变多而变慢） */
   likeCount: int('like_count').notNull().default(0),
@@ -546,7 +662,7 @@ export const payments = mysqlTable('payments', {
 /** 点赞 —— 谁赞了哪条 submission */
 export const likes = mysqlTable('likes', {
   id: int('id').autoincrement().primaryKey(),
-  submissionId: varchar('submission_id', { length: 40 }).notNull().references(() => submissions.id),
+  submissionId: varchar('submission_id', { length: SUBMISSION_ID_LENGTH }).notNull().references(() => submissions.id),
   userId: int('user_id').notNull().references(() => users.id),
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 }, (t) => [
@@ -557,7 +673,7 @@ export const likes = mysqlTable('likes', {
 /** LLM 对某次提交的反馈 */
 export const reviews = mysqlTable('reviews', {
   id: int('id').autoincrement().primaryKey(),
-  submissionId: varchar('submission_id', { length: 40 }).notNull().references(() => submissions.id),
+  submissionId: varchar('submission_id', { length: SUBMISSION_ID_LENGTH }).notNull().references(() => submissions.id),
   /**
    * ⚠️ 可空 —— LLM 反馈是异步的，pending 时还没有正文。
    *    参考文本也在这里：reviews 只是「对某次提交的反馈」，与讯飞的分无关。

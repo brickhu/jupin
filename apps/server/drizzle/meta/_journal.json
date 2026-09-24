@@ -169,6 +169,83 @@
       "when": 1790132262518,
       "tag": "0023_drop_share_key",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1790149680365,
+      "tag": "0024_steep_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1790150521502,
+      "tag": "0025_wise_bloodscream",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1790161843364,
+      "tag": "0026_steady_tyrannus",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1790162879794,
+      "tag": "0027_new_corsair",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1790171572067,
+      "tag": "0028_special_cloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1790185633554,
+      "tag": "0029_late_molten_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1790217683830,
+      "tag": "0030_square_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1790218208000,
+      "tag": "0031_conscious_ronan",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1790218596874,
+      "tag": "0032_wakeful_clint_barton",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1790219088762,
+      "tag": "0033_noisy_proemial_gods",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1790219175100,
+      "tag": "0034_nappy_charles_xavier",
+      "breakpoints": true
     }
   ]
 }
