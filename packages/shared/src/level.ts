@@ -36,8 +36,9 @@
  *    音节数 / 句长的方差极小，算出来几乎全挤在中段，区分不出我们要的四档。
  *    而且「易读」量的是阅读，不是「中文母语者念出来有多难」。
  *    真正站得住的替代是 **词表分档**（Nation 的 word family + 95%/98% 覆盖率那套），
- *    ECDICT 的 tag（zk/gk/cet4/cet6/ky/toefl/ielts/gre）几乎 1:1 对上我们的 L1–L5
- *    —— 这就是 ① 的数据来源（作为 LLM 的 dict_lookup 工具，见 tools/pipeline 的 ecdict.ts）。
+ *    而 ECDICT 的 tag（zk/gk/cet4/cet6/ky/toefl/ielts/gre）几乎 1:1 对上我们的 L1–L5。
+ *    ⚠️ 但**别拿它直接定档**（实测：比模型自己的判断更不准，tag 高档位噪声大）——
+ *    它在流水线里只是 LLM 的 `dict_lookup` **核实工具**，档位由模型定（见 tools/pipeline 的 ecdict.ts）。
  *
  * ⚠️ 值是**档位数字 0–3**，不是字符串：
  *    · 它要落库（articles.difficulty）并按档位排序 / 筛选 —— 数字才单调可比；
