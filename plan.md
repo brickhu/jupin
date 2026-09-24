@@ -53,7 +53,13 @@
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 - [ ] **B13** 用新口径**重判存量内容**的难度（B12/B14 已完成，可直接开工）—— 只改正文 JSON 的 `difficulty` 字段（`text` 不动 ⇒ **id 不变**），改完跑 reindex 让 articles.difficulty 索引跟上 —— 做完的标志：每句的 difficulty 都是新提示词判出来的
-- [ ] **B15** 用你给的**人工锚点样本**替换/补充提示词的【参照样本】—— ⚠️ **但先要定轴**：你这组样本是按「**词汇等级 + 句子复杂度**」分的，与项目现行的「**朗读难度（发音 / 连读）**」在两句上直接相反。四句原文（人工定级，别再丢）：
+- [ ] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
+  ① 数据上两个档位（`vocabLevel` / `pronLevel`），库里两列（派生索引，供筛选排序）；
+  ② `reason` **进正文 JSON 且给用户看**，固定格式：**以「相当于<级别>水平」开头**（级别用考试口径：小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / 雅思 6.5 / GRE），随后是发音难点，`；` 后是词汇与句式点评。例：
+     `相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；词都比较常见，只有 sophistication 稍超纲。`
+  ③ detail 接口改成**显式挑字段**（现在 `...content` 是"JSON 里有什么就漏什么"，reason 要漏给用户但别的内部字段不能）；
+  ④ 顺带把轴无关的符号改名：`DIFFICULTY_LABEL`→`LEVEL_LABEL`、`DIFFICULTY_ORDER`→`LEVEL_ORDER`、`normalizeDifficulty`→`normalizeLevel`、`ArticleDifficulty`→`ArticleLevel`；字段/列 `difficulty`→`pronLevel`/`pron_level`
+  —— 做完的标志：正文 JSON 有两个档位 + 一句 reason（格式如上）、库里两列、admin 与 detail 都能看到、8 句实测两轴分布都合理。**B15 并入本条**，词汇轴的锚点用你给的人工样本：
   - **专家**：The assumption that human behavior is governed entirely by rational choice ignores the profound influence of subconscious emotions, which often drive decisions long before logic has had the chance to intervene
   - **高级**：Companies that fail to adapt to the rapidly changing technological landscape risk being left behind by competitors who are quicker to embrace innovation.
   - **中级**：Although the internet has made it easier than ever to access information, finding reliable sources requires a high level of critical thinking
