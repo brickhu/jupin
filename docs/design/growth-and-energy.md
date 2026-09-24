@@ -1,9 +1,15 @@
 # 成长体系与能量值（设计稿）
 
-> **状态：已确认，已实施。**（奖励/解冻卡那部分见 docs/design/reward-system.md）
-> 本文是这两个改动的**唯一规格来源**：公式、边界、落库、契约都在这里。
-> 与它冲突的旧描述（AGENT.md 的「等级徽章」、schema 注释里的「streakBest 是徽章的唯一依据」）
-> 在实施时一并改掉。
+> **状态：已确认，已实施**（奖励/解冻卡那部分见 docs/design/reward-system.md）。
+> 本文写的是这两个改动的**方案与理由**：公式、边界、落库、契约的推导过程。
+>
+> ⚠️ **本文不是任务清单，也不是现状说明。**
+> · **做没做、做到哪了 → [plan.md](../../plan.md)**（唯一任务来源）。
+>   本文里的「待定 / 待你确认 / 执行清单 / 测试清单」是**写作当时的快照**，与 plan.md 不一致时以 plan.md 为准。
+> · **当前实际行为 → 代码及其注释**（唯一真相）。本文描述的是**设计意图**。
+>
+> ⚠️ 特别提醒：本文 §11「与历史残留规则的冲突清单」是**开工前**列的，
+> 其中绝大多数已经被改掉（徽章、额度、门禁三组已确认落地），**照它当待办读会误导**。
 
 ## 0. 一页看完
 
@@ -222,7 +228,8 @@ standout = round(f(score − m) * w)
 放在 me/ 下面会让人以为「只有我自己能看」。
 
 ⚠️ 相应地，原来的**修改资料**页（私有表单）让出了 profile 这个名字，
-改叫 **pages/profile-edit/profile-edit** —— 否则会有两个 profile 页面靠猜。
+现在放在 **pages/me/edit-user/edit-user** —— 否则会有两个 profile 页面靠猜。
+（它支持昵称 / 头像 / 性别 / 年龄 / 简介；加入页仍然只问昵称 + 头像。）
 
 页面结构（自上而下）：
 
@@ -476,7 +483,7 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | submissions 全表 | 成绩历史，全部是测试数据 |
 | users 的 streak_days / streak_best / last_read_date、以及解冻卡表 | 它们是从 submissions 推出来的。清了成绩再留着这些数就是孤儿 —— 「连战 12 天」而一条提交都查不到 |
 | users 的 invalid_count / invalid_date / growth_* / energy / energy_date | 同上（新列本来也是 0，这里是显式兜底） |
-| **articles 的 participant_count / conquered_count** | ⚠️⚠️ **最容易漏的一条**：它们是 submissions 的**冗余计数**。不清的话竞技场会显示「19 人参与」而底下一条成绩都没有 —— 正是「两个数对不上」的那类 bug |
+| ~~articles 的 participant_count / conquered_count~~ | ⚠️ **这两列已删除**（迁移 0034）：它们只写不读，参与/攻克人数一律从 submissions 现算 —— 于是不再有「成绩清了、计数还在」这种不一致可言 |
 | 探针 / 测试账号（dev 的 probe_login_e2e 之类） | 手工造的账号 |
 | energy_ledger | 新表，本来就是空的 |
 
@@ -572,10 +579,8 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 
 ### 待定
 
-| # | 问题 | 我的建议 |
-|---|---|---|
-| 1 | **存量成长值是否回溯**（见 6） | **不回溯**，从 0 开始（三条理由见 6.2） |
-| 2 | 充值档位（10 / 30 / 100 …）的具体数字 | 架构先支持任意整数倍，数字后定 |
+> ⚠️ 待定项是**任务状态**，已统一收在 [plan.md](../../plan.md)（A5 / A7），这里不再重复一份。
+> 判断理由是「重复即错误」：同一个问题两处各写一半，迟早只更新一边。
 
 ---
 
@@ -643,7 +648,7 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | 22 | MeResponse 的 isMember / dailyLimit / usedToday → 换成 energy；连带删 app.ts 的 globalData.isMember、typings/index.d.ts、join.test.ts / store.test.ts 里的假响应字段 |
 | 23 | StreakDelta.freezeUsed 永远是 0（不自动消耗）⇒ 删掉；freezeEarned 改成「本次发了几张解冻卡」 |
 | 24 | **门禁顺序**：routes/submissions.ts 现在是「幂等 → 门禁」，改成能量之后必须是「**幂等 → 锁能量**」—— 反了会让重试多锁一次 |
-| 25 | 清历史数据时别忘了 **articles.participant_count / conquered_count**（见 6.2） |
+| 25 | ~~清历史数据时别忘了 articles.participant_count / conquered_count~~ —— 两列已删（迁移 0034），无需再清 |
 
 ### D. 确认**不**冲突的（写下来，免得后人再查一遍）
 

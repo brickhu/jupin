@@ -1,5 +1,7 @@
 # ---- 依赖 ----
 node_modules/
+# ⚠️ 本沙箱里 pnpm 写不了 ~/Library/pnpm，只能把 npm 缓存重定向到仓库内
+.npm-cache/
 .pnpm-store/
 .pnpm-home/
 
@@ -32,6 +34,11 @@ tools/pipeline/data/out/
 # 成品在 content/audio/，这里只是「别再请求一次引擎」的中间层，不该进仓库。
 tools/pipeline/data/cache/
 
+# ---- 本地 admin 服务的状态 ----
+# ⚠️ .state.json 里是会话 cookie 的签名密钥 —— 泄漏 = 别人可以伪造登录态。
+#    顺带它还记着「当前选了哪个环境」，也不该进仓库。
+tools/admin/.state.json
+
 # ---- 日志与系统 ----
 *.log
 npm-debug.log*
@@ -55,3 +62,6 @@ npm-debug.log*
 # Docker buildx 配置重定向（沙箱/CI 用）
 .buildx/
 .docker/
+
+
+
