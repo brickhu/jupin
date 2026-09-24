@@ -1,0 +1,186 @@
+{
+  "id": "9ec92356e39599e4",
+  "text": "The world is like a mirror: Frown at it and it frowns at you; smile, and it smiles too.",
+  "translation": "世界就像一面镜子：你对它皱眉，它也对你皱眉；你笑，它也笑。",
+  "pronLevel": 2,
+  "vocabLevel": 1,
+  "reason": "相当于高中水平，world 的 r 和 l 挨着念很绕，mirror 两个 r 也不顺；词都常见，句子短。",
+  "tags": [
+    "名言",
+    "哲理",
+    "发音难点"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "The",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 300
+    },
+    {
+      "pos": 1,
+      "word": "world",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 80,
+      "endMs": 480
+    },
+    {
+      "pos": 2,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 410,
+      "endMs": 710
+    },
+    {
+      "pos": 3,
+      "word": "like",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 570,
+      "endMs": 870
+    },
+    {
+      "pos": 4,
+      "word": "a",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 690,
+      "endMs": 990
+    },
+    {
+      "pos": 5,
+      "word": "mirror:",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 880,
+      "endMs": 1450
+    },
+    {
+      "pos": 6,
+      "word": "Frown",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2070,
+      "endMs": 2560
+    },
+    {
+      "pos": 7,
+      "word": "at",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2490,
+      "endMs": 2790
+    },
+    {
+      "pos": 8,
+      "word": "it",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2720,
+      "endMs": 3050
+    },
+    {
+      "pos": 9,
+      "word": "and",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3210,
+      "endMs": 3510
+    },
+    {
+      "pos": 10,
+      "word": "it",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3330,
+      "endMs": 3630
+    },
+    {
+      "pos": 11,
+      "word": "frowns",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3520,
+      "endMs": 4000
+    },
+    {
+      "pos": 12,
+      "word": "at",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3930,
+      "endMs": 4230
+    },
+    {
+      "pos": 13,
+      "word": "you;",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4160,
+      "endMs": 4570
+    },
+    {
+      "pos": 14,
+      "word": "smile,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5110,
+      "endMs": 5930
+    },
+    {
+      "pos": 15,
+      "word": "and",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6210,
+      "endMs": 6510
+    },
+    {
+      "pos": 16,
+      "word": "it",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6330,
+      "endMs": 6630
+    },
+    {
+      "pos": 17,
+      "word": "smiles",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6560,
+      "endMs": 7120
+    },
+    {
+      "pos": 18,
+      "word": "too.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 7120,
+      "endMs": 7610
+    }
+  ]
+}
