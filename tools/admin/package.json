@@ -1,0 +1,19 @@
+{
+  "name": "@jushuo/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "本地内容管理台（句库管理）—— 127.0.0.1:4983，无构建，tsx 直跑",
+  "scripts": {
+    "start": "tsx server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
+  }
+}

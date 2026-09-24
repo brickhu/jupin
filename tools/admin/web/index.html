@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>句拼 · 内容管理台</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- ============ 登录（环境在这里选，不在 header 里切） ============ -->
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <h1>句拼</h1>
+      <p class="muted">内容管理台 · 本地操作台</p>
+      <label>账号<input name="user" value="admin" autocomplete="username" /></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" /></label>
+      <div class="env-pick">
+        <p class="env-pick-head">环境<span class="muted tiny">（这次会话写哪个库）</span></p>
+        <div id="login-envs" class="env-options"></div>
+        <p id="login-env-note" class="muted tiny"></p>
+      </div>
+      <p id="login-error" class="error" hidden></p>
+      <button class="primary" type="submit">登录</button>
+      <p class="muted tiny">口令在仓库根的 <code>.env.local</code> 里（ADMIN_PASSWORD）。</p>
+    </form>
+  </section>
+
+  <!-- ============ 主界面 ============ -->
+  <div id="shell" hidden>
+    <header class="topbar">
+      <div class="brand">句拼<span id="env-badge" class="env-badge">—</span></div>
+      <nav class="menu">
+        <button type="button" data-view="library" class="nav active">句库</button>
+        <button type="button" data-view="energy" class="nav">能量</button>
+        <button type="button" data-view="account" class="nav">管理员账号</button>
+        <button type="button" id="logout" class="nav">退出</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- 句库列表 -->
+      <section id="view-library" class="view">
+        <div class="toolbar">
+          <input id="q" type="search" placeholder="搜英文原句或中文译文…" autocomplete="off" />
+          <span id="count" class="muted tiny"></span>
+          <span class="grow"></span>
+          <button type="button" id="add-btn" class="primary">新增句子</button>
+        </div>
+        <p id="list-error" class="error" hidden></p>
+        <table class="list">
+          <thead>
+            <tr>
+              <th class="c-play">试听</th>
+              <th>英文原句</th>
+              <th>译文</th>
+              <th class="c-diff">难度</th>
+              <th class="c-time">发布时间</th>
+              <th class="c-state">状态</th>
+              <th class="c-act"></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="muted empty" hidden>这个环境里还没有句子。</p>
+      </section>
+
+      <!-- 句子详情（/article/<id>） -->
+      <section id="view-detail" class="view" hidden>
+        <p class="crumb"><a href="/articles" id="back-link">← 句库</a></p>
+        <p id="detail-error" class="error" hidden></p>
+        <p id="dt-draft-tip" class="warn" hidden></p>
+        <article id="detail-body" hidden>
+          <!-- ⭐ 朗读卡：句子 + 译文 + 播放按钮，配色来自内容主题（浅底深字）。
+               ⚠️ 内部一律 currentColor + 透明度 —— 与小程序 submission-card / arena-card 同一条约定 -->
+          <div id="dt-card" class="read-card">
+            <p id="dt-text" class="read-text"></p>
+            <div class="read-zh-row">
+              <p id="dt-translation" class="read-zh"></p>
+              <button type="button" class="edit-icon" data-field="translation" title="改译文">✎</button>
+            </div>
+            <div class="read-actions">
+              <button type="button" id="dt-play" class="read-play">▶ 播放</button>
+              <span id="dt-time" class="read-time">0:00 / 0:00</span>
+            </div>
+          </div>
+
+          <!-- 其余信息：卡片外，用 dl。每行右侧一个编辑 icon，点了就地变输入框；
+               所有改动先攒着，点「更新」一次提交（没改动时它是禁用的）。
+               ⚠️ 句子 id 没有编辑 icon：id = sha256(正文)，它同时是文件名和音频路径，
+                  改它就不是「同一条句子的编辑」而是另一条内容了。 -->
+          <div class="meta-head"><span>句子信息</span></div>
+          <dl class="meta-list">
+            <dt>状态</dt><dd><span id="dt-status" class="badge"></span><button type="button" class="edit-icon" data-field="isActive" title="改发布状态">✎</button></dd>
+            <dt>难度</dt><dd><span id="dt-difficulty"></span><button type="button" class="edit-icon" data-field="difficulty" title="改难度">✎</button></dd>
+            <dt>发布时间</dt><dd><span id="dt-published"></span></dd>
+            <dt>标签</dt><dd><span id="dt-tags" class="tags"></span><button type="button" class="edit-icon" data-field="tags" title="改标签">✎</button></dd>
+            <dt>句子 id</dt><dd id="dt-id" class="mono tiny"></dd>
+          </dl>
+
+          <div class="block words-block">
+            <div class="words-head">
+              <span>本文 <b id="dt-wordcount">0</b> 个单词</span>
+              <span class="grow"></span>
+              <button type="button" id="dt-redo" class="ghost" title="正文不动，只重跑 fish（音频坏了、区间不对时用）">重做标准音</button>
+            </div>
+            <ul id="dt-words" class="word-list"></ul>
+          </div>
+
+          <!-- ⭐ 全部改动由**这一个**按钮提交，放在最底部（有改动才亮、没改动是灰的） -->
+          <div class="row end meta-foot">
+            <button type="button" id="dt-restore" class="ghost" hidden>恢复</button>
+            <button type="button" id="dt-update" class="primary" disabled>更新</button>
+          </div>
+          <audio id="dt-audio" preload="metadata"></audio>
+        </article>
+      </section>
+
+      <!-- 能量（占位） -->
+      <section id="view-energy" class="view" hidden>
+        <div class="placeholder">
+          <h2>能量</h2>
+          <p class="muted">这一页还没做。按需求，句库管理先跑通 —— 能量（奖励规则、发放记录、流水）后面再补。</p>
+        </div>
+      </section>
+
+      <!-- 管理员账号 -->
+      <section id="view-account" class="view" hidden>
+        <div class="placeholder">
+          <h2>管理员账号</h2>
+          <dl class="kv">
+            <dt>当前账号</dt><dd id="acc-user">—</dd>
+            <dt>口令存放</dt><dd>仓库根 <code>.env.local</code> 的 <code>ADMIN_PASSWORD</code></dd>
+            <dt>访问范围</dt><dd>只监听 127.0.0.1，外部访问不到</dd>
+            <dt>当前环境</dt><dd id="acc-env">—</dd>
+            <dt>各环境状态</dt><dd id="acc-envs">—</dd>
+          </dl>
+          <p class="muted tiny">换环境：<b>退出后重新登录</b>（环境是这次会话的前提，不在这里临时切）。</p>
+          <p class="muted tiny">想换口令：改 <code>.env.local</code> 里的 <code>ADMIN_PASSWORD</code>，重启服务即可。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============ 内容编辑抽屉（新增 / 编辑共用） ============ -->
+  <div id="editor" class="overlay" hidden>
+    <div class="drawer">
+      <header class="drawer-head">
+        <h2 id="ed-title">新增句子</h2>
+        <button type="button" id="ed-close" class="nav">关闭</button>
+      </header>
+
+      <!-- 第一步：输入英文（只在新增时） -->
+      <div id="ed-input">
+        <label class="block">英文原句
+          <textarea id="ed-text" rows="3" placeholder="在这里贴一句英文。回车换行不影响 —— id 按整句内容算。"></textarea>
+        </label>
+        <div class="row">
+          <button type="button" id="ed-generate" class="primary">跑生成流水线</button>
+          <span class="muted tiny">LLM 出译文 / 难度 / 标签 → fish 出标准音和词级时间戳 → 建草稿行</span>
+        </div>
+      </div>
+
+      <pre id="ed-log" class="log" hidden></pre>
+      <p id="ed-error" class="error" hidden></p>
+      <p id="ed-env-warn" class="warn" hidden></p>
+
+      <!-- 第二步：字段 + 试听 -->
+      <div id="ed-fields" hidden>
+        <p id="ed-id" class="muted tiny mono"></p>
+        <label class="block">英文原句（只读，改它就是另一条句子）
+          <textarea id="ed-text-ro" rows="2" readonly></textarea>
+        </label>
+        <label class="block">译文
+          <textarea id="ed-translation" rows="3"></textarea>
+        </label>
+        <div class="row">
+          <label class="block">难度
+            <select id="ed-difficulty"></select>
+          </label>
+          <label class="block grow">标签（空格或逗号分隔，最多 8 个）
+            <input id="ed-tags" type="text" />
+          </label>
+        </div>
+        <div class="row" id="ed-tagchips"></div>
+
+        <div class="block">语音预览
+          <!-- ⚠️ preload=metadata 不是性能调优：readyState=0 时给 currentTime 赋值会被忽略，
+               点词就只能从 0 秒开始播（见 app.js 的 playWordAt） -->
+          <audio id="ed-audio" controls preload="metadata"></audio>
+          <p id="ed-audio-note" class="muted tiny"></p>
+        </div>
+        <div class="block words-block">
+          <div class="words-head">
+            <span>本文 <b id="ed-wordcount">0</b> 个单词</span>
+            <span class="grow"></span>
+            <span class="muted tiny">点时间可直接改，改完点下面「保存」</span>
+          </div>
+          <ul id="ed-words" class="word-list"></ul>
+        </div>
+
+        <p id="ed-status" class="muted tiny"></p>
+        <div class="row end">
+          <button type="button" id="ed-save" class="ghost">保存</button>
+          <button type="button" id="ed-publish" class="primary">发布</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <audio id="row-audio" preload="none"></audio>
+  <p id="toast" class="toast" hidden></p>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

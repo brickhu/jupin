@@ -1,0 +1,286 @@
+/* 句拼 admin —— 手写样式，无构建。
+   ⚠️ 主题色 #4f46e5 与小程序 brand 一致（packages/shared/src/brand.ts），
+      免得同一个产品在两端看起来像两个东西。 */
+
+:root {
+  --bg: #0e1016;
+  --panel: #161a22;
+  --panel-2: #1c212b;
+  --line: #262c38;
+  --text: #e7e9ef;
+  --muted: #8b93a7;
+  --brand: #4f46e5;
+  --brand-2: #6366f1;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+/* ⚠️⚠️ 这一条不是可选的样式偏好，是**修 bug**：
+   HTML 的 hidden 属性靠 UA 样式表的 display:none 生效，而**作者样式里任何
+   一条 display 都会盖掉它**（作者 > UA）。本页用 hidden 控制显隐的节点里，
+   好几个自己写了 display —— .overlay 是 flex、.view 是 block ——
+   结果就是：登录页上「新增句子」抽屉**一直显示**并压住登录卡片；
+   三个页面区块也一直竖着叠在一起。
+   ⇒ 用 !important 把这条规矩钉死，它必须赢过所有组件自己的 display。 */
+[hidden] { display: none !important; }
+
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+code { font-family: var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.muted { color: var(--muted); }
+.tiny { font-size: 12px; }
+.mono { font-family: var(--mono); }
+.grow { flex: 1; }
+a { color: var(--brand-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- 登录 ---------- */
+.login { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 24px; }
+.login-card {
+  width: 380px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 14px;
+}
+.login-card h1 { margin: 0; font-size: 26px; letter-spacing: 2px; }
+.login-card p { margin: 0; }
+.login-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+
+/* 环境选择（登录页）—— 它是这次会话的**前提**，所以放在最显眼的位置 */
+.env-pick { border-top: 1px solid var(--line); padding-top: 14px; }
+.env-pick-head { font-size: 13px; color: var(--muted); margin-bottom: 8px !important; }
+.env-options { display: flex; flex-direction: column; gap: 6px; }
+.env-option {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px; cursor: pointer; background: var(--bg);
+}
+.env-option:hover { border-color: #37404f; }
+.env-option input { width: auto; margin: 0; }
+.env-option.on { border-color: var(--brand); background: #1b1c33; }
+.env-option.dead { opacity: .55; cursor: not-allowed; }
+.env-option .env-name { font-size: 13px; }
+.env-option .env-note { font-size: 11px; color: var(--warn); }
+
+input, textarea, select, button { font: inherit; color: inherit; }
+input, textarea, select {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; width: 100%; outline: none;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--brand-2); }
+textarea { resize: vertical; line-height: 1.7; }
+textarea[readonly] { color: var(--muted); background: var(--panel-2); }
+
+button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); padding: 8px 14px; }
+button:hover { border-color: #37404f; }
+button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--brand-2); border-color: var(--brand-2); }
+button.ghost { background: transparent; }
+button:disabled { opacity: .5; cursor: default; }
+
+.error { color: var(--err); font-size: 13px; margin: 0; }
+
+/* 环境提醒：云环境的正文/音频随镜像走，这件事必须比普通提示更显眼 */
+.warn {
+  background: #241f10; border: 1px solid #5c4a1d; color: #f3d9a4;
+  border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.7; margin: 0 0 14px;
+}
+
+/* ---------- 顶栏 ----------
+   ⚠️ 导航整体靠右（.menu 用 margin-left:auto 推过去），
+      左边只留「句拼 + 当前环境标识」。
+      环境**不在这里切** —— 它在登录页选定（见 index.html 的注释）。 */
+.topbar {
+  display: flex; align-items: center; gap: 18px; padding: 0 18px; height: 56px;
+  background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5;
+}
+.brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+.env-badge {
+  font-size: 12px; font-weight: 500; letter-spacing: 0; padding: 2px 9px; border-radius: 999px;
+  background: #1b1c33; border: 1px solid var(--brand); color: #c7c9ff;
+}
+.env-badge.prod { background: #2a1618; border-color: #7f3238; color: #ffd0d0; }
+.env-badge.dev { background: #241f10; border-color: #5c4a1d; color: #f3d9a4; }
+.menu { margin-left: auto; display: flex; gap: 4px; }
+.nav { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 6px 12px; }
+.nav:hover { color: var(--text); background: var(--panel-2); }
+.nav.active { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+
+/* ---------- 主区：列表**满屏**，只有详情/占位页收窄 ---------- */
+main { padding: 18px 18px 60px; }
+#view-detail, #view-energy, #view-account { max-width: 980px; margin: 0 auto; }
+.view { display: block; }
+
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.toolbar input[type="search"] { max-width: 340px; }
+.empty { padding: 40px 0; text-align: center; }
+
+/* ---------- 列表 ---------- */
+/* ⚠️ table-layout: fixed + 显式列宽：auto 布局会把「初级」「已发布」挤成两行 */
+table.list {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+}
+table.list th, table.list td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.list th { font-size: 12px; color: var(--muted); font-weight: 500; background: var(--panel-2); }
+table.list tr:last-child td { border-bottom: none; }
+table.list tbody tr:hover { background: #1a1f29; }
+th.c-play, td.c-play { width: 62px; }
+th.c-diff, td.c-diff { width: 76px; }
+th.c-time, td.c-time { width: 150px; }
+th.c-state, td.c-state { width: 88px; }
+th.c-act, td.c-act { width: 84px; }
+.en { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.zh { color: #c9cddb; overflow-wrap: anywhere; }
+.nowrap { white-space: nowrap; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.badge { font-size: 12px; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--line); white-space: nowrap; }
+.badge.live { color: var(--ok); border-color: #245c46; background: #10241d; }
+.badge.draft { color: var(--warn); border-color: #5c4a1d; background: #241f10; }
+td.act { text-align: right; white-space: nowrap; }
+
+/* 试听按钮：列表里唯一的「一行只做一件事」的控件 */
+button.play {
+  width: 34px; height: 30px; padding: 0; font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+button.play.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+/* ---------- 详情页 ----------
+   ⭐ 朗读卡：配色来自**内容主题**（shared/theme.ts：浅底 hsl(..,90%) + 深字 hsl(..,10%)）。
+   ⚠️ 根节点给 background/color，内部一律 currentColor + 透明度 ——
+      与小程序 submission-card / arena-card 是同一条约定；
+      内部若写死颜色，主题一改就会出现「深底上的深字」这种看不见的错。 */
+.crumb { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+.read-card {
+  border-radius: 14px; padding: 22px 24px; margin-bottom: 18px;
+  background: var(--panel); color: var(--text); /* ← JS 用主题色覆盖这两条 */
+}
+.read-text { font-family: var(--mono); font-size: 21px; line-height: 1.75; margin: 0 0 10px; }
+.read-zh-row { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 18px; }
+.read-zh { font-size: 16px; margin: 0; opacity: .8; flex: 1; }
+
+/* 就地编辑的小图标（✎）—— 无图标字体，用字形；hover 才明显，平时不抢注意力 */
+.edit-icon {
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  padding: 1px 6px; font-size: 13px; color: inherit; opacity: .5; flex: none;
+}
+.edit-icon:hover { opacity: 1; border-color: currentColor; background: rgba(127, 127, 127, .12); }
+
+/* 「句子信息」小标题；**更新按钮在最底部**（.meta-foot），有改动才亮、没改动是灰的 */
+.meta-head { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.meta-foot { margin: 18px 0 0; }
+.meta-foot button.primary:not(:disabled) { box-shadow: 0 0 0 3px rgba(79, 70, 229, .28); }
+.meta-foot button:disabled { box-shadow: none; }
+
+/* 就地编辑的输入控件 */
+.inline-input {
+  font: inherit; padding: 3px 8px; border-radius: 7px;
+  background: var(--bg); border: 1px solid var(--brand-2); color: var(--text);
+  min-width: 160px; max-width: 100%;
+}
+.meta-list dd { display: flex; align-items: center; gap: 6px; }
+.meta-list dd .edit-icon { margin-left: auto; }
+.meta-list dd .inline-input { flex: 1; }
+.read-actions { display: flex; align-items: center; gap: 12px; }
+.read-play {
+  background: transparent; border: 1px solid currentColor; color: inherit;
+  border-radius: 999px; padding: 8px 18px; font-weight: 600;
+}
+.read-play:hover { background: rgba(0, 0, 0, .08); }
+.read-time { font-size: 12px; opacity: .65; font-variant-numeric: tabular-nums; }
+
+/* 卡片外的其余信息（句子 id / 状态 / 难度 / 发布时间 / 标签 / 排期） */
+.meta-list { display: grid; grid-template-columns: 92px 1fr; gap: 10px 16px; margin: 0 0 20px; }
+.meta-list dt { color: var(--muted); font-size: 13px; }
+.meta-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* 卡片外的两个块：词级播放、编辑 */
+#view-detail .block { display: block; margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+#view-detail .row.end { margin-bottom: 0; }
+
+/* ---------- 抽屉 ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(6, 8, 12, .72); display: flex; justify-content: flex-end; z-index: 20; }
+.drawer {
+  width: min(680px, 100%); background: var(--bg); border-left: 1px solid var(--line);
+  padding: 18px 22px 60px; overflow-y: auto;
+}
+.drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.drawer-head h2 { margin: 0; font-size: 18px; }
+.block { display: block; margin-bottom: 14px; }
+label.block { font-size: 13px; color: var(--muted); }
+label.block > input, label.block > textarea, label.block > select { margin-top: 6px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.row.end { justify-content: flex-end; }
+.row label.block { margin-bottom: 0; }
+.row input[type="date"] { width: 170px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.check input { width: auto; }
+
+.log { background: #0b0d12; border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: #b9c0d0; max-height: 220px; overflow: auto; }
+
+/* ---------- 分词列表（纵向：词 | 起止时间 | 试听）----------
+   时间做成按钮：点一下变输入框，回车确定、Esc 取消（见 app.js 的 startTimeEdit）。
+   ⚠️ 时间必须**可改**：引擎对弱读虚词给的边界会落在停顿上（the/to/is），
+      自动规则兜不住每一个，得留一条人工修正的路。 */
+.words-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.words-head b { color: var(--text); }
+.word-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.word-row {
+  display: grid; grid-template-columns: 1fr auto 40px;
+  align-items: center; gap: 14px; padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+/* 正在播的那一行：底色 + 左侧色条（只有很轻的底色时，短词听起来像「什么都没发生」） */
+.word-row { position: relative; }
+.word-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--brand); }
+.w-bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; overflow: hidden; border-radius: 2px; }
+.w-bar i { display: block; height: 100%; width: 0; background: var(--brand-2); transition: width .08s linear; }
+.w-text { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+.w-time { display: flex; align-items: center; gap: 4px; }
+.w-time button.t {
+  background: transparent; border: 1px dashed var(--line); border-radius: 6px;
+  padding: 2px 7px; font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.w-time button.t:hover { border-color: var(--brand-2); color: var(--text); }
+.t-input { width: 108px; padding: 2px 6px; font-family: var(--mono); font-size: 12px; }
+/* ⚠️ 通用行内输入框的 min-width 是给「译文」那种长文本用的；时间只有 00:01.590，收窄 */
+.w-time .inline-input { min-width: 0; width: 104px; }
+/* 编辑态唯一的显式出口：yes（回车等价；点别处 = 取消，所以不需要 no） */
+button.inline-ok {
+  padding: 3px 9px; font-size: 12px; line-height: 1.4; border-radius: 6px;
+  background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600;
+}
+button.inline-ok:hover { background: var(--brand-2); border-color: var(--brand-2); }
+.word-row button.play {
+  width: 34px; height: 28px; padding: 0; font-size: 12px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.word-row button.play.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+audio { width: 100%; margin-top: 6px; }
+
+/* ---------- 占位页 ---------- */
+.placeholder { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 26px; max-width: 620px; }
+.placeholder h2 { margin: 0 0 10px; font-size: 18px; }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 0 0 14px; }
+.kv dt { color: var(--muted); font-size: 13px; }
+.kv dd { margin: 0; }
+/* 环境不可用的原因：单独一行、用警告色，别混在正文里被忽略 */
+.env-line { font-size: 13px; }
+.env-line.bad { color: var(--warn); }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 16px; z-index: 40; margin: 0; box-shadow: 0 10px 30px rgba(0,0,0,.4); max-width: 70vw;
+}
+.toast.bad { border-color: #6b2b2b; color: #ffd7d7; }
