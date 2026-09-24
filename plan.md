@@ -52,7 +52,14 @@
 - [ ] **B4** `packages/shared/src/streak.ts` 的 `freeze*` 命名统一成 `unfreeze*` —— 卡叫「解冻卡」，代码名还留着一半
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
-- [ ] **B13** 用新口径**重判存量内容**的难度（B12/B14 已完成，可直接开工）—— 只改正文 JSON 的 difficulty 字段（text 不动 ⇒ **id 不变**），改完跑 reindex 让 articles.difficulty 索引跟上—— 按母语者判"简单"的句子对中国学习者未必简单 —— 做完的标志：每句的 difficulty 都是新提示词判出来的
+- [ ] **B13** 用新口径**重判存量内容**的难度（B12/B14 已完成，可直接开工）—— 只改正文 JSON 的 `difficulty` 字段（`text` 不动 ⇒ **id 不变**），改完跑 reindex 让 articles.difficulty 索引跟上 —— 做完的标志：每句的 difficulty 都是新提示词判出来的
+- [ ] **B15** 用你给的**人工锚点样本**替换/补充提示词的【参照样本】—— ⚠️ **但先要定轴**：你这组样本是按「**词汇等级 + 句子复杂度**」分的，与项目现行的「**朗读难度（发音 / 连读）**」在两句上直接相反。四句原文（人工定级，别再丢）：
+  - **专家**：The assumption that human behavior is governed entirely by rational choice ignores the profound influence of subconscious emotions, which often drive decisions long before logic has had the chance to intervene
+  - **高级**：Companies that fail to adapt to the rapidly changing technological landscape risk being left behind by competitors who are quicker to embrace innovation.
+  - **中级**：Although the internet has made it easier than ever to access information, finding reliable sources requires a high level of critical thinking
+  - **中级**：The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.
+  - **初级**：The best way to predict the future is to invent it.
+  - **初级**：Don't count the days, make the days count.
 
 ### C. 上线 / 运维
 
