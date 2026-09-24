@@ -10,15 +10,23 @@
  *   ① **`chunk_seq` 和 `chunk_audio_offset_sec` 恒为 0**，不能用来排序。
  *      音频必须**按 SSE 到达顺序**拼接 —— 这是唯一可靠的顺序来源。
  *
- *   ② **`alignment` 是逐块累积的**：前几块是 `null`，
- *      越往后越全，**最后一块包含完整的 `segments[]`**。
- *      所以要保留「最后一个非 null 的 alignment」，不是第一个。
+ *   ② **`alignment` 是「块内累积、块间重置」的** —— ⚠️⚠️ 这条被 2026-09 的一次真实内容推翻过：
+ *      短句只有一个块（块内累积 ⇒ 最后一块最全）；**长句引擎会切成多块，新块从第 1 段重新数**，
+ *      于是「保留最后一个非 null」只拿到最后一块的段。
+ *      实测（49 词那条）：chunk1 累积到 40 段（The…argued），chunk2 又从 1 段数到 14 段
+ *      ⇒ 症状是「对齐校验失败：本地分词 49 个词，引擎返回 14 个 segment」。
+ *      现在按「是不是上一块的延续」分块，再把各块按**块时长偏移**拼成全局时间轴。
  *
- *   ③ `segments[].text` 与**空格分词**逐项一致
- *      （shared 的 `plainWordsOf`）—— 这正是 services/standard-audio.ts
- *      的 filesOf() 算 w{i}.mp3 个数用的规则。spec 第九节要求
- *      「必须与自建词表逐项一致」，本文件用 assertAlignment 把这个假设
- *      变成一条会炸的断言，而不是一个静默的错位。
+ *   ②b **连字符会被引擎拆开**：subsistence-oriented → 2 段、market-driven → 2 段、
+ *      historians-turned-sociologists → 3 段、multi-directional → 2 段；
+ *      而 shared 的 `plainWordsOf` **不拆**（它只按空白切）。
+ *      ⇒ 「逐项相等」根本不成立，要按**本地词消费引擎段**（用 '-' 拼起来能对上就算），
+ *        见 alignToWords。
+ *
+ *   ③ `segments[].text` 与**空格分词**的关系是「本地一个词 = 引擎 1…N 段」（见 ②b）——
+ *      这与 plainWordsOf / 词表 / 逐词上色共用同一条规则。spec 第九节要求
+ *      「必须与自建词表逐项一致」：本文件用 alignToWords 把这个假设变成
+ *      **一条会炸的断言 + 一个「一个词一段」的规范结果**，而不是一个静默的错位。
  *
  *   ④ 代理是**必须**的：本机直连 api.fish.audio 直接超时，
  *      只有走 FISH_PROXY_URL 才通。Node 的 fetch 不支持 socks5，
@@ -117,56 +125,77 @@ function readEnv(): FishEnv {
 /**
  * ⭐ 对齐校验 —— spec 第九节的硬要求，这里让它**会炸**。
  *
- * 引擎的分词必须和我们算 w{i}.mp3 个数用的分词规则逐项一致，
- * 否则切片会整体错位：w0.mp3 放的是第二个词的声音，而且不报错。
+ * ⚠️⚠️ 实测出来的两条规则（2026-09 用真实内容 dump，见文件头 ②/②b）：
+ *    ① 引擎**剥掉词首/词尾的标点**："it." → "it"、"fatal:" → "fatal"（词数不变）；
+ *    ② 引擎**把连字符拆开**："subsistence-oriented" → "subsistence" + "oriented"、
+ *       "historians-turned-sociologists" → 3 段 —— 而 plainWordsOf **不拆**，词数会变多。
+ *    ⇒ 所以不能逐项比对：得**按本地词去消费引擎段**（本地一个词吃掉 1…N 段，
+ *      用 '-' 拼起来能对上就算），吃完必须一段不剩。
  *
- * ⚠️⚠️ 实测出来的一条规则（用现有 5 句话逐句 dump 过，全部一致）：
- *    引擎**会剥掉词首/词尾的标点**，但**词数一个不差**：
- *      "it." → "it"    "final," → "final"    "fatal:" → "fatal"
- *    5 句话的段数与空格分词数分别是 11/11、5/5、16/16、18/18、14/14。
- *
- *    所以校验分两层：
- *      ① **词数必须相等** —— 这条最要紧，切片个数直接由它决定；
- *      ② 归一化（去首尾标点）后**逐项相等** —— 防止引擎把两个词并成一个
- *         再吐出等量的别的词，那也能骗过词数检查。
- *
- * ⚠️ 用「保留内部标点」的归一化：don't / well-known 不能被拆开。
+ * ⚠️ 归一化**保留内部连字符与撇号**：don't / well-known 是词内的东西，不能被剥掉。
  */
 function normalizeToken(w: string): string {
   return w.replace(/^[^\p{L}\p{N}']+/u, '').replace(/[^\p{L}\p{N}']+$/u, '')
 }
 
-export function assertAlignment(text: string, alignment: Alignment): void {
-  const ours = plainWordsOf(text)
-  const theirs = alignment.segments.map((s) => s.text)
-  if (ours.length !== theirs.length) {
+/**
+ * 把引擎段对齐到**本地词**上：返回「一个本地词一段」的合并结果
+ * （连字符被拆开的那些段合并回来，取首段的 start、末段的 end）。
+ *
+ * ⚠️ 对不上就**抛** —— 这是「静默错位」的唯一出口。
+ * ⚠️ 返回值的不变量：`segments.length === plainWordsOf(text).length`，
+ *    下游（连读否决）可以直接按词下标取用。
+ * ⚠️ `text` 用**本地词**（"days," 而不是 "days"）—— 它只是给人看的，
+ *    时间轴才是下游要的。
+ */
+export function alignToWords(text: string, segments: AlignmentSegment[]): AlignmentSegment[] {
+  const words = plainWordsOf(text)
+  const out: AlignmentSegment[] = []
+  let i = 0
+  for (const w of words) {
+    const parts = normalizeToken(w).split('-').filter(Boolean)
+    if (parts.length === 0) {
+      // 纯符号 token（"—" / "--"）：没有可发音的内容，给一个零长度的点，不吃引擎段
+      const at = out.length > 0 ? out[out.length - 1]!.end : (segments[0]?.start ?? 0)
+      out.push({ text: w, start: at, end: at })
+      continue
+    }
+    const group: AlignmentSegment[] = []
+    for (const part of parts) {
+      const s = segments[i]
+      if (!s || normalizeToken(s.text) !== part) {
+        throw new Error(
+          `对齐校验失败：本地第 ${out.length} 个词 ${JSON.stringify(w)} 需要引擎段 ` +
+            `${JSON.stringify(part)}，实际拿到 ${JSON.stringify(s?.text ?? null)}（第 ${i} 段）。\n` +
+            `  本地：${JSON.stringify(words)}\n  引擎：${JSON.stringify(segments.map((x) => x.text))}`,
+        )
+      }
+      group.push(s)
+      i++
+    }
+    out.push({ text: w, start: group[0]!.start, end: group[group.length - 1]!.end })
+  }
+  if (i !== segments.length) {
     throw new Error(
-      `对齐校验失败：本地分词 ${ours.length} 个词，引擎返回 ${theirs.length} 个 segment。\n` +
-        `  本地：${JSON.stringify(ours)}\n  引擎：${JSON.stringify(theirs)}`,
+      `对齐校验失败：本地分词 ${words.length} 个词，引擎返回 ${segments.length} 个 segment` +
+        `（本地吃完还剩 ${segments.length - i} 段）。\n` +
+        `  本地：${JSON.stringify(words)}\n  引擎：${JSON.stringify(segments.map((x) => x.text))}`,
     )
   }
-  for (let i = 0; i < ours.length; i++) {
-    const a = normalizeToken(ours[i] ?? '')
-    const b = normalizeToken(theirs[i] ?? '')
-    if (a !== b) {
-      throw new Error(
-        `对齐校验失败：第 ${i} 个词不一致 —— 本地 ${JSON.stringify(ours[i])}` +
-          `（归一化 ${JSON.stringify(a)}），引擎 ${JSON.stringify(theirs[i])}` +
-          `（归一化 ${JSON.stringify(b)}）`,
-      )
-    }
-  }
-  for (const s of alignment.segments) {
+  for (const s of segments) {
     if (!(s.end >= s.start)) {
       throw new Error(`对齐校验失败：词 ${JSON.stringify(s.text)} 的 end < start`)
     }
   }
+  return out
 }
 
 /** 一段 SSE 原文 → 音频 + 对齐（纯函数，便于单测） */
 export function parseSse(raw: string): { audio: Buffer; alignment: Alignment } {
   const chunks: Buffer[] = []
-  let alignment: Alignment | null = null
+  /** 各块的对齐（块内累积、块间重置 —— 见文件头 ②）；cur = 当前这一块 */
+  const groups: Alignment[] = []
+  let cur: Alignment | null = null
   let sawEvent = false
 
   for (const block of raw.split(/\r?\n\r?\n/)) {
@@ -192,18 +221,25 @@ export function parseSse(raw: string): { audio: Buffer; alignment: Alignment } {
 
     if (evt.audio_base64) chunks.push(Buffer.from(evt.audio_base64, 'base64'))
 
-    // ⚠️ 累积语义：留最后一个非 null 的
+    // ⚠️ 块内累积、块间重置（见文件头 ②）—— 不是「留最后一个」那么简单
     if (evt.alignment?.segments) {
-      alignment = {
+      const next: Alignment = {
         segments: evt.alignment.segments,
         audioDuration: evt.alignment.audio_duration ?? 0,
       }
+      // 同一块内新的一定以旧的为前缀；否则就是**新块的开始**
+      if (cur && isPrefixOf(cur.segments, next.segments)) cur = next
+      else {
+        if (cur) groups.push(cur)
+        cur = next
+      }
     }
   }
+  if (cur) groups.push(cur)
 
   if (!sawEvent) throw new Error('fish-audio 没有返回任何 SSE 事件')
   if (chunks.length === 0) throw new Error('fish-audio 返回了事件，但没有音频块')
-  if (!alignment) {
+  if (groups.length === 0) {
     throw new Error(
       'fish-audio 没有返回 alignment —— 没有词级时间戳就没法切片。' +
         '检查 FISH_MODEL 是否支持时间戳（s1 / s2-pro 系列才给）。',
@@ -211,7 +247,33 @@ export function parseSse(raw: string): { audio: Buffer; alignment: Alignment } {
   }
 
   // ⚠️ 顺序 = 到达顺序，不排序（chunk_seq 恒为 0，排序等于随机）
-  return { audio: Buffer.concat(chunks), alignment }
+  return { audio: Buffer.concat(chunks), alignment: stitchAlignments(groups) }
+}
+
+/** b 是否以 a 为前缀（同一块内 alignment 是累积的，所以后一个一定以它开头） */
+function isPrefixOf(a: AlignmentSegment[], b: AlignmentSegment[]): boolean {
+  if (a.length > b.length) return false
+  return a.every((s, i) => s.text === b[i]!.text)
+}
+
+/**
+ * ⭐ 把各块的对齐拼成**一条全局时间轴**。
+ *
+ * ⚠️ 每块的 start/end 都从 0 秒重新开始（实测：chunk2 的第一个事件 dur=0.93，
+ *    和 chunk1 一样）⇒ 后一块必须加上**前面所有块的时长**。
+ * ⚠️ 用块自己的 audio_duration 做偏移：它也是块内累积的，最后一块给出该块的总时长
+ *    （实测两块 20.43s + 8.27s ≈ 音频 28.7s，与 mp3 体积吻合）。
+ */
+function stitchAlignments(groups: Alignment[]): Alignment {
+  const segments: AlignmentSegment[] = []
+  let offset = 0
+  for (const g of groups) {
+    for (const s of g.segments) {
+      segments.push({ text: s.text, start: s.start + offset, end: s.end + offset })
+    }
+    offset += g.audioDuration
+  }
+  return { segments, audioDuration: offset }
 }
 
 /**
@@ -241,7 +303,7 @@ function cacheKeyOf(text: string, model: string, voiceId: string): string {
  */
 export async function synthesize(
   text: string,
-  opts: { cache?: boolean; assert?: boolean } = {},
+  opts: { cache?: boolean } = {},
 ): Promise<Synthesis> {
   const env = readEnv()
   const useCache = opts.cache ?? true
@@ -263,13 +325,23 @@ export async function synthesize(
 
   const raw = await requestSse(env, text)
   const { audio, alignment } = parseSse(raw)
-  if (opts.assert ?? true) assertAlignment(text, alignment)
+  /**
+   * ⭐ 落缓存 / 返回的都是**对齐到本地词**的版本（一个词一段）：
+   *    引擎那边连字符是拆开的（见文件头 ②b），原样存下去，下游按词下标取用时就会错位。
+   *    ⚠️ 对不上会在这里**抛** —— 这是「静默错位」的唯一出口。
+   *    ⚠️ 老缓存里存的是引擎原始分段（那时还没有连字符拆分与分块这两件事），
+   *       只在校验通过后才写盘，所以短句的老缓存读出来仍是「一词一段」。
+   */
+  const aligned: Alignment = {
+    segments: alignToWords(text, alignment.segments),
+    audioDuration: alignment.audioDuration,
+  }
 
   await mkdir(CACHE_DIR, { recursive: true })
   await writeFile(audioPath, audio)
-  await writeFile(alignPath, JSON.stringify(alignment, null, 2))
+  await writeFile(alignPath, JSON.stringify(aligned, null, 2))
 
-  return { audio, alignment, text, cached: false, voiceId: env.voiceId, fingerprint }
+  return { audio, alignment: aligned, text, cached: false, voiceId: env.voiceId, fingerprint }
 }
 
 /**
