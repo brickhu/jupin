@@ -106,7 +106,10 @@ for (const f of files) {
     scores: meta.scores,
     reason: meta.reason,
     tags: meta.tags,
-    words: raw.words ?? [],
+    // ⭐ 词表与连读标注也一起重算 —— 它们同样出自这次 LLM 调用（句中释义）
+    //    ⚠️ 老正文的 words 是「音频切片表」那套结构，**不能原样带过去**
+    words: meta.words,
+    links: meta.links,
   }
   for (const k of Object.keys(raw)) {
     // ⚠️ 旧字段一个都不带过去：两条轴（pronLevel / vocabLevel）已废弃，

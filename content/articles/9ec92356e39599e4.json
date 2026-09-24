@@ -8,7 +8,7 @@
     4,
     2
   ],
-  "reason": "相当于高中水平，world 的 r 和 l 挨着，词尾 -rld 连读费劲；词都常见。",
+  "reason": "相当于高中水平，world 的 r 和 l 挨着念不顺，词尾 -s 音容易吞；词都很常见。",
   "tags": [
     "名言",
     "哲理",
@@ -16,175 +16,215 @@
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "The",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 300
+      "text": "The",
+      "stress": -1,
+      "syllables": [
+        "The"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 1,
-      "word": "world",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 80,
-      "endMs": 480
+      "text": "world",
+      "stress": 0,
+      "syllables": [
+        "world"
+      ],
+      "ipa": "/ˈwɝld/",
+      "meaning": "世界、周围的一切",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 2,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 410,
-      "endMs": 710
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 3,
-      "word": "like",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 570,
-      "endMs": 870
+      "text": "like",
+      "stress": 0,
+      "syllables": [
+        "like"
+      ],
+      "ipa": "/ˈlaɪk/",
+      "meaning": "",
+      "tip": ""
     },
     {
-      "pos": 4,
-      "word": "a",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 690,
-      "endMs": 990
+      "text": "a",
+      "stress": -1,
+      "syllables": [
+        "a"
+      ],
+      "ipa": "/ə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 5,
-      "word": "mirror:",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 880,
-      "endMs": 1450
+      "text": "mirror:",
+      "stress": 0,
+      "syllables": [
+        "mir",
+        "ror:"
+      ],
+      "ipa": "/ˈmɪɹɚ/",
+      "meaning": "镜子",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 6,
-      "word": "Frown",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2070,
-      "endMs": 2560
+      "text": "Frown",
+      "stress": 0,
+      "syllables": [
+        "Frown"
+      ],
+      "ipa": "/ˈfɹaʊn/",
+      "meaning": "皱眉（表示不悦）",
+      "tip": ""
     },
     {
-      "pos": 7,
-      "word": "at",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2490,
-      "endMs": 2790
+      "text": "at",
+      "stress": -1,
+      "syllables": [
+        "at"
+      ],
+      "ipa": "/ət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 8,
-      "word": "it",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2720,
-      "endMs": 3050
+      "text": "it",
+      "stress": -1,
+      "syllables": [
+        "it"
+      ],
+      "ipa": "/ɪt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 9,
-      "word": "and",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3210,
-      "endMs": 3510
+      "text": "and",
+      "stress": -1,
+      "syllables": [
+        "and"
+      ],
+      "ipa": "/ən/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 10,
-      "word": "it",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3330,
-      "endMs": 3630
+      "text": "it",
+      "stress": -1,
+      "syllables": [
+        "it"
+      ],
+      "ipa": "/ɪt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 11,
-      "word": "frowns",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3520,
-      "endMs": 4000
+      "text": "frowns",
+      "stress": 0,
+      "syllables": [
+        "frowns"
+      ],
+      "ipa": "/ˈfɹaʊnz/",
+      "meaning": "",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 12,
-      "word": "at",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3930,
-      "endMs": 4230
+      "text": "at",
+      "stress": -1,
+      "syllables": [
+        "at"
+      ],
+      "ipa": "/ət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 13,
-      "word": "you;",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4160,
-      "endMs": 4570
+      "text": "you;",
+      "stress": -1,
+      "syllables": [
+        "you;"
+      ],
+      "ipa": "/jə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 14,
-      "word": "smile,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5110,
-      "endMs": 5930
+      "text": "smile,",
+      "stress": 0,
+      "syllables": [
+        "smile,"
+      ],
+      "ipa": "/ˈsmaɪl/",
+      "meaning": "微笑、笑一笑",
+      "tip": ""
     },
     {
-      "pos": 15,
-      "word": "and",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6210,
-      "endMs": 6510
+      "text": "and",
+      "stress": -1,
+      "syllables": [
+        "and"
+      ],
+      "ipa": "/ən/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 16,
-      "word": "it",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6330,
-      "endMs": 6630
+      "text": "it",
+      "stress": -1,
+      "syllables": [
+        "it"
+      ],
+      "ipa": "/ɪt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 17,
-      "word": "smiles",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6560,
-      "endMs": 7120
+      "text": "smiles",
+      "stress": 0,
+      "syllables": [
+        "smiles"
+      ],
+      "ipa": "/ˈsmaɪlz/",
+      "meaning": "",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 18,
-      "word": "too.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 7120,
-      "endMs": 7610
+      "text": "too.",
+      "stress": 1,
+      "syllables": [
+        "too."
+      ],
+      "ipa": "/ˈtu/",
+      "meaning": "",
+      "tip": ""
     }
+  ],
+  "links": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "美音里这里的 t 变成很轻的 /ɾ/（像汉语的 d）；and 弱读成 /ən/",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "t / d 遇上 you 合成一个音；you 弱读成 /jə/",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    ""
   ]
 }

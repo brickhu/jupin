@@ -6,7 +6,6 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
 import { getStorage } from '../storage'
-import { plainWordsOf } from '@jushuo/shared'
 import { contentPathOf, readStaticFile, resolveStaticRoot } from './content'
 
 /**
@@ -33,11 +32,6 @@ export function audioKeyOf(articleId: string): string {
   return `${KEY_PREFIX}/${articleId}.mp3`
 }
 
-/** 这篇的第 index 个单词的发音 */
-export function wordAudioKeyOf(articleId: string, index: number): string {
-  return `${KEY_PREFIX}/${articleId}/w${index}.mp3`
-}
-
 /**
  * ⭐ 把 key 变成小程序能用的 **fileID**。
  *
@@ -52,16 +46,14 @@ export function fileIdOf(key: string): string | null {
 }
 
 /**
- * 这篇文章要上传的全部文件（整句 + 每个词）。
- * ⚠️ 词表来自**与客户端同一条切词规则**（shared 的 plainWordsOf）—— 见 services/content.ts 的说明。
+ * 这篇文章要上传的全部文件 —— **现在只有整句**。
+ *
+ * ⚠️⚠️ 以前这里还有 `{id}/w{i}.mp3`（逐词切片）：点词播放改走微信 TTS 之后
+ *    就不再产那些文件了（对象存储里也不用再传 N 份）。删掉它是**有意的**，
+ *    不是漏了 —— 如果哪天又冒出 `w{i}.mp3`，那是某个旧路径没清掉。
  */
-function filesOf(articleId: string, text: string): string[] {
-  // ⚠️ 切词走唯一实现（plainWordsOf）—— 切片下标必须与客户端点词的下标一致
-  const words = plainWordsOf(text)
-  return [
-    `${articleId}.mp3`,
-    ...words.map((_, i) => `${articleId}/w${i}.mp3`),
-  ]
+function filesOf(articleId: string): string[] {
+  return [`${articleId}.mp3`]
 }
 
 /**
@@ -124,10 +116,9 @@ export async function seedStandardAudio(
   const storage = getStorage()
 
   for (const row of rows) {
+    // ⚠️ 只要正文文件在就够（音频与词表无关了）—— 但要确认它在，否则会灌一个孤儿音频
     const jsonPath = resolve(root, contentPathOf(row.id).replace(/^\/+/, ''))
     if (!existsSync(jsonPath)) continue
-    const text = (JSON.parse(await readFile(jsonPath, 'utf8')) as { text?: string }).text ?? ''
-    if (!text) continue
 
     const localFull = resolve(root, KEY_PREFIX, `${row.id}.mp3`)
     if (!existsSync(localFull)) {
@@ -139,13 +130,13 @@ export async function seedStandardAudio(
     if (await storage.exists(audioKeyOf(row.id))) {
       out.skipped++
     } else {
-      for (const rel of filesOf(row.id, text)) {
+      for (const rel of filesOf(row.id)) {
         const bytes = await readStaticFile(`${KEY_PREFIX}/${rel}`)
         if (!bytes) continue
         await storage.put(`${KEY_PREFIX}/${rel}`, bytes)
         out.uploaded++
       }
-      log(`[audio] 已灌入 #${row.id}（${filesOf(row.id, text).length} 个文件）`)
+      log(`[audio] 已灌入 #${row.id}（${filesOf(row.id).length} 个文件）`)
     }
 
     // ⭐ 把 key 记进库 —— /api/articles/:id/content 要靠它拼 fileID

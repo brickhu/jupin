@@ -1,11 +1,11 @@
 import { Hono } from 'hono'
 import { desc, eq } from 'drizzle-orm'
 import { normalizeLevel, normalizeTags, plainWordsOf } from '@jushuo/shared'
-import type { ArticleDetail, ArticleListItem } from '@jushuo/shared'
+import type { ArticleDetail, ArticleListItem, AudioRef } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { contentPathOf, loadArticleContent } from '../services/content'
-import { audioRefOf, fileIdOf, wordAudioKeyOf } from '../services/standard-audio'
+import { audioRefOf, fileIdOf } from '../services/standard-audio'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
 
@@ -93,22 +93,16 @@ articlesRoutes.get('/:id', async (c) => {
    *    此时必须老实返回 null，让客户端**隐藏播放入口**。
    *    否则会渲染一个能点、点了报 404 的喇叭 —— 那比没有按钮更难排查。
    */
-  // ⚠️ 切词走唯一实现（plainWordsOf）：下标必须与客户端点词的下标一致
-  const words = plainWordsOf(content.text)
   const ref = audioRefOf(article)
   // ⚠️ 没有标准音就是 **null**，不是 { full: null }：客户端据此隐藏播放入口。
   //    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定 ——
   //    同一个事实（「这段音频存不存在」）在三个接口里必须是同一种表达。
-  const audio = ref
-    ? {
-        ...ref,
-        words: words.map((_, i) =>
-          ref.kind === 'cloud'
-            ? fileIdOf(wordAudioKeyOf(id, i))
-            : `/media/articles/${id}/w${i}.mp3`,
-        ),
-      }
-    : null
+  /**
+   * ⚠️⚠️ 这里**以前还拼一份逐词音频地址数组**（audio.words），已删除（2026-09）：
+   *    点词播放改走微信 TTS。逐词音频从来没有独立文件，是服务端从整句切出来的；
+   *    现在正文里也没有时间戳了（见 types/content.ts 的 ArticleWordItem）。
+   */
+  const audio: AudioRef | null = ref ?? null
 
   /**
    * ⚠️⚠️ **逐个字段列出**，不再 `{ ...content }`。
@@ -121,7 +115,9 @@ articlesRoutes.get('/:id', async (c) => {
     id: content.id,
     text: content.text,
     translation: content.translation,
-    words: content.words,
+    words: Array.isArray(content.words) ? content.words : [],
+    // ⭐ 词间连读标注：与 words 一一对应（老正文没有 ⇒ 空数组，客户端按"都没标"渲染）
+    links: Array.isArray(content.links) ? content.links : [],
     // ⭐ 正文里没写难度（老 JSON）就是 null，不补默认值
     difficulty: normalizeLevel(content.difficulty),
     // ⭐ 给用户看的一句话（也是正文属性，与难度同源）

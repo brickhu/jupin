@@ -5,87 +5,104 @@
   "difficulty": 0,
   "scores": [
     1,
-    1,
+    2,
     1
   ],
-  "reason": "相当于小学水平，词都短、没有难念的音；全是最常见的词，句子也短。",
+  "reason": "相当于小学水平，没有难念的音，读起来很顺；词都很常见，句子也短。",
   "tags": [
-    "名言",
     "励志",
+    "口语",
     "短句"
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "Don't",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 320
+      "text": "Don't",
+      "stress": 0,
+      "syllables": [
+        "Don't"
+      ],
+      "ipa": "/ˈdoʊnt/",
+      "meaning": "",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 1,
-      "word": "count",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 320,
-      "endMs": 720
+      "text": "count",
+      "stress": 0,
+      "syllables": [
+        "count"
+      ],
+      "ipa": "/ˈkaʊnt/",
+      "meaning": "数（日子）；也让日子有价值",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 2,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 610,
-      "endMs": 910
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 3,
-      "word": "days,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 800,
-      "endMs": 1530
+      "text": "days,",
+      "stress": 0,
+      "syllables": [
+        "days,"
+      ],
+      "ipa": "/ˈdeɪz/",
+      "meaning": "日子，每一天",
+      "tip": ""
     },
     {
-      "pos": 4,
-      "word": "make",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1590,
-      "endMs": 2080
+      "text": "make",
+      "stress": 0,
+      "syllables": [
+        "make"
+      ],
+      "ipa": "/ˈmeɪk/",
+      "meaning": "让，使",
+      "tip": ""
     },
     {
-      "pos": 5,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1970,
-      "endMs": 2270
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 6,
-      "word": "days",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2160,
-      "endMs": 2560
+      "text": "days",
+      "stress": 0,
+      "syllables": [
+        "days"
+      ],
+      "ipa": "/ˈdeɪz/",
+      "meaning": "日子，每一天",
+      "tip": ""
     },
     {
-      "pos": 7,
-      "word": "count.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2560,
-      "endMs": 3130
+      "text": "count.",
+      "stress": 1,
+      "syllables": [
+        "count."
+      ],
+      "ipa": "/ˈkaʊnt/",
+      "meaning": "数（日子）；也让日子有价值",
+      "tip": "词尾辅音连着收，别加元音"
     }
+  ],
+  "links": [
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "词尾爆破音只做口型不出声，停住再念下一个词；the 弱读成 /ðə/",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词；the 弱读成 /ðə/",
+    "",
+    ""
   ]
 }

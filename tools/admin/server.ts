@@ -29,14 +29,14 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
-import type { ArticleWord, DifficultyScores } from '../../packages/shared/src/types/content'
+import type { ArticleWordItem, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
 import { articleTags, articles, schedules } from '../../apps/server/src/db/schema'
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
 import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
 import { articleIdOf } from '../pipeline/src/lib/article-id'
-import { MIN_PLAY_SEC, produceStandardAudio, writeWordTimestamps } from '../pipeline/src/lib/audio-assets'
+import { produceStandardAudio } from '../pipeline/src/lib/audio-assets'
 import { gradeArticles } from '../pipeline/src/lib/article-meta'
 import type { ArticleCandidate } from '../pipeline/src/lib/article-meta'
 import { themeFromHash } from '../../packages/shared/src/theme'
@@ -449,78 +449,11 @@ async function listArticles(mode: Mode, q: string, limit: number) {
  *    那是「新增」而不是「编辑」。
  */
 /**
- * 校验**手工改过**的词级播放区间。
- *
- * ⚠️⚠️ 为什么必须严，而不是「信前端」：
- *    ① 客户端只在 `words.length === 切词数` 时才启用点词播放
- *       （reading.ts 的 wordTimes），条数一错就**静默**退回预切切片 ——
- *       界面看起来正常，只是点词不再精确；
- *    ② `content-files.test.ts` 还会在 CI 里检查「每个词的区间 ≥300ms」
- *       「最后一个词的结束点不越过音频时长」—— 存进去一个坏值，
- *       下一次 pnpm test 就红，而那时没人记得是谁改的。
- *    所以挡在写文件之前，并且报错要指明是**第几个词**。
+ * ⚠️⚠️ 这里**曾经有 validateWords**（校验手工改过的逐词播放区间：条数、≥300ms、
+ *    不越过音频时长）—— 随「点词播放改走微信 TTS」一起删掉了（2026-09）：
+ *    正文里不再有 startMs/endMs，也就没有"坏区间"可校验。
+ *    现在词表是**只读的派生数据**（由流水线按正文算出），这个台子只展示它。
  */
-async function validateWords(
-  id: string,
-  text: string,
-  raw: unknown,
-): Promise<{ words?: ArticleWord[]; error?: string }> {
-  if (!Array.isArray(raw)) return { error: 'words 必须是数组' }
-  // ⚠️ 切词走唯一实现（plainWordsOf）：客户端只在条数相等时才启用点词播放，
-  //    这里如果用了别的规则，校验就会拦下正常内容（或放坏内容过去）
-  const tokens = plainWordsOf(text)
-  if (raw.length !== tokens.length) {
-    return {
-      error:
-        'words 有 ' + raw.length + ' 条，正文是 ' + tokens.length + ' 个词 —— 对不上。' +
-        '条数不一致时客户端会**关掉**点词播放（静默退回预切切片），所以不允许保存。',
-    }
-  }
-
-  // 音频时长：用来挡住「区间越过音频末尾」（点词会播到空白）
-  let durationMs: number | null = null
-  const mp3 = await readStaticFile('content/audio/' + id + '.mp3')
-  if (mp3) durationMs = mp3DurationMs(Buffer.from(mp3))
-
-  const out: ArticleWord[] = []
-  for (let i = 0; i < raw.length; i++) {
-    const w = raw[i] as Partial<ArticleWord> | undefined
-    const at = '第 ' + (i + 1) + ' 个词'
-    if (!w || typeof w !== 'object') return { error: at + '不是对象' }
-    if (String(w.word ?? '') !== tokens[i]) {
-      return { error: at + '是「' + String(w.word ?? '') + '」，正文里是「' + tokens[i] + '」—— 顺序或内容对不上' }
-    }
-    const startMs = Math.round(Number(w.startMs))
-    const endMs = Math.round(Number(w.endMs))
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return { error: at + '的时间不是数字' }
-    if (startMs < 0) return { error: at + '的起点为负' }
-    if (endMs <= startMs) return { error: at + '的结束点不在起点之后' }
-    const minMs = Math.round(MIN_PLAY_SEC * 1000)
-    if (endMs - startMs < minMs) {
-      return {
-        error:
-          at + '（' + tokens[i] + '）的区间只有 ' + (endMs - startMs) + 'ms，' +
-          '短于最小可听长度 ' + minMs + 'ms —— 剥出来是一声空响（弱读虚词最容易撞上）',
-      }
-    }
-    if (durationMs !== null && endMs > durationMs + 120) {
-      return {
-        error:
-          at + '（' + tokens[i] + '）结束于 ' + endMs + 'ms，超过音频时长 ' + Math.round(durationMs) +
-          'ms + 余量 —— 点它会播到空白',
-      }
-    }
-    out.push({
-      ...(w as ArticleWord),
-      pos: typeof w.pos === 'number' ? w.pos : i,
-      word: tokens[i]!,
-      startMs,
-      endMs,
-    })
-  }
-  return { words: out }
-}
-
 /**
  * 正文 JSON 的**绝对**路径（本机仓库）—— 内容寻址：文件名就是 id。
  * ⚠️ 名字里带 Abs：服务端那边有个同义的 `contentPathOf(id)`，它返回的是
@@ -542,6 +475,7 @@ async function writeContentFile(id: string, fields: Record<string, unknown>): Pr
   const prev = existsSync(p) ? JSON.parse(await readFile(p, 'utf8')) : {}
   const next: Record<string, unknown> = { ...prev, ...fields }
   if (!Array.isArray(next.words)) next.words = []
+  if (!Array.isArray(next.links)) next.links = []
   await writeFile(p, JSON.stringify(next, null, 2) + '\n')
 }
 
@@ -566,8 +500,10 @@ async function upsertArticle(
      *    一条已发布的句子必须原样留在线上 —— 否则每次修个错别字都会把它悄悄下架。
      */
     publish: boolean | undefined
-    /** 手工修正过的词级播放区间（不传就不动正文里的 words） */
-    words?: ArticleWord[]
+    /** 词表（由流水线产出；这个台子目前只展示、不改） */
+    words?: ArticleWordItem[]
+    /** 词间连读标注（长度 = words.length - 1） */
+    links?: string[]
   },
 ): Promise<boolean> {
   // ⭐ 档位**由判据分算出来**，绝不写传进来的值 —— 正文里两者永远自洽
@@ -581,8 +517,8 @@ async function upsertArticle(
     difficulty,
     scores: input.scores,
     tags: input.tags,
-    // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的时间戳」
-    ...(input.words ? { words: input.words } : {}),
+    // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的词表」
+    ...(input.words ? { words: input.words, links: input.links ?? [] } : {}),
   })
 
   const d = await dbOf(mode)
@@ -742,20 +678,22 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
     await writeContentFile(it.id, {
       id: it.id, text: it.text, translation: it.translation,
       difficulty: it.difficulty, scores: it.scores,
-      reason: it.reason, tags: it.tags, words: [],
+      reason: it.reason, tags: it.tags,
+      // ⭐ 词表与连读标注来自这一次 LLM 调用（句中释义）—— 与正文一起落盘
+      words: it.words, links: it.links,
     })
     prepared.push({ it, created })
   }
 
   // ② 批量 TTS
-  job.step = '② fish：标准音 + 词级时间戳（' + prepared.length + ' 条）'
+  job.step = '② fish：整句标准音（' + prepared.length + ' 条）'
   const ok: typeof prepared = []
   for (const p of prepared) {
     try {
+      // ⚠️ 只合成整句：逐词音频与时间戳随「点词改走微信 TTS」一起删掉了
       const prod = await produceStandardAudio(p.it.id, p.it.text, { force: true })
-      const n = await writeWordTimestamps(p.it.id, prod.alignment)
       job.log.push('🔊 ' + p.it.id + '  ' + prod.alignment.audioDuration.toFixed(2) + 's / ' +
-        prod.wordCount + ' 词 / 时间戳 ' + n + ' 条')
+        prod.wordCount + ' 个词')
       ok.push(p)
     } catch (err) {
       /**
@@ -840,12 +778,11 @@ async function setPublishedBatch(
  * ⚠️ 正文一个字都不动，所以 id 不变：这是「重做音」，不是「新增句子」。
  */
 async function runRegenerateAudio(job: Job, id: string, text: string, force: boolean): Promise<void> {
-  job.step = 'fish：标准音 + 词级时间戳'
+  job.step = 'fish：整句标准音'
   const prod = await produceStandardAudio(id, text, { force })
-  const n = await writeWordTimestamps(id, prod.alignment)
   job.log.push(
-    '整句 ' + prod.alignment.audioDuration.toFixed(2) + 's，' + prod.wordCount + ' 个词，' +
-      '时间戳 ' + n + ' 条' + (prod.skipped ? '（复用已有音频）' : '（重新合成）'),
+    '整句 ' + prod.alignment.audioDuration.toFixed(2) + 's，' + prod.wordCount + ' 个词' +
+      (prod.skipped ? '（复用已有音频）' : '（重新合成）'),
   )
   job.step = '完成'
   job.status = 'done'
@@ -1079,6 +1016,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
        */
       tags: Array.isArray(c?.tags) && c.tags.length ? c.tags : tags.map((t) => t.tag).sort(),
       words: Array.isArray(c?.words) ? c.words : [],
+      /** ⭐ 词间连读标注（与 words 一一对应；空串 = 不连）—— 详情页在两行之间显示它 */
+      links: Array.isArray(c?.links) ? c.links : [],
       contentOnDisk: Boolean(c),
       scheduledDates: sched.map((s) => s.date).sort(),
       /**
@@ -1116,18 +1055,6 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const tags = normalizeTags(b.tags ?? c.tags)
 
     /**
-     * ⭐ 词级播放区间：**手工修正**用（引擎对弱读虚词给的边界会落在停顿上，
-     *    自动化修不了每一个，得留一条手改的路）。
-     * ⚠️ 只在请求带了 words 时才校验 —— 普通保存不该被迫回传整份区间。
-     */
-    let words: ArticleWord[] | undefined
-    if (b.words !== undefined) {
-      const check = await validateWords(id, String(c.text ?? ''), b.words)
-      if (check.error) return fail(res, check.error)
-      words = check.words
-    }
-
-    /**
      * ⚠️ 发布时间**只由服务端产生**（草稿 → 发布那一刻），客户端不能指定。
      *    这里明确**拒收**而不是静默忽略：不说的话，调用方会以为改成功了。
      */
@@ -1144,7 +1071,6 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       reason,
       tags,
       publish: b.publish === undefined ? undefined : b.publish === true,
-      words: words,
     })
     return ok(res, {
       id,
@@ -1155,8 +1081,6 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       tags,
       /** ⭐ 保存后的发布状态 —— 唯一真相是 is_active（content_status 已删） */
       published: publish,
-      /** 保存后返回区间条数，前端据此确认「真的写进去了」 */
-      wordCount: words ? words.length : undefined,
     })
   }
 

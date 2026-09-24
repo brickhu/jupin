@@ -1,5 +1,5 @@
 import type { ScoreParts } from '../scoring'
-import type { ArticleLevel, ArticleTheme, ArticleWord, AudioRef } from './content'
+import type { ArticleLevel, ArticleTheme, ArticleWordItem, AudioRef } from './content'
 
 /**
  * 引擎输出的词级结果。
@@ -422,23 +422,9 @@ export interface ArticleListItem {
 /**
  * ⭐ 详情里那一段标准音 —— 比卡片上的 ScheduleAudio 多一份**逐词音频地址**。
  *
- * ⚠️ words 的下标与 `plainWordsOf(text)` 一一对应（同一个切词实现，见 shared/tokenize.ts）；
- *    点第 i 个词就播 words[i]。
- * ⚠️ 这个形状**只有详情接口**用：列表/卡片只给整句地址（多给的每个词都要付一遍
- *    对象存储地址的代价）。
+ * ⚠️ 以前这里多一个 words: 逐词音频地址的数组（下标对应 plainWordsOf）——
+ *    已经删除：点词播放改走微信 TTS，正文与接口都不再存逐词音频。
  */
-export interface ArticleDetailAudio extends AudioRef {
-  /**
-   * 逐词音频地址；**下标与 plainWordsOf(text) 一一对应**。
-   *
-   * ⚠️ 元素可能是 **null** —— 服务端拼不出这个 fileID 时（环境缺
-   *    WX_CLOUD_ENV_ID / COS_BUCKET，见 standard-audio.ts 的 fileIdOf）就是 null。
-   *    **不能把 null 挤掉**：一挤下标就整体错位，客户端点第 i 个词会播到第 i+1 个的音。
-   *    ⇒ 客户端遇到 null 应当**跳过播放**（那个词没有音频），而不是播一个空地址。
-   */
-  words: (string | null)[]
-}
-
 /**
  * ⭐ 句库**详情**（全量）—— GET /api/articles/:id，阅读页要的那一份。
  *
@@ -459,7 +445,9 @@ export interface ArticleDetail {
   id: string
   text: string
   translation: string
-  words: ArticleWord[]
+  words: ArticleWordItem[]
+  /** ⭐ 词间连读标注（与 words 一一对应；`links[i]` 描述 words[i] 与 words[i+1] 之间；"" = 不连） */
+  links: string[]
   /** ⭐ 发音难度（中文母语者读出来有多难念） */
   difficulty: ArticleLevel | null
   /** ⭐ 词汇难度（小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度） */
@@ -469,7 +457,7 @@ export interface ArticleDetail {
    */
   reason: string | null
   tags: string[]
-  audio: ArticleDetailAudio | null
+  audio: AudioRef | null
   theme: ArticleTheme | null
 }
 

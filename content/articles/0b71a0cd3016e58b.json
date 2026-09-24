@@ -8,57 +8,77 @@
     3,
     1
   ],
-  "reason": "相当于高中水平，sophistication 音节多、重音难猜；用词偏书面，句子很短。",
+  "reason": "相当于高中水平，sophistication 重音位置不好猜；词少但偏抽象。",
   "tags": [
     "名言",
-    "难词",
-    "短句"
+    "哲理",
+    "难词"
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "Simplicity",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 880
+      "text": "Simplicity",
+      "stress": 0,
+      "syllables": [
+        "Sim",
+        "plic",
+        "i",
+        "ty"
+      ],
+      "ipa": "/sɪmˈplɪsəti/",
+      "meaning": "简单、简约（不加修饰）",
+      "tip": "主重音在第 2 拍"
     },
     {
-      "pos": 1,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 850,
-      "endMs": 1150
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 2,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1050,
-      "endMs": 1350
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 3,
-      "word": "ultimate",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1280,
-      "endMs": 1880
+      "text": "ultimate",
+      "stress": 0,
+      "syllables": [
+        "ul",
+        "ti",
+        "mate"
+      ],
+      "ipa": "/ˈʌltəmət/",
+      "meaning": "极致的、最高程度的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 4,
-      "word": "sophistication.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1880,
-      "endMs": 3050
+      "text": "sophistication.",
+      "stress": 1,
+      "syllables": [
+        "so",
+        "phis",
+        "ti",
+        "ca",
+        "tion."
+      ],
+      "ipa": "/səˌfɪstəˈkeɪʃən/",
+      "meaning": "精致、考究（指格调高雅）",
+      "tip": "主重音在第 4 拍"
     }
+  ],
+  "links": [
+    "两个元音相接，中间自然带一个很轻的滑音；is 弱读成 /ɪz/",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音",
+    "词尾爆破音只做口型不出声，停住再念下一个词"
   ]
 }

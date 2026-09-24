@@ -2,144 +2,174 @@
   "id": "e3b369dd474ffdb9",
   "text": "She sells seashells by the seashore, and the shells she sells are surely seashells.",
   "translation": "她在海边卖贝壳，而她卖的贝壳，确实是海边的贝壳。",
-  "difficulty": 0,
+  "difficulty": 1,
   "scores": [
-    1,
+    2,
     5,
     2
   ],
-  "reason": "相当于高中水平，sells 和 seashells 里 /s/、/ʃ/ 反复切换；词都很简单。",
+  "reason": "相当于高中水平，sells和seashells的/s/、/ʃ/来回切；词都很常见。",
   "tags": [
     "绕口令",
     "发音难点",
-    "常见词"
+    "短句"
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "She",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 300
+      "text": "She",
+      "stress": -1,
+      "syllables": [
+        "She"
+      ],
+      "ipa": "/ʃi/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 1,
-      "word": "sells",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 160,
-      "endMs": 720
+      "text": "sells",
+      "stress": 0,
+      "syllables": [
+        "sells"
+      ],
+      "ipa": "/ˈsɛlz/",
+      "meaning": "卖、出售",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 2,
-      "word": "seashells",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 720,
-      "endMs": 1600
+      "text": "seashells",
+      "stress": 0,
+      "syllables": [
+        "seashells"
+      ],
+      "ipa": "/ˈsiˌʃɛlz/",
+      "meaning": "海贝壳、贝壳",
+      "tip": "主重音在第 1 拍；词尾辅音连着收，别加元音"
     },
     {
-      "pos": 3,
-      "word": "by",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1570,
-      "endMs": 1870
+      "text": "by",
+      "stress": -1,
+      "syllables": [
+        "by"
+      ],
+      "ipa": "/baɪ/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 4,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1730,
-      "endMs": 2030
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 5,
-      "word": "seashore,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1920,
-      "endMs": 2810
+      "text": "seashore,",
+      "stress": 0,
+      "syllables": [
+        "seashore,"
+      ],
+      "ipa": "/ˈsiˌʃɔɹ/",
+      "meaning": "海边、海滨",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 6,
-      "word": "and",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3370,
-      "endMs": 3670
+      "text": "and",
+      "stress": -1,
+      "syllables": [
+        "and"
+      ],
+      "ipa": "/ən/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 7,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3490,
-      "endMs": 3790
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 8,
-      "word": "shells",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3680,
-      "endMs": 4000
+      "text": "shells",
+      "stress": 0,
+      "syllables": [
+        "shells"
+      ],
+      "ipa": "/ˈʃɛlz/",
+      "meaning": "贝壳、外壳",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 9,
-      "word": "she",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3970,
-      "endMs": 4270
+      "text": "she",
+      "stress": -1,
+      "syllables": [
+        "she"
+      ],
+      "ipa": "/ʃi/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 10,
-      "word": "sells",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4240,
-      "endMs": 4840
+      "text": "sells",
+      "stress": 0,
+      "syllables": [
+        "sells"
+      ],
+      "ipa": "/ˈsɛlz/",
+      "meaning": "卖、出售",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 11,
-      "word": "are",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4810,
-      "endMs": 5110
+      "text": "are",
+      "stress": -1,
+      "syllables": [
+        "are"
+      ],
+      "ipa": "/ɚ/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 12,
-      "word": "surely",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5040,
-      "endMs": 5520
+      "text": "surely",
+      "stress": 0,
+      "syllables": [
+        "sure",
+        "ly"
+      ],
+      "ipa": "/ˈʃʊɹli/",
+      "meaning": "确实、想必",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 13,
-      "word": "seashells.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5520,
-      "endMs": 6490
+      "text": "seashells.",
+      "stress": 1,
+      "syllables": [
+        "seashells."
+      ],
+      "ipa": "/ˈsiˌʃɛlz/",
+      "meaning": "海贝壳、贝壳",
+      "tip": "主重音在第 1 拍；词尾辅音连着收，别加元音"
     }
+  ],
+  "links": [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词；the 弱读成 /ðə/",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
   ]
 }

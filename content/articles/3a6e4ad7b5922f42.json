@@ -2,13 +2,13 @@
   "id": "3a6e4ad7b5922f42",
   "text": "Success is not final, failure is not fatal: it is the courage to continue that counts.",
   "translation": "成功不是终点，失败也并非末日，重要的是继续前行的勇气。",
-  "difficulty": 1,
+  "difficulty": 0,
   "scores": [
-    3,
-    3,
+    2,
+    2,
     2
   ],
-  "reason": "相当于高中水平，counts 的 -nts 连读容易糊；只有 fatal 稍超纲。",
+  "reason": "相当于初中水平，counts 结尾的 -nts 要连着念顺；其余词都很常见。",
   "tags": [
     "名言",
     "励志",
@@ -16,148 +16,187 @@
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "Success",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 640
+      "text": "Success",
+      "stress": 0,
+      "syllables": [
+        "Suc",
+        "cess"
+      ],
+      "ipa": "/səkˈsɛs/",
+      "meaning": "成功（此句指一时的成功）",
+      "tip": "主重音在第 2 拍"
     },
     {
-      "pos": 1,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 570,
-      "endMs": 870
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 2,
-      "word": "not",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 770,
-      "endMs": 1070
+      "text": "not",
+      "stress": -1,
+      "syllables": [
+        "not"
+      ],
+      "ipa": "/nɑt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 3,
-      "word": "final,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1040,
-      "endMs": 1690
+      "text": "final,",
+      "stress": 0,
+      "syllables": [
+        "fi",
+        "nal,"
+      ],
+      "ipa": "/ˈfaɪnəl/",
+      "meaning": "最终的、到此为止的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 4,
-      "word": "failure",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2150,
-      "endMs": 2720
+      "text": "failure",
+      "stress": 0,
+      "syllables": [
+        "fail",
+        "ure"
+      ],
+      "ipa": "/ˈfeɪljɚ/",
+      "meaning": "失败（一时的失利）",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 5,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2650,
-      "endMs": 2950
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 6,
-      "word": "not",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2850,
-      "endMs": 3150
+      "text": "not",
+      "stress": -1,
+      "syllables": [
+        "not"
+      ],
+      "ipa": "/nɑt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 7,
-      "word": "fatal:",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3120,
-      "endMs": 3770
+      "text": "fatal:",
+      "stress": 0,
+      "syllables": [
+        "fa",
+        "tal:"
+      ],
+      "ipa": "/ˈfeɪtəl/",
+      "meaning": "致命的、彻底完蛋的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 8,
-      "word": "it",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4370,
-      "endMs": 4670
+      "text": "it",
+      "stress": -1,
+      "syllables": [
+        "it"
+      ],
+      "ipa": "/ɪt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 9,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4490,
-      "endMs": 4790
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 10,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4650,
-      "endMs": 4950
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 11,
-      "word": "courage",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4880,
-      "endMs": 5400
+      "text": "courage",
+      "stress": 0,
+      "syllables": [
+        "courage"
+      ],
+      "ipa": "/ˈkɝədʒ/",
+      "meaning": "勇气、胆量",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 12,
-      "word": "to",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5330,
-      "endMs": 5630
+      "text": "to",
+      "stress": -1,
+      "syllables": [
+        "to"
+      ],
+      "ipa": "/tə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 13,
-      "word": "continue",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5520,
-      "endMs": 6160
+      "text": "continue",
+      "stress": 0,
+      "syllables": [
+        "con",
+        "tin",
+        "ue"
+      ],
+      "ipa": "/kənˈtɪnju/",
+      "meaning": "继续（往前走）",
+      "tip": "主重音在第 2 拍"
     },
     {
-      "pos": 14,
-      "word": "that",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6090,
-      "endMs": 6390
+      "text": "that",
+      "stress": -1,
+      "syllables": [
+        "that"
+      ],
+      "ipa": "/ðət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 15,
-      "word": "counts.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6320,
-      "endMs": 7050
+      "text": "counts.",
+      "stress": 1,
+      "syllables": [
+        "counts."
+      ],
+      "ipa": "/ˈkaʊnts/",
+      "meaning": "重要、算数",
+      "tip": "词尾辅音连着收，别加元音"
     }
+  ],
+  "links": [
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音；is 弱读成 /ɪz/",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词"
   ]
 }

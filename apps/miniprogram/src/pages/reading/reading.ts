@@ -167,13 +167,60 @@ const MPW_MIN = 250
 const MPW_MAX = 1600
 
 /**
- * 预拉取逐词音的**上限**。
+ * ⭐ 词音缓存：**词 → 插件给出的本地临时文件路径**。
  *
- * ⚠️ 限制的不是流量（一个词才几 KB），是**并发请求数**：
- *    长句几十个词，进页面就一次性全发出去，会挤占小程序本就不宽的请求通道 ——
- *    而此刻用户可能正要录音或提交。
+ * ⚠️⚠️ 必须缓存：同声传译插件的 textToSpeech 是**异步回调 + 有配额**的，
+ *    每点一次都重新合成会又慢又费配额；而这句子里同一个词常常被点好几次。
+ * ⚠️ 放模块级而不是 data：data 必须可序列化（Map 不适合）。
+ * ⚠️ 缓存的是插件的**临时文件路径**，小程序重启就失效 —— 那是插件的行为，
+ *    我们不能把它复制到自己的目录（临时文件的生命周期由插件管）。
  */
-const MAX_PREFETCH_WORDS = 24
+const wordVoiceCache = new Map<string, string>()
+
+interface TtsPlugin {
+  textToSpeech: (o: {
+    lang: string
+    tts: boolean
+    content: string
+    success: (res: { filename?: string }) => void
+    fail: (err: unknown) => void
+  }) => void
+}
+
+/** 拿插件；没在 app.json 里声明 / 版本不对时返回 null（调用方给明确提示，不静默失败） */
+function ttsPlugin(): TtsPlugin | null {
+  try {
+    return requirePlugin('WechatSI') as TtsPlugin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * ⭐ 合成一个词的读音（带缓存）—— 点词播放的唯一音频来源。
+ *
+ * ⚠️ 传英文文本、`lang: 'en_US'`：插件默认是中文，不指定语言会把单词按中文念。
+ * @returns 本地可播路径；插件不可用或合成失败时 null
+ */
+function wordVoiceOf(text: string): Promise<string | null> {
+  const hit = wordVoiceCache.get(text)
+  if (hit !== undefined) return Promise.resolve(hit)
+  const plugin = ttsPlugin()
+  if (!plugin) return Promise.resolve(null)
+  return new Promise(function (resolve) {
+    plugin.textToSpeech({
+      lang: 'en_US',
+      tts: true,
+      content: text,
+      success: function (res) {
+        const file = res && res.filename
+        if (file) wordVoiceCache.set(text, file)
+        resolve(file || null)
+      },
+      fail: function () { resolve(null) },
+    })
+  })
+}
 
 interface WordView {
   /** 稳定的 key（同一个词可能出现多次，不能用 text 当 key） */
@@ -573,22 +620,6 @@ Page({
   recordingKey: '',
 
   /**
-   * 逐词标准音的 fileID，下标与 plainWords 一一对应。
-   * ⚠️ 新内容**不再产这个**（每句 N 个文件，对象存储 / 灌库 / CDN 都要跟着走一遍）。
-   *    只有**没有时间戳的老内容**才用它兜底，见 onPlayWord。
-   */
-  wordAudio: [] as (string | null)[],
-
-  /**
-   * ⭐ 逐词的**播放区间**（毫秒），下标与 plainWords 一一对应。
-   *
-   * 点某个词时直接在**整句标准音**上定位到 startMs、播到 endMs —— 不再需要预切文件。
-   * ⚠️ 区间来自正文 JSON 的 words[]（流水线 ④ 产出；与预切切片**同源**，
-   *    所以换过来听感不变）。
-   * ⚠️ 只在**条数对得上**时才用（见 applyContent）：错位会变成「点这个词、播那个词」。
-   */
-  wordTimes: [] as { startMs: number; endMs: number }[],
-  /**
    * 这次要挑战的是哪一天。
    * ⚠️ 由首页带进来（/pages/reading/reading?id=<articleId>&date=2026-09-21），
    *    缺省取今天 —— 直接进朗读页（开发时）也不该崩。
@@ -685,18 +716,8 @@ Page({
       this.plainWords = plainWordsOf(content.text)
       // ⭐ 缓存键由**句子原文 + uid** 决定（不是 articleId）—— 见字段上的说明
       this.recordingKey = recordingKeyOf(content.text, getUserId())
-      /**
-       * ⭐ 逐词怎么播：**优先用正文 JSON 里的时间戳**（在整句标准音上定位），
-       *    预切切片只作为老内容的兜底。
-       * ⚠️ 时间戳只在**条数对得上**时才认：错位同样是「点这个词、播那个词」，
-       *    而且比切错更难查 —— 没有任何东西会报错。
-       */
-      const words = content.words ?? []
-      this.wordTimes =
-        words.length === this.plainWords.length
-          ? words.map((w) => ({ startMs: w.startMs, endMs: w.endMs }))
-          : []
-      this.wordAudio = content.audio?.words ?? []
+      // ⚠️ 逐词播放不再需要正文里的词级时间戳（点词走微信 TTS，见 onPlayWord）——
+      //    正文的 words[] 现在只用于**逐词显示**（音标 / 句中义 / 技巧）。
       this.setData({
         translation: content.translation,
         words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
@@ -963,7 +984,7 @@ Page({
 
 
   /**
-   * ⭐ 进页面就**后台预拉取**这一段的标准音（整句 + 逐词）。
+   * ⭐ 进页面就**后台预拉取**整句标准音。
    *
    * ⚠️ 预拉取只影响"快不快"，不影响"能不能"：
    *    失败时 ensureLocalAudio 会退回远端地址，用户照样能听，只是慢一点。
@@ -971,18 +992,9 @@ Page({
   prefetchStandardAudio() {
     if (!this.data.canPlayAudio || !this.data.fullAudio) return
     const kind = this.data.audioKind
-    const items: { src: string | null | undefined; kind: 'cloud' | 'http' }[] = [
-      { src: this.data.fullAudio, kind },
-    ]
-    /**
-     * ⚠️ 只有**老内容**（没有词级时间戳）才需要预拉逐词音 —— 那种情况下点词播的是
-     *    一个个预切文件。新内容点词是在**同一条整句音频**上定位，整句到了就够了。
-     * ⚠️ 上限 MAX_PREFETCH_WORDS：长句不至于一次发几十个请求。
-     */
-    if (this.wordTimes.length === 0) {
-      for (const w of this.wordAudio.slice(0, MAX_PREFETCH_WORDS)) items.push({ src: w, kind })
-    }
-    prefetchAudio(items)
+    // ⚠️ 只预拉整句：逐词音是**点的时候才合成**的（TTS），没法预拉 ——
+    //    合成结果按词缓存在 wordVoiceCache 里，第二次点同一个词就秒出。
+    prefetchAudio([{ src: this.data.fullAudio, kind }])
   },
 
   /** ⭐ 卡片右上角那个喇叭：播整句标准音 */
@@ -1015,36 +1027,27 @@ Page({
   },
 
   /**
-   * ⭐ 点某个词听它的发音。
+   * ⭐ 点某个词听它的发音 —— 走**微信同声传译插件**（免费、不占外网域名、不依赖第三方）。
    *
+   * ⚠️⚠️ 这里**以前**是在整句标准音上定位到该词的 startMs→endMs 播放。改成 TTS 之后：
+   *    · 听到的是**词典式的孤立读音**，不是句中的连读/弱读形 —— 这是刻意的取舍
+   *      （用户 2026-09 的决定：点词给"这个词怎么念"，整句给"这句话怎么念"）；
+   *    · 正文里因此不再需要逐词时间戳与音频切片（见 types/content.ts 的 ArticleWordItem）。
    * ⚠️ 下标由 **dataset** 带来（WXML 里 data-i），不能靠遍历 words 现找 ——
    *    词的文本可能重复（"the" 在一句里出现两次），按文本找必然指向错的那个。
+   * ⚠️ 插件拿不到（app.json 没声明 / 版本不对）时**明确报错**，不静默失败。
    */
   async onPlayWord(e: WechatMiniprogram.BaseEvent) {
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     if (!Number.isInteger(i) || i < 0) return
+    // ⚠️ 合成前去掉标点：插件读 "count." 会把句号读出来
+    const text = (this.plainWords[i] ?? '').replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '')
+    if (text === '') return
 
-    // ⭐ 首选：在**整句标准音**上定位到这个词的区间播放（一条音频，不再预切 N 个文件）
-    const seg = this.wordTimes[i]
-    if (seg) {
-      if (!this.data.fullAudio) return
-      this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay' })
-      const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
-      if (!url) {
-        this.setData({ error: '标准音取不到，请稍后再试' })
-        return
-      }
-      this.playUrl(url, '单词发音', seg).catch((err: Error) => this.setData({ error: err.message }))
-      return
-    }
-
-    // ⚠️ 兜底：老内容没有 words[]（或条数对不上）⇒ 退回预切的单词音频
-    const fileId = this.wordAudio[i]
-    if (!fileId) return
     this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay' })
-    const url = await ensureLocalAudio(fileId, this.data.audioKind)
+    const url = await wordVoiceOf(text)
     if (!url) {
-      this.setData({ error: '单词发音取不到，请稍后再试' })
+      this.setData({ error: '单词发音暂时取不到（同声传译插件未就绪）' })
       return
     }
     this.playUrl(url, '单词发音').catch((err: Error) => this.setData({ error: err.message }))

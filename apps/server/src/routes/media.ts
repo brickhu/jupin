@@ -48,24 +48,6 @@ mediaRoutes.get('/articles/:file', async (c) => {
 })
 
 /**
- * ⚠️ 参数**不能写成 `w:index.mp3`** —— Hono 的路由按 `/` 切段，
- *    `:index.mp3` 会被当成一个叫 `index.mp3` 的参数名，
- *    `c.req.param('index')` 拿到 undefined → 静默 404。
- *    踩过一次：整句能播、单词全部 404。
- *    ⇒ 让每段就是一个干净的参数，后缀在代码里解析。
- */
-mediaRoutes.get('/articles/:id/:file', async (c) => {
-  // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**；index 仍是数字
-  const id = c.req.param('id')
-  const m = /^w(\d+)\.mp3$/.exec(c.req.param('file'))
-  const index = m ? Number(m[1]) : -1
-  if (!id || index < 0) {
-    return c.json({ ok: false, error: '音频不存在' }, 404)
-  }
-  return serveAudio(c, `content/audio/${id}/w${index}.mp3`)
-})
-
-/**
  * ⭐ 回吐**用户自己的一段录音**（可播的 WAV）—— 列表里那个播放按钮。
  *
  * ⚠️⚠️ 为什么这条路由是**无鉴权**的、以及为什么这样是可以的：

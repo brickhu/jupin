@@ -558,10 +558,7 @@ function fillDetail(d) {
 
   const a = $("#dt-audio")
   a.src = "/api/audio/" + d.id + ".mp3?t=" + Date.now()
-  renderWords($("#dt-words"), $("#dt-wordcount"), state.detailWords, a, function () {
-    // 词级区间也并入同一份「待提交」—— 和译文/难度/标签共用一个「更新」
-    setPending("words", state.detailWords)
-  })
+  renderWordInfo($("#dt-words"), $("#dt-wordcount"), state.detailWords, d.links)
   renderDetailPlay()
   renderDetailTime()
   renderUpdateButton()
@@ -871,25 +868,11 @@ function renderDetailTime() {
   $("#dt-time").textContent = fmtSec(a.currentTime) + " / " + fmtSec(a.duration)
 }
 
-/**
- * 清掉「点词播放」留下的定时器与高亮。
- *
- * ⚠️ 点词播放会挂一个「到 endMs 就 pause」的定时器。用户紧接着点「播放整句」时，
- *    那个定时器还在跑 —— 几百毫秒后它会把整句播放 **pause 掉**，
- *    看起来就像「播放按钮坏了 / 播一下就停」。所以用户主动播整句前必须先清掉它。
- */
-function stopWordPlay(audio, box) {
-  endWordPlayback(audio)
-  if (box) {
-    box.querySelectorAll(".word-row.on").forEach(function (r) { r.classList.remove("on") })
-  }
-}
 
 async function toggleDetailPlay() {
   const a = $("#dt-audio")
   if (!a.getAttribute("src")) return
   if (!a.paused) { a.pause(); return }
-  stopWordPlay(a, $("#dt-words"))
   try {
     await a.play()
   } catch (e) {
@@ -903,250 +886,90 @@ $("#dt-audio").addEventListener("play", renderDetailPlay)
 $("#dt-audio").addEventListener("pause", renderDetailPlay)
 $("#dt-audio").addEventListener("timeupdate", renderDetailTime)
 $("#dt-audio").addEventListener("loadedmetadata", renderDetailTime)
-// 正在播的那一行画进度（详情页的分词列表）
-$("#dt-audio").addEventListener("timeupdate", function () { progressOf($("#dt-audio")) })
 $("#dt-audio").addEventListener("ended", function () { renderDetailPlay(); renderDetailTime() })
 function stopDetailAudio() {
   const a = $("#dt-audio")
-  stopWordPlay(a, $("#dt-words"))
   a.pause()
   renderDetailPlay()
   renderDetailTime()
 }
 
-/* ============================ 词级播放（详情页 / 抽屉共用） ============================ */
+
+/* ============================ 词表（只读） ============================ */
 
 /**
- * 渲染分词列表：一行一个词 —— 词 ｜ [起] - [止] ｜ 试听。
+ * ⭐ 渲染**词表**：一行一个词 —— 词（含句重音）｜ 音节 ｜ 音标 ｜ 句中义 ｜ 发音技巧，
+ *    并在两行之间显示该词界的**连读技巧**。
  *
- * ⭐ 时间可以**点开就地改**（见 startTimeEdit）：引擎对弱读虚词（the/to/is）给的
- *    边界经常落在停顿上，自动规则兜不住每一个，得留一条人工修正的路。
- * ⚠️ 改完必须保存（onChange 让调用方把「保存」亮出来）—— 否则刷新就回来了。
- * ⚠️ 区间是**播放区间**（词中点夹取 + 最小 300ms），与小程序 reading 页同一套，
- *    所以这里「点词听到的」和真机上听到的是同一段。
+ * ⚠️⚠️ 这里以前是一张「逐词播放区间」表（每行两个可点改的时间戳 + 试听按钮）。
+ *    随「点词播放改走微信 TTS」一起换掉了（2026-09）：正文里不再有时间戳、
+ *    逐词音频也不存在，那张表没有数据可渲染了。
+ * ⚠️ 词表是**派生数据**（由流水线按正文算出），这个台子**只展示、不改**：
+ *    要改就改提示词/规则再整库重跑（pnpm content:regrade --apply）。
  */
-function renderWords(box, countEl, words, audio, onChange) {
+function renderWordInfo(box, countEl, words, links) {
   if (countEl) countEl.textContent = String((words || []).length)
   box.textContent = ""
   if (!words || !words.length) {
     const li = document.createElement("li")
     li.className = "word-row muted tiny"
-    li.textContent = "这条还没有词级时间戳（重新生成一次就有了）。"
+    li.textContent = "这条还没有词表（重新生成 / 重判一次就有了）。"
     box.appendChild(li)
     return
   }
+  const STRESS = { 1: "重读", 0: "普通", "-1": "弱读" }
   words.forEach(function (w, i) {
     const li = document.createElement("li")
     li.className = "word-row"
     li.dataset.i = String(i)
 
-    const text = document.createElement("span")
-    text.className = "w-text"
-    text.textContent = w.word
+    const head = document.createElement("div")
+    head.className = "wi-head"
+    const text = document.createElement("b")
+    text.className = "wi-text"
+    text.textContent = w.text || ""
+    head.appendChild(text)
+    const st = document.createElement("span")
+    st.className = "wi-stress s" + String(w.stress)
+    st.textContent = STRESS[String(w.stress)] || "?"
+    head.appendChild(st)
+    if (Array.isArray(w.syllables) && w.syllables.length > 1) {
+      const syl = document.createElement("span")
+      syl.className = "wi-syl muted tiny"
+      syl.textContent = w.syllables.join(" · ")
+      head.appendChild(syl)
+    }
+    if (w.ipa) {
+      const ipa = document.createElement("span")
+      ipa.className = "wi-ipa"
+      ipa.textContent = w.ipa
+      head.appendChild(ipa)
+    }
+    li.appendChild(head)
 
-    const time = document.createElement("span")
-    time.className = "w-time"
-    time.appendChild(timeButton(box, countEl, words, audio, onChange, i, "startMs"))
-    const dash = document.createElement("span")
-    dash.className = "muted"
-    dash.textContent = "-"
-    time.appendChild(dash)
-    time.appendChild(timeButton(box, countEl, words, audio, onChange, i, "endMs"))
-
-    const play = document.createElement("button")
-    play.type = "button"
-    play.className = "play"
-    play.textContent = "▶"
-    play.title = "试听这个词"
-    play.addEventListener("click", function () { playWordAt(audio, box, words, i) })
-
-    const bar = document.createElement("span")
-    bar.className = "w-bar"
-    const fill = document.createElement("i")
-    bar.appendChild(fill)
-
-    li.appendChild(text)
-    li.appendChild(time)
-    li.appendChild(play)
-    li.appendChild(bar)
+    if (w.meaning) {
+      const m = document.createElement("div")
+      m.className = "wi-meaning"
+      m.textContent = "释义：" + w.meaning
+      li.appendChild(m)
+    }
+    if (w.tip) {
+      const t = document.createElement("div")
+      t.className = "wi-tip muted tiny"
+      t.textContent = "技巧：" + w.tip
+      li.appendChild(t)
+    }
     box.appendChild(li)
-  })
-}
 
-function timeButton(box, countEl, words, audio, onChange, i, key) {
-  const btn = document.createElement("button")
-  btn.type = "button"
-  btn.className = "t"
-  btn.textContent = "[" + fmtStamp(words[i][key]) + "]"
-  btn.title = "点一下改这个时间（支持 00:01.590 ／ 1.590 秒 ／ 1590 毫秒）"
-  btn.addEventListener("click", function () {
-    startTimeEdit(btn, box, countEl, words, audio, onChange, i, key)
-  })
-  return btn
-}
-
-/** 毫秒 → 00:01.590 */
-function fmtStamp(ms) {
-  const t = Math.max(0, Math.round(Number(ms) || 0))
-  const p = function (n, w) { return String(n).padStart(w, "0") }
-  return p(Math.floor(t / 60000), 2) + ":" + p(Math.floor((t % 60000) / 1000), 2) + "." + p(t % 1000, 3)
-}
-
-/**
- * 解析人工输入的时间。三种写法都收：
- *   00:01.590 → 分:秒.毫秒   1.590 → 秒   1590 → 毫秒（纯整数按毫秒，库里存的就是毫秒）
- * 看不懂返回 null —— 调用方报错，**不猜**（猜错的后果是点词播到别的地方去）。
- */
-function parseStamp(text) {
-  const raw = String(text || "").trim().replace(/^\[|\]$/g, "")
-  if (!raw) return null
-  const mmss = /^(\d+):(\d+(?:\.\d+)?)$/.exec(raw)
-  if (mmss) return Math.round((Number(mmss[1]) * 60 + Number(mmss[2])) * 1000)
-  if (/^\d+\.\d+$/.test(raw)) return Math.round(Number(raw) * 1000)
-  if (/^\d+$/.test(raw)) return Number(raw)
-  return null
-}
-
-/** 点时间 → 就地变输入框。回车确定、Esc 取消、失焦也算确定；改完顺手播一次 */
-function startTimeEdit(btn, box, countEl, words, audio, onChange, i, key) {
-  const input = document.createElement("input")
-  input.className = "t-input"
-  input.value = fmtStamp(words[i][key])
-  input.title = "支持 00:01.590 ／ 1.590（秒）／ 1590（毫秒）"
-  input.title = "支持 00:01.590 ／ 1.590（秒）／ 1590（毫秒）"
-  /**
-   * ⭐ 和 dl 里的行内编辑**同一套**：输入框 + yes / no。
-   * ⚠️ 不再放「按输入值试听」的 ▶（用户 2026-09 的决定）：那个按钮是多余的 ——
-   *    先 yes 提交、再点这一行的 ▶，语义更清楚，而且提交后的那次自动预览本来就会响。
-   * ⚠️ 值先进**本地缓存**（onChange → setPending → localStorage），
-   *    只有点底部「更新」才同步到服务端。
-   */
-  startInlineEdit(btn, input, function (el) {
-    const ms = parseStamp(el.value)
-    if (ms === null) {
-      toast("时间看不懂：" + el.value + "（可用 00:01.590 / 1.590 / 1590）", true)
-      return null
+    // ⭐ 连读技巧画在**两行之间** —— 它是两个词之间的关系，不是某一个词的属性
+    const l = (links || [])[i]
+    if (l) {
+      const link = document.createElement("li")
+      link.className = "link-row"
+      link.textContent = "‿ " + l
+      box.appendChild(link)
     }
-    return ms
-  }, function (ms) {
-    words[i][key] = ms
-    if (typeof onChange === "function") onChange()
-    renderWords(box, countEl, words, audio, onChange)
-    // 提交后播一次：改对没有，耳朵比眼睛快（这一次是真人的点击触发的，不受自动播放策略影响）
-    playWordAt(audio, box, words, i)
   })
-}
-
-/**
- * ⚠️⚠️ 必须先等到**元数据**再定位，否则点任何词都在播句子开头。
- *
- *    <audio> 在 readyState = 0（还没拿到 metadata）时给 currentTime 赋值会被
- *    **直接忽略**：不报错、不生效，接着 play() 就从 0 秒开始。
- *    症状正是「每个词都从 0 秒起播」——而且看起来像「分词功能没做」。
- *    小程序那边对应的是 startTime（见 lib/audio/play.ts 的 startSegment），
- *    它同样带一次「补 seek」，两边的阈值也保持一致（0.05s）。
- */
-function waitMetadata(audio) {
-  if (audio.readyState >= 1) return Promise.resolve()
-  return new Promise(function (resolve) {
-    let done = false
-    const finish = function () {
-      if (done) return
-      done = true
-      audio.removeEventListener("loadedmetadata", finish)
-      resolve()
-    }
-    audio.addEventListener("loadedmetadata", finish)
-    // ⚠️ 兜底：加载失败也要放行，否则这一次点击会永远卡住
-    setTimeout(finish, 1500)
-    try { audio.load() } catch (e) { /* ignore */ }
-  })
-}
-
-/** ⭐ 播一个词的区间（点这一行的 ▶、或改完时间自动预览，都走这里） */
-async function playWordAt(audio, box, words, i) {
-  const w = words[i]
-  if (!audio || !w || typeof w.startMs !== "number" || typeof w.endMs !== "number") return
-  const rows = box.querySelectorAll(".word-row")
-  const clear = function () { endWordPlayback(audio) }
-  clearTimeout(audio.__stop)
-  clearTimeout(audio.__resync)
-
-  const start = Math.max(0, w.startMs / 1000)
-  const end = Math.max(start + 0.15, w.endMs / 1000)
-
-  await waitMetadata(audio)
-  try { audio.currentTime = start } catch (e) { /* 还不可 seek，下一步补 */ }
-  audio.__playing = { box: box, i: i, startMs: w.startMs, endMs: w.endMs }
-  progressOf(audio)
-  /**
-   * ⚠️ 光靠 `timeupdate` 不够：它约 250ms 才跳一次，而一个词可能只有 300ms
-   *    （MIN_PLAY_SEC）—— 那样整段播完进度条一次都不动。这里自己按 60ms 推。
-   */
-  clearInterval(audio.__tick)
-  audio.__tick = setInterval(function () { progressOf(audio) }, 60)
-  const p = audio.play()
-  if (p && p.catch) {
-    p.catch(function (err) {
-      /**
-       * ⚠️⚠️ 这里**绝不能静默**：浏览器拦下自动播放时（NotAllowedError），
-       *    表现就是「改完时间什么都没发生」—— 而用户完全不知道是为什么。
-       *    （实测的教训：本来写的是空 catch，于是这条路上一点线索都没有。）
-       */
-      toast("浏览器拦下了自动播放（" + ((err && err.name) || "未知") + "）—— 点这一行的 ▶ 试听", true)
-      clear()
-    })
-  }
-
-  /**
-   * ⚠️ 再核一次：首帧有可能把这次 seek 丢掉。
-   *    不补的话听到的是句子开头 —— 那是**错的**，比「不准」更糟。
-   */
-  audio.__resync = setTimeout(function () {
-    if (Math.abs(audio.currentTime - start) > 0.05) {
-      try { audio.currentTime = start } catch (e) { /* ignore */ }
-    }
-  }, 80)
-
-  rows.forEach(function (r) { r.classList.toggle("on", Number(r.dataset.i) === i) })
-  audio.__stop = setTimeout(function () { audio.pause(); clear() }, (end - start) * 1000 + 80)
-}
-
-/**
- * 正在播的那一行画一条进度 —— 只有声音的话，短词（300ms）听起来就是「响了一下」，
- * 看不出播的是哪一段、播到哪了。
- */
-/**
- * 一次「点词播放」的收尾：清定时器、去掉高亮、进度条归零。
- *
- * ⚠️ 复位进度条必须**按正在播的那一行**去取：
- *    `box.querySelector(".word-row .w-bar i")` 命中第一行，会有「播第 5 个词、
- *    进度条却停在第一行 / 停在 50% 不动」这种假象（实测踩到）。
- */
-function endWordPlayback(audio) {
-  clearTimeout(audio.__stop)
-  clearTimeout(audio.__resync)
-  clearInterval(audio.__tick)
-  const prev = audio.__playing
-  if (prev) {
-    const rows = prev.box.querySelectorAll(".word-row")
-    rows.forEach(function (r) { r.classList.remove("on") })
-    const row = rows[prev.i]
-    const bar = row && row.querySelector(".w-bar i")
-    if (bar) bar.style.width = "0%"
-  }
-  audio.__playing = null
-}
-
-function progressOf(audio) {
-  const p = audio.__playing
-  if (!p) return
-  const row = p.box.querySelectorAll(".word-row")[p.i]
-  const bar = row && row.querySelector(".w-bar i")
-  if (!bar) return
-  const span = Math.max(1, p.endMs - p.startMs)
-  const pct = ((audio.currentTime * 1000 - p.startMs) / span) * 100
-  bar.style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + "%"
 }
 
 /* ============================ 内容编辑抽屉 ============================ */

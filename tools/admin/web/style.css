@@ -225,45 +225,28 @@ label.block > input, label.block > textarea, label.block > select { margin-top: 
 
 .log { background: #0b0d12; border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: #b9c0d0; max-height: 220px; overflow: auto; }
 
-/* ---------- 分词列表（纵向：词 | 起止时间 | 试听）----------
-   时间做成按钮：点一下变输入框，回车确定、Esc 取消（见 app.js 的 startTimeEdit）。
-   ⚠️ 时间必须**可改**：引擎对弱读虚词给的边界会落在停顿上（the/to/is），
-      自动规则兜不住每一个，得留一条人工修正的路。 */
+/* ---------- 词表（只读：词｜句重音｜音节｜音标｜句中义｜技巧）----------
+   ⚠️ 这里以前是「逐词播放区间」表（可点改的时间戳 + 试听）——
+      点词播放改走微信 TTS 之后，正文里没有时间戳、也没有逐词音频，那张表删了。
+   ⚠️ 词表由流水线按正文算出（派生数据），这个台子只展示：
+      要改就改提示词/规则再整库重跑（pnpm content:regrade --apply）。 */
 .words-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .words-head b { color: var(--text); }
 .word-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-.word-row {
-  display: grid; grid-template-columns: 1fr auto 40px;
-  align-items: center; gap: 14px; padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-}
-/* 正在播的那一行：底色 + 左侧色条（只有很轻的底色时，短词听起来像「什么都没发生」） */
-.word-row { position: relative; }
-.word-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--brand); }
-.w-bar { position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; overflow: hidden; border-radius: 2px; }
-.w-bar i { display: block; height: 100%; width: 0; background: var(--brand-2); transition: width .08s linear; }
-.w-text { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
-.w-time { display: flex; align-items: center; gap: 4px; }
-.w-time button.t {
-  background: transparent; border: 1px dashed var(--line); border-radius: 6px;
-  padding: 2px 7px; font-family: var(--mono); font-size: 12px; color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.w-time button.t:hover { border-color: var(--brand-2); color: var(--text); }
-.t-input { width: 108px; padding: 2px 6px; font-family: var(--mono); font-size: 12px; }
-/* ⚠️ 通用行内输入框的 min-width 是给「译文」那种长文本用的；时间只有 00:01.590，收窄 */
-.w-time .inline-input { min-width: 0; width: 104px; }
-/* 编辑态唯一的显式出口：yes（回车等价；点别处 = 取消，所以不需要 no） */
-button.inline-ok {
-  padding: 3px 9px; font-size: 12px; line-height: 1.4; border-radius: 6px;
-  background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600;
-}
-button.inline-ok:hover { background: var(--brand-2); border-color: var(--brand-2); }
-.word-row button.play {
-  width: 34px; height: 28px; padding: 0; font-size: 12px; line-height: 1;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.word-row button.play.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.word-row { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.wi-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.wi-text { font-family: var(--mono); font-size: 14px; color: var(--text); }
+.wi-stress { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+/* ⭐ 句重音三档：重读最显眼、弱读最淡 —— 与阅读页"用字重表达节奏"是同一个意思 */
+.wi-stress.s1 { color: var(--text); border-color: var(--brand); font-weight: 600; }
+.wi-stress.s0 { color: var(--muted); }
+.wi-stress.s-1 { color: var(--muted); opacity: .6; }
+.wi-syl { font-family: var(--mono); }
+.wi-ipa { font-family: var(--mono); color: var(--brand-2); }
+.wi-meaning { font-size: 12px; color: var(--text); margin-top: 3px; }
+.wi-tip { margin-top: 2px; }
+/* 连读技巧画在**两行之间**：它是两个词之间的关系，不是某个词的属性 */
+.link-row { padding: 3px 10px 3px 24px; font-size: 12px; color: var(--brand-2); border-bottom: 1px solid var(--line); }
 
 audio { width: 100%; margin-top: 6px; }
 

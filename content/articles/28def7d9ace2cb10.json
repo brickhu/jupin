@@ -5,10 +5,10 @@
   "difficulty": 0,
   "scores": [
     2,
-    1,
+    2,
     2
   ],
-  "reason": "相当于初中水平，没有难念的音、句子也短；词都很常见，只有 predict 稍长。",
+  "reason": "相当于初中水平，predict 结尾的 /kt/ 稍拗口；全是常用词，句子也短。",
   "tags": [
     "名言",
     "励志",
@@ -16,103 +16,129 @@
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "The",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 300
+      "text": "The",
+      "stress": -1,
+      "syllables": [
+        "The"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 1,
-      "word": "best",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 50,
-      "endMs": 350
+      "text": "best",
+      "stress": 0,
+      "syllables": [
+        "best"
+      ],
+      "ipa": "/ˈbɛst/",
+      "meaning": "最好的、最有效的",
+      "tip": "词尾辅音连着收，别加元音"
     },
     {
-      "pos": 2,
-      "word": "way",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 320,
-      "endMs": 680
+      "text": "way",
+      "stress": 0,
+      "syllables": [
+        "way"
+      ],
+      "ipa": "/ˈweɪ/",
+      "meaning": "办法、方式",
+      "tip": ""
     },
     {
-      "pos": 3,
-      "word": "to",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 610,
-      "endMs": 910
+      "text": "to",
+      "stress": -1,
+      "syllables": [
+        "to"
+      ],
+      "ipa": "/tə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 4,
-      "word": "predict",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 800,
-      "endMs": 1280
+      "text": "predict",
+      "stress": 0,
+      "syllables": [
+        "pre",
+        "dict"
+      ],
+      "ipa": "/pɹɪˈdɪkt/",
+      "meaning": "预测、预知",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
     },
     {
-      "pos": 5,
-      "word": "the",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1170,
-      "endMs": 1470
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 6,
-      "word": "future",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1360,
-      "endMs": 2090
+      "text": "future",
+      "stress": 0,
+      "syllables": [
+        "fu",
+        "ture"
+      ],
+      "ipa": "/ˈfjutʃɚ/",
+      "meaning": "未来、将来",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 7,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2130,
-      "endMs": 2430
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 8,
-      "word": "to",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2290,
-      "endMs": 2590
+      "text": "to",
+      "stress": -1,
+      "syllables": [
+        "to"
+      ],
+      "ipa": "/tə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 9,
-      "word": "invent",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2480,
-      "endMs": 2960
+      "text": "invent",
+      "stress": 1,
+      "syllables": [
+        "in",
+        "vent"
+      ],
+      "ipa": "/ˌɪnˈvɛnt/",
+      "meaning": "创造、发明出来",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
     },
     {
-      "pos": 10,
-      "word": "it.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2850,
-      "endMs": 3150
+      "text": "it.",
+      "stress": -1,
+      "syllables": [
+        "it."
+      ],
+      "ipa": "/ɪt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     }
+  ],
+  "links": [
+    "",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词；the 弱读成 /ðə/",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音；is 弱读成 /ɪz/",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音",
+    ""
   ]
 }

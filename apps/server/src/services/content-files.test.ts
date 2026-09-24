@@ -1,8 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { mp3DurationMs } from './mp3-duration'
 import {
   ARTICLE_ID_LENGTH,
   plainWordsOf,
@@ -84,61 +82,56 @@ describe('content/articles/*.json', () => {
     }
   })
 
-  it('每个词的播放区间都够长 —— 弱读虚词不能只剩静音', async () => {
+  /**
+   * ⭐ 词表是朗读页逐词渲染与点按的**唯一**数据 —— 它必须与正文严格对齐。
+   *
+   * ⚠️⚠️ 这条守的是「错位」那一类坏法：词表比正文多/少一个词、或音节拼不回原词。
+   *    表现是「点这个词、看到那个词的释义」，而**没有任何报错**。
+   * ⚠️ 用**唯一的切词实现**来核对：自己再抄一份 split 规则只会让两者一起漂。
+   */
+  it('词表与正文一一对应，且每个词的音节能拼回原词', async () => {
     for (const [file, raw] of await loadAll()) {
-      const words = raw.words as { word: string; startMs: number; endMs: number }[] | undefined
-      // ⚠️ 老内容还没有 words（流水线 ④ 没跑过）—— 那种情况下端侧退回预切切片，不算错
+      type W = { text?: string; stress?: number; syllables?: string[]; ipa?: string; meaning?: string; tip?: string }
+      const words = raw.words as W[] | undefined
+      // ⚠️ 老内容还没有这套词表 —— 客户端走旧渲染，不算错
       if (!words || words.length === 0) continue
-      // ⚠️ 用**唯一的切词实现**来核对：这条断言的意思是「写的 words 就是客户端会切出来的那些」，
-      //    自己再抄一份 split 规则只会让两者一起漂
       const expected = plainWordsOf(String(raw.text))
       expect(words.length, file + ' 的 words 条数应与词数一致').toBe(expected.length)
       for (let i = 0; i < words.length; i++) {
         const w = words[i]!
-        expect(w.word, file + ' 第 ' + i + ' 个词与正文对不上').toBe(expected[i])
-        expect(w.startMs, file + ' 的区间为负').toBeGreaterThanOrEqual(0)
+        expect(w.text, file + ' 第 ' + i + ' 个词与正文对不上').toBe(expected[i])
+        expect(Array.isArray(w.syllables), file + ' 第 ' + i + ' 个词缺少 syllables').toBe(true)
         /**
-         * ⚠️⚠️ 这条守的是实测出来的一类错：引擎对弱读虚词（the / to / is）给的边界
-         *    经常落在**停顿**上 —— "Don't count the days…" 里那个 the 给到 [0.72,0.80]，
-         *    而这段音频 0.74–0.79 是数字静音（RMS 1.3% 峰值），剥出来只剩一声空响。
-         *    所以区间必须有不短于 300ms 的下限（见 audio-assets 的 wordRangesOf）。
+         * ⭐ 不变量：拼写分拍拼回来必须**一个字不差**（含标点）。
+         * ⚠️ 它是拼接对齐器的验收标准 —— 分拍错一位，音节级的样式就会画在错的字母上。
          */
-        expect(w.endMs - w.startMs, file + ' 第 ' + i + ' 个词（' + w.word + '）的区间太短').toBeGreaterThanOrEqual(300)
+        expect(w.syllables!.join(''), file + ' 第 ' + i + ' 个词（' + String(w.text) + '）的音节拼不回原词').toBe(expected[i])
+        expect([-1, 0, 1], file + ' 第 ' + i + ' 个词的 stress 必须是 -1 / 0 / 1').toContain(w.stress)
+        expect(typeof w.ipa, file + ' 第 ' + i + ' 个词的 ipa 应当是字符串').toBe('string')
+        expect(typeof w.meaning, file + ' 第 ' + i + ' 个词的 meaning 应当是字符串').toBe('string')
+        expect(typeof w.tip, file + ' 第 ' + i + ' 个词的 tip 应当是字符串').toBe('string')
       }
     }
   })
 
   /**
-   * ⭐ 时间戳是「点词从哪播到哪」的唯一依据，所以它必须落在音频**里面**。
+   * ⭐ `links[i]` 描述 `words[i]` 与 `words[i+1]` 之间 ⇒ 长度必须是 `words.length - 1`。
    *
-   * ⚠️⚠️ 这条守的是当初那个真实 bug 的同类：引擎对弱读虚词给的边界落在停顿上，
-   *    一个词的区间可能只有 80ms（"the"），甚至贴着音频末尾 ——
-   *    表现是「点了没声音 / 播出来是空白」，而没有任何报错。
-   *    区间下限由 wordRangesOf 保证（上面那条用例），这里补的是**上界**。
+   * ⚠️ 长度错一位，连读符号就会画在**错误的词界**上 —— 比不画更糟（它会教错）。
    */
-  it('词级时间戳不能超出音频本体', async () => {
-    const audioDir = join(resolveStaticRoot() ?? '', 'content/audio')
+  it('links 与词界一一对应（长度 = words.length - 1）', async () => {
     for (const [file, raw] of await loadAll()) {
-      const words = raw.words as { word: string; startMs: number; endMs: number }[] | undefined
-      if (!words || words.length === 0) continue
-
-      const id = String(raw.id)
-      const mp3 = join(audioDir, id + '.mp3')
-      /**
-       * ⚠️ 「有 words 但没有 mp3」不是可以跳过的情况：时间戳指向一份不存在的音频，
-       *    点词播放必然失败。老内容没 words 才允许退回预切切片 —— 反过来不行。
-       */
-      expect(existsSync(mp3), file + ' 有词级时间戳，却没有 content/audio/' + id + '.mp3').toBe(true)
-
-      const durationMs = mp3DurationMs(readFileSync(mp3))
-      expect(durationMs, file + ' 的 mp3 解析不出时长').not.toBeNull()
-
-      const maxEnd = Math.max(...words.map((w) => w.endMs))
-      // ⚠️ 留 120ms 余量：mp3 按帧计，最后一帧的时长会略长于最后一个词的结束点
-      expect(
-        maxEnd,
-        file + ' 的最后一个词结束于 ' + maxEnd + 'ms，超过音频时长 ' + durationMs + 'ms',
-      ).toBeLessThanOrEqual(durationMs! + 120)
+      const words = raw.words as unknown[] | undefined
+      const links = raw.links
+      // ⚠️ 老内容没有 links（也没有新词表）—— 那时客户端不画连读符号
+      if (links === undefined) continue
+      expect(Array.isArray(links), file + ' 的 links 应当是数组').toBe(true)
+      expect((links as unknown[]).length, file + ' 的 links 长度应当是 words.length - 1').toBe(
+        (words?.length ?? 0) - 1,
+      )
+      for (const l of links as unknown[]) {
+        expect(typeof l, file + ' 的 links 元素应当是字符串（空串 = 不连）').toBe('string')
+      }
     }
   })
 

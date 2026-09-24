@@ -5,10 +5,10 @@
   "difficulty": 0,
   "scores": [
     2,
-    3,
+    2,
     2
   ],
-  "reason": "相当于初中水平，everything 的 /θ/ 和 should 的 /ʃ/ 容易混；单词都很常见。",
+  "reason": "相当于初中水平，everything 的 th 和 simple 的 mpl 连着念稍绕；词都很常见。",
   "tags": [
     "名言",
     "哲理",
@@ -16,103 +16,131 @@
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "Everything",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 480
+      "text": "Everything",
+      "stress": 0,
+      "syllables": [
+        "Every",
+        "thing"
+      ],
+      "ipa": "/ˈɛvɹiˌθɪŋ/",
+      "meaning": "一切事物、凡事",
+      "tip": "主重音在第 1 拍；th 要咬舌尖"
     },
     {
-      "pos": 1,
-      "word": "should",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 450,
-      "endMs": 750
+      "text": "should",
+      "stress": -1,
+      "syllables": [
+        "should"
+      ],
+      "ipa": "/ʃʊd/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 2,
-      "word": "be",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 610,
-      "endMs": 910
+      "text": "be",
+      "stress": -1,
+      "syllables": [
+        "be"
+      ],
+      "ipa": "/bi/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 3,
-      "word": "made",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 800,
-      "endMs": 1200
+      "text": "made",
+      "stress": 0,
+      "syllables": [
+        "made"
+      ],
+      "ipa": "/ˈmeɪd/",
+      "meaning": "被弄得、使之变得",
+      "tip": ""
     },
     {
-      "pos": 4,
-      "word": "as",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1130,
-      "endMs": 1430
+      "text": "as",
+      "stress": -1,
+      "syllables": [
+        "as"
+      ],
+      "ipa": "/əz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 5,
-      "word": "simple",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1360,
-      "endMs": 2000
+      "text": "simple",
+      "stress": 0,
+      "syllables": [
+        "sim",
+        "ple"
+      ],
+      "ipa": "/ˈsɪmpəl/",
+      "meaning": "简单的、简明",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 6,
-      "word": "as",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1970,
-      "endMs": 2270
+      "text": "as",
+      "stress": -1,
+      "syllables": [
+        "as"
+      ],
+      "ipa": "/əz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 7,
-      "word": "possible,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2240,
-      "endMs": 2970
+      "text": "possible,",
+      "stress": 0,
+      "syllables": [
+        "pos",
+        "si",
+        "ble,"
+      ],
+      "ipa": "/ˈpɑsəbəl/",
+      "meaning": "可能的（此处指尽可能）",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 8,
-      "word": "but",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3210,
-      "endMs": 3510
+      "text": "but",
+      "stress": -1,
+      "syllables": [
+        "but"
+      ],
+      "ipa": "/bət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 9,
-      "word": "not",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3440,
-      "endMs": 3760
+      "text": "not",
+      "stress": -1,
+      "syllables": [
+        "not"
+      ],
+      "ipa": "/nɑt/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 10,
-      "word": "simpler.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3760,
-      "endMs": 4410
+      "text": "simpler.",
+      "stress": 1,
+      "syllables": [
+        "sim",
+        "pler."
+      ],
+      "ipa": "/ˈsɪmpəlɚ/",
+      "meaning": "更简单的",
+      "tip": "主重音在第 1 拍"
     }
+  ],
+  "links": [
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词"
   ]
 }

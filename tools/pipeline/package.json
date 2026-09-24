@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@jushuo/shared": "workspace:*",
+    "cmu-pronouncing-dictionary": "^3.0.0",
     "ecdict": "^0.0.4",
+    "hyphen": "^1.14.1",
     "socks-proxy-agent": "^10.1.0"
   },
   "devDependencies": {

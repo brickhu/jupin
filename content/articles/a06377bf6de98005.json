@@ -5,178 +5,228 @@
   "difficulty": 1,
   "scores": [
     3,
-    4,
+    3,
     2
   ],
-  "reason": "相当于高中水平，paralyzes 的 r/l 挨着念不顺；几个词偏书面、偏难。",
+  "reason": "相当于高中水平，unreasoning、paralyzes 重音难猜；长词叠用偏重。",
   "tags": [
     "名言",
-    "励志",
-    "难词",
-    "发音难点"
+    "演讲",
+    "长词",
+    "难词"
   ],
   "words": [
     {
-      "pos": 0,
-      "word": "The",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 0,
-      "endMs": 300
+      "text": "The",
+      "stress": -1,
+      "syllables": [
+        "The"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 1,
-      "word": "only",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 90,
-      "endMs": 390
+      "text": "only",
+      "stress": 0,
+      "syllables": [
+        "only"
+      ],
+      "ipa": "/ˈoʊnli/",
+      "meaning": "唯一的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 2,
-      "word": "thing",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 320,
-      "endMs": 640
+      "text": "thing",
+      "stress": 0,
+      "syllables": [
+        "thing"
+      ],
+      "ipa": "/ˈθɪŋ/",
+      "meaning": "东西、事情（此句指唯一可怕之物）",
+      "tip": "th 要咬舌尖"
     },
     {
-      "pos": 3,
-      "word": "we",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 530,
-      "endMs": 830
+      "text": "we",
+      "stress": -1,
+      "syllables": [
+        "we"
+      ],
+      "ipa": "/wi/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 4,
-      "word": "have",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 690,
-      "endMs": 990
+      "text": "have",
+      "stress": -1,
+      "syllables": [
+        "have"
+      ],
+      "ipa": "/həv/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 5,
-      "word": "to",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 850,
-      "endMs": 1150
+      "text": "to",
+      "stress": -1,
+      "syllables": [
+        "to"
+      ],
+      "ipa": "/tə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 6,
-      "word": "fear",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1040,
-      "endMs": 1560
+      "text": "fear",
+      "stress": 0,
+      "syllables": [
+        "fear"
+      ],
+      "ipa": "/ˈfɪɹ/",
+      "meaning": "害怕；恐惧（动词、名词同形）",
+      "tip": ""
     },
     {
-      "pos": 7,
-      "word": "is",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1530,
-      "endMs": 1830
+      "text": "is",
+      "stress": -1,
+      "syllables": [
+        "is"
+      ],
+      "ipa": "/ɪz/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 8,
-      "word": "fear",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 1760,
-      "endMs": 2080
+      "text": "fear",
+      "stress": 0,
+      "syllables": [
+        "fear"
+      ],
+      "ipa": "/ˈfɪɹ/",
+      "meaning": "害怕；恐惧（动词、名词同形）",
+      "tip": ""
     },
     {
-      "pos": 9,
-      "word": "itself,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 2080,
-      "endMs": 2650
+      "text": "itself,",
+      "stress": 0,
+      "syllables": [
+        "it",
+        "self,"
+      ],
+      "ipa": "/ˌɪtˈsɛlf/",
+      "meaning": "",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
     },
     {
-      "pos": 10,
-      "word": "nameless,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 3110,
-      "endMs": 4000
+      "text": "nameless,",
+      "stress": 0,
+      "syllables": [
+        "name",
+        "less,"
+      ],
+      "ipa": "/ˈneɪmləs/",
+      "meaning": "说不出名字的、无以名状的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 11,
-      "word": "unreasoning,",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 4000,
-      "endMs": 4970
+      "text": "unreasoning,",
+      "stress": 0,
+      "syllables": [
+        "un",
+        "rea",
+        "son",
+        "ing,"
+      ],
+      "ipa": "/ənˈɹiznɪŋ/",
+      "meaning": "不讲道理的、莫名的",
+      "tip": "主重音在第 2 拍"
     },
     {
-      "pos": 12,
-      "word": "unjustified",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 5030,
-      "endMs": 6000
+      "text": "unjustified",
+      "stress": 0,
+      "syllables": [
+        "un",
+        "jus",
+        "ti",
+        "fied"
+      ],
+      "ipa": "/əˈdʒʌstəˌfaɪd/",
+      "meaning": "毫无根据的、没道理的",
+      "tip": "主重音在第 2 拍"
     },
     {
-      "pos": 13,
-      "word": "terror",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6000,
-      "endMs": 6560
+      "text": "terror",
+      "stress": 0,
+      "syllables": [
+        "ter",
+        "ror"
+      ],
+      "ipa": "/ˈtɛɹɚ/",
+      "meaning": "极度的恐惧、惊恐",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 14,
-      "word": "which",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6560,
-      "endMs": 6880
+      "text": "which",
+      "stress": -1,
+      "syllables": [
+        "which"
+      ],
+      "ipa": "/wɪtʃ/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
     },
     {
-      "pos": 15,
-      "word": "paralyzes",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 6880,
-      "endMs": 7680
+      "text": "paralyzes",
+      "stress": 0,
+      "syllables": [
+        "par",
+        "a",
+        "lyzes"
+      ],
+      "ipa": "/ˈpɛɹəˌlaɪzɪz/",
+      "meaning": "使瘫痪、使无法施展",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 16,
-      "word": "needed",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 7680,
-      "endMs": 8000
+      "text": "needed",
+      "stress": 0,
+      "syllables": [
+        "need",
+        "ed"
+      ],
+      "ipa": "/ˈnidəd/",
+      "meaning": "所需要的、该做的",
+      "tip": "主重音在第 1 拍"
     },
     {
-      "pos": 17,
-      "word": "efforts.",
-      "ipa": null,
-      "posTag": null,
-      "meaningZh": null,
-      "startMs": 8000,
-      "endMs": 8730
+      "text": "efforts.",
+      "stress": 1,
+      "syllables": [
+        "ef",
+        "forts."
+      ],
+      "ipa": "/ˈɛfɚts/",
+      "meaning": "努力、费的心力",
+      "tip": "主重音在第 1 拍；词尾辅音连着收，别加元音"
     }
+  ],
+  "links": [
+    "两个元音相接，中间自然带一个很轻的滑音",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "",
+    "",
+    ""
   ]
 }

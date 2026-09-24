@@ -27,7 +27,8 @@
  */
 
 import { difficultyFromScores, normalizeLevel, normalizeScores, normalizeTags, splitParagraphs } from '@jushuo/shared'
-import type { ArticleLevel, DifficultyScores } from '@jushuo/shared'
+import type { ArticleLevel, ArticleWordItem, DifficultyScores } from '@jushuo/shared'
+import { buildWordInfo } from './word-info'
 import { DICT_TOOL } from './ecdict'
 import { chatJsonWithTools } from './llm'
 
@@ -43,6 +44,13 @@ export interface ArticleCandidate {
    *    ⚠️ 存它是为了「能验算」：difficulty 必须等于 difficultyFromScores(scores)。
    */
   scores: DifficultyScores | null
+  /**
+   * ⭐ 词表（朗读页逐词显示与点按要的全部数据）—— 见 types/content.ts 的 ArticleWordItem。
+   * ⚠️ 与 links 一起由 `buildWordInfo` 产出（音节 / 音标 / 句重音 / 技巧 / 句中释义）。
+   */
+  words: ArticleWordItem[]
+  /** ⭐ 词间连读标注（长度 = words.length - 1；空串 = 不连） */
+  links: string[]
   tags: string[]
   /** 给用户看的一句话（格式见 SYSTEM）—— 进正文 JSON，detail 接口会返回 */
   reason: string
@@ -170,13 +178,20 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
 
 【tags】2–4 个，中文，每个不超过 6 个字；先主题（名言 / 励志 / 口语 …）后特征（长句 / 难词 / 发音难点 …）。
 
+【句中释义】⚠️ 另外给每个**实词**一句**在这个句子里**的中文释义（用 words 字段交回来）：
+  · **跳过功能词**（the / of / and / it / is / to / a …）—— 它们不需要释义；
+  · 只写这个词**在这句里的那个意思**，**别罗列词典义项**（用户点词是想知道"这里是什么意思"）；
+  · 6–14 个字，说人话，不要「释义：」这种前缀；
+  · 同一个词在一段里出现两次只写一条（按词形给，不按位置）。
+
 【输出】只输出 JSON，不要任何解释。
 ⚠️ articles 的**条数必须等于输入段数**，每条带 index（第几段，从 1 开始）。
 ⚠️ **不要写 scores 的解释、不要写其他字段**（多写的会被丢掉）：
 {
   "articles": [
     { "index": 1, "text": "纠错后的英文", "translation": "自然口语化的中文（别用直译腔）",
-      "scores": [4, 2, 3], "difficulty": 2, "tags": ["主题", "特征"], "reason": "相当于…水平，…；…" }
+      "scores": [4, 2, 3], "difficulty": 2, "tags": ["主题", "特征"], "reason": "相当于…水平，…；…",
+      "words": [ { "w": "sophistication", "m": "精致、考究（此句指格调）" } ] }
   ]
 }`
 
@@ -192,6 +207,23 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
  *    ECDICT 的字段不完整也不好直接当结论（高级词表也收基础词、屈折形常常没填），
  *    所以工具只给**原始字段**，权衡留给模型 —— 这就是 tool-call 的意义（见 ecdict.ts）。
  */
+/**
+ * 模型交回来的 `words: [{w, m}]` → 词形（小写、去标点）→ 中文释义。
+ * ⚠️ 按**词形**对齐而不是按下标：让模型数下标一定会数错；同一个词出现两次意思也一样。
+ * ⚠️ 空的 / 认不出的条目直接丢掉（宁可没有释义，也不要一条错位的）。
+ */
+function meaningsOf(raw: unknown): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!Array.isArray(raw)) return out
+  for (const item of raw) {
+    const o = (item ?? {}) as Record<string, unknown>
+    const w = String(o.w ?? '').toLowerCase().replace(/[^a-z'’]/g, '')
+    const m = String(o.m ?? '').trim()
+    if (w !== '' && m !== '') out.set(w, m)
+  }
+  return out
+}
+
 export async function gradeArticles(input: string): Promise<ArticleCandidate[]> {
   const paragraphs = splitParagraphs(input)
   if (paragraphs.length === 0) return []
@@ -217,19 +249,41 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
     const a = byIndex.get(i + 1)
     if (!a) {
       // ⚠️ 模型没给这一段 ⇒ 用原文占位（档位留空，界面会拦住不让生成）
-      return { text: p, translation: '', difficulty: null, scores: null, tags: [], reason: '' }
+      //    ⚠️ words/links 仍然按**原文**算出来（音节/音标/重音与纠错无关）——
+      //       这样界面上至少能看到这一段的词表，而不是一片空白。
+      const fallback = buildWordInfo({ text: p })
+      return {
+        text: p,
+        translation: '',
+        difficulty: null,
+        scores: null,
+        words: fallback.words,
+        links: fallback.links,
+        tags: [],
+        reason: '',
+      }
     }
     const text = String(a.text ?? '').trim()
     // ⭐ 判据分 → 档位：**代码算的说了算**（模型自己算加权总有几个错的）。
     //    scores 认不出时才退回模型报的 difficulty —— 那说明这次判据没给全，
     //    留一个「有档位没判据」的记录，总比整条丢掉强（正文校验会盯住这种）。
     const scores = normalizeScores(a.scores)
+    // ⚠️ 纠错后的 text 为空（模型抽风）就退回原文 —— 宁可没纠错，也不能丢这一条
+    const corrected = text === '' ? p : text
+    /**
+     * ⭐ 词表按**纠错之后**的正文算 —— 它必须和最终写进 JSON 的 text 是同一个字符串，
+     *    否则下标会和评分引擎的逐词分数错位（"点这个词、看那个词的诊断"）。
+     * ⚠️ 句中释义按**词形**对齐（不是按下标）：模型数下标一定会数错，
+     *    而同一个词在句子里出现两次意思也一样。
+     */
+    const info = buildWordInfo({ text: corrected, meanings: meaningsOf(a.words) })
     return {
-      // ⚠️ 纠错后的 text 为空（模型抽风）就退回原文 —— 宁可没纠错，也不能丢这一条
-      text: text === '' ? p : text,
+      text: corrected,
       translation: String(a.translation ?? '').trim(),
       difficulty: difficultyFromScores(scores) ?? normalizeLevel(a.difficulty),
       scores,
+      words: info.words,
+      links: info.links,
       tags: normalizeTags(a.tags),
       reason: String(a.reason ?? '').trim(),
     }
