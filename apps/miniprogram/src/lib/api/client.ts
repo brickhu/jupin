@@ -400,6 +400,36 @@ function relogin(): Promise<void> {
   return login()
 }
 
+/**
+ * ⭐ 把「重试到预算用尽」的底层错误翻译成**用户能动手**的一句话。
+ *
+ * ⚠️⚠️ 为什么必须抽出来：原来这段翻译只存在于循环体的 `lastAttempt` 分支里，
+ *    而预算被掐断时走的是上面的 `break`（预检查）—— 那条路直接 `throw lastErr`，
+ *    于是 `callContainer`（单次上限 15s）下请求「挂在半路」，几乎必然从 `break` 出去，
+ *    用户看到的是原始 `request:fail timeout`，而这段人话成了**死代码**。
+ *    现在两条出口（循环内最后一次失败、预算耗尽 break）都走这里。
+ */
+function exhaustedError(e: Error, startedAt: number): ApiError {
+  // ⚠️ 「重试到预算用尽」有两种完全不同的原因，**不能给同一句话**：
+  //    ① 冷启动：请求根本没打到服务（服务端没有任何记录）
+  //    ② 打分未完成：服务端正在跑评测，只是还没跑完
+  //    把它们都说成「服务正在启动中」会让用户以为服务挂了、去重开小程序，
+  //    而这恰恰是唯一不该做的动作（重开也不会更快）。
+  const scoring = e instanceof StillScoringError
+  return new ApiError(
+    scoring
+      ? '打分还在进行中（长句要十几秒），再点一次「提交检测」即可拿到结果 —— 不会重复计费'
+      : '服务正在启动中（云托管冷启动要十几秒），请再试一次',
+    scoring ? 'SCORING' : 'COLD_START',
+    {
+      attempts: RETRY_DELAYS_MS.length,
+      elapsedMs: Date.now() - startedAt,
+      target: TARGET,
+      lastError: e.message,
+    },
+  )
+}
+
 /** 带冷启动重试的请求主体 —— 401 的补救在 request() 那一层，这里不管 */
 async function requestWithRetries<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let lastErr: Error | null = null
@@ -454,21 +484,8 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
         console.warn(
           `[api] ✗ ${path} 最终失败 ${attemptElapsed}ms（第 ${attempt + 1} 次，累计 ${Date.now() - startedAt}ms）→ ${TARGET}：${e.message}`,
         )
-        if (retryable && lastAttempt) {
-          // ⚠️ 「重试到预算用尽」有两种完全不同的原因，**不能给同一句话**：
-          //    ① 冷启动：请求根本没打到服务（服务端没有任何记录）
-          //    ② 打分未完成：服务端正在跑评测，只是还没跑完
-          //    把它们都说成「服务正在启动中」会让用户以为服务挂了、去重开小程序，
-          //    而这恰恰是唯一不该做的动作（重开也不会更快）。
-          const scoring = e instanceof StillScoringError
-          throw new ApiError(
-            scoring
-              ? '打分还在进行中（长句要十几秒），再点一次「提交检测」即可拿到结果 —— 不会重复计费'
-              : '服务正在启动中（云托管冷启动要十几秒），请再试一次',
-            scoring ? 'SCORING' : 'COLD_START',
-            { attempts: RETRY_DELAYS_MS.length, elapsedMs: Date.now() - startedAt, target: TARGET, lastError: e.message },
-          )
-        }
+        // ⭐ 翻译成同一句人话 —— 与下面「预算耗尽」那条出口共用，见 exhaustedError()
+        if (retryable && lastAttempt) throw exhaustedError(e, startedAt)
         throw err
       }
       lastErr = e
@@ -478,6 +495,18 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
     }
   }
 
+  /**
+   * ⚠️⚠️ 走到这里说明**预算在发起下一次之前就被检查掐断了**（见上面的 break），
+   *    而不是「循环正常跑完」。这正是 `callContainer` 冷启动的典型形态：
+   *    请求挂在半路直到单次上限，剩余预算不够再发一次 —— 若不在这里翻译，
+   *    上面那段人话就永远用不上（见 exhaustedError 的说明）。
+   */
+  if (
+    lastErr &&
+    (lastErr instanceof RetryableError || lastErr instanceof StillScoringError || isTransportFailure(lastErr))
+  ) {
+    throw exhaustedError(lastErr, startedAt)
+  }
   throw lastErr ?? new Error('请求失败')
 }
 
