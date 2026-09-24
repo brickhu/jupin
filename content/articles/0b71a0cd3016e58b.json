@@ -1,0 +1,58 @@
+{
+  "id": "0b71a0cd3016e58b",
+  "text": "Simplicity is the ultimate sophistication.",
+  "translation": "至简，即是至臻。",
+  "difficulty": 1,
+  "tags": [
+    "名言",
+    "设计",
+    "难词"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "Simplicity",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 880
+    },
+    {
+      "pos": 1,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 850,
+      "endMs": 1150
+    },
+    {
+      "pos": 2,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1050,
+      "endMs": 1350
+    },
+    {
+      "pos": 3,
+      "word": "ultimate",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1280,
+      "endMs": 1880
+    },
+    {
+      "pos": 4,
+      "word": "sophistication.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1880,
+      "endMs": 3050
+    }
+  ]
+}

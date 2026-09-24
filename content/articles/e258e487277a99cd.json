@@ -1,0 +1,84 @@
+{
+  "id": "e258e487277a99cd",
+  "text": "Don't count the days, make the days count.",
+  "translation": "不要数着日子过，而要让日子过得有意义。",
+  "difficulty": 0,
+  "tags": [
+    "名言",
+    "口语"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "Don't",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 320
+    },
+    {
+      "pos": 1,
+      "word": "count",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 320,
+      "endMs": 720
+    },
+    {
+      "pos": 2,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 610,
+      "endMs": 910
+    },
+    {
+      "pos": 3,
+      "word": "days,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 800,
+      "endMs": 1530
+    },
+    {
+      "pos": 4,
+      "word": "make",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1590,
+      "endMs": 2080
+    },
+    {
+      "pos": 5,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1970,
+      "endMs": 2270
+    },
+    {
+      "pos": 6,
+      "word": "days",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2160,
+      "endMs": 2560
+    },
+    {
+      "pos": 7,
+      "word": "count.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2560,
+      "endMs": 3130
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "id": "06ef2b193b83b3d7",
+  "text": "Everything should be made as simple as possible, but not simpler.",
+  "translation": "凡事都应尽可能简单，但不能过于简单。",
+  "difficulty": 0,
+  "tags": [
+    "名言",
+    "哲理"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "Everything",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 480
+    },
+    {
+      "pos": 1,
+      "word": "should",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 450,
+      "endMs": 750
+    },
+    {
+      "pos": 2,
+      "word": "be",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 610,
+      "endMs": 910
+    },
+    {
+      "pos": 3,
+      "word": "made",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 800,
+      "endMs": 1200
+    },
+    {
+      "pos": 4,
+      "word": "as",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1130,
+      "endMs": 1430
+    },
+    {
+      "pos": 5,
+      "word": "simple",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1360,
+      "endMs": 2000
+    },
+    {
+      "pos": 6,
+      "word": "as",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1970,
+      "endMs": 2270
+    },
+    {
+      "pos": 7,
+      "word": "possible,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2240,
+      "endMs": 2970
+    },
+    {
+      "pos": 8,
+      "word": "but",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3210,
+      "endMs": 3510
+    },
+    {
+      "pos": 9,
+      "word": "not",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3440,
+      "endMs": 3760
+    },
+    {
+      "pos": 10,
+      "word": "simpler.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3760,
+      "endMs": 4410
+    }
+  ]
+}

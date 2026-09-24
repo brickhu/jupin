@@ -1,0 +1,157 @@
+{
+  "id": "3a6e4ad7b5922f42",
+  "text": "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+  "translation": "成功不是终点，失败也并非末日，重要的是继续前行的勇气。",
+  "difficulty": 1,
+  "tags": [
+    "名言",
+    "励志",
+    "长句"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "Success",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 640
+    },
+    {
+      "pos": 1,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 570,
+      "endMs": 870
+    },
+    {
+      "pos": 2,
+      "word": "not",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 770,
+      "endMs": 1070
+    },
+    {
+      "pos": 3,
+      "word": "final,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1040,
+      "endMs": 1690
+    },
+    {
+      "pos": 4,
+      "word": "failure",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2150,
+      "endMs": 2720
+    },
+    {
+      "pos": 5,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2650,
+      "endMs": 2950
+    },
+    {
+      "pos": 6,
+      "word": "not",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2850,
+      "endMs": 3150
+    },
+    {
+      "pos": 7,
+      "word": "fatal:",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3120,
+      "endMs": 3770
+    },
+    {
+      "pos": 8,
+      "word": "it",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4370,
+      "endMs": 4670
+    },
+    {
+      "pos": 9,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4490,
+      "endMs": 4790
+    },
+    {
+      "pos": 10,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4650,
+      "endMs": 4950
+    },
+    {
+      "pos": 11,
+      "word": "courage",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4880,
+      "endMs": 5400
+    },
+    {
+      "pos": 12,
+      "word": "to",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5330,
+      "endMs": 5630
+    },
+    {
+      "pos": 13,
+      "word": "continue",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5520,
+      "endMs": 6160
+    },
+    {
+      "pos": 14,
+      "word": "that",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6090,
+      "endMs": 6390
+    },
+    {
+      "pos": 15,
+      "word": "counts.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6320,
+      "endMs": 7050
+    }
+  ]
+}

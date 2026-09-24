@@ -1,0 +1,138 @@
+{
+  "id": "e3b369dd474ffdb9",
+  "text": "She sells seashells by the seashore, and the shells she sells are surely seashells.",
+  "translation": "她在海边卖贝壳，而她卖的贝壳，确实是海边的贝壳。",
+  "difficulty": 2,
+  "tags": [
+    "绕口令",
+    "发音难点"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "She",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 300
+    },
+    {
+      "pos": 1,
+      "word": "sells",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 160,
+      "endMs": 720
+    },
+    {
+      "pos": 2,
+      "word": "seashells",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 720,
+      "endMs": 1600
+    },
+    {
+      "pos": 3,
+      "word": "by",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1570,
+      "endMs": 1870
+    },
+    {
+      "pos": 4,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1730,
+      "endMs": 2030
+    },
+    {
+      "pos": 5,
+      "word": "seashore,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1920,
+      "endMs": 2810
+    },
+    {
+      "pos": 6,
+      "word": "and",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3370,
+      "endMs": 3670
+    },
+    {
+      "pos": 7,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3490,
+      "endMs": 3790
+    },
+    {
+      "pos": 8,
+      "word": "shells",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3680,
+      "endMs": 4000
+    },
+    {
+      "pos": 9,
+      "word": "she",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3970,
+      "endMs": 4270
+    },
+    {
+      "pos": 10,
+      "word": "sells",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4240,
+      "endMs": 4840
+    },
+    {
+      "pos": 11,
+      "word": "are",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4810,
+      "endMs": 5110
+    },
+    {
+      "pos": 12,
+      "word": "surely",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5040,
+      "endMs": 5520
+    },
+    {
+      "pos": 13,
+      "word": "seashells.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5520,
+      "endMs": 6490
+    }
+  ]
+}

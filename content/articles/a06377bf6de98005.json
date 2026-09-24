@@ -1,0 +1,175 @@
+{
+  "id": "a06377bf6de98005",
+  "text": "The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.",
+  "translation": "我们唯一需要恐惧的，就是恐惧本身——那种无以名状、失去理智、毫无道理的恐惧，它会夺走人前进的动力。",
+  "difficulty": 2,
+  "tags": [
+    "名言",
+    "长句",
+    "难词"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "The",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 300
+    },
+    {
+      "pos": 1,
+      "word": "only",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 90,
+      "endMs": 390
+    },
+    {
+      "pos": 2,
+      "word": "thing",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 320,
+      "endMs": 640
+    },
+    {
+      "pos": 3,
+      "word": "we",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 530,
+      "endMs": 830
+    },
+    {
+      "pos": 4,
+      "word": "have",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 690,
+      "endMs": 990
+    },
+    {
+      "pos": 5,
+      "word": "to",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 850,
+      "endMs": 1150
+    },
+    {
+      "pos": 6,
+      "word": "fear",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1040,
+      "endMs": 1560
+    },
+    {
+      "pos": 7,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1530,
+      "endMs": 1830
+    },
+    {
+      "pos": 8,
+      "word": "fear",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1760,
+      "endMs": 2080
+    },
+    {
+      "pos": 9,
+      "word": "itself,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2080,
+      "endMs": 2650
+    },
+    {
+      "pos": 10,
+      "word": "nameless,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 3110,
+      "endMs": 4000
+    },
+    {
+      "pos": 11,
+      "word": "unreasoning,",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 4000,
+      "endMs": 4970
+    },
+    {
+      "pos": 12,
+      "word": "unjustified",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 5030,
+      "endMs": 6000
+    },
+    {
+      "pos": 13,
+      "word": "terror",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6000,
+      "endMs": 6560
+    },
+    {
+      "pos": 14,
+      "word": "which",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6560,
+      "endMs": 6880
+    },
+    {
+      "pos": 15,
+      "word": "paralyzes",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 6880,
+      "endMs": 7680
+    },
+    {
+      "pos": 16,
+      "word": "needed",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 7680,
+      "endMs": 8000
+    },
+    {
+      "pos": 17,
+      "word": "efforts.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 8000,
+      "endMs": 8730
+    }
+  ]
+}

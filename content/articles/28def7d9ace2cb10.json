@@ -1,0 +1,111 @@
+{
+  "id": "28def7d9ace2cb10",
+  "text": "The best way to predict the future is to invent it.",
+  "translation": "预测未来最好的方式，就是把它创造出来。",
+  "difficulty": 0,
+  "tags": [
+    "名言",
+    "未来"
+  ],
+  "words": [
+    {
+      "pos": 0,
+      "word": "The",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 0,
+      "endMs": 300
+    },
+    {
+      "pos": 1,
+      "word": "best",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 50,
+      "endMs": 350
+    },
+    {
+      "pos": 2,
+      "word": "way",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 320,
+      "endMs": 680
+    },
+    {
+      "pos": 3,
+      "word": "to",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 610,
+      "endMs": 910
+    },
+    {
+      "pos": 4,
+      "word": "predict",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 800,
+      "endMs": 1280
+    },
+    {
+      "pos": 5,
+      "word": "the",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1170,
+      "endMs": 1470
+    },
+    {
+      "pos": 6,
+      "word": "future",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 1360,
+      "endMs": 2090
+    },
+    {
+      "pos": 7,
+      "word": "is",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2130,
+      "endMs": 2430
+    },
+    {
+      "pos": 8,
+      "word": "to",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2290,
+      "endMs": 2590
+    },
+    {
+      "pos": 9,
+      "word": "invent",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2480,
+      "endMs": 2960
+    },
+    {
+      "pos": 10,
+      "word": "it.",
+      "ipa": null,
+      "posTag": null,
+      "meaningZh": null,
+      "startMs": 2850,
+      "endMs": 3150
+    }
+  ]
+}
