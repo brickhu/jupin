@@ -65,6 +65,8 @@
   - **初级**：The best way to predict the future is to invent it.
   - **初级**：Don't count the days, make the days count.
 
+- [ ] **B17** admin「新增句子」改成**批量入库**（2026-09 需求）：① 多段输入（空行分隔）→ LLM **拆分 + 纠错** → ② 多选/可编辑候选列表（默认全选）→ ③ 批量生成（**先 LLM 出 N 条 → 再批量 TTS → 最后上传静态资源 + 入库草稿**）→ ④ 入库列表（URL + 勾选）→【发布】批量置为已发布 —— 做完的标志：粘一段多段文本（含 `itand` 这类错）能拆成多条、纠错、勾选、批量入库、批量发布，且**已存在的条目被跳过（不浪费生成成本）**
+
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
