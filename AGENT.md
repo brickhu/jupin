@@ -55,6 +55,9 @@ docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · �
 | **④ 提交时闭环** | commit 信息带 `plan <ID>`；提交前跑 `pnpm check`；然后 `pnpm plan:sync` 按 git 把 `- [ ]` 勾成 `- [x]` 并归档进「已完成」 | `pnpm plan:status` 认得出这条，且没有 🔲 |
 | **⑤ 无 commit 的完成项** | 真机实验 / 外部配置 / 决定这类做完也没有 commit 的，在 plan.md 手写一行并标 `[无 commit]` | 这类条目要少 |
 
+⚠️ **commit 里的 `plan <ID>` 表示「这条任务完成」** —— 只是**记录**一条任务、或改计划本身的提交
+**不要挂那个 ID**（写成 `chore(plan): 新增 B14`）。否则 `plan:sync` 会把刚记下的任务立刻勾成完成。
+
 **提交信息格式**（scope 里挂任务 ID）：
 
 ```
