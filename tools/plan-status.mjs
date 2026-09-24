@@ -108,17 +108,39 @@ const falseCheck = [...tasks].filter(([id, t]) => t.checked && !hasCommit(id)).m
 // ---------------------------------------------------------------- --write
 if (write) {
   const done = new Set([...tasks.keys()].filter(hasCommit))
+  const lines = planText.split('\n')
+  /** 每个元素 = 一条任务**连它的缩进子条目**（{ id, lines }） */
   const collected = []
   const kept = []
-  for (const line of planText.split('\n')) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const m = TASK_RE.exec(line)
     if (m && (m[1] === 'x' || done.has(m[2]))) {
-      collected.push(m[1] === 'x' ? line : '- [x] ' + line.slice(6))
+      const block = [m[1] === 'x' ? line : '- [x] ' + line.slice(6)]
+      /**
+       * ⚠️⚠️ 任务行**下面的缩进子条目是它的一部分，必须一起搬走**。
+       *    只搬任务行会把细节留在原处变成**孤儿**（踩过：B16 的四条说明与六个锚点样本
+       *    被落在「待办」里，而它的任务行孤零零躺在「已完成」）。
+       */
+      while (i + 1 < lines.length && lines[i + 1].trim() !== '' && /^\s/.test(lines[i + 1])) {
+        block.push(lines[++i])
+      }
+      collected.push({ id: m[2], lines: block })
+      // 顺手吃掉紧跟的一个空行，免得搬走之后留下一串空行
+      if (i + 1 < lines.length && lines[i + 1].trim() === '') i++
       continue
     }
     kept.push(line)
   }
-  collected.sort((a, b) => TASK_RE.exec(a)[2].localeCompare(TASK_RE.exec(b)[2]))
+  /**
+   * ⚠️ 按「字母 + **数字**」排，不能用 localeCompare：
+   *    字符串序会把 B10 排在 B7 前面（"1" < "7"），读起来像没排。
+   */
+  collected.sort((a, b) => {
+    const pa = [a.id[0], Number(a.id.slice(1))]
+    const pb = [b.id[0], Number(b.id.slice(1))]
+    return pa[0] === pb[0] ? pa[1] - pb[1] : pa[0] < pb[0] ? -1 : 1
+  })
   const idx = kept.findIndex((l) => /^##\s+已完成/.test(l) && !/无 commit/.test(l))
   if (idx < 0) {
     console.error('❌ plan.md 里找不到「## 已完成」段，无法回写')
@@ -135,7 +157,7 @@ if (write) {
   while (b < sectionEnd && kept[b].trim() === '') b++
   const banner = []
   while (b < sectionEnd && /^>/.test(kept[b])) banner.push(kept[b++])
-  const body = ['', ...banner, '', ...collected, '']
+  const body = ['', ...banner, '', ...collected.flatMap((c) => [...c.lines, ''])]
   kept.splice(idx + 1, sectionEnd - (idx + 1), ...body)
   const next = kept.join('\n')
   if (next === planText) {
@@ -143,7 +165,7 @@ if (write) {
     process.exit(0)
   }
   writeFileSync(PLAN_PATH, next, 'utf8')
-  console.log('plan:sync —— 已按 git 勾选并归档 ' + collected.length + ' 条：' + collected.map((l) => TASK_RE.exec(l)[2]).join(' '))
+  console.log('plan:sync —— 已按 git 勾选并归档 ' + collected.length + ' 条：' + collected.map((c) => c.id).join(' '))
   console.log('（plan.md 已改；记得提交它）')
   process.exit(0)
 }

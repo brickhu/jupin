@@ -52,19 +52,9 @@
 - [ ] **B4** `packages/shared/src/streak.ts` 的 `freeze*` 命名统一成 `unfreeze*` —— 卡叫「解冻卡」，代码名还留着一半
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
-  ① 数据上两个档位（`vocabLevel` / `pronLevel`），库里两列（派生索引，供筛选排序）；
-  ② `reason` **进正文 JSON 且给用户看**，固定格式：**以「相当于<级别>水平」开头**（级别用考试口径：小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / 雅思 6.5 / GRE），随后是发音难点，`；` 后是词汇与句式点评。例：
-     `相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；词都比较常见，只有 sophistication 稍超纲。`
-  ③ detail 接口改成**显式挑字段**（现在 `...content` 是"JSON 里有什么就漏什么"，reason 要漏给用户但别的内部字段不能）；
-  ④ 顺带把轴无关的符号改名：`DIFFICULTY_LABEL`→`LEVEL_LABEL`、`DIFFICULTY_ORDER`→`LEVEL_ORDER`、`normalizeDifficulty`→`normalizeLevel`、`ArticleDifficulty`→`ArticleLevel`；字段/列 `difficulty`→`pronLevel`/`pron_level`
-  —— 做完的标志：正文 JSON 有两个档位 + 一句 reason（格式如上）、库里两列、admin 与 detail 都能看到、8 句实测两轴分布都合理。**B15 并入本条**，词汇轴的锚点用你给的人工样本：
-  - **专家**：The assumption that human behavior is governed entirely by rational choice ignores the profound influence of subconscious emotions, which often drive decisions long before logic has had the chance to intervene
-  - **高级**：Companies that fail to adapt to the rapidly changing technological landscape risk being left behind by competitors who are quicker to embrace innovation.
-  - **中级**：Although the internet has made it easier than ever to access information, finding reliable sources requires a high level of critical thinking
-  - **中级**：The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.
-  - **初级**：The best way to predict the future is to invent it.
-  - **初级**：Don't count the days, make the days count.
 
+- [ ] **B18** 批量入库的**拆分改成代码按空行**（一段 = 一条，确定性），LLM **只负责纠错 + 四项元数据** —— 用户 2026-09 决定：**接受将来出现超长句**，不要模型自己判切分 —— 做完的标志：段数 = 条数（代码保证），模型只填内容；提示词里删掉「切分规则」
+- [ ] **B19** 把 `The world is like a mirror…` 换成**纠错版**：纠错后的正文入库并发布；带错的那条（`c3cd0bb15f936445`）下架 —— 用户 2026-09 确认
 
 ### C. 上线 / 运维
 
@@ -82,16 +72,37 @@
 > ⭐ 本节的 `[x]` 由 `pnpm plan:status --write` **从 git 派生**，不要手写、不要手改。
 > 天生没有 commit 的完成项写在下一节。
 
-- [x] **B10** AGENT.md 写清**「人怎么派活」**—— 四种句型、你只需要决定的三件事、每次任务的固定回路 —— 做完的标志：AGENT.md 有这一节，派活不用再问
-- [x] **B11** 难度定级改为**纯 LLM 判定**：废弃「脚本算特征」方案 —— 改掉步骤说明与注释、在 spec.md 记下这条决策 —— 做完的标志：全仓库没有把它当**现行方案**的地方（注释/文档里的「已废弃」说明不算；docs/archive 不动）
-- [x] **B12** 难度提示词改为**中国学习者视角**：四档重写 + 加「中国学习者最常错的音」清单 + reason 必须点出具体难点 —— 做完的标志：提示词以中国学习者为基准，prd/spec 记下这条口径
-- [x] **B13** 用新口径**重判存量内容**（B12/B14 已完成）—— 只改正文 JSON 的 `pronLevel` / `vocabLevel` / `reason`（`text` 不动 ⇒ **id 不变**），改完刷 `articles` 的派生索引（`pnpm content:regrade --apply`）—— 做完的标志：8 句的两轴与 reason 都是当前提示词判出来的，且 `articles.pron_level` / `vocab_level` 与 JSON 一致
-- [x] **B14** 校准难度提示词的**档位分布** —— 实测（B12 之后重判 8 句）：**7 句上移**、5 句挤在「高级」，出现**天花板效应**。根因：清单写成「**出现即加难度**」，而 `the` 的 /ð/、连读几乎每句都有 → 要改成按**密度与叠加**升档，并写明「`the` 的 /ð/ 太普遍，**不单独**构成升档理由」—— 做完的标志：重判后档位至少覆盖 3 档、不挤在单档
-- [x] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
-- [x] **B17** admin「新增句子」改成**批量入库**（2026-09 需求）：① 多段输入（空行分隔）→ LLM **拆分 + 纠错** → ② 多选/可编辑候选列表（默认全选）→ ③ 批量生成（**先 LLM 出 N 条 → 再批量 TTS → 最后上传静态资源 + 入库草稿**）→ ④ 入库列表（URL + 勾选）→【发布】批量置为已发布 —— 做完的标志：粘一段多段文本（含 `itand` 这类错）能拆成多条、纠错、勾选、批量入库、批量发布，且**已存在的条目被跳过（不浪费生成成本）**
 - [x] **B7** 把存量按主题拆成带 `plan <ID>` 的 commit —— 做完的标志：工作区干净、`plan:status` 认得出这批提交
+
 - [x] **B8** plan 改用**统一 checkbox**（`- [ ]` / `- [x]`），`[x]` 由 `pnpm plan:sync` 从 git 派生并归档 —— 做完的标志：plan.md 全是 checkbox、`plan:status` 能报「有 commit 但没勾」、`--write` 幂等
+
 - [x] **B9** 写清**多任务并行**的冲突规则（四个冲突面 + 各自的消法），并加 `pnpm task:*` worktree 工具 —— 做完的标志：AGENT.md 有这一节、`pnpm task:start/list/remove` 可用
+
+- [x] **B10** AGENT.md 写清**「人怎么派活」**—— 四种句型、你只需要决定的三件事、每次任务的固定回路 —— 做完的标志：AGENT.md 有这一节，派活不用再问
+
+- [x] **B11** 难度定级改为**纯 LLM 判定**：废弃「脚本算特征」方案 —— 改掉步骤说明与注释、在 spec.md 记下这条决策 —— 做完的标志：全仓库没有把它当**现行方案**的地方（注释/文档里的「已废弃」说明不算；docs/archive 不动）
+
+- [x] **B12** 难度提示词改为**中国学习者视角**：四档重写 + 加「中国学习者最常错的音」清单 + reason 必须点出具体难点 —— 做完的标志：提示词以中国学习者为基准，prd/spec 记下这条口径
+
+- [x] **B13** 用新口径**重判存量内容**（B12/B14 已完成）—— 只改正文 JSON 的 `pronLevel` / `vocabLevel` / `reason`（`text` 不动 ⇒ **id 不变**），改完刷 `articles` 的派生索引（`pnpm content:regrade --apply`）—— 做完的标志：8 句的两轴与 reason 都是当前提示词判出来的，且 `articles.pron_level` / `vocab_level` 与 JSON 一致
+
+- [x] **B14** 校准难度提示词的**档位分布** —— 实测（B12 之后重判 8 句）：**7 句上移**、5 句挤在「高级」，出现**天花板效应**。根因：清单写成「**出现即加难度**」，而 `the` 的 /ð/、连读几乎每句都有 → 要改成按**密度与叠加**升档，并写明「`the` 的 /ð/ 太普遍，**不单独**构成升档理由」—— 做完的标志：重判后档位至少覆盖 3 档、不挤在单档
+
+- [x] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
+  ① 数据上两个档位（`vocabLevel` / `pronLevel`），库里两列（派生索引，供筛选排序）；
+  ② `reason` **进正文 JSON 且给用户看**，固定格式：**以「相当于<级别>水平」开头**（级别用考试口径：小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / 雅思 6.5 / GRE），随后是发音难点，`；` 后是词汇与句式点评。例：
+     `相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；词都比较常见，只有 sophistication 稍超纲。`
+  ③ detail 接口改成**显式挑字段**（现在 `...content` 是"JSON 里有什么就漏什么"，reason 要漏给用户但别的内部字段不能）；
+  ④ 顺带把轴无关的符号改名：`DIFFICULTY_LABEL`→`LEVEL_LABEL`、`DIFFICULTY_ORDER`→`LEVEL_ORDER`、`normalizeDifficulty`→`normalizeLevel`、`ArticleDifficulty`→`ArticleLevel`；字段/列 `difficulty`→`pronLevel`/`pron_level`
+  —— 做完的标志：正文 JSON 有两个档位 + 一句 reason（格式如上）、库里两列、admin 与 detail 都能看到、8 句实测两轴分布都合理。**B15 并入本条**，词汇轴的锚点用你给的人工样本：
+  - **专家**：The assumption that human behavior is governed entirely by rational choice ignores the profound influence of subconscious emotions, which often drive decisions long before logic has had the chance to intervene
+  - **高级**：Companies that fail to adapt to the rapidly changing technological landscape risk being left behind by competitors who are quicker to embrace innovation.
+  - **中级**：Although the internet has made it easier than ever to access information, finding reliable sources requires a high level of critical thinking
+  - **中级**：The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.
+  - **初级**：The best way to predict the future is to invent it.
+  - **初级**：Don't count the days, make the days count.
+
+- [x] **B17** admin「新增句子」改成**批量入库**（2026-09 需求）：① 多段输入（空行分隔）→ LLM **拆分 + 纠错** → ② 多选/可编辑候选列表（默认全选）→ ③ 批量生成（**先 LLM 出 N 条 → 再批量 TTS → 最后上传静态资源 + 入库草稿**）→ ④ 入库列表（URL + 勾选）→【发布】批量置为已发布 —— 做完的标志：粘一段多段文本（含 `itand` 这类错）能拆成多条、纠错、勾选、批量入库、批量发布，且**已存在的条目被跳过（不浪费生成成本）**
 
 ## 已完成 · 无 commit（手写）
 
