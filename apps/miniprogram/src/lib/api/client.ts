@@ -21,7 +21,7 @@ import type {
   SubmissionStatusResponse,
 } from '@jushuo/shared'
 
-import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, TRANSPORT } from '../../config'
+import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, TARGET, TRANSPORT } from '../../config'
 
 let token = ''
 
@@ -423,13 +423,27 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
     // ⚠️ 只在「还有下一次机会」时才吞掉错误；最后一次必须原样抛出去
     const lastAttempt = attempt === RETRY_DELAYS_MS.length - 1
 
+    /**
+     * ⭐ 每一次尝试都记一行「耗时 + 第几次 + 累计 + 实际目标」。
+     *
+     * ⚠️⚠️ 加它的原因：真机上「慢」这个体感，无法从任何一层单独判断 ——
+     *    可能是传输层（callContainer 本身的网关开销）、可能是实例冷启动、
+     *    也可能是某个接口服务端确实慢。没有这行日志，只能靠猜。
+     *    目标（TARGET）一并打出来，是为了立刻分清「打的是本机 Docker 还是 dev 云」。
+     */
+    const attemptStartedAt = Date.now()
     try {
       const attemptOptions: RequestOptions = { ...options, timeout: remaining }
-      return await (TRANSPORT === 'container'
+      const result = await (TRANSPORT === 'container'
         ? containerRequest<T>(path, attemptOptions)
         : httpRequest<T>(path, attemptOptions))
+      console.log(
+        `[api] ← ${path} 成功 ${Date.now() - attemptStartedAt}ms（第 ${attempt + 1} 次，累计 ${Date.now() - startedAt}ms）→ ${TARGET}`,
+      )
+      return result
     } catch (err) {
       const e = err as Error
+      const attemptElapsed = Date.now() - attemptStartedAt
       // ⚠️ AuthExpiredError 刻意**不在这里重试** —— 它是 request() 那一层的事，
       //    在那里重试之前会先重新登录。在这里当成普通传输失败重试，
       //    只会在同一个失效 token 上白撞三次。
@@ -437,6 +451,9 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
       const retryable =
         e instanceof RetryableError || e instanceof StillScoringError || isTransportFailure(e)
       if (!retryable || lastAttempt) {
+        console.warn(
+          `[api] ✗ ${path} 最终失败 ${attemptElapsed}ms（第 ${attempt + 1} 次，累计 ${Date.now() - startedAt}ms）→ ${TARGET}：${e.message}`,
+        )
         if (retryable && lastAttempt) {
           // ⚠️ 「重试到预算用尽」有两种完全不同的原因，**不能给同一句话**：
           //    ① 冷启动：请求根本没打到服务（服务端没有任何记录）
@@ -449,13 +466,15 @@ async function requestWithRetries<T>(path: string, options: RequestOptions = {})
               ? '打分还在进行中（长句要十几秒），再点一次「提交检测」即可拿到结果 —— 不会重复计费'
               : '服务正在启动中（云托管冷启动要十几秒），请再试一次',
             scoring ? 'SCORING' : 'COLD_START',
-            { attempts: RETRY_DELAYS_MS.length, lastError: e.message },
+            { attempts: RETRY_DELAYS_MS.length, elapsedMs: Date.now() - startedAt, target: TARGET, lastError: e.message },
           )
         }
         throw err
       }
       lastErr = e
-      console.warn(`[api] ${path} 第 ${attempt + 1} 次失败，将重试：${e.message}`)
+      console.warn(
+        `[api] ✗ ${path} 第 ${attempt + 1} 次失败 ${attemptElapsed}ms（累计 ${Date.now() - startedAt}ms）→ ${TARGET}，将重试：${e.message}`,
+      )
     }
   }
 

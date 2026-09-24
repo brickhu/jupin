@@ -1002,7 +1002,15 @@ function openWordDialog(i) {
   if (!w) return
   state.editWordIndex = i
   errBox("#wd-error", "")
-  $("#wd-hint").textContent = "第 " + (i + 1) + " 个词（下标必须与正文一致，所以单词本身不可改）"
+  /**
+   * ⚠️ 空字段**必须看起来是空的**：以前占位符写的是示例文案（"精致、考究（此句指格调）"），
+   *    结果空值看起来像已经有值 —— 用户 2026-09 就是这么被误导的。
+   *    现在占位符统一是「（空）」，字段含义写在标签旁边。
+   */
+  const weak = w.stress === -1
+  $("#wd-hint").textContent =
+    "第 " + (i + 1) + " 个词（下标必须与正文一致，所以单词本身不可改）" +
+    (weak ? "；它是弱读的功能词，释义与技巧通常不必填" : "")
   $("#wd-text").value = w.text || ""
   $("#wd-ipa").value = w.ipa || ""
   $("#wd-stress").value = String(w.stress === undefined ? 0 : w.stress)

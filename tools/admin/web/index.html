@@ -114,7 +114,9 @@
               <h3>改这个词</h3>
               <p class="muted tiny" id="wd-hint"></p>
               <label class="block">单词<input type="text" id="wd-text" readonly /></label>
-              <label class="block">音标<input type="text" id="wd-ipa" placeholder="/səˌfɪstəˈkeɪʃən/" /></label>
+              <label class="block">音标<span class="muted tiny">留空 = 不显示音标</span>
+                <input type="text" id="wd-ipa" placeholder="/səˌfɪstəˈkeɪʃən/" />
+              </label>
               <label class="block">句重音
                 <select id="wd-stress">
                   <option value="-1">弱读（轻、含糊）</option>
@@ -125,8 +127,12 @@
               <label class="block">音节<span class="muted tiny">用空格分开，拼回来必须等于原词</span>
                 <input type="text" id="wd-syllables" placeholder="so phis ti ca tion" />
               </label>
-              <label class="block">句中义<input type="text" id="wd-meaning" placeholder="精致、考究（此句指格调）" /></label>
-              <label class="block">发音技巧<input type="text" id="wd-tip" placeholder="主重音在第 4 拍，别落到第一个音节" /></label>
+              <label class="block">句中义<span class="muted tiny">功能词（the / of / it …）留空就行</span>
+                <input type="text" id="wd-meaning" placeholder="（空）" />
+              </label>
+              <label class="block">发音技巧<span class="muted tiny">留空 = 不显示技巧</span>
+                <input type="text" id="wd-tip" placeholder="（空）" />
+              </label>
               <p class="error" id="wd-error" hidden></p>
               <div class="row end">
                 <button type="button" class="ghost" id="wd-cancel">取消</button>
