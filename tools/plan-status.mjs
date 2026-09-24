@@ -32,7 +32,7 @@ const PLAN_PATH = join(ROOT, 'plan.md')
 const planText = readFileSync(PLAN_PATH, 'utf8')
 
 /** 任务行：\`- [ ] **B1** 说明…\`（ID 必须在行首的粗体里 —— 避免把正文里的引用当成定义） */
-const TASK_RE = /^- \[([ x])\] \*\*([A-C]\d)\*\* /
+const TASK_RE = /^- \[([ x])\] \*\*([A-C]\d+)\*\* /
 
 /** 抽任务 ID → 它所在的节与当前勾选状态 */
 function parseTasks(text) {
@@ -77,7 +77,7 @@ try {
 
 /** commit 信息里的 ID：plan B1 / plan-B1 / (plan B1) 都认 */
 const idOf = (subject) => {
-  const m = /plan[\s-]*([A-C]\d)\b/i.exec(subject)
+  const m = /plan[\s-]*([A-C]\d+)\b/i.exec(subject)
   return m ? m[1].toUpperCase() : null
 }
 
