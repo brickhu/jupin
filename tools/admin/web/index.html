@@ -151,14 +151,14 @@
         <button type="button" id="ed-close" class="nav">关闭</button>
       </header>
 
-      <!-- 第一步：输入英文（只在新增时） -->
+      <!-- ① 输入：可以多段，段间空一行 -->
       <div id="ed-input">
-        <label class="block">英文原句
-          <textarea id="ed-text" rows="3" placeholder="在这里贴一句英文。回车换行不影响 —— id 按整句内容算。"></textarea>
+        <label class="block">英文（可以多段 —— <b>段与段之间空一行</b>）
+          <textarea id="ed-text" rows="7" placeholder="把英文贴在这里，段间留一个空行。&#10;会自动拆成多条，并顺手纠错（例如把 itand 补成 it and）。"></textarea>
         </label>
         <div class="row">
-          <button type="button" id="ed-generate" class="primary">跑生成流水线</button>
-          <span class="muted tiny">LLM 出译文 / 难度 / 标签 → fish 出标准音和词级时间戳 → 建草稿行</span>
+          <button type="button" id="ed-split" class="primary">① 拆分并纠错</button>
+          <span class="muted tiny">这一步只调 LLM 出文本 / 译文 / 两个难度 / 标签 —— <b>先不花钱生成语音</b></span>
         </div>
       </div>
 
@@ -166,51 +166,27 @@
       <p id="ed-error" class="error" hidden></p>
       <p id="ed-env-warn" class="warn" hidden></p>
 
-      <!-- 第二步：字段 + 试听 -->
-      <div id="ed-fields" hidden>
-        <p id="ed-id" class="muted tiny mono"></p>
-        <label class="block">英文原句（只读，改它就是另一条句子）
-          <textarea id="ed-text-ro" rows="2" readonly></textarea>
-        </label>
-        <label class="block">译文
-          <textarea id="ed-translation" rows="3"></textarea>
-        </label>
+      <!-- ② 候选：勾选 + 就地改（正文/译文/档位/标签/那句话），确认后才生成 -->
+      <div id="ed-step2" hidden>
         <div class="row">
-          <label class="block">发音难度
-            <select id="ed-pron"></select>
-          </label>
-          <label class="block">词汇难度
-            <select id="ed-vocab"></select>
-          </label>
-          <label class="block grow">标签（空格或逗号分隔，最多 8 个）
-            <input id="ed-tags" type="text" />
-          </label>
+          <b>拆出 <span id="ed-cand-count">0</span> 条</b>
+          <span id="ed-skip-note" class="muted tiny"></span>
+          <span class="grow"></span>
+          <button type="button" id="ed-toggle-all" class="ghost">全选 / 全不选</button>
+          <button type="button" id="ed-ingest" class="primary">② 生成入库（草稿）</button>
         </div>
-        <label class="block">一句话（难在哪，给用户看）
-          <input id="ed-reason" type="text" />
-        </label>
-        <div class="row" id="ed-tagchips"></div>
+        <ul id="ed-candidates" class="cand-list"></ul>
+      </div>
 
-        <div class="block">语音预览
-          <!-- ⚠️ preload=metadata 不是性能调优：readyState=0 时给 currentTime 赋值会被忽略，
-               点词就只能从 0 秒开始播（见 app.js 的 playWordAt） -->
-          <audio id="ed-audio" controls preload="metadata"></audio>
-          <p id="ed-audio-note" class="muted tiny"></p>
+      <!-- ③ 入库结果：勾选后批量发布 -->
+      <div id="ed-step3" hidden>
+        <div class="row">
+          <b>已入库 <span id="ed-done-count">0</span> 条</b>
+          <span class="grow"></span>
+          <button type="button" id="ed-toggle-done" class="ghost">全选 / 全不选</button>
+          <button type="button" id="ed-publish" class="primary">③ 发布选中</button>
         </div>
-        <div class="block words-block">
-          <div class="words-head">
-            <span>本文 <b id="ed-wordcount">0</b> 个单词</span>
-            <span class="grow"></span>
-            <span class="muted tiny">点时间可直接改，改完点下面「保存」</span>
-          </div>
-          <ul id="ed-words" class="word-list"></ul>
-        </div>
-
-        <p id="ed-status" class="muted tiny"></p>
-        <div class="row end">
-          <button type="button" id="ed-save" class="ghost">保存</button>
-          <button type="button" id="ed-publish" class="primary">发布</button>
-        </div>
+        <ul id="ed-ingested" class="done-list"></ul>
       </div>
     </div>
   </div>

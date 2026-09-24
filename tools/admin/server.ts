@@ -37,7 +37,8 @@ import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
 import { articleIdOf } from '../pipeline/src/lib/article-id'
 import { MIN_PLAY_SEC, produceStandardAudio, writeWordTimestamps } from '../pipeline/src/lib/audio-assets'
-import { generateArticleMeta } from '../pipeline/src/lib/article-meta'
+import { splitArticles } from '../pipeline/src/lib/article-meta'
+import type { ArticleCandidate } from '../pipeline/src/lib/article-meta'
 import { themeFromHash } from '../../packages/shared/src/theme'
 import { ARTICLE_ID_LENGTH } from '../../packages/shared/src/constants'
 import { contentPathOf } from '../../packages/shared/src/content-path'
@@ -634,95 +635,188 @@ interface Job {
 
 const jobs = new Map<string, Job>()
 
-async function runGenerate(job: Job, mode: Mode, text: string): Promise<void> {
-  const id = articleIdOf(text)
-  job.log.push('id = ' + id.slice(0, 16) + '…')
+/** 一条候选 + 它现在的处境（`exists` = 内容已在盘上 ⇒ 生成那一步直接跳过） */
+interface SplitItem extends ArticleCandidate {
+  id: string
+  exists: boolean
+}
 
-  job.step = 'LLM：译文 / 两个难度 / 标签'
-  const meta = await generateArticleMeta(text)
-  const lb = (v: typeof meta.pronLevel) => (v === null ? '—' : LEVEL_LABEL[v])
-  job.log.push(
-    '发音 ' + lb(meta.pronLevel) + '｜词汇 ' + lb(meta.vocabLevel) +
-      '｜标签 ' + (meta.tags.join(' / ') || '—'),
-    '这句话难在哪：' + (meta.reason || '—'),
-  )
-  /**
-   * ⚠️ 两条轴**都要**，缺一个就不发：正文 JSON 里两个档位是并列的事实，
-   *    只写一个会让「另一条轴没评过」和「评出来是 null」分不清。
-   */
-  if (meta.pronLevel === null || meta.vocabLevel === null) {
-    throw new Error('模型没给全两个难度档位（发音 / 词汇都要 0–3），这条先别发')
+/** 一条的结局 —— 界面上就是「入库列表」里那一行 */
+interface IngestResult {
+  id: string
+  text: string
+  translation: string
+  pronLevel: number
+  vocabLevel: number
+  reason: string
+  tags: string[]
+  status: 'done' | 'skipped' | 'failed'
+  error?: string
+}
+
+/**
+ * ⭐ 第一步：LLM 把多段输入拆成 1–N 条 + 纠错 + 给出四条元数据（**不落盘、不生成音频**）。
+ *
+ * ⚠️ 去重在这里就先算出来给界面看：`exists` 为真的条目在生成那一步会被跳过，
+ *    省掉的正是**唯一按量花钱**的 TTS（顺序的理由见 spec.md 第九节）。
+ */
+async function runSplit(job: Job, text: string): Promise<void> {
+  job.step = 'LLM：拆分 + 纠错 + 难度 / 标签'
+  const list = await splitArticles(text)
+  const items: SplitItem[] = []
+  const seen = new Set<string>()
+  for (const c of list) {
+    const id = articleIdOf(c.text)
+    // ⚠️ 批内去重：输入里同一句出现两次时只留一条（否则同一份音频会生成两次）
+    if (seen.has(id)) continue
+    seen.add(id)
+    items.push({ ...c, id, exists: existsSync(contentAbsPathOf(id)) })
   }
-
-  /**
-   * ⭐ 正文必须**在跑音频之前**落盘。
-   *
-   * ⚠️ 第一版把写文件放在最后，结果是 fish 的音频合成完了、
-   *    写词级时间戳那一步直接 ENOENT —— 因为 writeWordTimestamps 是
-   *    「读 content/articles/<id>.json → 塞进 words → 写回」，
-   *    文件不存在就没有可写回的地方。
-   * ⚠️ 失败时必须把新建的这个文件删掉：下次部署 loadSeedArticles 会扫到它，
-   *    并按 DB 默认值（isActive 默认 true）插进库里 ——
-   *    那就等于**悄悄上线一句没有音、没有词的句子**。
-   *    已有文件（重新生成同一句）不能删，那不是这次新建的。
-   */
-  const jsonPath = contentAbsPathOf(id)
-  const existed = existsSync(jsonPath)
-  /** 音频这一步的产物；失败时保持 null（后面的 result 要用） */
-  let audio: { wordCount: number; durationMs: number } | null = null
-  try {
-    await writeContentFile(id, {
-      id,
-      text,
-      translation: meta.translation,
-      pronLevel: meta.pronLevel,
-      vocabLevel: meta.vocabLevel,
-      // ⭐ 给用户看的一句话 —— 与两个档位同源，一起写进正文
-      reason: meta.reason,
-      tags: meta.tags,
-      words: [],
-    })
-
-    job.step = 'fish：标准音 + 词级时间戳'
-    const prod = await produceStandardAudio(id, text, { force: true })
-    const n = await writeWordTimestamps(id, prod.alignment)
-    job.log.push(
-      '整句 ' + prod.alignment.audioDuration.toFixed(2) + 's，' + prod.wordCount + ' 个词，时间戳 ' + n + ' 条',
-    )
-    audio = { wordCount: prod.wordCount, durationMs: Math.round(prod.alignment.audioDuration * 1000) }
-  } catch (err) {
-    if (!existed) await unlink(jsonPath).catch(() => {})
-    throw err
+  if (items.length === 0) throw new Error('模型没拆出任何句子 —— 输入是英文吗？')
+  for (const it of items) {
+    const lb = (v: typeof it.pronLevel) => (v === null ? '—' : LEVEL_LABEL[v])
+    job.log.push((it.exists ? '⏭ 已存在 ' : '· ') + it.id + '  发音 ' + lb(it.pronLevel) +
+      '｜词汇 ' + lb(it.vocabLevel) + '  ' + it.text)
+    job.log.push('    ' + it.reason)
   }
+  job.step = '完成'
+  job.status = 'done'
+  job.result = { items, existsCount: items.filter((i) => i.exists).length }
+}
 
-  job.step = '写库（草稿）'
-  await upsertArticle(mode, {
-    id,
-    text,
-    translation: meta.translation,
-    pronLevel: meta.pronLevel,
-    vocabLevel: meta.vocabLevel,
-    reason: meta.reason,
-    tags: meta.tags,
-    publish: false,
+/**
+ * ⭐ 第二、三步：批量落正文 → 批量 TTS → 批量入库（草稿）。
+ *
+ * ⚠️⚠️ **顺序是刻意的，别改成「逐条一条龙」**（理由见 spec.md 第九节）：
+ *    ① 正文先全部落盘 —— TTS 的词级时间戳要写回它，文件不存在就没有可写回的地方；
+ *    ② 再批量跑 TTS —— 这是唯一按量花钱的一步，放在最后意味着前面任何一条不合格都不用花钱；
+ *    ③ 最后才写库（草稿）。中途挂掉时库里不会留半成品行。
+ * ⚠️ `exists` 的条目**直接跳过**：内容已经在了，不重复花那份钱。
+ * ⚠️ 单条失败**不拖垮整批**：记下错误继续跑，结果里逐条给出 status。
+ * ⚠️⚠️ **id 一律按 text 重算**，不信客户端传来的那个 —— 候选的正文是可以在界面上手改的，
+ *    改了正文就是另一条内容（id = sha256(text)）；沿用旧 id 会把音频写到错误的文件上。
+ */
+async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<void> {
+  const items = incoming
+    .map((it) => ({ ...it, text: String(it.text ?? '').trim() }))
+    .filter((it) => it.text !== '')
+    .map((it) => ({ ...it, id: articleIdOf(it.text) }))
+  const results: IngestResult[] = []
+  const base = (it: SplitItem): Omit<IngestResult, 'status' | 'error'> => ({
+    id: it.id, text: it.text, translation: it.translation,
+    pronLevel: it.pronLevel ?? -1, vocabLevel: it.vocabLevel ?? -1,
+    reason: it.reason, tags: it.tags,
   })
+
+  // ① 落正文
+  job.step = '① 落正文（' + items.length + ' 条）'
+  const prepared: Array<{ it: SplitItem; created: boolean }> = []
+  for (const it of items) {
+    if (existsSync(contentAbsPathOf(it.id))) {
+      results.push({ ...base(it), status: 'skipped' })
+      job.log.push('⏭ 已存在，跳过（省一次生成）：' + it.id + '  ' + it.text.slice(0, 40))
+      continue
+    }
+    /**
+     * ⚠️ 两条轴都要有值才敢落盘：正文里它们是并列的事实，缺一个就是「没评过级」。
+     *    界面会拦住，这里再兜一道。
+     */
+    if (it.pronLevel === null || it.vocabLevel === null) {
+      results.push({ ...base(it), status: 'failed', error: '缺少难度档位（发音 / 词汇都要 0–3）' })
+      job.log.push('❌ 缺少难度档位：' + it.text.slice(0, 40))
+      continue
+    }
+    const created = !existsSync(contentAbsPathOf(it.id))
+    await writeContentFile(it.id, {
+      id: it.id, text: it.text, translation: it.translation,
+      pronLevel: it.pronLevel, vocabLevel: it.vocabLevel,
+      reason: it.reason, tags: it.tags, words: [],
+    })
+    prepared.push({ it, created })
+  }
+
+  // ② 批量 TTS
+  job.step = '② fish：标准音 + 词级时间戳（' + prepared.length + ' 条）'
+  const ok: typeof prepared = []
+  for (const p of prepared) {
+    try {
+      const prod = await produceStandardAudio(p.it.id, p.it.text, { force: true })
+      const n = await writeWordTimestamps(p.it.id, prod.alignment)
+      job.log.push('🔊 ' + p.it.id + '  ' + prod.alignment.audioDuration.toFixed(2) + 's / ' +
+        prod.wordCount + ' 词 / 时间戳 ' + n + ' 条')
+      ok.push(p)
+    } catch (err) {
+      /**
+       * ⚠️ 失败时删掉**这次新建**的正文：留着它，下次部署 loadSeedArticles 会扫到，
+       *    并按 DB 默认值（isActive 默认 true）插进库 —— 等于悄悄上线一句没音的句子。
+       *    已有文件（重新生成同一句）不能删，那不是这次新建的。
+       */
+      if (p.created) await unlink(contentAbsPathOf(p.it.id)).catch(() => {})
+      results.push({ ...base(p.it), status: 'failed', error: (err as Error).message })
+      job.log.push('❌ 生成失败（已回滚正文）：' + p.it.id + '  ' + (err as Error).message)
+    }
+  }
+
+  // ③ 入库（草稿）
+  job.step = '③ 入库（草稿）'
+  for (const p of ok) {
+    try {
+      await upsertArticle(mode, {
+        id: p.it.id, text: p.it.text, translation: p.it.translation,
+        pronLevel: p.it.pronLevel!, vocabLevel: p.it.vocabLevel!,
+        reason: p.it.reason, tags: p.it.tags, publish: false,
+      })
+      results.push({ ...base(p.it), status: 'done' })
+      job.log.push('✓ 入库（草稿）：' + p.it.id)
+    } catch (err) {
+      results.push({ ...base(p.it), status: 'failed', error: (err as Error).message })
+      job.log.push('❌ 入库失败：' + p.it.id + '  ' + (err as Error).message)
+    }
+  }
 
   job.step = '完成'
   job.status = 'done'
   job.result = {
-    id,
-    text,
-    translation: meta.translation,
-    pronLevel: meta.pronLevel,
-    pronLabel: meta.pronLevel === null ? null : LEVEL_LABEL[meta.pronLevel],
-    vocabLevel: meta.vocabLevel,
-    vocabLabel: meta.vocabLevel === null ? null : LEVEL_LABEL[meta.vocabLevel],
-    tags: meta.tags,
-    reason: meta.reason,
-    wordCount: audio?.wordCount ?? 0,
-    durationMs: audio?.durationMs ?? 0,
-    words: (await contentOf(id))?.words ?? [],
+    items: results,
+    done: results.filter((r) => r.status === 'done').length,
+    skipped: results.filter((r) => r.status === 'skipped').length,
+    failed: results.filter((r) => r.status === 'failed').length,
   }
+}
+
+/**
+ * ⭐ 第四步：批量发布（或下架）—— 只动库里的发布位，**不重写正文**。
+ *
+ * ⚠️ `publishedAt` 只在**草稿 → 已发布**那一刻写（与 upsertArticle 同一条规矩）：
+ *    反复发布会把它刷成「最后一次编辑时间」，那就答非所问了。
+ * ⚠️ 顺手刷一次派生索引：正文可能被手工改过（两个档位 / 标签）。
+ */
+async function setPublishedBatch(
+  mode: Mode,
+  ids: string[],
+  publish: boolean,
+): Promise<Array<{ id: string; ok: boolean; error?: string }>> {
+  const d = await dbOf(mode)
+  const out: Array<{ id: string; ok: boolean; error?: string }> = []
+  for (const id of ids) {
+    try {
+      const [cur] = await d
+        .select({ isActive: articles.isActive })
+        .from(articles)
+        .where(eq(articles.id, id))
+        .limit(1)
+      if (!cur) { out.push({ id, ok: false, error: '句库没有这一条' }); continue }
+      await d
+        .update(articles)
+        .set({ isActive: publish, ...(publish && !cur.isActive ? { publishedAt: new Date() } : {}) })
+        .where(eq(articles.id, id))
+      await syncArticleIndex(id, d)
+      out.push({ id, ok: true })
+    } catch (err) {
+      out.push({ id, ok: false, error: (err as Error).message })
+    }
+  }
+  return out
 }
 
 /**
@@ -877,14 +971,37 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return ok(res, { env: S.env, list, levelLabels: LEVEL_LABEL, levelOrder: LEVEL_ORDER })
   }
 
-  // ---- 生成（异步任务）----
-  if (path === '/api/generate' && req.method === 'POST') {
+  /**
+   * ---- 批量入库：三步各一个入口 ----
+   *
+   * ⚠️ 拆成三个入口而不是一条龙，是为了让**人在中间看一眼**：
+   *    拆分（LLM）→ 人确认/改 → 生成（TTS）→ 人勾选 → 发布。
+   *    TTS 是唯一按量花钱的一步，放在人确认之后（理由见 spec.md 第九节）。
+   */
+  if (path === '/api/split' && req.method === 'POST') {
     const b = await body(req)
     const text = String(b.text ?? '').trim()
     if (!text) return fail(res, '缺少 text')
-    const mode = S.env
-    const jobId = startJob((job) => runGenerate(job, mode, text))
+    const jobId = startJob((job) => runSplit(job, text))
     return ok(res, { jobId })
+  }
+
+  if (path === '/api/ingest' && req.method === 'POST') {
+    const b = await body(req)
+    const items = Array.isArray(b.items) ? (b.items as SplitItem[]) : []
+    if (items.length === 0) return fail(res, '没有要生成的条目')
+    const mode = S.env
+    const jobId = startJob((job) => runIngest(job, mode, items))
+    return ok(res, { jobId })
+  }
+
+  if (path === '/api/publish' && req.method === 'POST') {
+    const b = await body(req)
+    const ids = Array.isArray(b.ids) ? (b.ids as string[]) : []
+    if (ids.length === 0) return fail(res, '没有要处理的条目')
+    // ⚠️ 不带 publish 字段 = 发布；显式传 false 才是下架
+    const publish = b.publish !== false
+    return ok(res, { results: await setPublishedBatch(S.env, ids, publish) })
   }
 
   const jobPath = /^\/api\/jobs\/([0-9a-f]+)$/.exec(path)

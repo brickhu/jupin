@@ -814,9 +814,8 @@ $("#dt-audio").addEventListener("play", renderDetailPlay)
 $("#dt-audio").addEventListener("pause", renderDetailPlay)
 $("#dt-audio").addEventListener("timeupdate", renderDetailTime)
 $("#dt-audio").addEventListener("loadedmetadata", renderDetailTime)
-// 正在播的那一行画进度（详情页 / 抽屉共用）
+// 正在播的那一行画进度（详情页的分词列表）
 $("#dt-audio").addEventListener("timeupdate", function () { progressOf($("#dt-audio")) })
-$("#ed-audio").addEventListener("timeupdate", function () { progressOf($("#ed-audio")) })
 $("#dt-audio").addEventListener("ended", function () { renderDetailPlay(); renderDetailTime() })
 function stopDetailAudio() {
   const a = $("#dt-audio")
@@ -1065,10 +1064,23 @@ function progressOf(audio) {
 
 $("#add-btn").addEventListener("click", function () { openCreate() })
 $("#ed-close").addEventListener("click", function () { closeEditor() })
-$("#ed-generate").addEventListener("click", function () { runGenerate() })
-$("#ed-save").addEventListener("click", function () { saveArticle(false) })
-$("#ed-publish").addEventListener("click", function () { saveArticle(true) })
-$("#ed-tags").addEventListener("input", function () { renderTagChips() })
+$("#ed-split").addEventListener("click", function () { runSplit() })
+$("#ed-ingest").addEventListener("click", function () { runIngest() })
+$("#ed-publish").addEventListener("click", function () { publishSelected() })
+$("#ed-toggle-all").addEventListener("click", function () { toggleAll("#ed-candidates") })
+$("#ed-toggle-done").addEventListener("click", function () { toggleAll("#ed-ingested") })
+
+/** 全选 / 全不选：只要还有没勾的就全勾上，否则全取消 */
+function toggleAll(sel) {
+  const boxes = [].slice.call(document.querySelectorAll(sel + " input[type=checkbox]:not(:disabled)"))
+  const want = boxes.some(function (b) { return !b.checked })
+  boxes.forEach(function (b) { b.checked = want })
+}
+
+/** "" ⇒ null（服务端的档位是 0–3 或 null，"未定" 不能变成 0） */
+function numberOrNull(v) {
+  return v === "" || v === null || v === undefined ? null : Number(v)
+}
 
 /**
  * 云环境的提醒。
@@ -1099,33 +1111,26 @@ function openEditorShell() {
 }
 
 function closeEditor() {
-  const a = $("#ed-audio")
-  stopWordPlay(a, $("#ed-words"))
-  a.pause()
   $("#editor").hidden = true
-  state.edit = null
-  state.editWords = []
 }
 
+/**
+ * ⭐ 抽屉是**批量入库**的三步：① 拆分 → ② 勾选/手改后生成 → ③ 勾选后发布。
+ *
+ * ⚠️ 三步刻意分开，不在一条龙里跑完：**TTS 是唯一按量花钱的一步**，
+ *    要放在人看过「拆得对不对」之后（理由见 spec.md 第九节）。
+ */
 function openCreate() {
   state.editorMode = "create"
-  state.edit = null
-  state.editWords = []
-  $("#ed-title").textContent = "新增句子"
-  $("#ed-input").hidden = false
-  $("#ed-fields").hidden = true
-  $("#ed-log").hidden = true
-  $("#ed-log").textContent = ""
+  $("#ed-title").textContent = "新增句子（批量）"
   $("#ed-text").value = ""
-  $("#ed-generate").disabled = false
-  $("#ed-text-ro").value = ""
-  $("#ed-translation").value = ""
-  $("#ed-tags").value = ""
-  $("#ed-id").textContent = ""
-  $("#ed-status").textContent = ""
-  $("#ed-words").textContent = ""
-  $("#ed-audio").removeAttribute("src")
-  $("#ed-audio-note").textContent = ""
+  $("#ed-log").textContent = ""
+  $("#ed-log").hidden = true
+  $("#ed-candidates").textContent = ""
+  $("#ed-ingested").textContent = ""
+  $("#ed-step2").hidden = true
+  $("#ed-step3").hidden = true
+  $("#ed-split").disabled = false
   openEditorShell()
   $("#ed-text").focus()
 }
@@ -1154,64 +1159,12 @@ function fillLevelSelect(sel, value) {
   sel.value = value === null || value === undefined ? "" : String(value)
 }
 
-function fillFields(d) {
-  state.edit = d
-  state.editWords = Array.isArray(d.words) ? d.words : []
-  $("#ed-id").textContent = "id " + d.id
-  $("#ed-text-ro").value = d.text || ""
-  $("#ed-translation").value = d.translation || ""
-  $("#ed-tags").value = (d.tags || []).join(" ")
-  fillLevelSelect($("#ed-pron"), d.pronLevel)
-  fillLevelSelect($("#ed-vocab"), d.vocabLevel)
-  $("#ed-reason").value = d.reason || ""
-  audioSrc(d.id)
-  renderTagChips()
-  state.editWordsDirty = false
-  renderWords($("#ed-words"), $("#ed-wordcount"), state.editWords, $("#ed-audio"), function () {
-    state.editWordsDirty = true
-  })
-  renderStatus()
-}
-
-function audioSrc(id) {
-  const a = $("#ed-audio")
-  // ⚠️ 加时间戳破缓存：重做标准音后文件名不变（id 没变），不加这个可能还能播到旧的
-  a.src = "/api/audio/" + id + ".mp3?t=" + Date.now()
-  const note = $("#ed-audio-note")
-  if (state.env === "local") {
-    note.textContent = "读的是仓库里的 content/audio/" + id.slice(0, 12) + "….mp3"
-  } else {
-    note.textContent = "试听读的是**本机仓库**的文件；这条句子进了 " + state.env +
-      " 的库，音频要等下一次部署（dev 靠 SEED_ON_START 灌桶）才会到对象存储。"
-  }
-}
-
-function renderStatus() {
-  const d = state.edit
-  if (!d) return
-  const live = d.isActive === true || d.isActive === 1
-  $("#ed-status").textContent =
-    "当前状态：" + (live ? "已发布" : "草稿") + "　环境：" + (ENV_LABEL[state.env] || state.env) +
-    "　词数：" + state.editWords.length
-}
-
 function parseTags(raw) {
   return String(raw || "")
     .split(/[,，、\s]+/)
     .map(function (s) { return s.trim() })
     .filter(Boolean)
     .slice(0, 8)
-}
-
-function renderTagChips() {
-  const box = $("#ed-tagchips")
-  box.textContent = ""
-  parseTags($("#ed-tags").value).forEach(function (t) {
-    const c = document.createElement("span")
-    c.className = "chip"
-    c.textContent = t
-    box.appendChild(c)
-  })
 }
 
 /**
@@ -1248,92 +1201,232 @@ async function pollJob(jobId) {
   }
 }
 
-async function runGenerate() {
+/** ⭐ ① 拆分 + 纠错（只调 LLM，不生成音频、不落盘） */
+async function runSplit() {
   if (state.busy) return
   const text = $("#ed-text").value.trim()
-  if (!text) { errBox("#ed-error", "先贴一句英文"); return }
+  if (!text) { errBox("#ed-error", "先贴英文"); return }
   state.busy = true
   errBox("#ed-error", "")
-  $("#ed-generate").disabled = true
+  $("#ed-split").disabled = true
   $("#ed-log").textContent = ""
   $("#ed-log").hidden = false
+  $("#ed-step2").hidden = true
+  $("#ed-step3").hidden = true
   try {
-    const start = await api("/api/generate", { method: "POST", body: { text: text } })
+    const start = await api("/api/split", { method: "POST", body: { text: text } })
     logLine("任务 " + start.jobId.slice(0, 8) + " 已开跑…")
     const job = await pollJob(start.jobId)
-    onGenerated(job.result)
+    renderCandidates(job.result)
   } catch (e) {
     errBox("#ed-error", e.message)
     logLine("❌ " + e.message)
   } finally {
     state.busy = false
-    $("#ed-generate").disabled = false
+    $("#ed-split").disabled = false
   }
 }
 
-function onGenerated(result) {
-  state.editorMode = "create"
-  $("#ed-input").hidden = true
-  $("#ed-fields").hidden = false
-  fillFields({
-    id: result.id,
-    text: result.text,
-    translation: result.translation,
-    pronLevel: result.pronLevel,
-    vocabLevel: result.vocabLevel,
-    reason: result.reason,
-    tags: result.tags,
-    isActive: false,
-    words: result.words,
-  })
-  if (result.reason) logLine("这句话难在哪：" + result.reason)
-  loadList()
-  toast("生成完成，检查后点发布")
+/** 一条候选：勾选 + 正文（可改）+ 译文 + 两个档位 + 标签 + 那句话 */
+function candidateRow(it) {
+  const li = document.createElement("li")
+  li.className = "cand"
+
+  const head = document.createElement("div")
+  head.className = "cand-head"
+  const cb = document.createElement("input")
+  cb.type = "checkbox"
+  cb.className = "cand-check"
+  // ⚠️ 已存在的默认**不勾**：它本来就会被跳过，勾上没有意义
+  cb.checked = !it.exists
+  head.appendChild(cb)
+  const a = document.createElement("a")
+  a.href = "/article/" + it.id
+  a.className = "mono tiny"
+  a.textContent = it.id
+  head.appendChild(a)
+  if (it.exists) {
+    const b = document.createElement("span")
+    b.className = "badge"
+    b.textContent = "已存在 · 生成时跳过"
+    head.appendChild(b)
+  }
+  li.appendChild(head)
+
+  const text = document.createElement("textarea")
+  text.rows = 2
+  text.className = "cand-text"
+  text.value = it.text
+  li.appendChild(text)
+
+  const tr = document.createElement("textarea")
+  tr.rows = 2
+  tr.className = "cand-tr"
+  tr.value = it.translation || ""
+  li.appendChild(tr)
+
+  const row = document.createElement("div")
+  row.className = "row"
+  const mk = function (label, sel) {
+    const lb = document.createElement("label")
+    lb.className = "block"
+    lb.textContent = label
+    lb.appendChild(sel)
+    return lb
+  }
+  const pron = document.createElement("select")
+  pron.className = "cand-pron"
+  fillLevelSelect(pron, it.pronLevel)
+  const vocab = document.createElement("select")
+  vocab.className = "cand-vocab"
+  fillLevelSelect(vocab, it.vocabLevel)
+  row.appendChild(mk("发音难度", pron))
+  row.appendChild(mk("词汇难度", vocab))
+  const tags = document.createElement("input")
+  tags.type = "text"
+  tags.className = "cand-tags grow"
+  tags.value = (it.tags || []).join(" ")
+  row.appendChild(mk("标签", tags))
+  li.appendChild(row)
+
+  const reason = document.createElement("input")
+  reason.type = "text"
+  reason.className = "cand-reason"
+  reason.value = it.reason || ""
+  reason.placeholder = "相当于…水平，…；…"
+  li.appendChild(reason)
+
+  return li
 }
 
-/** 保存 / 发布 / 下架。⚠️ 不带 publish 字段 = 保持现状（见服务端 upsertArticle 的三态） */
-async function saveArticle(publish) {
-  const d = state.edit
-  if (!d || state.busy) return
+function renderCandidates(result) {
+  const items = (result && result.items) || []
+  const box = $("#ed-candidates")
+  box.textContent = ""
+  items.forEach(function (it) { box.appendChild(candidateRow(it)) })
+  $("#ed-cand-count").textContent = String(items.length)
+  const skip = items.filter(function (it) { return it.exists }).length
+  $("#ed-skip-note").textContent = skip ? "其中 " + skip + " 条已存在，生成时会跳过（不花钱）" : ""
+  $("#ed-step2").hidden = items.length === 0
+  if (items.length === 0) errBox("#ed-error", "没拆出任何句子 —— 输入是英文吗？")
+  else logLine("拆出 " + items.length + " 条，默认已勾选" + (skip ? "（" + skip + " 条已存在）" : ""))
+}
+
+/** 收集勾选的候选 —— **以界面上的文本为准**（人可能改过；服务端还会按 text 重算 id） */
+function collectCandidates() {
+  const out = []
+  ;[].slice.call(document.querySelectorAll("#ed-candidates .cand")).forEach(function (li) {
+    if (!li.querySelector(".cand-check").checked) return
+    out.push({
+      text: li.querySelector(".cand-text").value.trim(),
+      translation: li.querySelector(".cand-tr").value.trim(),
+      pronLevel: numberOrNull(li.querySelector(".cand-pron").value),
+      vocabLevel: numberOrNull(li.querySelector(".cand-vocab").value),
+      tags: parseTags(li.querySelector(".cand-tags").value),
+      reason: li.querySelector(".cand-reason").value.trim(),
+    })
+  })
+  return out.filter(function (it) { return it.text !== "" })
+}
+
+/** ⭐ ② 生成入库（草稿）—— 服务端按「先落正文 → 再批量 TTS → 最后入库」跑 */
+async function runIngest() {
+  if (state.busy) return
+  const items = collectCandidates()
+  if (items.length === 0) { errBox("#ed-error", "先勾选至少一条"); return }
+  state.busy = true
+  errBox("#ed-error", "")
+  $("#ed-ingest").disabled = true
+  try {
+    const start = await api("/api/ingest", { method: "POST", body: { items: items } })
+    logLine("任务 " + start.jobId.slice(0, 8) + " 已开跑…")
+    const job = await pollJob(start.jobId)
+    renderIngested(job.result)
+  } catch (e) {
+    errBox("#ed-error", e.message)
+    logLine("❌ " + e.message)
+  } finally {
+    state.busy = false
+    $("#ed-ingest").disabled = false
+  }
+}
+
+function ingestedRow(it) {
+  const li = document.createElement("li")
+  li.className = "done"
+  li.setAttribute("data-id", it.id)
+  const cb = document.createElement("input")
+  cb.type = "checkbox"
+  cb.className = "done-check"
+  // ⚠️ 只有真入库的才能勾（跳过 / 失败的没什么可发布）
+  cb.disabled = it.status !== "done"
+  cb.checked = it.status === "done"
+  li.appendChild(cb)
+  const a = document.createElement("a")
+  a.href = "/article/" + it.id
+  a.className = "mono tiny"
+  a.textContent = it.id
+  li.appendChild(a)
+  const st = document.createElement("span")
+  st.className = "badge " + (it.status === "done" ? "draft" : "")
+  st.textContent = it.status === "done" ? "草稿"
+    : it.status === "skipped" ? "已存在 · 跳过" : "失败：" + (it.error || "未知")
+  li.appendChild(st)
+  const t = document.createElement("div")
+  t.className = "en tiny"
+  t.textContent = it.text
+  li.appendChild(t)
+  return li
+}
+
+function renderIngested(result) {
+  const items = (result && result.items) || []
+  const box = $("#ed-ingested")
+  box.textContent = ""
+  items.forEach(function (it) { box.appendChild(ingestedRow(it)) })
+  const done = items.filter(function (x) { return x.status === "done" }).length
+  $("#ed-done-count").textContent = String(done)
+  $("#ed-step3").hidden = items.length === 0
+  logLine("本次：" + done + " 条入库 · 跳过 " + (result.skipped || 0) +     " 条（已存在，省了生成）· 失败 " + (result.failed || 0) + " 条")
+  loadList()
+}
+
+/** ⭐ ③ 批量发布（只改库里的发布位） */
+async function publishSelected() {
+  if (state.busy) return
+  const ids = []
+  ;[].slice.call(document.querySelectorAll("#ed-ingested .done")).forEach(function (li) {
+    if (li.querySelector(".done-check").checked) ids.push(li.getAttribute("data-id"))
+  })
+  if (ids.length === 0) { errBox("#ed-error", "先勾选要发布的条目"); return }
   state.busy = true
   errBox("#ed-error", "")
   try {
-    const body = {
-      translation: $("#ed-translation").value.trim(),
-      pronLevel: Number($("#ed-pron").value),
-      vocabLevel: Number($("#ed-vocab").value),
-      reason: $("#ed-reason").value.trim(),
-      tags: parseTags($("#ed-tags").value),
-    }
-    if (publish) body.publish = true
-    // ⚠️ 只在**改过**区间时才带上 words：普通保存不该回传整份时间戳
-    //    （服务端会校验，条数/区间不对会直接报错而不是写坏文件）
-    if (state.editWordsDirty) body.words = state.editWords
-    await api("/api/articles/" + d.id, { method: "PUT", body: body })
-    state.editWordsDirty = false
-    if (publish) {
-      d.isActive = true
-      toast(state.env === "local" ? "已发布" : "已写入 " + state.env + " 的库；正文和音频要等部署")
-    } else {
-      toast(state.env === "local" ? "已保存" : "已保存（云环境读的是镜像里的正文，改动不生效）")
-    }
-    // 新增流程里发布完就落到这条的详情页（继续看词级播放、排期都顺手）
-    if (publish && state.editorMode === "create") {
-      closeEditor()
-      navigate("/article/" + d.id)
-      return
-    }
-    const fresh = await api("/api/articles/" + d.id)
-    fillFields(fresh)
+    const r = await api("/api/publish", { method: "POST", body: { ids: ids } })
+    const okList = r.results.filter(function (x) { return x.ok })
+    const bad = r.results.filter(function (x) { return !x.ok })
+    okList.forEach(function (x) {
+      const li = document.querySelector('#ed-ingested .done[data-id="' + x.id + '"]')
+      if (!li) return
+      const st = li.querySelector(".badge")
+      st.className = "badge live"
+      st.textContent = "已发布"
+      li.querySelector(".done-check").checked = false
+    })
+    logLine("发布：" + okList.length + " 条成功" + (bad.length ? "，" + bad.length + " 条失败：" +
+      bad.map(function (b) { return b.id + "(" + b.error + ")" }).join("、") : ""))
+    toast("已发布 " + okList.length + " 条")
     loadList()
-    if (parseRoute(location.pathname).view === "detail") loadDetail(d.id)
   } catch (e) {
     errBox("#ed-error", e.message)
-    toast(e.message, true)
   } finally {
     state.busy = false
   }
 }
+
+
+
+
 
 /** 重做标准音：正文一个字不动，只重跑 fish 并刷新词级区间 */
 /**

@@ -284,3 +284,19 @@ audio { width: 100%; margin-top: 6px; }
   padding: 10px 16px; z-index: 40; margin: 0; box-shadow: 0 10px 30px rgba(0,0,0,.4); max-width: 70vw;
 }
 .toast.bad { border-color: #6b2b2b; color: #ffd7d7; }
+
+/* ---- 批量入库抽屉（新增句子） ---- */
+.cand-list, .done-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.cand, .done {
+  border: 1px solid var(--line, #2a2a2a);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.cand-head, .done { display: flex; align-items: center; gap: 8px; }
+.cand-head { margin-bottom: 6px; }
+.cand textarea, .cand input[type=text] { width: 100%; box-sizing: border-box; margin: 4px 0; }
+.cand .row { gap: 8px; margin-top: 4px; }
+.done .badge { margin-left: auto; }
+.done .en { margin-top: 4px; }
+
