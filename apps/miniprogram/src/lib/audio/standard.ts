@@ -47,7 +47,7 @@ function keyOf(src: string, kind: 'cloud' | 'http'): string {
  * ⚠️ 它是"退路"：正常情况下应该用 ensureLocalAudio 拿本地文件。
  *    消息里所有直接播远端地址的地方都应当能从这里退回来。
  *
- * @param src  见 ArticleContent.audio 的注释
+ * @param src  见 shared 的 AudioRef / ArticleDetailAudio
  * @param kind 'cloud' = 云存储 fileID；'http' = 服务端路径
  */
 export async function resolveAudioUrl(

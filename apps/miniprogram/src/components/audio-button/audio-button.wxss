@@ -1,0 +1,75 @@
+/* ⭐ 音频播放按钮：只定义**形状 / 间距 / loading 的旋转**。
+   ⚠️ 颜色一律内联（fill / ink）—— 在主题卡上它要反色，写死在类里就跟不了主题。 */
+
+.ab-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 三个尺寸：sm 与改造前的金句卡一致，md 与提交卡一致，lg 给结果页那个主按钮 */
+.ab-sm { width: 44rpx; height: 44rpx; }
+.ab-md { width: 64rpx; height: 64rpx; }
+.ab-lg { width: 88rpx; height: 88rpx; }
+
+/**
+ * ⭐ 未播放 = **描边**（线色由内联的 border-color 给，见 audio-button.ts）。
+ * ⚠️ 必须 border-box：不然 3rpx 的线会额外撑大外径，
+ *    描边/实心两种状态来回切时整行会跳 6rpx。
+ */
+.ab-outline {
+  background: transparent;
+  border-style: solid;
+  box-sizing: border-box;
+}
+
+/* ⚠️ 线宽按直径等比给（约 6%）：统一 3rpx 的话，lg 那颗的环会明显比 sm 的细 */
+.ab-outline.ab-sm { border-width: 3rpx; }
+.ab-outline.ab-md { border-width: 4rpx; }
+.ab-outline.ab-lg { border-width: 5rpx; }
+
+/* 图标比改造前放大 1.5 倍（20/24/34 → 30/36/51）—— 实心圆钮里原来的字形偏小 */
+.ab-glyph {
+  line-height: 1;
+}
+
+.ab-glyph-sm { font-size: 30rpx; }
+.ab-glyph-md { font-size: 36rpx; }
+.ab-glyph-lg { font-size: 51rpx; }
+
+/* 时长：颜色跟着宿主文字走（这里只降透明度），宽度由 formatDuration 保证固定 */
+.ab-duration {
+  opacity: 0.5;
+  line-height: 1;
+}
+
+.ab-duration-sm { font-size: 22rpx; margin-left: 16rpx; }
+.ab-duration-md { font-size: 24rpx; margin-left: 16rpx; }
+.ab-duration-lg { font-size: 26rpx; margin-left: 20rpx; }
+
+.ab-disabled {
+  opacity: 0.4;
+}
+
+.ab-hover {
+  opacity: 0.6;
+}
+
+/* loading：把 MDI 那道弧转起来 */
+.ab-spinning {
+  animation: ab-spin 0.8s linear infinite;
+}
+
+@keyframes ab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

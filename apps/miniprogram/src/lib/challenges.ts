@@ -19,7 +19,7 @@ export const CHALLENGE_PAGE = '/pages/challenge/challenge'
  *    这一页是**对外展示**的（以后要能被别人打开、能分享），
  *    不属于任何一个人的私有地盘。放在 me/ 下面会让人以为"只有我自己能看"。
  * ⚠️ 相应地，「修改资料」（表单、私有）让出了 profile 这个名字，
- *    改叫 pages/profile-edit —— 免得两个 profile 页面靠猜。
+ *    单独放在 pages/me/edit-user —— 免得两个 profile 页面靠猜。
  */
 const PROFILE_HOME_PAGE = '/pages/profile/profile'
 /** 页面栈里那一页的 route 写法（无斜杠） */

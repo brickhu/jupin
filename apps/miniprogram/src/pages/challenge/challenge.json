@@ -3,6 +3,8 @@
   "enableShareAppMessage": true,
   "enableShareTimeline": true,
   "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar"
+    "audio-button": "/components/audio-button/audio-button",
+    "nav-bar": "/components/nav-bar/nav-bar",
+    "submission-card": "/components/submission-card/submission-card"
   }
 }

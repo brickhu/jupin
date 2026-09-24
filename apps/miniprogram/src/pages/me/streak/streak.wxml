@@ -23,11 +23,11 @@
   <view class="bg-white rounded-2.5 p-4 mt-3">
     <view class="flex items-center">
       <view class="px-3 py-2" bindtap="onPrev" hover-class="active__opacity-60">
-        <text class="text-32rpx text-muted">‹</text>
+        <text class="text-40rpx text-muted iconfont icon-chevron-left"></text>
       </view>
       <text class="flex-1 text-center text-28rpx font-medium text-ink">{{monthText}}</text>
       <view class="px-3 py-2 {{canNext ? '' : 'opacity-30'}}" bindtap="onNext" hover-class="{{canNext ? 'active__opacity-60' : ''}}">
-        <text class="text-32rpx text-muted">›</text>
+        <text class="text-40rpx text-muted iconfont icon-chevron-right"></text>
       </view>
     </view>
 

@@ -1,0 +1,34 @@
+/* 金句卡片：主题色由根节点内联 style 给，内部一律 currentColor + 透明度分层。
+   ⚠️ 尺寸/间距与改造前的今日卡（featured）/ 历史卡（list）逐项对齐。 */
+
+.ac-card {
+  border-radius: 20rpx;
+}
+
+/* 今日卡：p-5（40rpx） */
+.ac-featured {
+  padding: 40rpx;
+}
+
+/* 历史卡：p-4（32rpx）+ mb-3（24rpx） */
+.ac-list {
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+}
+
+/* 参与过的卡：当前前景色描边（原来是品牌色，现在跟主题走） */
+.ac-joined {
+  box-shadow: 0 0 0 3rpx currentColor;
+}
+
+/* 层次：只调透明度，颜色永远是 currentColor。
+   text-faint → .55，text-muted → .72（与改造前的灰阶一一对应）。 */
+.ac-dim {
+  color: currentColor;
+  opacity: 0.65;
+}
+
+.ac-faint {
+  color: currentColor;
+  opacity: 0.5;
+}

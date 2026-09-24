@@ -10,6 +10,7 @@ import {
   sniffAudioContainer,
   today,
 } from '@jushuo/shared'
+import { plainWordsOf } from '@jushuo/shared'
 import type { SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
@@ -236,7 +237,7 @@ Page({
     /** 根节点要让开的上边距（px）—— 自定义导航栏是浮层，不占文档流（见 lib/nav.ts） */
     navTop: 0,
 
-    articleId: 1,
+    articleId: '',
     phase: 'loading' as Phase,
     error: '',
 
@@ -253,11 +254,12 @@ Page({
      *    音频都存在对象存储里、榜单上都有这一条成绩；
      *    区别只是**别人能不能听到这段录音**。
      *
-     * ⚠️⚠️ 提交时**不问**用户，提交后由服务端回传权威值（applyResult 里写入）。
-     *    在结果页给开关，是因为听完自己的分数再决定「要不要让人听」依据更足；
-     *    而提交前横一个开关，等于让每个用户先做一个与「读好这句」无关的决定。
+     * ⚠️⚠️ 默认 **false**，提交时**不问**用户；结果页（pages/challenge）那个
+     *    「允许公众收听」开关再打开。听完自己的分数再决定要不要让人听，
+     *    依据比提交前横一个开关足得多。
+     * ⚠️ 从挑战详情分享卡片进来的本来就能听，不受这一位影响。
      */
-    isPublic: true,
+    isPublic: false,
     /**
      * ⚡ 能量点数 —— 提交按钮下面那行要用它。
      * ⚠️ 只从服务端给的 profile 里读（每次 /me 顺手补足到 3 点），端侧不自己算。
@@ -273,11 +275,15 @@ Page({
 
     /** 整句标准音（fileID 或服务端路径，由 audioKind 决定怎么解释） */
     fullAudio: '',
-    /** 'cloud' | 'http' —— 见 ArticleContent.audio 的注释 */
+    /** 'cloud' | 'http' —— 见 shared 的 AudioRef / ArticleDetailAudio */
     audioKind: 'http' as 'cloud' | 'http',
 
     /** 正在播的单词下标；-1 表示没在播单词 */
     playingWord: -1,
+    /** ⭐ 右上角那个喇叭的状态（见 audio-button）—— 整句标准音只有这一个播放钮 */
+    sentenceState: 'unplay' as 'unplay' | 'loading' | 'playing',
+    /** ⭐ 试听（我自己这段录音）的状态 —— 同一颗播放钮 */
+    replayState: 'unplay' as 'unplay' | 'loading' | 'playing',
 
     /**
      * ⭐ 这段录音是从**上次的缓存**恢复来的（不是刚录的）。
@@ -566,11 +572,25 @@ Page({
    */
   recordingKey: '',
 
-  /** 逐词标准音的 fileID，下标与 plainWords 一一对应 */
+  /**
+   * 逐词标准音的 fileID，下标与 plainWords 一一对应。
+   * ⚠️ 新内容**不再产这个**（每句 N 个文件，对象存储 / 灌库 / CDN 都要跟着走一遍）。
+   *    只有**没有时间戳的老内容**才用它兜底，见 onPlayWord。
+   */
   wordAudio: [] as (string | null)[],
+
+  /**
+   * ⭐ 逐词的**播放区间**（毫秒），下标与 plainWords 一一对应。
+   *
+   * 点某个词时直接在**整句标准音**上定位到 startMs、播到 endMs —— 不再需要预切文件。
+   * ⚠️ 区间来自正文 JSON 的 words[]（流水线 ④ 产出；与预切切片**同源**，
+   *    所以换过来听感不变）。
+   * ⚠️ 只在**条数对得上**时才用（见 applyContent）：错位会变成「点这个词、播那个词」。
+   */
+  wordTimes: [] as { startMs: number; endMs: number }[],
   /**
    * 这次要挑战的是哪一天。
-   * ⚠️ 由首页带进来（/pages/reading/reading?id=3&date=2026-09-21），
+   * ⚠️ 由首页带进来（/pages/reading/reading?id=<articleId>&date=2026-09-21），
    *    缺省取今天 —— 直接进朗读页（开发时）也不该崩。
    */
   scheduleDate: '',
@@ -587,10 +607,11 @@ Page({
   onLoad(query: Record<string, string | undefined>) {
     this.msPerWord = loadMsPerWord()
     this.setData({
-      articleId: Number(query.id) || 1,
+      // ⭐ articleId 是内容 hash（字符串）—— 原样取；缺省退回 '1'（老行为：开发时直接进页也能开）
+      articleId: query.id || '1',
       navTop: navPadTop(),
       // ⚠️ 先拿缓存里的值画出来（store 里有上次 /me 的结果），不必等一次往返
-      energy: me.getState().profile?.energy ?? 0,
+      energy: me.getState().userInfo?.energy ?? 0,
     })
     // ⚠️ 用服务端的 day.ts 而不是本地时钟：手机时间可以随便改
     this.scheduleDate = query.date ?? today()
@@ -658,18 +679,29 @@ Page({
     this.setData({ phase: 'loading', error: '' })
     try {
       const content = await fetchArticleContent(this.data.articleId)
-      // ⚠️ 词表在前端切：正文的 words[] 要等内容流水线产出（现在是空的），
-      //    而逐词着色只需要「词序」，不需要词级时间戳。
-      //    ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
-      //       否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
-      this.plainWords = content.text.split(/\s+/).filter(Boolean)
+      // ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
+      //    否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
+      // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音频 / 第 i 个时间区间」
+      this.plainWords = plainWordsOf(content.text)
       // ⭐ 缓存键由**句子原文 + uid** 决定（不是 articleId）—— 见字段上的说明
       this.recordingKey = recordingKeyOf(content.text, getUserId())
+      /**
+       * ⭐ 逐词怎么播：**优先用正文 JSON 里的时间戳**（在整句标准音上定位），
+       *    预切切片只作为老内容的兜底。
+       * ⚠️ 时间戳只在**条数对得上**时才认：错位同样是「点这个词、播那个词」，
+       *    而且比切错更难查 —— 没有任何东西会报错。
+       */
+      const words = content.words ?? []
+      this.wordTimes =
+        words.length === this.plainWords.length
+          ? words.map((w) => ({ startMs: w.startMs, endMs: w.endMs }))
+          : []
       this.wordAudio = content.audio?.words ?? []
       this.setData({
         translation: content.translation,
         words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
-        canPlayAudio: !!content.audio?.full,
+        // ⚠️ audio 为 null = 这篇还没灌标准音（服务端就是这样表达的，不是 full=null）
+      canPlayAudio: !!content.audio,
         fullAudio: content.audio?.full ?? '',
         audioKind: content.audio?.kind ?? 'http',
         phase: 'ready',
@@ -855,6 +887,12 @@ Page({
    *    它现在的唯一用途就是把老录音放出来。
    */
   async onReplay() {
+    // 再点一次 = 停（与卡片、结果页的播放钮同一套手感）
+    if (this.data.replayState === 'playing') {
+      stopAudio()
+      this.setData({ replayState: 'unplay' })
+      return
+    }
     const primary = IS_DEVTOOLS ? this.data.audioPath : this.data.playPath
     const fallback = IS_DEVTOOLS ? this.data.playPath : this.data.audioPath
     const src = primary || fallback
@@ -865,6 +903,10 @@ Page({
       })
       return
     }
+
+    // ⚠️ 整句 / 单词 / 试听**共用同一个播放器**，开播前先把别人的标记清掉，
+    //    否则会出现「试听在播」和「整句在播」两颗钮同时亮着
+    this.setData({ replayState: 'playing', sentenceState: 'unplay', playingWord: -1 })
 
     try {
       await this.playUrl(src, '试听')
@@ -883,7 +925,7 @@ Page({
        *       原件能播不等于复制品也能播 —— 这时备用音源是唯一的出路。
        */
       if (!fallback || fallback === src) {
-        this.setData({ error: (err as Error).message })
+        this.setData({ replayState: 'unplay', error: (err as Error).message })
         return
       }
       console.warn('[reading] 主音源播不出来，改用备用：' + (err as Error).message)
@@ -892,7 +934,7 @@ Page({
     try {
       await this.playUrl(fallback as string, '试听')
     } catch (err) {
-      this.setData({ error: (err as Error).message })
+      this.setData({ replayState: 'unplay', error: (err as Error).message })
     }
   },
 
@@ -905,11 +947,16 @@ Page({
    *
    * ⚠️ 这里只把「播完清掉正在播的标记」这件事接上来。
    */
-  playUrl(src: string, what: string): Promise<void> {
+  playUrl(src: string, what: string, segment?: { startMs: number; endMs: number }): Promise<void> {
     // ⚠️ 播成功就把上一次的错误提示清掉 —— 这是原来那个实现里的一句
     //    `setData({ error: '' })`，搬走之后漏了它的话，
     //    症状是「重试成功了，红框还挂在那儿」。
-    return playAudioUrl(src, what, () => this.setData({ playingWord: -1 })).then(() => {
+    return playAudioUrl(src, what, () =>
+      // ⚠️ 播完把三个播放标记都清掉：喇叭 / 逐词 / 试听共用播放器，谁先停都要回到「没在播」
+      this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' }),
+      // ⭐ segment：只播这个词那一段（见 onPlayWord）
+      segment,
+    ).then(() => {
       if (this.data.error) this.setData({ error: '' })
     })
   },
@@ -927,22 +974,44 @@ Page({
     const items: { src: string | null | undefined; kind: 'cloud' | 'http' }[] = [
       { src: this.data.fullAudio, kind },
     ]
-    // ⚠️ 逐词音也一起拉：点词听发音是朗读页最常用的动作，
-    //    而每个词只有几 KB。但给它一个上限，长句不至于一次发几十个请求。
-    for (const w of this.wordAudio.slice(0, MAX_PREFETCH_WORDS)) items.push({ src: w, kind })
+    /**
+     * ⚠️ 只有**老内容**（没有词级时间戳）才需要预拉逐词音 —— 那种情况下点词播的是
+     *    一个个预切文件。新内容点词是在**同一条整句音频**上定位，整句到了就够了。
+     * ⚠️ 上限 MAX_PREFETCH_WORDS：长句不至于一次发几十个请求。
+     */
+    if (this.wordTimes.length === 0) {
+      for (const w of this.wordAudio.slice(0, MAX_PREFETCH_WORDS)) items.push({ src: w, kind })
+    }
     prefetchAudio(items)
   },
 
   /** ⭐ 卡片右上角那个喇叭：播整句标准音 */
   async onPlaySentence() {
     if (!this.data.fullAudio) return
-    this.setData({ playingWord: -1 })
-    const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
-    if (!url) {
-      this.setData({ error: '标准音取不到，请稍后再试' })
+    // ⚠️ 先读进局部量再判断：await 之后还要再看一次「用户有没有取消」，
+    //    而直接用 this.data 判断会让 TS 把后面的比较窄化成恒真/恒假
+    const st = this.data.sentenceState
+    // 再点一次 = 停 —— 与卡片、结果页的播放钮同一套手感
+    if (st === 'playing') {
+      stopAudio()
+      this.setData({ sentenceState: 'unplay' })
       return
     }
-    this.playUrl(url, '标准音').catch((err: Error) => this.setData({ error: err.message }))
+    // 取音途中再点 = 忽略（还没出声）
+    if (st === 'loading') return
+
+    this.setData({ playingWord: -1, replayState: 'unplay', sentenceState: 'loading' })
+    const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
+    if (!url) {
+      this.setData({ sentenceState: 'unplay', error: '标准音取不到，请稍后再试' })
+      return
+    }
+    // ⚠️ 等待期间用户可能已经取消了 —— 那就别再出声
+    if (this.data.sentenceState !== 'loading') return
+    this.setData({ sentenceState: 'playing' })
+    this.playUrl(url, '标准音').catch((err: Error) =>
+      this.setData({ sentenceState: 'unplay', error: err.message }),
+    )
   },
 
   /**
@@ -954,9 +1023,25 @@ Page({
   async onPlayWord(e: WechatMiniprogram.BaseEvent) {
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     if (!Number.isInteger(i) || i < 0) return
+
+    // ⭐ 首选：在**整句标准音**上定位到这个词的区间播放（一条音频，不再预切 N 个文件）
+    const seg = this.wordTimes[i]
+    if (seg) {
+      if (!this.data.fullAudio) return
+      this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay' })
+      const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
+      if (!url) {
+        this.setData({ error: '标准音取不到，请稍后再试' })
+        return
+      }
+      this.playUrl(url, '单词发音', seg).catch((err: Error) => this.setData({ error: err.message }))
+      return
+    }
+
+    // ⚠️ 兜底：老内容没有 words[]（或条数对不上）⇒ 退回预切的单词音频
     const fileId = this.wordAudio[i]
     if (!fileId) return
-    this.setData({ playingWord: i })
+    this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay' })
     const url = await ensureLocalAudio(fileId, this.data.audioKind)
     if (!url) {
       this.setData({ error: '单词发音取不到，请稍后再试' })
@@ -1008,8 +1093,8 @@ Page({
       // ⭐ 只受理，不等打分（打分要 10–20 秒，见 lib/api/client.ts 的注释）
       // ⚠️ 回传的是**当初点进来的那一天**，不是今天：
       //    历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变。
-      // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值落库，
-      //    结果页再给开关（见 onTogglePublic）。
+      // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值（false）落库，
+      //    结果页再给开关（见 pages/challenge 的 onTogglePublic）。
       void isPublic
       const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl)
       // ⭐ 记住它：结果页那个「公开我的录音」开关要靠它去改

@@ -10,6 +10,8 @@
  *
  *    页面里的样式照旧用工具类，这两者不冲突。
  */
+/* ⚠️ 本组件是 isolated（见上），app.wxss 里的 .iconfont 进不来，必须自己引一份 */
+@import "../../iconfont.wxss";
 
 .nv-root {
   position: fixed;
@@ -74,6 +76,26 @@
   overflow: hidden;
 }
 
+/**
+ * ⭐ 身份解析中（启动登录还没回来）时的转圈 —— 占住左侧那一格。
+ * ⚠️ 尺寸与头像同高（60rpx），否则标题左侧的内容会跳一下。
+ * ⚠️ sideWidth 是固定宽度，所以它不会把标题挤偏。
+ */
+.nv-spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border: 4rpx solid #e5e5ea;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: nv-spin 0.7s linear infinite;
+}
+
+@keyframes nv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 未登录时那一格画的是按钮而不是头像：说清楚"点这里能登录"，
    比画一个空圆圈再让人猜要好 */
 .nv-login {
@@ -89,17 +111,17 @@
   font-weight: 500;
 }
 
+/* ⚠️ 换成图标字体后字号要重新定：MDI 是 24 网格，字形自带留白，
+   home 只占约 83%、chevron 只占 50% —— 值按视觉高度反推，不是随手加的 */
 .nv-glyph {
-  font-size: 34rpx;
+  font-size: 38rpx;
   line-height: 1;
   color: #333;
 }
 
-/* ‹ 是个标点字形，天生比 emoji 小一圈，单独放大 */
 .nv-glyph-back {
-  font-size: 52rpx;
+  font-size: 42rpx;
   color: #666;
-  margin-top: -6rpx;
 }
 
 .nv-hover {

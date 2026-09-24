@@ -17,7 +17,7 @@ import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 
 /** 列表里一行（显示形态与接口字段分开：WXML 里没法算） */
 interface Row {
-  articleId: number
+  articleId: string
   text: string
   /** '5 次' */
   attemptsText: string

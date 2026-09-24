@@ -101,48 +101,11 @@
               而紧跟着的卡片却是整宽的，观感上脱开。） -->
     <text class="text-28rpx font-semibold text-ink block px-1 pt-1 pb-2">今日挑战</text>
 
-    <view class="bg-white rounded-2.5 p-5 {{today.joined ? 'idx-joined' : ''}}">
-      <!-- ⭐ 卡片头：播放按钮在左、人数与箭头在右。
-           ⚠️ 这里**不放日期**：它紧挨着句子，很容易被读成「这句子的发布日期」，
-              而它其实是「这一场排在哪一天」。要表达这个信息得用别的方式，
-              不是把日期横在句子旁边。
-           ⚠️ 箭头是「点卡片进详情」的**唯一提示** —— 卡片底部还有一个按钮，
-              不给提示的话「点哪儿都一样」的错觉会让人以为自己点错了。 -->
-      <view class="flex items-center mb-3" data-article="{{today.articleId}}" bindtap="onOpenDetail">
-        <!-- ⭐ 圆形播放按钮 + 时长。
-             ⚠️ catchtap 是必须的：不 catch 会冒泡到整张卡片，变成「点播放却进了详情页」。
-             ⚠️ 没有标准音（audio 为 null）时整块不渲染 —— 而不是给一个点了没反应的图标。
-             ⚠️ 日期没删，挪到了右边：往日卡片里它是唯一能区分哪一天的信息。 -->
-        <view class="idx-play {{playingArticle === today.articleId ? 'idx-play-on' : ''}}"
-              wx:if="{{today.audio}}"
-              data-id="{{today.articleId}}" data-full="{{today.audio.full}}" data-kind="{{today.audio.kind}}"
-              catchtap="onPlayAudio" hover-class="idx-play-hover">
-          <text class="idx-play-icon">{{playingArticle === today.articleId ? '■' : '▶'}}</text>
-        </view>
-        <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{today.durationText}}">{{today.durationText}}</text>
-        <!-- ⭐ 竞技数据挂在箭头左侧。
-             ⚠️ 这里**只**说「有多少人」——
-                「我参没参与」由按钮下方那行说，「我最好多少分」在详情页的榜单里。
-                同一件事说三遍，用户反而不知道哪一处才是准的。 -->
-        <text class="text-22rpx text-faint ml-auto shrink-0">{{today.stat}}</text>
-        <text class="text-36rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
-      </view>
-
-      <view class="flex items-start" data-article="{{today.articleId}}" bindtap="onOpenDetail">
-        <text class="text-44rpx leading-[1.5] font-semibold text-ink flex-1">{{today.text}}</text>
-      </view>
-
-      <view class="mt-3" data-article="{{today.articleId}}" bindtap="onOpenDetail">
-        <text class="text-26rpx text-faint leading-[1.6] block">{{today.translation}}</text>
-      </view>
-
-      <!-- ⚠️ 统计搬进卡片头之后，原来那行（连同上方的分隔线）就空了 ——
-           留着会是一条悬在句子和按钮之间、什么也没分开的横线 -->
-      <!-- ⚠️ 文案来自 startButtonLabel，与竞技场页共用同一份 —— 见 index.ts 的说明 -->
-      <view class="mt-4 text-center py-[26rpx] rounded-full bg-brand text-white text-30rpx font-medium"
-            data-id="{{today.articleId}}" data-date="{{today.date}}" bindtap="onStart">{{today.action}}</view>
-      <text class="text-22rpx text-faint block text-center mt-2.5">{{today.hint}}</text>
-    </view>
+    <!-- ⭐ 今日推荐 = arena-card 的 featured 形态（主题色 + currentColor 分层） -->
+    <arena-card mode="featured" entry="{{today}}"
+                playing="{{playingArticle === today.articleId}}"
+                loading="{{loadingArticle === today.articleId}}"
+                bind:open="onOpenDetail" bind:play="onPlayAudio" bind:start="onStart" />
 
     <!-- ══ 历史挑战 ══════════════════════════════════════════
          ⚠️ 叫「历史」不叫「往日」：它是一串同构卡片，
@@ -160,28 +123,11 @@
          ⚠️ 刻意不放按钮：历史是一串同构卡片，每张都挂一个实心按钮，
             整页会变成一片按钮墙，反而看不出哪一张是今天。
             要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3 {{item.joined ? 'idx-joined' : ''}}" wx:for="{{history}}" wx:key="articleId"
-          data-article="{{item.articleId}}" bindtap="onOpenDetail">
-      <view class="flex items-center mb-2">
-        <!-- ⭐ 圆形播放按钮 + 时长（与今日卡片同构，理由见上面那段注释） -->
-        <view class="idx-play {{playingArticle === item.articleId ? 'idx-play-on' : ''}}"
-              wx:if="{{item.audio}}"
-              data-id="{{item.articleId}}" data-full="{{item.audio.full}}" data-kind="{{item.audio.kind}}"
-              catchtap="onPlayAudio" hover-class="idx-play-hover">
-          <text class="idx-play-icon">{{playingArticle === item.articleId ? '■' : '▶'}}</text>
-        </view>
-        <text class="text-22rpx text-faint ml-2 shrink-0" wx:if="{{item.durationText}}">{{item.durationText}}</text>
-        <!-- ⭐ 统计挂在箭头左侧，与今日卡片同构。
-             ⚠️ 同样**不放日期**：理由见今日卡片那段（会被读成发布日期）。
-                想知道是哪一天的，点进详情页 —— 那一页有它自己的日期。 -->
-        <text class="text-22rpx text-faint ml-auto shrink-0">{{item.stat}}</text>
-        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1]">›</text>
-      </view>
-
-      <view class="flex items-start">
-        <text class="text-32rpx leading-[1.5] text-ink flex-1">{{item.text}}</text>
-      </view>
-    </view>
+    <!-- ⭐ 历史推荐 = arena-card 的 list 形态 -->
+    <arena-card wx:for="{{history}}" wx:key="articleId" mode="list" entry="{{item}}"
+                playing="{{playingArticle === item.articleId}}"
+                loading="{{loadingArticle === item.articleId}}"
+                bind:open="onOpenDetail" bind:play="onPlayAudio" />
 
     <!--
       ⚠️ 这里原来有一块「连续朗读 N 天 / 解冻卡」的卡（再早是等级徽章阶梯）。

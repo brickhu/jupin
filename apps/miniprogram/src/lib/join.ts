@@ -3,11 +3,11 @@ import * as me from './store'
 
 /** 「加入句拼」页（wx.navigateTo 用的带斜杠形式） */
 export const JOIN_PAGE = '/pages/join/join'
-/** 「修改资料」页 —— 已经加入过的人换头像/改昵称走这一页 */
-export const PROFILE_PAGE = '/pages/profile-edit/profile-edit'
+/** 「修改资料」页 —— 已经加入过的人改资料走这一页（昵称/头像/性别/年龄/简介） */
+export const PROFILE_PAGE = '/pages/me/edit-user/edit-user'
 /** 页面栈里那一页的 route 写法（无斜杠）—— 用来判断"是不是已经在这一页了" */
 const JOIN_ROUTE = 'pages/join/join'
-const PROFILE_ROUTE = 'pages/profile-edit/profile-edit'
+const PROFILE_ROUTE = 'pages/me/edit-user/edit-user'
 /** 兜底回首页 —— 与 lib/nav.ts 里那份保持一致 */
 export const HOME_PAGE = '/pages/index/index'
 
@@ -41,6 +41,13 @@ export async function refreshMe(): Promise<boolean | null> {
   } catch (err) {
     console.warn('[join] 取用户资料失败：' + (err as Error).message)
     return null
+  } finally {
+    /**
+     * ⭐ 无论成功失败，这次「我是谁」的解析都结束了 —— 通知 store。
+     *    ⚠️ 失败也要调：否则后端连不上时导航栏会永远停在 spinner，
+     *       而正确表现是「加入 / 点我重试」。
+     */
+    me.markSessionReady()
   }
 }
 
@@ -65,7 +72,7 @@ export function openJoinPage(): void {
  *
  * ⚠️⚠️ 它**不能**复用 openJoinPage：已经加入的人再去"加入"一次，
  *    看到的是「加入句拼 / 确认加入」—— 那一瞬间他会以为自己的账号没了。
- *    两个页面的表单是同一个组件，但**说法**必须不同（见 pages/profile-edit/profile-edit.wxml）。
+ *    两个页面的表单是同一个组件，但**说法**必须不同（见 pages/me/edit-user/edit-user.wxml）。
  */
 export function openProfilePage(): void {
   const stack = getCurrentPages()

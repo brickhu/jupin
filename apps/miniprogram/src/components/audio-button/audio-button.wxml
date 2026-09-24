@@ -1,0 +1,14 @@
+<!--
+  ⭐ 音频播放按钮（见 audio-button.ts 的说明）—— 圆钮 + 可选时长，内容只有这两样。
+  ⚠️ 时长跟着圆钮一起排版：宿主把它当**一格**用，不用再自己接一个时长元素。
+  ⚠️ durationText 为空（时长缺失 / 算不出来）时**不渲染**文字，而不是显示 00:00。
+-->
+<view class="ab-wrap">
+  <view class="ab {{circleClass}} {{outline ? 'ab-outline' : ''}} {{disabled ? 'ab-disabled' : ''}}"
+        style="{{circleStyle}}" catchtap="onTap" hover-class="{{disabled ? '' : 'ab-hover'}}">
+    <text class="ab-glyph {{glyphClass}} iconfont {{glyph}} {{spinning ? 'ab-spinning' : ''}}"
+          style="{{glyphStyle}}"></text>
+  </view>
+
+  <text wx:if="{{showDuration && durationText}}" class="ab-duration {{durationClass}}">{{durationText}}</text>
+</view>

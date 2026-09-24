@@ -1,59 +1,6 @@
 /**
- * 首页卡片的样式 —— 只有「圆形播放按钮」这一块是手写的。
- *
- * ⚠️ 为什么不像其余部分那样用 UnoCSS 工具类：
- *    圆 + 上下左右居中 + 两种状态（待播 / 播放中）这套组合，
- *    用工具类要拼六七个类才能表达，而它在模板里出现两次（今日 + 历史）——
- *    手写一处、两处共用更不容易写歪。
- *
- * ⚠️ 播放中的变色用**继承**（.idx-play-on 改 color，图标 color: inherit），
- *    不用后代选择器：WXSS 的选择器支持面比 CSS 窄，少用一类少一个坑。
+ * 首页自己的手写样式**已清空**：
+ *   · 卡片本体、圆形播放按钮、已参与描边 → 全部搬进 components/arena-card（含主题配色）
+ *   · 其余一律用 UnoCSS 工具类写在 WXML 上
+ * 保留这个文件只为了让「首页 = 卡片页」这件事有个落点，别再加样式。
  */
-.idx-play {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  /**
-   * 待播：**淡蓝底、无边框**。
-   * ⚠️ 底色调的是品牌色（#4f46e5 靛蓝）的浅色调 #e0e7ff，不是另找一个蓝 ——
-   *    这样「待播」和「播放中」是同一个颜色的两级深浅，点下去只是变实。
-   * ⚠️ 不要描边：描边那版看起来像「未激活的控件」，而它其实随时可点。
-   */
-  color: #4f46e5;
-  background: #e0e7ff;
-}
-
-/* 播放中：实心品牌色 + 白色图标（与上面同一个颜色的深一级） */
-.idx-play-on {
-  color: #ffffff;
-  background: #4f46e5;
-}
-
-/* ⚠️ color: inherit 是上面那套「变色只改父级」的关键，别改成固定色值 */
-.idx-play-icon {
-  color: inherit;
-  font-size: 20rpx;
-  line-height: 1;
-}
-
-.idx-play-hover {
-  opacity: 0.7;
-}
-
-/**
- * ⭐ 我参与过的句子 —— 一圈品牌色描边（今日卡与历史卡共用）。
- *
- * ⚠️ 用 box-shadow 而不是 border：子元素默认 content-box，border 会把卡片
- *    **撑宽 4rpx** —— 列表里就会出现一张比别的宽、还溢出容器 padding 的卡，
- *    而描边只是为了标记。连战记录页那格「已打卡」是同一条路子
- *    （见 me/streak/streak.wxss 里同样的说明）。
- * ⚠️ 只表示「参与过」：不按成绩分色（红/绿），也不区分攻没攻克 ——
- *    一圈实线再叠第二层含义，会让人以为这张卡片出了什么问题。
- */
-.idx-joined {
-  box-shadow: 0 0 0 3rpx #4f46e5;
-}

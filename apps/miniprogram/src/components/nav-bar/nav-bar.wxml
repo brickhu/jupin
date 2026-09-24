@@ -22,11 +22,15 @@
            而一个字母方块看起来像坏掉的图，占位图至少明确表示"这里该有张脸"。
       -->
       <block wx:if="{{leftMode === 'avatar'}}">
-        <image wx:if="{{joined}}" class="nv-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill"></image>
+        <!-- ⭐ 身份还在解析（启动登录中）→ 画 spinner。
+             ⚠️ 不能先画「加入」：那会让每个人打开小程序都先看到一个假按钮，
+                再闪成自己的头像 —— 既像 bug，也会诱导用户去点它。 -->
+        <view wx:if="{{sessionPending}}" class="nv-spinner"></view>
+        <image wx:elif="{{joined}}" class="nv-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill"></image>
         <view wx:else class="nv-login">{{joinBusy ? '加入中' : '加入'}}</view>
       </block>
-      <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph">🏠</text>
-      <text wx:else class="nv-glyph nv-glyph-back">‹</text>
+      <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph iconfont icon-home"></text>
+      <text wx:else class="nv-glyph nv-glyph-back iconfont icon-chevron-left"></text>
     </view>
 
     <text class="nv-title">{{title}}</text>

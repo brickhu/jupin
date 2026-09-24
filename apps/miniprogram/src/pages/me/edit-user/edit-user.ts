@@ -1,14 +1,15 @@
-import { HOME_PAGE } from '../../lib/join'
-import { navPadTop } from '../../lib/nav'
+import { HOME_PAGE } from '../../../lib/join'
+import { navPadTop } from '../../../lib/nav'
 
 /**
- * ⭐ 「修改资料」页 —— 换头像 / 改昵称（**私有表单**）。
+ * ⭐ 「修改资料」页 —— 改昵称 / 头像 / 性别 / 年龄 / 简介（**私有表单**）。
  *
- * ⚠️ 它原来叫 pages/profile，为了给**对外展示**的用户主页让出那个名字，
- *    改成了 pages/profile-edit —— 两个 profile 页面靠猜太费劲。
+ * ⚠️ 路由在 me/edit-user 下：它和「我的挑战 / 参与场次 / 连战」一样，
+ *    都是「我自己的东西」，归到 me/ 这一组，别在页面栈里再散一个顶层名字。
  *
- * ⚠️ 与「加入句拼」页的区别只有三处：标题、按钮文案、不自动弹键盘
- *    （来改头像的人不需要键盘，弹出来只会挡住头像那一行）。
+ * ⚠️ 与「加入句拼」页的区别：
+ *    · 加入页只要**昵称 + 头像**（full=false），进来自动弹键盘、按钮写「确认加入」
+ *    · 这一页要**全字段**（full=true），不弹键盘、按钮写「保存」
  *    表单与保存逻辑共用 components/profile-form —— 一份实现。
  */
 Page({

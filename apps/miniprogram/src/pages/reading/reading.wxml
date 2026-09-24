@@ -25,10 +25,8 @@
          ⚠️ 只在能播时才渲染（canPlayAudio）：点了没反应的图标比没有这个按钮更难排查。
          ⚠️ catchtap 而不是 bindtap：这张卡片整体不可点，但喇叭在词的上方，
             冒泡会让「点喇叭」顺带触发下面某个词的发音。 -->
-    <view class="absolute top-3 right-3 w-[64rpx] h-[64rpx] rounded-full bg-brand_10 flex items-center justify-center"
-          wx:if="{{canPlayAudio}}" catchtap="onPlaySentence">
-      <text class="text-30rpx">🔊</text>
-    </view>
+    <audio-button wx:if="{{canPlayAudio}}" class="absolute top-3 right-3" size="md"
+                  state="{{sentenceState}}" bind:play="onPlaySentence" />
 
     <!-- ⚠️ px-1 mr-1 必须写在静态类上：色块只在命中的词上，
          内边距若跟着 cls 走，着色时整行会抖 -->
@@ -91,9 +89,10 @@
     <block wx:if="{{phase === 'recorded' || phase === 'submitting'}}">
       <text class="text-26rpx text-faint block mb-2.5">已录 {{elapsed}} 秒</text>
 
-      <view class="flex gap-2 mb-2.5">
-        <view class="flex-1 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onReplay">▶ 试听</view>
-        <view class="flex-1 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onAgain">重录</view>
+      <!-- 试听 = audio-button（同一颗播放钮）；「重录」是带字的动作按钮，仍走原来那套 -->
+      <view class="flex items-center mb-2.5">
+        <audio-button size="md" state="{{replayState}}" bind:play="onReplay" />
+        <view class="flex-1 text-center py-[18rpx] ml-2.5 border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onAgain">重录</view>
       </view>
 
       <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium {{phase === 'submitting' ? 'opacity-50' : ''}}" bindtap="onSubmit">

@@ -1,7 +1,9 @@
+import type { MeResponse } from '@jushuo/shared'
 import { CLOUD_ENV_ID } from './config'
 import { login } from './lib/api/client'
 import { refreshMe } from './lib/join'
-import { hydrate } from './lib/store'
+import { hydrate, markSessionReady } from './lib/store'
+import type { MeState } from './lib/store'
 
 /**
  * 小程序入口。
@@ -11,6 +13,14 @@ App({
   globalData: {
     ready: false,
     // ⚠️ 这里原来有 nextFreeAt（冷却时间戳）—— 冷却已下线，见 services/quota.ts
+    /**
+     * ⭐ 数据的**挂载点** —— 由 lib/store 的 commit() / hydrate() 统一写入。
+     * ⚠️ 它就是 store 里那份 state 的**同一引用**，不是副本；
+     *    别在这里单独改，改状态一律走 store 的 action（见 lib/store 顶部说明）。
+     */
+    state: null as MeState | null,
+    /** ⭐ 快捷入口，= state.userInfo（GET /api/user/me 的原始返回体） */
+    userInfo: null as MeResponse | null,
   },
 
   async onLaunch() {
@@ -74,6 +84,9 @@ App({
       //
       //    另外：真机自检页（T1–T6）是**纯端侧**的，后端连不上完全不影响它。
       this.globalData.ready = false
+      // ⚠️ 登录失败也要把身份解析标记为「结束」：否则导航栏会一直转圈。
+      //    结束后按 hasJoined() 画「加入」，用户点一下可以重试身份确认。
+      markSessionReady()
       console.warn('[app] 登录失败（后端未连接？）', err)
     }
   },

@@ -1,20 +1,31 @@
+import type { Gender } from '@jushuo/shared'
+
 import { CLOUD_ENV_ID } from '../../config'
 import { getUserId, saveProfile } from '../../lib/api/client'
+import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import { refreshMe } from '../../lib/join'
 import * as me from '../../lib/store'
 
 /**
- * ⭐ 头像 + 昵称表单 —— 「加入句拼」和「修改资料」**共用同一个**。
+ * ⭐ 资料表单 —— 「加入句拼」和「修改资料」**共用同一个**。
  *
  * ⚠️⚠️ 为什么是组件而不是两个页面各写一份：
- *    真正要紧的不是那两行排版，是**保存那一步**：头像先上传换 fileID、
- *    昵称落库、用保存接口的返回值更新全局 state（见 store 的 applyProfilePatch）。
+ *    真正要紧的不是那几行排版，是**保存那一步**：头像先上传换 fileID、
+ *    其余字段落库、用保存接口的返回值更新全局 state（见 store 的 applyProfilePatch）。
  *    抄第二份的那一刻，两边就开始各自演化 —— 而这类分叉不会报错，
  *    只会表现为"改资料那条路和加入那条路的行为不一样"，极难查。
  *
- * ⚠️ 两个页面的差别只有**文案**（按钮说「确认加入」还是「保存」）
- *    和**要不要自动聚焦昵称框**（新人需要，来改头像的人不需要），
- *    都用属性传进来。
+ * ⚠️ 两个页面的差别用**属性**传进来：
+ *    · submitLabel —— 按钮说「确认加入」还是「保存」
+ *    · autoFocus   —— 新人要自动聚焦昵称框，来改资料的人不要
+ *    · full        —— 要不要显示 性别 / 年龄 / 简介
+ *      加入页只要**昵称 + 头像**（full=false）；资料页要全字段（full=true）。
+ *
+ * ⚠️⚠️ 头像有两个字段，别合并：
+ *    · avatarSrc  —— **显示用**。进来时先把已有的 fileID 换成临时地址填进去，
+ *                    否则「修改资料」看到的是一个「＋」，等于逼用户重新选一次。
+ *    · avatarPath —— **仅当用户重新选了头像**时才有的本地临时文件。
+ *                    提交时只有它非空才上传；否则不传 avatarUrl，服务端保持原样。
  *
  * ⚠️⚠️ profile-form.json 里那句 "styleIsolation": "apply-shared" **不能删**。
  *
@@ -23,13 +34,17 @@ import * as me from '../../lib/store'
  *    于是这个组件里写的 bg-brand / text-30rpx 会**一条都不生效**，
  *    而且不报错：按钮没有底色、字全是默认大小，看起来像"样式丢了"。
  *    apply-shared 让页面（含 app.wxss）的样式作用到组件内部，正好补上这一环。
- *
- *    ⚠️ 反过来说：导航栏和用户面板里的类名全是手写的 nv-* / us-*（在各自的 wxss 里），
- *       所以它们不需要这一句。**在这个组件里加 Uno 类名，就必须留着 apply-shared。**
  */
 
 /** 等页面转场结束再聚焦：转场还没完就弹键盘，两者抢位置，看起来像卡住 */
 const FOCUS_AFTER_MS = 320
+
+/** 性别选择器的展示值 —— 下标与 GENDER_VALUES 一一对应 */
+const GENDER_OPTIONS = ['不填', '男', '女']
+const GENDER_VALUES: (Gender | null)[] = [null, 'male', 'female']
+
+const AGE_MIN = 6
+const AGE_MAX = 120
 
 Component({
   properties: {
@@ -41,12 +56,25 @@ Component({
      *    已经填好的别弹键盘打扰他 —— 那种情况多半是来换头像的。
      */
     autoFocus: { type: Boolean, value: false },
+    /**
+     * ⭐ 要不要显示 性别 / 年龄 / 简介。
+     *   加入页只要昵称+头像（false），资料页要全字段（true）。
+     */
+    full: { type: Boolean, value: false },
   },
 
   data: {
-    /** 用户选的头像（**临时路径**，仅用于本地预览） */
+    /** 显示中的头像地址（新选的本地路径，或已有头像换出来的临时地址） */
+    avatarSrc: '',
+    /** ⚠️ 只有**重新选过**头像时才有值 —— 空 = 不动库里那张 */
     avatarPath: '',
     nickname: '',
+    genderOptions: GENDER_OPTIONS,
+    genderIndex: 0,
+    genderLabel: GENDER_OPTIONS[0] ?? '不填',
+    /** 年龄输入框的原始文本；'' = 未填 */
+    ageText: '',
+    bio: '',
     focusNickname: false,
     saving: false,
     error: '',
@@ -54,13 +82,30 @@ Component({
 
   lifetimes: {
     attached() {
-      // ⚠️ 已经起过名字的：预填上，别让他重打一遍
-      const p = me.getState().profile
+      // ⚠️ 已有的资料全部**预填**，别让用户重打 / 重选一遍
+      const p = me.getState().userInfo
       const nickname = p?.nickname ?? ''
-      if (nickname) {
-        this.setData({ nickname })
-        return
+      const genderIndex = p?.gender === 'male' ? 1 : p?.gender === 'female' ? 2 : 0
+      this.setData({
+        nickname,
+        genderIndex,
+        genderLabel: GENDER_OPTIONS[genderIndex] ?? GENDER_OPTIONS[0],
+        ageText: p?.age != null ? String(p.age) : '',
+        bio: p?.bio ?? '',
+      })
+
+      /**
+       * ⭐⭐ 已有头像**先显示出来** —— 这就是那个「修改 ≠ 重新提交」的修复点。
+       * ⚠️ 换址是异步的：回来时用户可能已经选了新头像，那就别用旧的把它盖掉。
+       */
+      const fileId = p?.avatarUrl ?? ''
+      if (fileId) {
+        void resolveCloudFileUrl(fileId).then((url) => {
+          if (url && !this.data.avatarPath) this.setData({ avatarSrc: url })
+        })
       }
+
+      if (nickname) return
       if (!this.data.autoFocus) return
       // ⭐ 新人这条路才是关键：不聚焦，用户会以为"这里要我手打一个名字"，然后自己编一个
       setTimeout(() => {
@@ -72,11 +117,30 @@ Component({
   methods: {
     onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
       // ⚠️ 这只是**临时路径**，不是能落库的地址 —— 提交时才上传（见 uploadAvatar）
-      this.setData({ avatarPath: e.detail?.avatarUrl ?? '', error: '' })
+      const avatarPath = e.detail?.avatarUrl ?? ''
+      this.setData({ avatarPath, avatarSrc: avatarPath, error: '' })
     },
 
     onNickname(e: WechatMiniprogram.Input) {
       this.setData({ nickname: e.detail?.value ?? '', error: '' })
+    },
+
+    onGender(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+      const idx = Number(e.detail?.value)
+      const genderIndex = Number.isInteger(idx) && idx >= 0 && idx < GENDER_OPTIONS.length ? idx : 0
+      this.setData({
+        genderIndex,
+        genderLabel: GENDER_OPTIONS[genderIndex] ?? GENDER_OPTIONS[0],
+        error: '',
+      })
+    },
+
+    onAge(e: WechatMiniprogram.Input) {
+      this.setData({ ageText: e.detail?.value ?? '', error: '' })
+    },
+
+    onBio(e: WechatMiniprogram.Input) {
+      this.setData({ bio: e.detail?.value ?? '', error: '' })
     },
 
     /**
@@ -89,9 +153,30 @@ Component({
       const nickname = this.data.nickname.trim()
       if (!nickname) return
 
+      /**
+       * 资料页才处理这三个字段；加入页（full=false）**根本不发**它们，
+       * 服务端「键不存在 = 不改」的语义会保持原值。
+       */
+      let gender: Gender | null = null
+      let age: number | null = null
+      let bio: string | null = null
+      if (this.data.full) {
+        const ageRaw = this.data.ageText.trim()
+        if (ageRaw) {
+          const n = Number(ageRaw)
+          if (!Number.isInteger(n) || n < AGE_MIN || n > AGE_MAX) {
+            this.setData({ error: '年龄请填 ' + AGE_MIN + '–' + AGE_MAX + ' 之间的整数' })
+            return
+          }
+          age = n
+        }
+        gender = GENDER_VALUES[this.data.genderIndex] ?? null
+        bio = this.data.bio.trim() || null
+      }
+
       this.setData({ saving: true, error: '' })
       try {
-        // ① 头像先上传（没选就跳过 —— 头像是可选的）
+        // ① 头像先上传（只有**重新选过**才传 —— 否则保持库里那张）
         let fileId = ''
         let avatarFailed = false
         if (this.data.avatarPath) {
@@ -110,7 +195,11 @@ Component({
           }
         }
         // ② 落库，并**用它的返回值**更新全局 state（见 store 的 applyProfilePatch）
-        const saved = await saveProfile({ nickname, ...(fileId ? { avatarUrl: fileId } : {}) })
+        const saved = await saveProfile({
+          nickname,
+          ...(fileId ? { avatarUrl: fileId } : {}),
+          ...(this.data.full ? { gender, age, bio } : {}),
+        })
         me.applyProfilePatch(saved)
         /**
          * ③ 再顺手拉一次完整的 /me（已征服数 / streak 在保存接口的返回值里没有）。

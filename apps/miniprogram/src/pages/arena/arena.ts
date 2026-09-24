@@ -1,5 +1,5 @@
 import { startButtonLabel } from '@jushuo/shared'
-import type { ArenaDetail, ScheduleDetail } from '@jushuo/shared'
+import type { ArenaDetail, ArticleTheme, ScheduleDetail } from '@jushuo/shared'
 import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
@@ -13,7 +13,7 @@ import * as me from '../../lib/store'
  *    完整的排行榜、我的名次、以及从这里进入朗读。
  *
  * ⚠️⚠️ **两种进法，两个地址**：
- *    · `?article=12` —— ⭐ 正路：**按句子**看一个竞技场（首页卡片点进来）
+ *    · `?article=<articleId>` —— ⭐ 正路：**按句子**看一个竞技场（首页卡片点进来）
  *      日期只是「编辑精选的容器」，和竞技场无关；挑战它算**今天**
  *    · `?date=2026-09-21` —— 「回到那一天再读一次」（参与场次 / 挑战结果页点进来），
  *      挑战它算**那一天**（否则昨天那张卡片的数字会变）
@@ -33,12 +33,20 @@ Page({
     error: '',
 
     /** ⭐ 这一句的 id —— 竞技场的**地址** */
-    articleId: 0,
+    articleId: '',
     /** ⭐ 从这里发起的挑战该记到哪一天（服务端给的，端侧不自己算） */
     submissionDate: '',
     text: '',
     translation: '',
     isToday: false,
+    /** ⭐ 句子卡的展示对象（arena-card 的 entry；不带卡片头/CTA） */
+    sentence: null as {
+      articleId: string
+      header: boolean
+      text: string
+      translation: string
+      theme: ArticleTheme | null
+    } | null,
 
     /** '23 人参与，最高得分 74' */
     stat: '',
@@ -62,16 +70,17 @@ Page({
    * ⭐ 页面是**从哪条路进来的**（见文件头那段）：
    *    重新加载必须沿同一条路，否则 submissionDate 会被算错。
    */
-  entry: { articleId: 0, date: '' },
+  entry: { articleId: '', date: '' },
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
 
   onLoad(query: Record<string, string | undefined>) {
     /** ⭐ 优先按句子（正路）；没有 article 才退回按日期（老入口） */
-    const articleId = Number(query.article ?? 0)
+    // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**
+    const articleId = query.article ?? ''
     const date = query.date ?? ''
-    this.entry = articleId ? { articleId, date: '' } : { articleId: 0, date }
+    this.entry = articleId ? { articleId, date: '' } : { articleId: '', date }
     this.setData({ navTop: navPadTop() })
     // ⭐ 订阅全局「我的记录」：在朗读页打完分，回到这里名次与成绩立刻是新的
     this.unsubStore = me.subscribe(() => this.render())
@@ -129,6 +138,13 @@ Page({
         text: d.text,
         translation: d.translation,
         isToday: d.isToday,
+        sentence: {
+          articleId: d.articleId,
+          header: false,
+          text: d.text,
+          translation: d.translation,
+          theme: d.theme,
+        },
         stat: this.statText(d),
         topScore: d.topScore,
         participantCount: d.participantCount,

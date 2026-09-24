@@ -1,0 +1,35 @@
+<!--
+  ⭐ 提交卡（见 submission-card.ts 的说明）。
+  ⚠️ bar 的尺寸/间距与改造前「我的挑战」那一行逐项对齐，只换配色。
+-->
+
+<!-- bar：我的挑战列表里的一行 -->
+<view wx:if="{{mode === 'bar'}}" class="sc-bar" style="background:{{bg}};color:{{fg}}"
+      data-i="{{index}}" bindtap="onOpen">
+  <view class="flex items-center">
+    <!-- 播放钮 = audio-button（尺寸/状态/反色都在组件里） -->
+    <audio-button class="mr-2" size="md"
+                  state="{{loading ? 'loading' : (playing ? 'playing' : 'unplay')}}"
+                  fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
+
+    <view class="sc-line">
+      <view class="flex">
+        <text class="text-30rpx leading-[1.5] mr-1 shrink-0 {{w.cls}}"
+              wx:for="{{row.words}}" wx:for-item="w" wx:key="i">{{w.text}}</text>
+      </view>
+      <view class="sc-fade" style="background:linear-gradient(to right, transparent, {{bg}})"></view>
+    </view>
+
+    <text class="text-22rpx ml-2 shrink-0 sc-faint">{{row.ago}}</text>
+  </view>
+
+  <view class="flex items-baseline mt-1.5">
+    <text class="text-28rpx font-bold mr-1.5 shrink-0 {{row.failed ? 'sc-faint' : ''}}">{{row.scoreText}}</text>
+    <text class="text-24rpx flex-1 sc-dim">{{row.verdict}}</text>
+  </view>
+</view>
+
+<!-- card：挑战结果页的整张卡，内容由页面 slot 放进来 -->
+<view wx:else class="sc-card" style="background:{{bg}};color:{{fg}}">
+  <slot />
+</view>

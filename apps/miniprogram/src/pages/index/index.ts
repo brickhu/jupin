@@ -1,7 +1,9 @@
-import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
+import { BRAND, formatScore, startButtonLabel, today } from '@jushuo/shared'
 import type {
+  ArticleTheme,
   GrowthRankResponse,
   GrowthRankRow,
+  MeResponse,
   ScheduleEntry,
   SchedulesResponse,
   StreakView,
@@ -15,11 +17,25 @@ import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
+/**
+ * ⭐ 分享卡片图 —— **代码包里**的一张固定图（5:4，微信分享卡的标准比例）。
+ *
+ * ⚠️ 必须显式给图，不能让微信自己截屏：不带 imageUrl 时它截的是**用户当时看到的**
+ *    那一屏（滚到哪截到哪），同一张活动在不同人那里长得完全不一样。
+ * ⚠️ 打包用的是 **JPEG**：源图 content/misc/share_picture_home.png 是 417KB 的 PNG，
+ *    但它**完全不透明**（没必要用 PNG），而主包上限 2MB —— 转 JPEG 后 74KB，视觉无差。
+ */
+const SHARE_IMAGE = '/assets/share-home.jpg'
+
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
 /** 首页荣誉榜的一块（tab 上的短标签 + 它自己的前十） */
 interface BoardView {
   key: string
-  /** ⚠️ 短标签：三个 tab 要挤在一行里，写「📈 自我超越」就够，别带 TOP10 */
+  /**
+   * ⚠️ 短标签：三个 tab 要挤在一行里，写「📈 自我超越」就够，别带 TOP10。
+   * ⚠️ emoji 前缀**故意不做成 icon font**：成长值是徽章那一类的荣誉标记，
+   *    要彩色要个性 —— 与 pages/profile 的成长值三行、用户面板那一排一致。
+   */
   label: string
   rows: GrowthRankRow[]
 }
@@ -42,7 +58,11 @@ function boardListOf(b: GrowthRankResponse): BoardView[] {
 interface CardView {
   /** 只有今日那一张有（见 toView 的说明） */
   date: string
-  articleId: number
+  articleId: string
+  /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
+  theme: ArticleTheme | null
+  /** 画不画卡片头（播放/人数/箭头）—— 今日与历史画，竞技场的句子卡不画 */
+  header: boolean
   text: string
   translation: string
   /**
@@ -69,8 +89,8 @@ interface CardView {
    *    两条路的解释在 lib/audio/standard.ts 里统一处理。
    */
   audio: { full: string; kind: 'cloud' | 'http' } | null
-  /** '0:03' —— 标准音时长；算不出来是空串 ⇒ 只显示按钮、不显示时长 */
-  durationText: string
+  /** 标准音时长（毫秒）—— null = 算不出来 ⇒ 只显示按钮、不显示时长（格式由 audio-button 统一） */
+  durationMs: number | null
   /**
    * 按钮下方那行：'你已经参与 3 次挑战 · 最高得分 86' / '还未参与挑战'。
    *
@@ -172,29 +192,14 @@ interface StatsView {
  *
  * ⚠️ 写成纯函数：输入只有两个对象，与页面实例无关，好单测。
  */
-function statsOf(profile: me.Profile | null, streak: StreakView | null): StatsView | null {
-  // ⚠️ 没有 profile = 还没跟服务端确认过身份（真正的「没登录」）→ 整张卡不画。
-  if (!profile) return null
+function statsOf(userInfo: MeResponse | null, streak: StreakView | null): StatsView | null {
+  // ⚠️ 没有 userInfo = 还没跟服务端确认过身份（真正的「没登录」）→ 整张卡不画。
+  if (!userInfo) return null
   return {
-    conqueredCount: profile.conqueredCount,
-    challengedRounds: profile.challengedRounds,
+    conqueredCount: userInfo.conqueredCount,
+    challengedRounds: userInfo.challengedRounds,
     streakDays: streak?.streakDays ?? 0,
   }
-}
-
-/**
- * 标准音时长 → '0:03'。
- *
- * ⚠️ 算不出来（null / 非正数）返回**空串**，端侧就只显示播放按钮、不显示时长 ——
- *    而不是显示一个 0:00（那会让人以为音频坏了）。
- * ⚠️ 只到「分:秒」：标准音最长也就十几秒，显示毫秒只会更吵。
- */
-function durationText(ms: number | null): string {
-  if (!ms || !Number.isFinite(ms) || ms <= 0) return ''
-  const total = Math.round(ms / 1000)
-  const m = Math.floor(total / 60)
-  const sec = total % 60
-  return m + ':' + String(sec).padStart(2, '0')
 }
 
 function statText(participantCount: number): string {
@@ -270,12 +275,17 @@ Page({
     /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
     boardsLoaded: false,
     /**
-     * ⭐ 正在播的是哪一句（articleId）。0 = 没在播。
+     * ⭐ 正在播的是哪一句（articleId）。空串 = 没在播。
      *
      * ⚠️ 用 **articleId** 而不是「第几张卡」：7 天里大概率好几天是同一句，
      *    按卡片记的话，点一张卡播的却是另一张卡的按钮亮着。
      */
-    playingArticle: 0,
+    playingArticle: '',
+    /**
+     * ⭐ 正在**取音**的是哪一句（还没出声）。与 playingArticle 分开：
+     *    取地址 + 落本地的那段窗口显示 spinner，而不是让它看起来已经在播。
+     */
+    loadingArticle: '',
   },
 
   /** 请求是否在途 —— 只用来挡并发，不参与任何业务判断 */
@@ -297,10 +307,34 @@ Page({
     // ⚠️ 在 onLoad 里取：它赶得上首帧渲染，不会先顶到状态栏再跳下来
     this.setData({ navTop: navPadTop() })
 
+    /**
+     * ⭐ 打开右上角「转发 / 分享到朋友圈」菜单（与 pages/profile 同一套）。
+     * ⚠️ 菜单只是入口，真正决定分享内容的是 onShareAppMessage / onShareTimeline；
+     *    不调它、也不开页面 json 的 enableShareAppMessage，右上角就没有「转发」。
+     */
+    wx.showShareMenu?.({ menus: ['shareAppMessage', 'shareTimeline'] })
+
     // ⭐ 订阅全局「我的记录」：朗读页打完分写进去，这里立刻重画。
     //    ⚠️ 这是「提交完返回首页不更新」的根治手段 ——
     //       它不依赖 onShow 的时机，也不要求首页还在页面栈里。
     this.unsubStore = me.subscribe(() => this.render())
+
+    /**
+     * ⭐ 先用**上次那一屏卡片**把首屏画出来，再照常去刷新。
+     *
+     * ⚠️ 为什么：云托管缩容到 0 之后，第一次请求要硬等 9~25 秒
+     *    （见 client.ts 的 LAUNCH_BUDGET_MS）。那段时间不该是一片空白 ——
+     *    卡片内容本身一天只变一次，把上次那一屏先画出来几乎总是对的。
+     * ⚠️ 跨天的缓存会被 cachedSchedules() 丢掉（见它的说明），
+     *    所以这里拿到的要么是当天的、要么是 null。
+     */
+    const cached = me.cachedSchedules()
+    if (cached) {
+      this.cards = { today: cached.today, history: cached.history }
+      this.setData({ loading: false })
+      this.render()
+    }
+
     void this.load()
   },
 
@@ -364,31 +398,42 @@ Page({
    * ⚠️ 走**和朗读页同一条**取音路径（ensureLocalAudio 优先本地），
    *    所以同一句第二次点会是秒出声。
    */
-  async onPlayAudio(e: WechatMiniprogram.BaseEvent) {
-    const ds = e.currentTarget.dataset as { id?: number; full?: string; kind?: string }
-    const articleId = Number(ds.id ?? 0)
-    if (!articleId || !ds.full) return
+  async onPlayAudio(e: WechatMiniprogram.CustomEvent<{
+    articleId: string
+    audio: { full: string; kind: 'cloud' | 'http' } | null
+  }>) {
+    const articleId = e.detail.articleId ?? ''
+    const full = e.detail.audio?.full
+    if (!articleId || !full) return
 
     // 再点一次 → 停（stopAudio 是全局唯一那个播放器）
     if (this.data.playingArticle === articleId) {
       stopAudio()
-      this.setData({ playingArticle: 0 })
+      this.setData({ playingArticle: '' })
+      return
+    }
+    // ⚠️ 取音途中再点同一句 = 取消：还没出声，停不下来，只能别再播（见下面那道检查）
+    if (this.data.loadingArticle === articleId) {
+      this.setData({ loadingArticle: '' })
       return
     }
 
-    const kind = ds.kind === 'cloud' ? 'cloud' : 'http'
-    // ⚠️ 先点亮按钮再取音：取音这一步在弱网下要等一下，
+    const kind = e.detail.audio?.kind === 'cloud' ? 'cloud' : 'http'
+    // ⚠️ 先点亮 loading 再取音：取音这一步在弱网下要等一下，
     //    不给反馈的话用户会以为没点上，然后连点好几下。
-    this.setData({ playingArticle: articleId })
+    this.setData({ loadingArticle: articleId, playingArticle: '' })
     try {
-      const src = await ensureLocalAudio(ds.full, kind)
+      const src = await ensureLocalAudio(full, kind)
       if (!src) throw new Error('拿不到标准音')
+      // ⚠️ 等待期间用户可能取消了 / 点了另一句 —— 那就别再出声
+      if (this.data.loadingArticle !== articleId) return
+      this.setData({ loadingArticle: '', playingArticle: articleId })
       await playAudioUrl(src, '标准音', () => {
         // ⚠️ 只在「还是这一句在播」时清掉标记：用户可能在播放期间点了另一句
-        if (this.data.playingArticle === articleId) this.setData({ playingArticle: 0 })
+        if (this.data.playingArticle === articleId) this.setData({ playingArticle: '' })
       })
     } catch (err) {
-      if (this.data.playingArticle === articleId) this.setData({ playingArticle: 0 })
+      if (this.data.loadingArticle === articleId) this.setData({ loadingArticle: '' })
       wx.showToast({ title: (err as Error).message || '播放失败', icon: 'none' })
     }
   },
@@ -412,6 +457,24 @@ Page({
     notifyNavScroll(this, e.scrollTop)
   },
 
+  /**
+   * ⭐ 转发给好友 —— 卡片图是 SHARE_IMAGE（见文件头），落地页就是首页本身。
+   * ⚠️ 文案只从 brand.ts 取（BRAND.pitch），不在这里另写一句 ——
+   *    同一句定位散着写必然漂移，见 brand.ts 的说明。
+   * ⚠️ 首页不带参数，所以 path 写死、也没有要带过去的状态。
+   */
+  onShareAppMessage() {
+    return { title: BRAND.pitch, path: '/pages/index/index', imageUrl: SHARE_IMAGE }
+  },
+
+  /**
+   * ⭐ 分享到朋友圈 —— 与转发同一张图、同一句文案。
+   * ⚠️ 朋友圈这条**不能用 path**（永远是当前页），参数只能走 query；
+   *    首页没有参数，所以连 query 都不用给。
+   */
+  onShareTimeline() {
+    return { title: BRAND.pitch, imageUrl: SHARE_IMAGE }
+  },
 
   onUnload() {
     // ⚠️ 必须退订：不退的话页面销毁后回调还在跑，里面一句 setData 就报错
@@ -482,7 +545,7 @@ Page({
     if (!c) return
     const st = me.getState()
     this.setData({
-      stats: statsOf(st.profile, st.streak),
+      stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
       today: this.toView(c.today),
       history: c.history.map((x) => this.toView(x)),
     })
@@ -500,12 +563,14 @@ Page({
        */
       date: card.date ?? '',
       articleId: card.articleId,
+      theme: card.theme,
+      header: true,
       text: card.text,
       translation: card.translation,
       stat: statText(card.participantCount),
       joined: mine.myBest !== null,
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
-      durationText: durationText(card.audio ? card.audio.durationMs : null),
+      durationMs: card.audio ? card.audio.durationMs : null,
       hint: hintText(mine),
       // ⚠️ 用 myBest 判断而不是 myAttempts：两者在正常流程里同进同退，
       //    但「参与过」的权威判据是**有没有成绩**。
@@ -551,20 +616,21 @@ Page({
    *    两个入口指向不同页面，所以卡片右侧放了一个「›」提示可点开，
    *    否则「点哪儿都一样」的错觉会让人以为自己点错了。
    */
-  onOpenDetail(e: WechatMiniprogram.BaseEvent) {
+  onOpenDetail(e: WechatMiniprogram.CustomEvent<{ articleId: string }>) {
     /**
      * ⚠️⚠️ 竞技场按**句子**寻址，不按日期：
      *    日期只是「编辑精选的容器」，同一句会被排到很多天 ——
      *    按日期进等于把「这一句的榜单」绑在某一天上，而那件事从来没成立过。
      */
-    const articleId = Number((e.currentTarget.dataset as { article?: string }).article ?? 0)
+    // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**
+    const articleId = e.detail.articleId ?? ''
     if (!articleId) return
     wx.navigateTo({ url: '/pages/arena/arena?article=' + articleId })
   },
 
   /** 开始/再次挑战 —— 必须把**这一天的日期**带过去 */
-  onStart(e: WechatMiniprogram.BaseEvent) {
-    const ds = e.currentTarget.dataset as { id?: number; date?: string }
+  onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string; date: string }>) {
+    const ds = { id: e.detail.articleId, date: e.detail.date }
     if (!ds.id || !ds.date) return
     /**
      * ⚠️ 这里**不再拦「加入过没有」**。身份（openid）是静默拿到的，而服务端在

@@ -127,11 +127,11 @@ Page({
        *    否则这一页会停在「加入」上，要等用户离开再进来才看得到自己的主页。
        */
       void refreshMe().then(() => {
-        if (!this.viewId && me.getState().profile?.id) void this.load()
+        if (!this.viewId && me.getState().userInfo?.id) void this.load()
       })
     }
 
-    const id = this.targetId || me.getState().profile?.id || 0
+    const id = this.targetId || me.getState().userInfo?.id || 0
     this.viewId = id
     if (!id) {
       // ⚠️ 没有 id 不是「取不到」：那是「还没加入」，画「加入」，其余不画
@@ -159,9 +159,9 @@ Page({
        *    所以看自己主页时，这两个数从「我是谁」那一份取（store 里的 /api/user/me）；
        *    看别人的主页时没有这一份 —— 那一行不显示（hasEnergy=false）。
        */
-      hasEnergy: me.getState().profile?.id === p.id,
-      energy: me.getState().profile?.energy ?? 0,
-      unfreezeCards: me.getState().streak?.unfreezeCards ?? 0,
+      hasEnergy: me.getState().userInfo?.id === p.id,
+      energy: me.getState().userInfo?.energy ?? 0,
+      unfreezeCards: me.getState().userInfo?.streak?.unfreezeCards ?? 0,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,

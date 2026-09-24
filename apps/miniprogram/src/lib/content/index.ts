@@ -1,4 +1,4 @@
-import type { ArticleContent } from '@jushuo/shared'
+import type { ArticleDetail } from '@jushuo/shared'
 
 import { request } from '../api/client'
 
@@ -11,21 +11,21 @@ import { request } from '../api/client'
  *   这一层只做 ②：阅读页要的是**全量**那一份。列表页要用 ① 时再往上加。
  *
  * ⚠️ 正文按设计要由 CDN 分发、客户端直接拉；现在由服务端代取只是因为
- *    contentJson 还可能是相对路径（流水线与 CDN 都还没建）。
- *    等 CDN 就位，这里可以直接换成拉 `article.contentJson`，调用方不用改。
+ *    CDN 还没建（服务端按 id 推导路径去读盘）。
+ *    等 CDN 就位，这里可以直接换成拉 `<CDN>/content/articles/<id>.json`，调用方不用改。
  *
  * ⚠️ 两句都是**公开数据**（同一句给所有人一样），所以服务端那条路不鉴权；
- *    但客户端仍从我们的接口拿 —— 它拿不到（也不该拿到）仓库里的 contentJson 路径。
+ *    但客户端仍从我们的接口拿 —— 它不该知道（也不需要知道）仓库里的正文路径。
  */
 
 /** 正文内存缓存 —— 同一篇文章一次会话只拉一次 */
-const contentCache = new Map<number, ArticleContent>()
+const contentCache = new Map<string, ArticleDetail>()
 
-export async function fetchArticleContent(id: number): Promise<ArticleContent> {
+export async function fetchArticleContent(id: string): Promise<ArticleDetail> {
   const hit = contentCache.get(id)
   if (hit) return hit
 
-  const content = await request<ArticleContent>('/api/articles/' + id)
+  const content = await request<ArticleDetail>('/api/articles/' + id)
   contentCache.set(id, content)
   return content
 }

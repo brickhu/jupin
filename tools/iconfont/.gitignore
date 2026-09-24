@@ -1,0 +1,5 @@
+# 生成器的中间产物（可随时重建）：只留 icons.json 这个离线缓存
+node_modules/
+svg/
+font.svg
+jushuo-icons.ttf

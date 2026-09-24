@@ -70,6 +70,11 @@ Component({
     leftMode: 'back' as 'avatar' | 'home' | 'back',
     /** 已加入 = 有账号（见 store 的 hasJoined）—— 还没加入时这一格画的是「加入」按钮 */
     joined: false,
+    /**
+     * ⭐ 身份还没解析完（启动登录中）—— 这时左侧画 spinner，而不是「加入」。
+     * ⚠️ 「还没问到」和「问到了但没有账号」是两件事，见 store 的 SessionState。
+     */
+    sessionPending: true,
     /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
     avatarSrc: '',
     /**
@@ -146,12 +151,13 @@ Component({
      *    先定下"加入过没有 / 显示什么字"，地址到了再补上。
      */
     syncProfile() {
-      const p = me.getState().profile
+      const st = me.getState()
+      const p = st.userInfo
       const joined = me.hasJoined()
       this.setData({
         joined,
-        // ⚠️ 没有头像时用**昵称首字**兜底：一个空圆圈传达不了任何信息，
-        //    而一个字就够 —— 它回答的是「这是我吗」。
+        // ⚠️ pending = 还没问到身份 ⇒ 画 spinner，别先画一个假的「加入」再闪掉
+        sessionPending: st.session === 'pending',
       })
 
       const fileId = p?.avatarUrl ?? ''
@@ -166,6 +172,8 @@ Component({
 
     onLeftTap() {
       if (this.data.leftMode === 'avatar') {
+        // ⚠️ 身份还在解析中：这一格是 spinner，不接受点击（也避免误触重试）
+        if (this.data.sessionPending) return
         /**
          * ⭐ 还没加入时这一格是「加入」按钮。
          *

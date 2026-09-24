@@ -1,0 +1,13 @@
+{
+  "name": "iconfont-build",
+  "private": true,
+  "version": "0.0.0",
+  "description": "从 Iconify 图标生成小程序 icon font 子集（构建期一次性工具，见 docs/research/icon-evaluation.md）",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "svg2ttf": "^6.1.0",
+    "svgicons2svgfont": "^16.0.0"
+  }
+}

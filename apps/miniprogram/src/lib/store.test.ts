@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { today } from '@jushuo/shared'
 
 /**
  * store 的单测。
@@ -34,7 +35,7 @@ const STREAK = {
 }
 
 /** 造一天的排期卡片 */
-function entry(date: string, articleId: number, myBest: number | null = null, myAttempts = 0) {
+function entry(date: string, articleId: string, myBest: number | null = null, myAttempts = 0) {
   return {
     date,
     articleId,
@@ -49,7 +50,7 @@ function entry(date: string, articleId: number, myBest: number | null = null, my
   }
 }
 
-function listResponse(today = entry('2026-09-21', 3), history: unknown[] = []) {
+function listResponse(today = entry('2026-09-21', '3'), history: unknown[] = []) {
   return { date: '2026-09-21', streak: STREAK, today, history } as never
 }
 
@@ -60,62 +61,62 @@ beforeEach(() => {
 
 describe('applyArenaRecords —— 「我的战绩」由个人接口喂（按句子落，不按日期）', () => {
   it('把服务端给的战绩写进对应句子', () => {
-    store.applyArenaRecords([{ articleId: 3, bestScore: 72, attempts: 2 }])
-    expect(store.arenaOf(3)).toEqual({ myBest: 72, myAttempts: 2 })
+    store.applyArenaRecords([{ articleId: '3', bestScore: 72, attempts: 2 }])
+    expect(store.arenaOf('3')).toEqual({ myBest: 72, myAttempts: 2 })
   })
 
   it('没参与过的句子返回「没参与」，而不是 undefined', () => {
-    expect(store.arenaOf(999)).toEqual({ myBest: null, myAttempts: 0 })
+    expect(store.arenaOf('999')).toEqual({ myBest: null, myAttempts: 0 })
   })
 
   it('⭐ 同一句给多次 → 只落一个键（按 articleId，不按日期）', () => {
     store.applyArenaRecords([
-      { articleId: 1, bestScore: 85, attempts: 2 },
-      { articleId: 1, bestScore: 60, attempts: 1 },
+      { articleId: '1', bestScore: 85, attempts: 2 },
+      { articleId: '1', bestScore: 60, attempts: 1 },
     ])
     expect(Object.keys(store.getState().arena)).toEqual(['1'])
-    expect(store.arenaOf(1)).toEqual({ myBest: 85, myAttempts: 2 })
+    expect(store.arenaOf('1')).toEqual({ myBest: 85, myAttempts: 2 })
   })
 
   it('⚠️ 保守合并：旧快照不能把更高的分盖回去', () => {
-    store.applyArenaRecords([{ articleId: 3, bestScore: 80, attempts: 1 }])
-    store.applyArenaRecords([{ articleId: 3, bestScore: 60, attempts: 1 }])
-    expect(store.arenaOf(3)).toEqual({ myBest: 80, myAttempts: 1 })
+    store.applyArenaRecords([{ articleId: '3', bestScore: 80, attempts: 1 }])
+    store.applyArenaRecords([{ articleId: '3', bestScore: 60, attempts: 1 }])
+    expect(store.arenaOf('3')).toEqual({ myBest: 80, myAttempts: 1 })
   })
 
   it('⭐ 公开列表接口（applySchedules）不再碰 arena / streak —— 它只带公开数据', () => {
-    store.applySchedules(listResponse(entry('2026-09-21', 3)))
+    store.applySchedules(listResponse(entry('2026-09-21', '3')))
     expect(store.getState().arena).toEqual({})
-    expect(store.getState().streak).toBeNull()
+    expect(store.getState().userInfo?.streak ?? null).toBeNull()
   })
 })
 
 describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => {
   it('⭐ 打分成功后，不经过任何网络请求，战绩立刻就是新的', () => {
-    expect(store.arenaOf(3).myBest).toBeNull()
-    store.applySubmissionResult({ articleId: 3, score: 74 })
-    expect(store.arenaOf(3)).toEqual({ myBest: 74, myAttempts: 1 })
+    expect(store.arenaOf('3').myBest).toBeNull()
+    store.applySubmissionResult({ articleId: '3', score: 74 })
+    expect(store.arenaOf('3')).toEqual({ myBest: 74, myAttempts: 1 })
   })
 
   it('同一句再提交一次：次数累加，最好成绩取较大值', () => {
-    store.applyArenaRecords([{ articleId: 3, bestScore: 80, attempts: 1 }])
-    store.applySubmissionResult({ articleId: 3, score: 60 })
-    expect(store.arenaOf(3)).toEqual({ myBest: 80, myAttempts: 2 })
+    store.applyArenaRecords([{ articleId: '3', bestScore: 80, attempts: 1 }])
+    store.applySubmissionResult({ articleId: '3', score: 60 })
+    expect(store.arenaOf('3')).toEqual({ myBest: 80, myAttempts: 2 })
   })
 
   it('⚠️ 提交到别的句子时，不能动这一句的战绩', () => {
-    store.applySubmissionResult({ articleId: 1, score: 91 })
-    expect(store.arenaOf(1).myBest).toBe(91)
-    expect(store.arenaOf(3).myBest).toBeNull()
+    store.applySubmissionResult({ articleId: '1', score: 91 })
+    expect(store.arenaOf('1').myBest).toBe(91)
+    expect(store.arenaOf('3').myBest).toBeNull()
   })
 
   it('streak 用服务端给的，端侧一个数都不算', () => {
     store.applySubmissionResult({
-      articleId: 3,
+      articleId: '3',
       score: 70,
       streak: { streakDays: 9, streakBest: 9, unfreezeCards: 0, counted: true, delta: 1 },
     })
-    expect(store.getState().streak?.streakDays).toBe(9)
+    expect(store.getState().userInfo?.streak?.streakDays).toBe(9)
   })
 
   it('服务端没给 streak 时保留旧值，不要清空', () => {
@@ -131,8 +132,8 @@ describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => 
       growth: { self: 0, diligence: 0, standout: 0 },
       streak: STREAK,
     } as never)
-    store.applySubmissionResult({ articleId: 3, score: 70 })
-    expect(store.getState().streak?.streakDays).toBe(3)
+    store.applySubmissionResult({ articleId: '3', score: 70 })
+    expect(store.getState().userInfo?.streak?.streakDays).toBe(3)
   })
 })
 // ⚠️ 放在「订阅」前面：那一组里有一个故意抛异常的订阅者不退订，
@@ -169,10 +170,10 @@ describe('hasJoined —— 「加入」的判据是账号，不是昵称', () =>
 describe('订阅', () => {
   it('写入时通知订阅者', () => {
     const seen: number[] = []
-    const off = store.subscribe((s) => seen.push(s.arena[3]?.myAttempts ?? -1))
+    const off = store.subscribe((s) => seen.push(s.arena['3']?.myAttempts ?? -1))
     // ⚠️ 战绩的写入方是 applyArenaRecords（公开列表不再带「我的」字段）
-    store.applyArenaRecords([{ articleId: 3, bestScore: 1, attempts: 1 }])
-    store.applySubmissionResult({ articleId: 3, score: 2 })
+    store.applyArenaRecords([{ articleId: '3', bestScore: 1, attempts: 1 }])
+    store.applySubmissionResult({ articleId: '3', score: 2 })
     expect(seen).toEqual([1, 2])
     off()
   })
@@ -181,7 +182,7 @@ describe('订阅', () => {
     const fn = vi.fn()
     const off = store.subscribe(fn)
     off()
-    store.applySubmissionResult({ articleId: 3, score: 1 })
+    store.applySubmissionResult({ articleId: '3', score: 1 })
     expect(fn).not.toHaveBeenCalled()
   })
 
@@ -192,7 +193,7 @@ describe('订阅', () => {
       throw new Error('boom')
     })
     store.subscribe(good)
-    store.applySubmissionResult({ articleId: 3, score: 1 })
+    store.applySubmissionResult({ articleId: '3', score: 1 })
     expect(good).toHaveBeenCalled()
     // ⚠️ 被吞掉的话，症状是「数据变了界面不动」，而没有任何东西看起来是坏的
     expect(err).toHaveBeenCalled()
@@ -200,9 +201,26 @@ describe('订阅', () => {
   })
 })
 
+describe('cachedSchedules —— 冷启动首屏的缓存（跨天必须丢掉）', () => {
+  it('同一天能把上次那一屏取回来', () => {
+    const res = { date: today(), today: entry(today(), '3'), history: [] } as never
+    store.applySchedules(res)
+    expect(store.cachedSchedules()).toEqual(res)
+  })
+
+  it('⚠️ 跨天一律 null —— 拿昨天那句当「今日挑战」画出来，点进去还是昨天那句', () => {
+    store.applySchedules({ date: '2000-01-01', today: entry('2000-01-01', '3'), history: [] } as never)
+    expect(store.cachedSchedules()).toBeNull()
+  })
+
+  it('从没拉到过也是 null', () => {
+    expect(store.cachedSchedules()).toBeNull()
+  })
+})
+
 describe('hydrate —— 冷启动读回上次的战绩', () => {
   it('读回后订阅者立刻拿到数据，首帧不必等网络', async () => {
-    store.applySubmissionResult({ articleId: 3, score: 88 })
+    store.applySubmissionResult({ articleId: '3', score: 88 })
     // ⚠️ 不能在这里调 store.reset() —— 它会 persist 一份空状态，把刚写的覆盖掉
     vi.resetModules()
     const fresh = await import('./store')
@@ -210,6 +228,6 @@ describe('hydrate —— 冷启动读回上次的战绩', () => {
     fresh.subscribe(fn)
     fresh.hydrate()
     expect(fn).toHaveBeenCalled()
-    expect(fresh.arenaOf(3).myBest).toBe(88)
+    expect(fresh.arenaOf('3').myBest).toBe(88)
   })
 })

@@ -78,3 +78,33 @@
 .pf-input-ph {
   color: #b9b9c0;
 }
+/* 性别 picker：占满标签右边，文字靠右 —— 与昵称那一行对齐成一列 */
+.pf-picker {
+  flex: 1;
+  margin-left: 24rpx;
+}
+
+.pf-pick {
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 30rpx;
+  color: #111;
+  text-align: right;
+}
+
+.pf-pick-ph {
+  color: #b9b9c0;
+}
+
+/* 简介：唯一的多行字段，不套 .pf-row 的固定行高 */
+.pf-bio {
+  padding: 24rpx 28rpx 28rpx;
+}
+
+.pf-textarea {
+  width: 100%;
+  min-height: 120rpx;
+  font-size: 30rpx;
+  color: #111;
+  line-height: 1.6;
+}

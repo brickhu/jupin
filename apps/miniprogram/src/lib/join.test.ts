@@ -46,6 +46,9 @@ function meResponse(nickname: string | null) {
     id: 1,
     nickname,
     avatarUrl: null,
+    gender: null,
+    age: null,
+    bio: null,
     status: 'active',
     isMember: false,
     dailyLimit: 1,
@@ -93,16 +96,16 @@ describe('refreshMe', () => {
 describe('applyProfilePatch —— 保存接口的返回值直接定「已经有名字」', () => {
   it('⭐ 昵称一写进来就立刻算已加入（不依赖再 GET 一次）', () => {
     expect(store.hasJoined()).toBe(false)
-    store.applyProfilePatch({ nickname: '张三', avatarUrl: null })
+    store.applyProfilePatch({ nickname: '张三', avatarUrl: null, gender: null, age: null, bio: null })
     expect(store.hasJoined()).toBe(true)
-    expect(store.getState().profile?.nickname).toBe('张三')
+    expect(store.getState().userInfo?.nickname).toBe('张三')
   })
 
   it('⚠️ 只动昵称/头像，已征服数原样留着（保存接口不返回它）', () => {
     const withCount = { ...meResponse('旧名字'), conqueredCount: 7 }
     store.applyProfile(withCount as never)
-    store.applyProfilePatch({ nickname: '新名字', avatarUrl: null })
-    expect(store.getState().profile?.conqueredCount).toBe(7)
+    store.applyProfilePatch({ nickname: '新名字', avatarUrl: null, gender: null, age: null, bio: null })
+    expect(store.getState().userInfo?.conqueredCount).toBe(7)
   })
 })
 
@@ -127,7 +130,7 @@ describe('openProfilePage —— 用户面板里的「修改」', () => {
   })
 
   it('⚠️ 已经在那一页上就不再压一层', () => {
-    stack = [{ route: 'pages/index/index' }, { route: 'pages/profile-edit/profile-edit' }]
+    stack = [{ route: 'pages/index/index' }, { route: 'pages/me/edit-user/edit-user' }]
     join.openProfilePage()
     expect(nav).toEqual([])
   })

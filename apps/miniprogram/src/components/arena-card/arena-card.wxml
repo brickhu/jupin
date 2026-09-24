@@ -1,0 +1,38 @@
+<!--
+  ⭐ 金句卡片（见 arena-card.ts 的说明）。
+  ⚠️ 布局/字号/字重与改造前的「今日卡 / 历史卡」逐项一致，只把颜色换成
+     currentColor + 透明度（theme 缺失时用品牌色兜底）。
+-->
+<view class="ac-card {{mode === 'list' ? 'ac-list' : 'ac-featured'}} {{entry.joined ? 'ac-joined' : ''}}"
+      style="background:{{bg}};color:{{fg}}">
+  <!-- 卡片头：左（播放 + 时长）· 右（人数 + 箭头）—— 父容器 justify-between -->
+  <view wx:if="{{entry.header}}" class="flex items-center justify-between {{mode === 'list' ? 'mb-2' : 'mb-3'}}" bindtap="onOpen">
+    <view class="flex items-center">
+      <!-- 播放钮 + 时长 = audio-button 的一格（时长格式由它统一成 00:05） -->
+      <audio-button wx:if="{{entry.audio}}" size="sm"
+                    state="{{loading ? 'loading' : (playing ? 'playing' : 'unplay')}}"
+                    showDuration="{{true}}" durationMs="{{entry.durationMs}}"
+                    fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
+    </view>
+    <view class="flex items-center">
+      <text wx:if="{{entry.stat}}" class="text-22rpx shrink-0 ac-faint">{{entry.stat}}</text>
+      <text class="shrink-0 leading-[1] ac-faint ml-2 iconfont icon-chevron-right {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}"></text>
+    </view>
+  </view>
+
+  <view class="flex items-start" bindtap="onOpen">
+    <text class="leading-[1.5] flex-1 {{mode === 'featured' ? 'text-44rpx font-semibold' : 'text-32rpx'}}">{{entry.text}}</text>
+  </view>
+
+  <view wx:if="{{mode === 'featured' && entry.translation}}" class="mt-3" bindtap="onOpen">
+    <text class="text-26rpx leading-[1.6] block ac-faint">{{entry.translation}}</text>
+  </view>
+
+  <!-- ⚠️ 挑战按钮与「还没参加」的状态**只有 featured 卡有**：
+       list（小卡）是「一眼扫过去」的列表，不放按钮，也不放参与状态。 -->
+  <block wx:if="{{mode === 'featured' && entry.action}}">
+    <view class="mt-4 text-center py-[26rpx] rounded-full text-30rpx font-medium"
+          style="background:{{fg}};color:{{bg}}" bindtap="onStart">{{entry.action}}</view>
+    <text wx:if="{{entry.hint}}" class="text-22rpx block text-center mt-2.5 ac-faint">{{entry.hint}}</text>
+  </block>
+</view>

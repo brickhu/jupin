@@ -1,0 +1,41 @@
+/* 提交卡：主题色由根节点内联给，内部一律 currentColor + 透明度分层。
+   ⚠️ bar 的尺寸/间距与改造前「我的挑战」那一行逐项对齐。 */
+
+.sc-bar {
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.sc-card {
+  border-radius: 20rpx;
+  /* ⚠️ p-3.5（28rpx）—— 与改造前那几张结果白卡的内边距一致 */
+  padding: 28rpx;
+}
+
+/* 单行句子 + 右侧渐隐（80rpx，与旧 .cl-fade 一致；渐隐到卡片底色） */
+.sc-line {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sc-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80rpx;
+  pointer-events: none;
+}
+
+.sc-dim {
+  color: currentColor;
+  opacity: 0.65;
+}
+
+.sc-faint {
+  color: currentColor;
+  opacity: 0.5;
+}

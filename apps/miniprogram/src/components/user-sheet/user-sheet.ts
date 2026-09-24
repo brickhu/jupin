@@ -102,16 +102,18 @@ Component({
      * ⭐ 菜单项。
      * ⚠️ 「通知」暂时没有页面 —— 点了给一句「敬请期待」，
      *    而不是留一个点了没反应的死链接（那看起来就像坏了）。
+     * ⚠️ icon 是 **iconfont 的类名**（不是 emoji）：彩色 emoji 在深浅底上会打架，
+     *    图标字体跟随文字颜色。可用字形见 tools/iconfont/build.mjs 的 ICONS。
      */
     menu: [
-      { key: 'participations', icon: '🎯', label: '参与场次' },
-      { key: 'challenges', icon: '📋', label: '我的挑战' },
+      { key: 'participations', icon: 'icon-target', label: '参与场次' },
+      { key: 'challenges', icon: 'icon-clipboard', label: '我的挑战' },
       // ⭐ 连战记录排在这三个战绩入口的最后：它和它们是同一类 ——
       //    「我走到哪了」。⚠️ 别把它塞进「我的主页」里面当二级入口：
       //    那一页是**给别人看**的（对外展示），连战日历只给自己看。
-      { key: 'streak', icon: '🔥', label: '连战记录' },
-      { key: 'home', icon: '🏠', label: '我的主页' },
-      { key: 'notice', icon: '🔔', label: '通知' },
+      { key: 'streak', icon: 'icon-fire', label: '连战记录' },
+      { key: 'home', icon: 'icon-home', label: '我的主页' },
+      { key: 'notice', icon: 'icon-bell', label: '通知' },
     ],
   },
 
@@ -173,7 +175,7 @@ Component({
      */
     refreshView() {
       const st = me.getState()
-      const p = st.profile
+      const p = st.userInfo
       this.setData({
         nickname: (p?.nickname ?? '').trim() || '未设置昵称',
         named: !!p?.nickname,
@@ -181,7 +183,7 @@ Component({
         conqueredCount: p?.conqueredCount ?? 0,
         energy: p?.energy ?? 0,
         growth: p?.growth ?? { self: 0, diligence: 0, standout: 0 },
-        streak: st.streak,
+        streak: st.userInfo?.streak ?? null,
       })
 
       // ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。
@@ -215,7 +217,7 @@ Component({
      * ⚠️⚠️ 两个页面按**有没有起过名字**分流，不能合成一个：
      *    没起过名字的人看到的是「加入句拼 / 确认加入」—— 那是邀请；
      *    已经起过名字的人再看到一次，那一瞬间他会以为自己的账号没了。
-     *    两页的表单是同一个组件，差别只在说法（见 pages/join 与 pages/profile-edit）。
+     *    两页的表单是同一个组件，差别只在说法（见 pages/join 与 pages/me/edit-user）。
      *
      * ⚠️ 它**不是登录**：账号（openid）早就有了，这里补的只是
      *    榜上显示成什么 —— **因此不点它也完全不影响使用**。

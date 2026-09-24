@@ -1,6 +1,8 @@
 import {
   alignWordScores,
   formatScore,
+  plainWordsOf,
+  resolveTheme,
   today,
   wordLevel,
   WORD_GREEN_LINE,
@@ -19,7 +21,10 @@ import {
   fetchSubmissionAudio,
   fetchSubmissionShare,
   fetchSubmissionStatus,
+  setSubmissionVisibility,
 } from '../../lib/api/client'
+import { refreshMe } from '../../lib/join'
+import * as me from '../../lib/store'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
@@ -30,9 +35,10 @@ import { agoText } from '../../lib/time'
  *
  * ⭐⭐ 它是**公开页面**（同个人主页 / 竞技场 / 首页）：`?sid=<提交 id>` 就是地址，
  *    谁来打开都走**同一个公开接口**取同一份数据 —— 不分「本人视角 / 访客视角」两条取数路径。
- *    「谁在看」只影响**哪些模块给**（由服务端在同一次请求里决定）：
- *      · 录音：公开的给所有人；**本人的不管公开没公开都给**
- *      · isOwner：导航栏标题与按钮文案据此显示（本人是「挑战结果 / 再次挑战」）
+ *    「谁在看」只在**端侧**决定播放按钮能不能点（服务端只把地址统一给出来）：
+ *      · 录音地址：服务端**无条件**给 —— 分享卡片即凭据（见 isShareCardEntry）
+ *      · canPlay：isOwner || isPublic || 从分享卡片进来（见 computeCanPlay）
+ *      · isOwner：owner.id 跟本地 userInfo.id 比出来（标题 / 开关 / 按钮文案）
  *      · 未出分的状态**只有本人**拿得到（别人拿到 404）
  *
  * ⚠️⚠️ 为什么单独一页，而不是塞在朗读页里：
@@ -67,6 +73,27 @@ interface DimensionView {
   barCls: string
 }
 
+/**
+ * ⭐ 「从挑战详情的分享卡片进来」的场景值 —— 分享卡片就等同于用户明确的分享动作，
+ *    所以从这几条路进来的人都能听，不看 isPublic（链接即凭据）。
+ *
+ * ⚠️ 为什么判 scene 而不是只看 shareTicket：
+ *    shareTicket 只在「群聊 + withShareTicket」时才有；
+ *    **单人聊天**用的是 scene=1007，根本不带 shareTicket。
+ *    场景值见微信官方「场景值列表」。
+ *      · 1007 单人聊天会话中的小程序消息卡片
+ *      · 1008 群聊会话中的小程序消息卡片
+ *      · 1044 带 shareTicket 的小程序消息卡片
+ *      · 1014 模板消息（通知卡片）
+ */
+const SHARE_CARD_SCENES = new Set([1007, 1008, 1044, 1014])
+
+function isShareCardEntry(query: Record<string, string | undefined>): boolean {
+  if (query.shareTicket) return true
+  const scene = Number(query.scene)
+  return Number.isFinite(scene) && SHARE_CARD_SCENES.has(scene)
+}
+
 Page({
   data: {
     navTop: 0,
@@ -87,36 +114,55 @@ Page({
     /** 成绩详情上面那句总结（最拖后腿的那一项 / 或按逐词说的实话） */
     summary: '',
     leaderboard: [] as (LeaderboardRow & { scoreText: string })[],
-    /** '12.3 秒' —— 播放按钮右边那个时长 */
-    durationText: '',
 
-    // ⚠️ 按产品要求**去掉**了：公开录音开关（isPublic）、连战信息（streak）。
-    //    可见性的默认值仍在服务端，只是不再在这一屏给开关。
+    /**
+     * ⭐ 这段录音是否公开（「允许公众收听」）。
+     * ⚠️ 取服务端回传的权威值；本人可以用下面那个开关改。
+     */
+    isPublic: false,
 
-    /** 这段录音能不能播（别人的分享链接里，非公开就是 false） */
+    /**
+     * ⭐ 播放按钮能不能点 —— **纯前端 OR 判断**（服务端只管把地址统一给出来）：
+     *      isOwner  ||  isPublic  ||  从挑战详情的分享卡片进来
+     *    全不命中就置灰、点了不播（见 computeCanPlay）。
+     */
     canPlay: false,
     playing: false,
+    /** 正在取音（还没出声）—— 播放钮显示 loading。⚠️ 与页面级的 loading 区分开 */
+    audioLoading: false,
 
     /** 分享卡片的标题（句子 + 分数，一眼能看懂） */
     shareTitle: '我在句拼读了一句，来比比？',
+    /** ⭐ 主题卡的底色 —— 反色按钮的文字色用它（resolveTheme 已处理 theme 缺失的兜底） */
+    cardBg: '#4f46e5',
+    /** ⭐ 主题卡的前景色 —— switch 这类原生态控件要用它上色 */
+    cardFg: '#ffffff',
   },
 
   /** 这条提交的 id（URL 参数） */
   sid: '',
-  /** 访客视角的音频地址（分享包里给的；本人是现取的，见 onPlay） */
+  /**
+   * ⭐ 这段录音的可播地址 —— 直接来自**开放接口**（/:sid 响应里那一份）。
+   *    本人和访客同一条路，不再分「本人现取 / 访客用分享包」。
+   */
   audioRef: null as SubmissionAudioRef | null,
   /** 这次挑战属于哪一天 —— 排名卡点进竞技场时带上（见 onOpenArena） */
   scheduleDate: '',
+  /** ⭐ 这一页是不是从「挑战详情分享卡片」进来的（入口 scene / shareTicket） */
+  fromShareCard: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.sid = query.sid ?? ''
+    this.fromShareCard = isShareCardEntry(query)
     this.setData({ navTop: navPadTop() })
 
     /**
      * ⭐ 打开右上角「转发 / 分享到朋友圈」菜单。
      * ⚠️ 菜单只是入口，真正决定分享内容的是 onShareAppMessage / onShareTimeline。
+     * ⚠️ withShareTicket: true —— 群聊里的分享卡片会带 shareTicket，
+     *    它是「这一页是从分享卡片进来的」的判据之一（见 isShareCardEntry）。
      */
-    wx.showShareMenu?.({ menus: ['shareAppMessage', 'shareTimeline'] })
+    wx.showShareMenu?.({ withShareTicket: true, menus: ['shareAppMessage', 'shareTimeline'] })
 
     if (!this.sid) {
       this.setData({ loading: false, error: '这条挑战不存在' })
@@ -130,11 +176,10 @@ Page({
   },
 
   /**
-   * ⭐ 取结果 —— **一条路径**：公开接口按提交 id 取那一份。
+   * ⭐ 取结果 —— **一条主路径**：开放接口按提交 id 取那一份。
    *
    * ⚠️ 无论是我自己打开的、还是别人转发来的，走的都是这个接口、同一条 URL；
-   *    「我是不是这条挑战的主人」由服务端在**同一个响应**里给出（isOwner），
-   *    录音也一样（公开的给所有人，本人的不管公开没公开都给）。
+   *    「我是不是这条挑战的主人」由响应里的 owner.id 在**端侧**比出来。
    * ⚠️ 未出分时只有**本人**能拿到状态（别人拿到的是 404）——
    *    所以「还在检测中」这句话只会出现在自己的屏幕上。
    */
@@ -142,83 +187,110 @@ Page({
     this.setData({ loading: true, error: '' })
 
     /**
-     * ---- 个人那一半：本人打开时拿得到（服务端校验归属），别人一律 404 ----
-     * ⚠️ 未出分的状态只有本人看得到：那不是错误，是中间态。
+     * ⭐ 并行确保「我是谁」拿到 —— owner 判断要用自己的 userInfo.id。
+     *    冷启动、缓存为空时它可能还没回来（app.ts 里的 refreshMe 是异步的），
+     *    不先拿就直接算会把本人误判成访客（开关不显示、播放被置灰）。
+     *    ⚠️ refreshMe 自己吞失败并返回 null，所以拿不到也只是退化成访客视图。
+     */
+    const identityReady = me.getState().userInfo ? Promise.resolve() : refreshMe()
+
+    /**
+     * ⭐ **一条主路径**：开放接口按提交 id 取那一份 —— 结果 + 录音 + owner.id。
+     *    本人和访客取的是同一个接口、同一份数据（服务端不再分两条取数路径）。
      */
     try {
-      const status = await fetchSubmissionStatus(this.sid)
-      if (status.status === 'scored' && status.result) {
-        this.applyOwner(status.result)
-        return
-      }
-      if (status.status === 'failed') {
-        this.setData({ loading: false, error: status.error ?? '这次挑战没有成绩' })
-        return
-      }
-      this.setData({ loading: false, error: '这次挑战还在检测中，稍后再看' })
+      const share = await fetchSubmissionShare(this.sid)
+      await identityReady
+      this.applyShare(share)
       return
     } catch (err) {
-      // ⚠️ 取不到 = 不是本人（或没登录）⇒ 往下走公开那一半 —— 这是**正常路径**，不是错误
-      console.log('[challenge] 个人那一半取不到（' + (err as Error).message + '），按公开那一半取')
-    }
-
-    /** ---- 公开那一半：所有人 ---- */
-    try {
-      const share = await fetchSubmissionShare(this.sid)
-      if (!share.result) {
-        this.setData({ loading: false, error: '这条挑战还没有成绩' })
-        return
+      /**
+       * ⚠️ 公开拿不到，多半是「还没出分」。只有**本人**该看到那句「还在检测中」；
+       *    别人一律按不存在处理，不暴露「这个 id 存在、但还没成绩」。
+       */
+      const publicError = err as Error
+      try {
+        const status = await fetchSubmissionStatus(this.sid)
+        if (status.status === 'failed') {
+          this.setData({ loading: false, error: status.error ?? '这次挑战没有成绩' })
+          return
+        }
+        if (status.status === 'scored' && status.result) {
+          // 极小概率的竞态（两次请求之间刚好出分）：状态接口更权威，用它兜底
+          this.applyOwnerResult(status.result)
+          return
+        }
+        this.setData({ loading: false, error: '这次挑战还在检测中，稍后再看' })
+      } catch {
+        // 状态接口也拿不到（不是本人 / 没登录）⇒ 报公开接口那条错
+        this.setData({ loading: false, error: publicError.message })
       }
-      this.applyShare(share, share.result)
-    } catch (err) {
-      this.setData({ loading: false, error: (err as Error).message })
     }
   },
 
 /**
-   * 个人那一半 → 展示视图（本人视角）。
-   * ⚠️ 本人的录音地址**现取**（服务端要校验归属），所以这里先不给地址，
-   *    等按下播放再去拿（见 onPlay）。
-   */
-  applyOwner(result: SubmitResponse) {
-    this.renderResult(result, { isOwner: true })
-    this.audioRef = null
-    this.setData({ canPlay: true, isPublic: result.isPublic })
-  },
-
-/**
-   * 公开那一半 → 展示视图。
-   * ⚠️ 录音只为**公开**的那条给地址；本人的录音走 onPlay 现取。
-   */
-
-  applyShare(share: ChallengeShareResponse, result: SubmitResponse) {
+ * ⭐ 开放接口的结果 → 展示视图（本人 / 访客**共用这一套**）。
+ *
+ * ⚠️ 「是不是本人」由 owner.id 跟本地 userInfo.id 比出来 ——
+ *    服务端不再分两条取数路径，只有「你恰好是主人」这一个事实。
+ */
+  applyShare(share: ChallengeShareResponse) {
+    const result = share.result
+    const myId = me.getState().userInfo?.id ?? 0
+    const isOwner = myId > 0 && share.owner.id === myId
     this.audioRef = share.audio
     this.setData({
-      // ⚠️ 走到这里就是**公开那一半**：看的人不是主人（本人那条走 applyOwner）
-      isOwner: false,
+      isOwner,
       owner: { nickname: share.owner.nickname, avatarSrc: share.owner.avatarUrl ?? '' },
       ago: agoText(share.at),
       isPublic: result.isPublic,
-      canPlay: !!share.audio,
+      canPlay: this.computeCanPlay(isOwner, result.isPublic, !!share.audio),
     })
-    this.renderResult(result, { isOwner: false })
+    this.renderResult(result, { isOwner })
+  },
+
+/**
+ * ⚠️ 兜底（极小概率的竞态）：开放接口说没出分、状态接口说出分了。
+ *    这时只有本人拿得到状态，所以按本人视图渲染；地址走 onPlay 按需再取。
+ */
+  applyOwnerResult(result: SubmitResponse) {
+    this.audioRef = null
+    this.setData({
+      isOwner: true,
+      isPublic: result.isPublic,
+      canPlay: this.computeCanPlay(true, result.isPublic, true),
+    })
+    this.renderResult(result, { isOwner: true })
+  },
+
+/**
+ * ⭐ 播放按钮唯一那条规则 —— 纯前端 OR 判断：
+ *      isOwner  ||  isPublic  ||  从挑战详情的分享卡片进来
+ *    （没有地址时一律不能播：失败的提交会被服务端连录音一起删掉。）
+ */
+  computeCanPlay(isOwner: boolean, isPublic: boolean, hasAudio: boolean): boolean {
+    if (!hasAudio) return false
+    return isOwner || isPublic || this.fromShareCard
   },
 
   /** 两种视角**共用**的渲染 —— 同一份结果，两屏长得一样 */
   renderResult(result: SubmitResponse, opts: { isOwner: boolean }) {
     this.scheduleDate = result.scheduleDate ?? ''
+    // ⭐ theme 缺失时按 articleId 复算（见 shared/theme.ts 的 resolveTheme）——
+    //    与后台详情页同一个结论，不再各自兜一个品牌色
+    const card = resolveTheme(result.theme, result.articleId)
     this.setData({
       loading: false,
       error: '',
       result,
+      cardBg: card.background,
+      cardFg: card.foreground,
       scoreText: formatScore(result.score),
       gapText: result.gapToPrev === null ? '已是第一' : result.gapToPrev + ' 分',
       words: this.renderWords(result.text ?? '', result.words ?? []),
       dimensions: this.renderParts(result.parts),
       summary: this.buildSummary(result),
       leaderboard: result.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
-      // ⚠️ 时长缺失（老记录没写这一列）→ 空串，而不是显示「0.0 秒」
-      durationText: result.durationMs ? (result.durationMs / 1000).toFixed(1) + ' 秒' : '',
       isOwner: opts.isOwner,
       shareTitle: this.buildShareTitle(result),
     })
@@ -256,13 +328,16 @@ Page({
    *    按下标硬套会让从错位处往后**每个词的颜色都是别人的**（见那个函数的说明）。
    */
   renderWords(text: string, scored: { word?: string; score: number; dp?: string }[]): WordView[] {
-    const plain = text.split(/\s+/).filter(Boolean)
+    const plain = plainWordsOf(text)
     const align = alignWordScores(text, scored.map((w) => w.word ?? ''))
     return plain.map((t, i) => {
       const at = align[i]
       const w = at === null || at === undefined ? undefined : scored[at]
-      // ⚠️ 对不上（插入 / 漏读，或老成绩没有逐词）→ 留墨色，不猜
-      return { i, text: t, cls: w ? 'text-' + wordLevel(w.score, w.dp) : 'text-ink' }
+      // ⚠️ 对不上（插入 / 漏读，或老成绩没有逐词）→ 不上色，继承 currentColor，不猜
+      // ⚠️ 正常词也继承 currentColor（原来是 text-ink）：卡片换成主题底之后，
+      //    固定墨色在深色主题上会看不见 —— 颜色一律跟着 currentColor 走。
+      const lvl = w ? wordLevel(w.score, w.dp) : ''
+      return { i, text: t, cls: lvl && lvl !== 'ink' ? 'text-' + lvl : '' }
     })
   },
 
@@ -306,8 +381,9 @@ Page({
    *
    * ⚠️ 播的是**服务端那份录音**，不是本机文件 —— 分享给别人的那一屏也要能听，
    *    而对方的手机里根本没有这段录音。
-   * ⚠️ 地址就来自**同一个公开响应**（本人不受 is_public 限制，见 routes/share.ts）——
-   *    所以这里不再有「本人现取一次」那条分支。
+   * ⚠️ 地址来自**开放接口**那一份（applyShare 已经拿到），不再分本人 / 访客；
+   *    只有竞态兜底那条路手上没有地址时，才按需去 /:sid/audio 取一次。
+   * ⚠️ 能不能点由 computeCanPlay 说了算 —— 置灰时这里直接 return，不播。
    */
   async onPlay() {
     if (this.data.playing) {
@@ -315,17 +391,44 @@ Page({
       this.setData({ playing: false })
       return
     }
-    this.setData({ playing: true })
+    if (!this.data.canPlay) return
+    // ⚠️ 取音途中再点 = 什么都不做：还没出声，停了也得等请求回来，叠两个请求更糟
+    if (this.data.audioLoading) return
+
+    this.setData({ audioLoading: true })
     try {
-      // ⚠️ 本人要**现取**（服务端校验归属）；别人用公开那一半给的地址
-      const ref = this.data.isOwner ? await fetchSubmissionAudio(this.sid) : this.audioRef
-      if (!ref) throw new Error('这段录音没有公开')
+      const ref = this.audioRef ?? (await fetchSubmissionAudio(this.sid)).audio
+      if (!ref) throw new Error('这段录音已经没有了')
       const path = await ensureLocalAudio(ref.src, ref.kind)
       if (!path) throw new Error('取不到这段录音')
+      // ⚠️ loading 一路亮到**真的能出声**为止：取地址 + 落本地都在这一段里，
+      //    先亮 stop 再卡住的话，用户会以为「按了停止却没停」
+      this.setData({ audioLoading: false, playing: true })
       await playAudioUrl(path, '录音', () => this.setData({ playing: false }))
     } catch (err) {
-      this.setData({ playing: false })
+      this.setData({ audioLoading: false, playing: false })
       wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2000 })
+    }
+  },
+
+  /**
+   * ⭐ 「允许公众收听」开关 —— 只有本人看得到（WXML 里 wx:if="{{isOwner}}"）。
+   *
+   * ⚠️ 打开 = isPublic=true：**卡片之外的入口**（以后出现的发现类入口）才听得到；
+   *    从挑战详情分享卡片进来的本来就能听，不受这个开关影响。
+   * ⚠️ 乐观更新 + 失败回滚：开关要立刻跟手；但服务端不认时必须弹回去 ——
+   *    否则界面说「已公开」而库里还是私密，用户会以为别人能听，其实不能。
+   */
+  async onTogglePublic(e: WechatMiniprogram.CustomEvent<{ value: boolean }>) {
+    const next = Boolean(e.detail.value)
+    const prev = this.data.isPublic
+    this.setData({ isPublic: next })
+    try {
+      const r = await setSubmissionVisibility(this.sid, next)
+      this.setData({ isPublic: r.isPublic })
+    } catch (err) {
+      this.setData({ isPublic: prev })
+      wx.showToast({ title: (err as Error).message || '设置失败，请重试', icon: 'none', duration: 2000 })
     }
   },
 

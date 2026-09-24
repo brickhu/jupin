@@ -12,7 +12,7 @@
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
-  <nav-bar id="nav" title="个人主页" />
+  <nav-bar id="nav" title="朗读挑战者" />
 
   <!-- ── 正在取 / 取不到 ────────────────────────────────────────
        ⚠️ 「取不到」只有两种：id 不存在（链接失效 / 账号被关 —— 服务端一律 404）
@@ -42,7 +42,7 @@
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->
       <button class="pr-share shrink-0" open-type="share" wx:if="{{hasProfile}}">
-        <text class="text-32rpx">🔗</text>
+        <text class="text-32rpx iconfont icon-share"></text>
       </button>
     </view>
 

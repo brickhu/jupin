@@ -43,7 +43,7 @@
       <view class="flex items-start">
         <text class="text-32rpx leading-[1.5] text-ink flex-1">{{item.text}}</text>
         <!-- 箭头是「整张卡可点」的唯一提示 -->
-        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1.2]">›</text>
+        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1.2] iconfont icon-chevron-right"></text>
       </view>
 
       <!-- 四个数：挑战 / 最高 / 位列 / 最低 -->

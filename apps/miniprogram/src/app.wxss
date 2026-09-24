@@ -1,5 +1,7 @@
 /* ⭐ UnoCSS 生成的原子类。由 build.mjs 产出到 dist/uno.wxss（构建期扫源码生成，零运行时） */
 @import "./uno.wxss";
+/* ⭐ 图标字体（Iconify/MDI 子集，base64 内联）—— 由 tools/iconfont/build.mjs 生成，勿手改 */
+@import "./iconfont.wxss";
 
 /**
  * 这里**只保留全局基线**。

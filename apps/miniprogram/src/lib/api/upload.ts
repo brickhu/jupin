@@ -38,7 +38,7 @@ export interface UploadResult {
 
 export interface UploadOptions {
   /** 本段录音属于哪篇文章 —— 会编进存储路径 */
-  articleId: number
+  articleId: string
   /** 上传进度回调 0–100 */
   onProgress?: (percent: number) => void
 }
@@ -63,7 +63,7 @@ export interface UploadOptions {
  *   路径要在**上传那一刻**就定下来，而 submissionId 含序列号，
  *   序列号要等提交时数库才知道 —— 所以两者是独立的（见服务端注释）。
  */
-function makeAudioKey(articleId: number, userId: number, filePath: string): string {
+function makeAudioKey(articleId: string, userId: number, filePath: string): string {
   const m = /\.([A-Za-z0-9]{1,5})$/.exec(filePath)
   const ext = (m?.[1] ?? RECORD_SPEC.extension).toLowerCase()
   return 'audio/' + articleId + '/' + userId + '/' + Date.now() + '.' + ext

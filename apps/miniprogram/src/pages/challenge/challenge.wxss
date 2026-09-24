@@ -13,7 +13,8 @@
   padding: 0;
   margin: 0;
   border-radius: 50%;
-  background: #eeecfd; /* 与 uno.config.mjs 的 brand 同色系浅底 */
+  /* ⚠️ 卡片上不再用品牌色：实心 currentColor，图标色由内联 style 反色成卡片底色 */
+  background: currentColor;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,4 +24,48 @@
 /* ⚠️ button 的 ::after 是微信自带的边框，不干掉就会有一圈灰边 */
 .cl-share::after {
   border: none;
+}
+
+/* ⭐ 主题卡内部分层：颜色一律 currentColor，只调透明度。
+   「以前写成灰/浅底的地方」现在 = currentColor + 更低的不透明度。 */
+/* ⚠️ 与旧色阶 1:1 对应：
+   ink(#111)=继承 currentColor 不透明 / body(#333)=.85 / muted(#666)=.65 / faint(#999)=.5 */
+.cc-body {
+  color: currentColor;
+  opacity: 0.85;
+}
+
+.cc-muted {
+  color: currentColor;
+  opacity: 0.65;
+}
+
+.cc-faint {
+  color: currentColor;
+  opacity: 0.5;
+}
+
+/* 区块之间的分隔线（旧版是各白卡之间的间隙 + 卡内细线） */
+.cc-sep {
+  height: 1rpx;
+  background: currentColor;
+  opacity: 0.15;
+  margin: 24rpx 0;
+}
+
+/* 轨道/占位圆：用 ::before 铺一层低透明度的 currentColor，子元素压在它上面不被一起透明 */
+.cc-track {
+  position: relative;
+}
+
+.cc-track::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: currentColor;
+  opacity: 0.15;
+  border-radius: 999rpx;
 }

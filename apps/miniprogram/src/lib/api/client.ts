@@ -6,6 +6,8 @@ import type {
   GrowthRankResponse,
   MeResponse,
   ParticipationsResponse,
+  ProfileUpdate,
+  ProfileUpdateResponse,
   UserProfileResponse,
   ArenaRecordsResponse,
   ScheduleDetail,
@@ -242,7 +244,21 @@ function handleResponse<T>(
  * 通道 ①：wx.request —— 本地联调用。
  * 需要合法域名（开发时可勾「不校验合法域名」）。
  */
-function httpRequest<T>(path: string, options: RequestOptions): Promise<T> {
+async function httpRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  /**
+   * ⭐⭐ 鉴权路径在发请求前先确保「登录已经完成」。
+   *
+   * ⚠️⚠️ 启动时 app.onLaunch 的 login() 与首屏页面的请求是**并发**的：
+   *    页面请求往往先跑，这时要么还没有 token、要么还是上一次的旧 token，
+   *    于是首屏必然先吃一个 401（再靠自动重登补救）—— 控制台一片红，还白跑一轮。
+   *    这里等同一个 loginInFlight，首屏就直接用刚签发的 token。
+   * ⚠️ 只等 /api/user/*（鉴权路径）：/api/schedules 这类公开路径不该被登录拖慢。
+   * ⚠️ /api/auth/* 自己就是登录，绝不能再等它，否则递归。
+   */
+  if (path.startsWith('/api/user/')) {
+    if (!restoreToken() || loginInFlight) await login()
+  }
+
   const t = restoreToken()
   return new Promise((resolve, reject) => {
     wx.request({
@@ -356,24 +372,32 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 /**
- * ⭐ 重新登录 —— 并发请求共用**同一个** Promise。
+ * ⭐ 登录中 —— **并发调用共用同一个 Promise**。
  *
- * ⚠️ 页面首屏常常同时发好几个请求，它们会一起 401。
- *    不做合并的话就会同时打 N 次 wx.login + N 次登录接口，
- *    而其中只有最后一次签发的 token 有效 —— 前面几次都白发。
+ * ⚠️⚠️ 两件事共用它，所以必须合并：
+ *    · app.onLaunch 的启动登录；
+ *    · 首屏页面的请求 —— 它们会在登录完成**之前**就发出去（页面 onLoad 不等 onLaunch 的
+ *      异步登录）。不合并的话：要么同时打 N 次 wx.login + /api/auth/login（只有最后一次
+ *      有效），要么页面拿着还没换上的旧 token 先撞一个 401，再靠自动重登补救。
+ *      两者都表现为「控制台一片红、白跑一轮」。
  */
-let relogging: Promise<void> | null = null
+let loginInFlight: Promise<void> | null = null
 
-function relogin(): Promise<void> {
-  if (!relogging) {
-    relogging = login().finally(() => {
-      // ⚠️ 稍后才允许下一次：立刻放开会和「刚签发就被别处判定失效」打架
+export function login(): Promise<void> {
+  if (!loginInFlight) {
+    loginInFlight = doLogin().finally(() => {
+      // ⚠️ 稍后才放开：同一次启动里的并发请求都复用这一次登录，别各自再打一遍
       setTimeout(() => {
-        relogging = null
+        loginInFlight = null
       }, 2_000)
     })
   }
-  return relogging
+  return loginInFlight
+}
+
+/** ⭐ 401 的补救入口 —— 与启动登录共用同一个 Promise（见 login 的说明） */
+function relogin(): Promise<void> {
+  return login()
 }
 
 /** 带冷启动重试的请求主体 —— 401 的补救在 request() 那一层，这里不管 */
@@ -475,7 +499,7 @@ export function wxLoginCode(): Promise<string> {
   })
 }
 
-export async function login(): Promise<void> {
+async function doLogin(): Promise<void> {
   if (TRANSPORT === 'container') {
     // ⚠️⚠️ 这里**必须**带 noRelogin。
     //    容器通道下身份由微信网关注入，login() 就是「取一次自己是谁」，
@@ -651,13 +675,13 @@ export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
  *    （见 store 的 applyArenaRecords）。⚠️ 只传当前屏上的 id：不是把我的全量记录拉下来。
  * ⚠️ ranks 只在需要「我的名次」的那一屏传 true（名次要服务端跨用户算）。
  */
-export function fetchArenaRecords(ids: number[], ranks = false): Promise<ArenaRecordsResponse> {
+export function fetchArenaRecords(ids: string[], ranks = false): Promise<ArenaRecordsResponse> {
   if (ids.length === 0) return Promise.resolve({ items: [] })
   const q = '/api/user/arena-records?ids=' + ids.join(',') + (ranks ? '&ranks=1' : '')
   return request<ArenaRecordsResponse>(q, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
-export function fetchArenaDetail(articleId: number): Promise<ArenaDetail> {
+export function fetchArenaDetail(articleId: string): Promise<ArenaDetail> {
   return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
@@ -675,11 +699,8 @@ export function fetchMe(): Promise<MeResponse> {
  *    存进库里只会得到一张永远加载不出来的图。
  *    上传由调用方先做（见 pages/join/join.ts），这里只负责落库。
  */
-export function saveProfile(input: {
-  nickname: string
-  avatarUrl?: string
-}): Promise<{ nickname: string; avatarUrl: string | null }> {
-  return request<{ nickname: string; avatarUrl: string | null }>('/api/user/profile', {
+export function saveProfile(input: ProfileUpdate): Promise<ProfileUpdateResponse> {
+  return request<ProfileUpdateResponse>('/api/user/profile', {
     method: 'POST',
     data: input,
   })
@@ -720,7 +741,7 @@ export function fetchScheduleDetail(date: string): Promise<ScheduleDetail> {
  *    这时 result 已经在了，不必再轮询。
  */
 export function submitReading(
-  articleId: number,
+  articleId: string,
   audioKey: string,
   /**
    * ⭐ 这次挑战的日期（'YYYY-MM-DD'）。
@@ -730,8 +751,12 @@ export function submitReading(
    */
   scheduleDate: string,
   audioUrl?: string,
-  /** ⭐ 是否公开这次录音（别人能不能听到）—— 默认公开 */
-  isPublic = true,
+  /**
+   * ⭐ 是否公开这次录音（「卡片之外的入口」能不能听到）—— 默认 **false**。
+   * ⚠️ 提交时**不问**用户，统一按默认私密落库；结果页那个「允许公众收听」
+   *    开关再改成 true（见 pages/challenge 的 onTogglePublic）。
+   */
+  isPublic = false,
 ): Promise<SubmissionStatusResponse> {
   return request<SubmissionStatusResponse>('/api/user/submissions', {
     method: 'POST',
@@ -770,12 +795,12 @@ export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionS
 }
 
 /**
- * ⭐ 别人**分享出来的**那次挑战 —— 走公开路径，不需要登录、也不校验归属。
+ * ⭐ 一次挑战的**公开**结果 —— 走开放路径，不需要登录、也不校验归属。
  *
- * ⚠️ 结果页两个视角共用一套渲染：本人走上面那个（服务端会校验归属），
- *    不是本人（或没登录）时落到这里 —— 服务端只给公开信息，
- *    录音地址也只在这条提交是公开的时候才给。
- * ⚠️ 路径不在 /api 下面：那条路径上全是鉴权中间件（见服务端 routes/share.ts）。
+ * ⚠️ 结果页**只有这一条取数路径**（本人和访客同一份）：响应里有结果、录音地址
+ *    和 owner.id；「是不是本人」由端侧拿 owner.id 跟自己的 userInfo.id 比。
+ *    ⭐ 录音地址**无条件给** —— 从挑战详情分享卡片进来的都能听（链接即凭据）。
+ * ⚠️ 路径不在 /api/user 下面：那条路径上全是鉴权中间件（见服务端 routes/public.ts）。
  */
 export function fetchSubmissionShare(submissionId: string): Promise<ChallengeShareResponse> {
   return request<ChallengeShareResponse>('/api/challenge/' + submissionId)
@@ -792,13 +817,13 @@ export function fetchUserProfile(userId: number): Promise<UserProfileResponse> {
 }
 
 /**
- * ⭐ 拿这段录音的**可播地址** —— 「我的挑战」列表里那个播放按钮。
+ * ⭐ 单取一段录音的**可播地址** —— 「我的挑战」列表里那个播放按钮。
  *
- * ⚠️ 地址是**单独授权、会过期**的，所以不能缓存、也不能提前批量取：
- *    每一步都按用户真正点下去那一下来（理由见服务端那条路由）。
- * ⚠️ 云端那条路第一次播放可能在服务端转一次码，给它正常预算就够了；
- *    转好的副本会留在对象存储里，之后就只是一次元数据查询。
+ * ⚠️ 走**开放路径**（与 /api/challenge/:sid 同一条口径）：不做用户鉴权、
+ *    也不判 isPublic —— 音频的可见性由入口决定，不由这条查询决定。
+ * ⚠️ 地址会过期，所以不能缓存、也不能提前批量取：每一步都按用户真正点下去
+ *    那一下来。云端第一次播放可能在服务端转一次码，转好的副本会留在对象存储里。
  */
 export function fetchSubmissionAudio(submissionId: string): Promise<SubmissionAudioResponse> {
-  return request<SubmissionAudioResponse>('/api/user/submissions/' + submissionId + '/audio')
+  return request<SubmissionAudioResponse>('/api/challenge/' + submissionId + '/audio')
 }

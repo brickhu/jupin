@@ -1,5 +1,12 @@
-import { alignWordScores, formatScore, wordLevel, WORD_GREEN_LINE, WORD_RED_LINE } from '@jushuo/shared'
-import type { ChallengeRecord, ChallengeWordScore } from '@jushuo/shared'
+import {
+  alignWordScores,
+  formatScore,
+  plainWordsOf,
+  wordLevel,
+  WORD_GREEN_LINE,
+  WORD_RED_LINE,
+} from '@jushuo/shared'
+import type { ArticleTheme, ChallengeRecord, ChallengeWordScore } from '@jushuo/shared'
 
 import { fetchChallenges, fetchSubmissionAudio } from '../../../lib/api/client'
 import { ensureLocalAudio } from '../../../lib/audio/standard'
@@ -37,7 +44,7 @@ interface RowWord {
 /** 列表里一行（显示形态与接口字段分开：WXML 里没法算） */
 interface Row {
   submissionId: string
-  articleId: number
+  articleId: string
   /** ⭐ 切好、上好色的词 */
   words: RowWord[]
   /** '55.4' / '—' */
@@ -52,6 +59,8 @@ interface Row {
   /** 检测失败的记录：没有分数，多半也没有音频了 */
   failed: boolean
   scheduleDate: string
+  /** ⭐ 这一句的视觉主题（bar 卡用它上色；老内容为 null ⇒ 品牌色兜底） */
+  theme: ArticleTheme | null
 }
 
 /**
@@ -65,14 +74,16 @@ interface Row {
  *    否则同一句、同一个词，列表里是绿的、点进去是灰的。
  */
 function toWords(text: string, scores: ChallengeWordScore[] | null): RowWord[] {
-  const plain = text.split(/\s+/).filter(Boolean)
-  if (!scores) return plain.map((t, i) => ({ i, text: t, cls: 'text-ink' }))
+  const plain = plainWordsOf(text)
+  // ⚠️ 没有逐词结果 → 继承 currentColor（原来是 text-ink；主题底上固定墨色会看不见）
+  if (!scores) return plain.map((t, i) => ({ i, text: t, cls: '' }))
   // ⚠️ 用词对齐而不是按下标 —— 引擎词表可能多一个插入词（见 alignWordScores 的说明）
   const align = alignWordScores(text, scores.map((s) => s.word ?? ''))
   return plain.map((t, i) => {
     const at = align[i]
     const s = at === null || at === undefined ? undefined : scores[at]
-    return { i, text: t, cls: s ? 'text-' + wordLevel(s.score, s.dp) : 'text-ink' }
+    const lvl = s ? wordLevel(s.score, s.dp) : ''
+    return { i, text: t, cls: lvl && lvl !== 'ink' ? 'text-' + lvl : '' }
   })
 }
 
@@ -112,6 +123,7 @@ function toRow(r: ChallengeRecord): Row {
 
     failed: r.status === 'failed',
     scheduleDate: r.scheduleDate ?? '',
+    theme: r.theme,
   }
 }
 
@@ -129,6 +141,9 @@ Page({
      *    同时只可能播一段（见 lib/audio/play.ts），存两份状态迟早不同步。
      */
     playing: -1,
+    /** ⭐ 正在**取音**的那一行的下标（-1 = 没有）—— 那一行的播放钮显示 loading。
+     *  ⚠️ 与列表自己的 loading（首次加载）区分开 */
+    audioLoading: -1,
   },
 
   onLoad() {
@@ -180,7 +195,9 @@ Page({
   /** 停掉正在播的那一段（并清掉行上的标记） */
   stopPlayback() {
     stopAudio()
-    if (this.data.playing !== -1) this.setData({ playing: -1 })
+    if (this.data.playing !== -1 || this.data.audioLoading !== -1) {
+      this.setData({ playing: -1, audioLoading: -1 })
+    }
   },
 
   /**
@@ -191,8 +208,8 @@ Page({
    * ⚠️ catchtap 而不是 bindtap：整行是「进详情」的入口，
    *    不拦住冒泡的话，点播放会顺手把人送进详情页。
    */
-  async onPlay(e: WechatMiniprogram.BaseEvent) {
-    const i = Number((e.currentTarget.dataset as { i?: number }).i)
+  async onPlay(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
+    const i = e.detail.index
     const row = this.data.rows[i]
     if (!row) return
 
@@ -201,15 +218,17 @@ Page({
       this.stopPlayback()
       return
     }
+    // ⚠️ 取音途中再点 = 忽略：还没出声，再发一次只会让两段音频抢同一个播放器
+    if (this.data.audioLoading === i) return
 
     if (row.failed) {
       wx.showToast({ title: '这段录音已经不在了', icon: 'none' })
       return
     }
 
-    // 先切到「正在播」：等网络回来再变色的话，用户会以为没点上而连点几次
+    // 先切到 loading：等网络回来再给反馈的话，用户会以为没点上而连点几次
     stopAudio()
-    this.setData({ playing: i })
+    this.setData({ audioLoading: i, playing: -1 })
 
     try {
       const { audio } = await fetchSubmissionAudio(row.submissionId)
@@ -219,21 +238,23 @@ Page({
       const path = await ensureLocalAudio(audio.src, audio.kind)
       if (!path) throw new Error('取不到这段录音')
       // ⚠️ 等待期间用户可能已经点了别的行 —— 那就别再播这一段了
-      if (this.data.playing !== i) return
+      if (this.data.audioLoading !== i) return
+      this.setData({ audioLoading: -1, playing: i })
       await playAudioUrl(path, '录音', () => {
         // ⚠️ 播完清标记，但只在「还是这一行」时清，别把新点的那一行带掉
         if (this.data.playing === i) this.setData({ playing: -1 })
       })
     } catch (err) {
-      if (this.data.playing === i) this.setData({ playing: -1 })
+      if (this.data.audioLoading === i || this.data.playing === i) {
+        this.setData({ audioLoading: -1, playing: -1 })
+      }
       wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2000 })
     }
   },
 
   /** 点一条 → 挑战详情（朗读页的结果屏） */
-  onOpen(e: WechatMiniprogram.BaseEvent) {
-    const ds = e.currentTarget.dataset as { i?: number }
-    const row = this.data.rows[ds.i ?? -1]
+  onOpen(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
+    const row = this.data.rows[e.detail.index]
     if (!row) return
 
     /**
