@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { scoreSentence, speechGaps } from '@jushuo/shared'
 import type { StreakDelta } from '@jushuo/shared'
 import { db } from '../db'
@@ -171,7 +171,7 @@ export async function runScoring(submissionId: string): Promise<void> {
       audioBytes = normalized.pcm.byteLength
       audioDurationMs = Math.round((normalized.pcm.byteLength / PCM_BYTES_PER_SEC) * 1000)
 
-      const refText = await loadArticleRefText(article.contentJson)
+      const refText = await loadArticleRefText(article.id)
       result = await getEngine().score({ refText, audio: normalized.pcm })
     } catch (err) {
       return fail(submissionId, (err as Error).message)
@@ -214,7 +214,7 @@ export async function runScoring(submissionId: string): Promise<void> {
           {
             score,
             parts: breakdown,
-            refText: article.contentJson ? await loadArticleRefText(article.contentJson) : '',
+            refText: await loadArticleRefText(article.id),
             weakWords: [...words]
               .sort((a, b) => a.score - b.score)
               .slice(0, 3)
@@ -234,29 +234,20 @@ export async function runScoring(submissionId: string): Promise<void> {
         )
       : null
     /**
-     * ⭐ 攻克 = **这一句拿到分数了**（不再有 85 分门槛 —— 那条线已废除）。
+     * ⚠️⚠️ 这里曾经写一个 submissions.is_conquered 标记，并用它数出
+     *    「这个用户在这条句子上是不是第一次拿到分」，再据此累加 articles 上的
+     *    participant_count / conquered_count 两个冗余计数。**三样都删了**：
      *
-     * ⚠️ 能走到这里就说明分数已经算出来了，所以恒为 true：
-     *    这一列现在的含义就是「这条提交出了分」，与 submissions.status 同义。
-     *    ⚠️ 统计一律以 status = 'scored' 为准（见 services/conquest.ts），
-     *       因为老数据里的 is_conquered 是按 85 线写的，会漏掉真实的攻克。
+     *      · is_conquered 与 status='scored' **同义**，而老数据那一列是按已废除的
+     *        85 分线写的（false）—— 任何读它的统计都会漏掉真实的攻克。
+     *        全仓库别处早改成读 status 了（见 services/conquest.ts），只剩这里还在读它。
+     *      · 两个冗余计数**没有任何代码在读**：竞技口径一律从 submissions 现算
+     *        （services/leaderboard.ts 的 COUNT(DISTINCT user_id)）。
+     *        留着不但会漂移，而且这段「对齐」逻辑本身就在用那个不可靠的列。
+     *
+     *    ⇒ 「几个人参与 / 几个人攻克」现在只有一个来源：**submissions 表**。
+     *      攻克的口径也只有一条：status = 'scored'。
      */
-    const isConquered = true
-
-    // 是否第一次提交 / 第一次征服（用于更新 articles 的冗余计数）
-    const isFirstSubmission = seq === 1
-    const [priorConquer] = await db
-      .select({ n: count() })
-      .from(submissions)
-      .where(
-        and(
-          eq(submissions.userId, userId),
-          eq(submissions.articleId, articleId),
-          eq(submissions.isConquered, true),
-        ),
-      )
-    // 「这个用户在这条句子上第一次拿到分」—— 文章的攻克人数按它累加
-    const isFirstConquer = isConquered && Number(priorConquer?.n ?? 0) === 0
 
     // ⚠️ 这里只是**打日志**用的。结果页要的 previousBest / isPersonalBest
     //   由 describe() 现算 —— 轮询会反复调用它，那些字段必须是幂等的
@@ -275,7 +266,6 @@ void previousBest
         energyState: 'charged',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）；数值本身是一位小数
         score: score.toFixed(1),
-        isConquered,
         // ⚠️ 归一化后字节数/时长变了，必须一起写回来
         audioBytes,
         audioDurationMs,
@@ -320,15 +310,6 @@ void previousBest
         )
       }
     }
-
-    // ---- 文章的参与/征服计数 ----
-    await db
-      .update(articles)
-      .set({
-        participantCount: sql`${articles.participantCount} + ${isFirstSubmission ? 1 : 0}`,
-        conqueredCount: sql`${articles.conqueredCount} + ${isFirstConquer ? 1 : 0}`,
-      })
-      .where(eq(articles.id, articleId))
 
     // ---- 无效提交计数归零 ----
     //

@@ -28,15 +28,16 @@ import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
 export const arenasRoutes = new Hono<{ Variables: Variables }>()
 
 arenasRoutes.get('/:articleId', async (c) => {
-  const articleId = Number(c.req.param('articleId'))
-  if (!Number.isInteger(articleId) || articleId <= 0) {
+  /** ⭐ 句子 id = 内容 hash（字符串），不再有「正整数」这一层校验 */
+  const articleId = c.req.param('articleId')
+  if (!articleId) {
     return c.json({ ok: false, error: 'articleId 不合法' }, 400)
   }
 
   const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
   if (!article) return c.json({ ok: false, error: '这一句不存在' }, 404)
 
-  const content = await loadArticleContent(article.contentJson)
+  const content = await loadArticleContent(article.id)
   // ⚠️ 公开接口：统计与榜单都传 0（匿名）—— 榜单里不标「你」
   const [stats, leaderboard] = await Promise.all([
     getArenaStatsBatch([articleId], 0).then((m) => m.get(articleId)),
@@ -58,6 +59,7 @@ arenasRoutes.get('/:articleId', async (c) => {
     isToday: true,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
+    theme: article.theme,
     leaderboard,
   }
   return c.json({ ok: true, data: detail })

@@ -1,4 +1,4 @@
-import { readStaticFile } from './content'
+import { readStaticFile, staticFileStamp } from './content'
 import { mp3DurationMs } from './mp3-duration'
 import { audioKeyOf, audioRefOf } from './standard-audio'
 
@@ -13,30 +13,34 @@ import { audioKeyOf, audioRefOf } from './standard-audio'
  *
  * ⚠️ 进程内缓存：一篇只解析一次。首页一次要 7 张卡片、而池子里通常只有几句，
  *    所以命中率很高；解析一个 20–50KB 的文件也就几十微秒。
+ * ⚠️⚠️ 缓存**必须带上文件的版本戳**（size+mtime）：音频被重新生成之后
+ *    （跑一次流水线 ④）只按路径缓存会一直报旧时长，而且不报错。
  * ⚠️ 解析不出来（文件缺失 / 编码不认）就返回 null，
  *    客户端据此**只显示按钮、不显示时长** —— 而不是显示一个 0:00。
  */
-const cache = new Map<number, number | null>()
+const cache = new Map<string, { stamp: string | null; ms: number | null }>()
 
-export async function standardAudioMs(articleId: number): Promise<number | null> {
+export async function standardAudioMs(articleId: string): Promise<number | null> {
+  const key = audioKeyOf(articleId)
+  const stamp = await staticFileStamp(key)
   const hit = cache.get(articleId)
-  if (hit !== undefined) return hit
+  if (hit && hit.stamp === stamp) return hit.ms
 
   let value: number | null = null
   try {
     /**
      * ⚠️⚠️ 路径必须走 audioKeyOf（它返回 content/audio/{id}.mp3）——
      *    静态资源的根目录是**仓库根 / /app**，不是 content/ 那一层
-     *    （contentJson 里自带 content/ 这一段，见 services/content.ts 的注释）。
+     *    （正文路径里自带 content/ 这一段，见 services/content.ts 的注释）。
      *    我第一版写成 'audio/{id}.mp3' ⇒ 永远读不到文件 ⇒ 时长永远不显示，
      *    而且**不报错**。用 audioKeyOf 就不会再犯：磁盘路径与对象存储 key 同源。
      */
-    const bytes = await readStaticFile(audioKeyOf(articleId))
+    const bytes = await readStaticFile(key)
     if (bytes) value = mp3DurationMs(Buffer.from(bytes))
   } catch (err) {
     console.warn('[audio] 读标准音算时长失败（articleId=' + articleId + '）：' + (err as Error).message)
   }
-  cache.set(articleId, value)
+  cache.set(articleId, { stamp, ms: value })
   return value
 }
 
@@ -46,7 +50,7 @@ export async function standardAudioMs(articleId: number): Promise<number | null>
  *    而不是渲染一个点了 404 的按钮（同 audioRefOf 的约定）。
  */
 export async function scheduleAudioOf(article: {
-  id: number
+  id: string
   standardAudio: string | null
 }): Promise<{ full: string; kind: 'cloud' | 'http'; durationMs: number | null } | null> {
   const ref = audioRefOf(article)

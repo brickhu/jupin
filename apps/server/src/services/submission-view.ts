@@ -53,7 +53,7 @@ export async function describe(
     getBestExcluding(articleId, viewerUserId, submissionId),
     // ⭐ 参考原文：详情/分享页要拿它给逐词上色（见 SubmitResponse.text 的说明）
     db
-      .select({ contentJson: articles.contentJson })
+      .select({ id: articles.id, theme: articles.theme })
       .from(articles)
       .where(eq(articles.id, articleId))
       .limit(1),
@@ -77,6 +77,8 @@ export async function describe(
     articleId,
     // ⚠️ 从库里读回来，不是写死 —— 用户可能在结果页改过（见 /visibility）
     isPublic: row.isPublic,
+    // ⭐ 视觉主题（结果卡上色）；老内容 / 已删句子为 null ⇒ 端侧品牌色兜底
+    theme: article[0]?.theme ?? null,
     isPersonalBest: previous === null || scoreNum > previous,
     // ⚠️ 攻克 =「这条出分了」（口径见 services/conquest.ts）。
     //    刻意**读 status 而不是 is_conquered 列**：老数据那一列是按已废除的
@@ -84,7 +86,7 @@ export async function describe(
     isConquered: row.status === 'scored',
     previousBest: previous,
     leaderboard,
-    text: await loadArticleRefText(article[0]?.contentJson ?? ''),
+    text: article[0] ? await loadArticleRefText(article[0].id) : '',
     // ⭐ 录音时长 —— 结果页在播放按钮旁边显示它（读完之后最直观的参照）
     ...(row.audioDurationMs ? { durationMs: row.audioDurationMs } : {}),
     // ⚠️ 老数据可能没有 scheduleDate（见 schema），那就干脆不给 —— 端侧退回今天

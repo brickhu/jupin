@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { addDays, dayNumber, today } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
+import { contentExists } from './content'
 
 /**
  * ⭐ 每日挑战 —— 「哪一天读哪一句」。
@@ -105,7 +106,23 @@ export function recentScheduleDates(days: number, from: string = today()): strin
  */
 export async function scheduleAhead(days = 14, from: string = today()): Promise<number> {
   const dates = recentScheduleDates(days + 1, addDays(from, days))
-  const pool = await db.select().from(articles).where(eq(articles.isActive, true)).orderBy(articles.id)
+  const active = await db.select().from(articles).where(eq(articles.isActive, true)).orderBy(articles.id)
+
+  /**
+   * ⚠️⚠️ 池子里只能有**这个部署读得到正文**的句子。
+   *    isActive 是**库**的状态，正文在**镜像**里 —— 两者不一致时
+   *    （内容刚发布进库、还没重新部署）被抽中的那一天，
+   *    全站朗读页都是「正文加载失败」，而且看不出跟这次发布有关。
+   *    宁可池子小一点（少排几天），也不要排出一天谁都打不开的题。
+   * ⚠️ 只 stat 不读内容：这个函数在每次读列表时都会跑。
+   */
+  const pool = active.filter((a) => contentExists(a.id))
+  if (pool.length !== active.length) {
+    console.warn(
+      '[schedules] ' + (active.length - pool.length) + ' 条句子的正文在这个部署里读不到，' +
+        '已从轮转池剔除（镜像没重新部署？跑 /health?deep=1 看差集）',
+    )
+  }
   if (pool.length === 0) return 0
 
   const existing = new Set((await loadRows(dates)).map((r) => r.date))
@@ -120,9 +137,8 @@ export async function scheduleAhead(days = 14, from: string = today()): Promise<
     .values(
       missing.map((date) => ({
         date,
-        articleId: (pool[((dayNumber(date) % pool.length) + pool.length) % pool.length] as
-          | (typeof articles.$inferSelect)
-          | undefined)?.id as number,
+        // ⚠️ 池子非空（上面已判），下标取模必落在范围内 ⇒ 非空断言是安全的
+        articleId: pool[((dayNumber(date) % pool.length) + pool.length) % pool.length]!.id,
         source: 'rotation',
       })),
     )
@@ -132,7 +148,7 @@ export async function scheduleAhead(days = 14, from: string = today()): Promise<
  * 给某一天**明确**排一句（运营用）。
  * ⚠️ 用 upsert：同一天重排是正常操作（换题），不该报主键冲突。
  */
-export async function setSchedule(date: string, articleId: number): Promise<void> {
+export async function setSchedule(date: string, articleId: string): Promise<void> {
   await db
     .insert(schedules)
     .values({ date, articleId, source: 'scheduled' })
@@ -140,7 +156,7 @@ export async function setSchedule(date: string, articleId: number): Promise<void
 }
 
 /** 这个句子被排在了哪些天（内容下线前的引用检查用） */
-export async function datesOfArticle(articleId: number): Promise<string[]> {
+export async function datesOfArticle(articleId: string): Promise<string[]> {
   const rows = await db
     .select({ date: schedules.date })
     .from(schedules)
@@ -149,7 +165,7 @@ export async function datesOfArticle(articleId: number): Promise<string[]> {
 }
 
 /** 只保留「启用中」的句子进轮转池的辅助（供测试与排查用） */
-export async function activeArticleIds(): Promise<number[]> {
+export async function activeArticleIds(): Promise<string[]> {
   const rows = await db
     .select({ id: articles.id })
     .from(articles)

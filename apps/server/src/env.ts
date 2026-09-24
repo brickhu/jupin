@@ -213,9 +213,10 @@ const schema = z.object({
   /** 迁移 SQL 目录，相对进程工作目录。容器里是 /app/drizzle */
   MIGRATIONS_DIR: z.string().default('drizzle'),
   /**
-   * 静态资源**根目录** —— contentJson 相对它解析。
-   * ⚠️ 不是「content 目录」：contentJson 形如 `/content/articles/1.json`，
+   * 静态资源**根目录** —— 正文路径相对它解析。
+   * ⚠️ 不是「content 目录」：正文路径形如 `/content/articles/<id>.json`，
    *    本身就带 content/ 那一段（那是它将来在 CDN 上的 URL 路径）。
+   *    ⚠️ 换 CDN 只改这个**根**，不改每条记录的路径。
    *    留空则自动探测（容器 /app、或本机仓库根）。
    */
   STATIC_ROOT: z.string().optional(),

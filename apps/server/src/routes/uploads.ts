@@ -41,7 +41,8 @@ uploadsRoutes.post('/', async (c) => {
     return c.json({ ok: false, error: '请求体不是 multipart/form-data' }, 400)
   }
 
-  const articleId = Number(form.get('articleId'))
+  const articleIdRaw = form.get('articleId')
+  const articleId = typeof articleIdRaw === 'string' ? articleIdRaw : ''
   const audioKey = String(form.get('audioKey') ?? '')
   const file = form.get('file')
 

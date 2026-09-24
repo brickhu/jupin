@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { desc, eq, lt } from 'drizzle-orm'
 import { normalizeDifficulty, normalizeTags, today } from '@jushuo/shared'
-import type { ArticleDifficulty, ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
+import type { ArticleDifficulty, ArticleTheme, ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
 import { loadArticleContent } from '../services/content'
@@ -77,8 +77,8 @@ schedulesRoutes.get('/', async (c) => {
   const candidateRows = await db
     .select({
       articleId: articles.id,
-      contentJson: articles.contentJson,
       standardAudio: articles.standardAudio,
+      theme: articles.theme,
     })
     .from(articles)
     .where(eq(articles.isActive, true))
@@ -92,19 +92,19 @@ schedulesRoutes.get('/', async (c) => {
 
   /** 今日 + 历史涉及的全部句子 —— 统计/正文/音频都按句子算一次 */
   const articleById = new Map<
-    number,
-    { id: number; contentJson: string; standardAudio: string | null }
+    string,
+    { id: string; standardAudio: string | null; theme: ArticleTheme | null }
   >()
   articleById.set(todayPick.article.id, {
     id: todayPick.article.id,
-    contentJson: todayPick.article.contentJson,
     standardAudio: todayPick.article.standardAudio,
+    theme: todayPick.article.theme,
   })
   for (const c of historyRows) {
     articleById.set(c.articleId, {
       id: c.articleId,
-      contentJson: c.contentJson,
       standardAudio: c.standardAudio,
+      theme: c.theme,
     })
   }
   const articleIds = [...articleById.keys()]
@@ -112,22 +112,22 @@ schedulesRoutes.get('/', async (c) => {
   //    不会去查「我的最好成绩」—— 那走鉴权接口 /api/user/arena-records。
   const stats = await getArenaStatsBatch(articleIds, 0)
 
-  // ⚠️ 正文按 contentJson 去重后一次性读：轮转池只有几句，反复出现同一条内容
+  // ⚠️ 正文按**文章 id**去重后一次性读（id 就是内容 hash，同内容必然同 id）
   // ⚠️ 这里的 type 必须与 loadArticleContent 的解析口径一致：
   //    难度 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
   //    （articles 表只是索引，见 db/schema.ts）。
-  const byContentJson = new Map<
+  const byArticleId = new Map<
     string,
     { text: string; translation: string; difficulty: ArticleDifficulty | null; tags: string[] }
   >()
   for (const id of articleIds) {
     const a = articleById.get(id)
-    if (a) byContentJson.set(a.contentJson, { text: '', translation: '', difficulty: null, tags: [] })
+    if (a) byArticleId.set(a.id, { text: '', translation: '', difficulty: null, tags: [] })
   }
   await Promise.all(
-    [...byContentJson.keys()].map(async (key) => {
-      const content = await loadArticleContent(key)
-      byContentJson.set(key, {
+    [...byArticleId.keys()].map(async (articleId) => {
+      const content = await loadArticleContent(articleId)
+      byArticleId.set(articleId, {
         text: content?.text ?? '',
         translation: content?.translation ?? '',
         // ⚠️ 内容可能比代码旧（CDN 上的老 JSON 没有这两个字段）⇒ 一律过规范化，
@@ -143,7 +143,7 @@ schedulesRoutes.get('/', async (c) => {
    * ⚠️ 时长是读 content/audio/*.mp3 现算的（容器里没有 ffprobe），
    *    进程内缓存；算不出来是 null ⇒ 端侧只显示按钮、不显示时长。
    */
-  const audioOf = new Map<number, ScheduleAudio | null>()
+  const audioOf = new Map<string, ScheduleAudio | null>()
   await Promise.all(
     articleIds.map(async (id) => {
       const a = articleById.get(id)
@@ -153,9 +153,9 @@ schedulesRoutes.get('/', async (c) => {
   )
 
   /** 卡片里与「哪一天」无关的那部分 —— 今日和历史共用 */
-  const commonOf = (articleId: number, contentJson: string): Omit<ScheduleEntry, 'articleId'> | null => {
+  const commonOf = (articleId: string): Omit<ScheduleEntry, 'articleId'> | null => {
     const st = stats.get(articleId)
-    const c = byContentJson.get(contentJson)
+    const c = byArticleId.get(articleId)
     return {
       text: c?.text ?? '',
       translation: c?.translation ?? '',
@@ -165,6 +165,7 @@ schedulesRoutes.get('/', async (c) => {
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
       audio: audioOf.get(articleId) ?? null,
+      theme: articleById.get(articleId)?.theme ?? null,
     }
   }
 
@@ -173,7 +174,7 @@ schedulesRoutes.get('/', async (c) => {
    *    （「日期只是编辑精选的容器」，这三个字段描述的正是那个容器）。
    */
   const todayArticle = todayPick.article
-  const common = commonOf(todayArticle.id, todayArticle.contentJson)
+  const common = commonOf(todayArticle.id)
   if (!common) {
     return c.json({ ok: false, error: '今天的排期指向了不存在的句子' }, 503)
   }
@@ -188,11 +189,11 @@ schedulesRoutes.get('/', async (c) => {
   /**
    * ⭐ 历史卡片：来自**句库**，与「哪一天」无关 —— 所以一个日期字段都不带。
    *    点进去走按句子寻址的 arena（/api/arenas/:articleId）。
-   *    ⚠️ 内容查不到的句子直接丢掉（理论上不会，取数时已经带了 contentJson）。
+   *    ⚠️ 内容查不到的句子直接丢掉（理论上不会，取数时正文一定能按 id 读到）。
    */
   const history: ScheduleEntry[] = []
   for (const row of historyRows) {
-    const c = commonOf(row.articleId, row.contentJson)
+    const c = commonOf(row.articleId)
     if (!c) continue
     history.push({ articleId: row.articleId, ...c })
   }
@@ -224,7 +225,7 @@ schedulesRoutes.get('/:date', async (c) => {
 
   // ⚠️ 统计、榜单、名次全部按**句子**（句子 = 竞技场），日期只决定进哪一个
   const articleId = pick.article.id
-  const content = await loadArticleContent(pick.article.contentJson)
+  const content = await loadArticleContent(articleId)
   // ⚠️ 公开接口：统计与榜单都传 0（匿名）
   const [stats, leaderboard] = await Promise.all([
     getArenaStatsBatch([articleId], 0).then((m) => m.get(articleId)),
@@ -244,6 +245,7 @@ schedulesRoutes.get('/:date', async (c) => {
     isToday: date === now,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
+    theme: pick.article.theme,
     leaderboard,
   }
   return c.json({ ok: true, data: detail })

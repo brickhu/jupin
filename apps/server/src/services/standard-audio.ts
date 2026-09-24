@@ -6,7 +6,8 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
 import { getStorage } from '../storage'
-import { readStaticFile, resolveStaticRoot } from './content'
+import { plainWordsOf } from '@jushuo/shared'
+import { contentPathOf, readStaticFile, resolveStaticRoot } from './content'
 
 /**
  * ⭐ 标准音进对象存储 —— 内容侧唯一的「写」。
@@ -28,12 +29,12 @@ import { readStaticFile, resolveStaticRoot } from './content'
 const KEY_PREFIX = 'content/audio'
 
 /** 这篇文章的标准音在对象存储里的 key */
-export function audioKeyOf(articleId: number): string {
+export function audioKeyOf(articleId: string): string {
   return `${KEY_PREFIX}/${articleId}.mp3`
 }
 
 /** 这篇的第 index 个单词的发音 */
-export function wordAudioKeyOf(articleId: number, index: number): string {
+export function wordAudioKeyOf(articleId: string, index: number): string {
   return `${KEY_PREFIX}/${articleId}/w${index}.mp3`
 }
 
@@ -52,10 +53,11 @@ export function fileIdOf(key: string): string | null {
 
 /**
  * 这篇文章要上传的全部文件（整句 + 每个词）。
- * ⚠️ 词表来自**与客户端同一条切词规则**，见 tools/build-content-audio.mjs 的说明。
+ * ⚠️ 词表来自**与客户端同一条切词规则**（shared 的 plainWordsOf）—— 见 services/content.ts 的说明。
  */
-function filesOf(articleId: number, text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean)
+function filesOf(articleId: string, text: string): string[] {
+  // ⚠️ 切词走唯一实现（plainWordsOf）—— 切片下标必须与客户端点词的下标一致
+  const words = plainWordsOf(text)
   return [
     `${articleId}.mp3`,
     ...words.map((_, i) => `${articleId}/w${i}.mp3`),
@@ -69,25 +71,33 @@ function filesOf(articleId: number, text: string): string[] {
  *    列是空的 = 这篇还没灌过（内容流水线没跑），必须返回 null，
  *    让客户端**隐藏播放入口** —— 否则会渲染一个能点、点了 404 的按钮。
  *
+ * ⚠️⚠️ 走不走云**只由 STORAGE 决定**，不能看 fileIdOf() 成不成功：
+ *    .env.local 里同时写着 WX_CLOUD_ENV_ID / COS_BUCKET（本机也要能直传录音、头像），
+ *    所以本机 fileIdOf() 也一定成功。照着它判，本机的标准音就会去云桶里找
+ *    `content/audio/<文章 id>.mp3` —— 而文章 id 已经是内容 hash，桶里那条 key
+ *    还是旧编号，对不上 ⇒ 客户端报「拿不到标准音」。
+ *    本机磁盘上有 content/audio/ 这份文件，走下面的 /media 公开路由即可。
+ *    （用户录音那条同源，见 services/recording.ts 的 env.STORAGE === 'local'）
+ *
  * ⚠️ 本机那条走 /media/ 下的公开路由，不能是 /api/ 下的鉴权路由：
  *    InnerAudioContext 不带 Authorization 头，挂鉴权路由下必然 401。
  *    见 routes/media.ts 的注释。
  */
-export function audioRefOf(article: { id: number; standardAudio: string | null }):
+export function audioRefOf(article: { id: string; standardAudio: string | null }):
   | { full: string; kind: 'cloud' | 'http' }
   | null {
   if (!article.standardAudio) return null
+  const httpRef = { full: `/media/articles/${article.id}.mp3`, kind: 'http' as const }
+  if (env.STORAGE === 'local') return httpRef
   const cloud = fileIdOf(audioKeyOf(article.id))
-  return cloud
-    ? { full: cloud, kind: 'cloud' }
-    : { full: `/media/articles/${article.id}.mp3`, kind: 'http' }
+  return cloud ? { full: cloud, kind: 'cloud' } : httpRef
 }
 
 export interface SeedAudioResult {
   uploaded: number
   skipped: number
   /** 盘上根本没有音频的文章 —— 提示要先去跑生成脚本 */
-  missing: number[]
+  missing: string[]
 }
 
 /**
@@ -114,7 +124,7 @@ export async function seedStandardAudio(
   const storage = getStorage()
 
   for (const row of rows) {
-    const jsonPath = resolve(root, row.contentJson.replace(/^\/+/, ''))
+    const jsonPath = resolve(root, contentPathOf(row.id).replace(/^\/+/, ''))
     if (!existsSync(jsonPath)) continue
     const text = (JSON.parse(await readFile(jsonPath, 'utf8')) as { text?: string }).text ?? ''
     if (!text) continue

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { RECORD_SPEC } from '@jushuo/shared'
+import { RECORD_SPEC, SUBMISSION_ID_LENGTH } from '@jushuo/shared'
 
 /**
  * 提交记录的标识与音频路径规范 —— **纯函数，零 DB 依赖**（可单测）。
@@ -16,14 +16,18 @@ import { RECORD_SPEC } from '@jushuo/shared'
 
 const AUDIO_PREFIX = 'audio'
 
-export function makeSubmissionId(userId: number, articleId: number, seq: number): string {
+/**
+ * ⚠️ 长度用 shared 的常量：它同时决定列的宽度和接口校验 sid 的正则，
+ *    三处各写一个数就会漂（这次就漂过一次：派生 24、列宽 40）。
+ */
+export function makeSubmissionId(userId: number, articleId: string, seq: number): string {
   return createHash('sha256')
     .update(`jushuo:${userId}:${articleId}:${seq}`)
     .digest('hex')
-    .slice(0, 24)
+    .slice(0, SUBMISSION_ID_LENGTH)
 }
 
-export function makeAudioKey(articleId: number, userId: number, timestampMs: number): string {
+export function makeAudioKey(articleId: string, userId: number, timestampMs: number): string {
   return `${AUDIO_PREFIX}/${articleId}/${userId}/${timestampMs}.${RECORD_SPEC.extension}`
 }
 
@@ -118,7 +122,7 @@ export function assertAudioUrlMatchesKey(input: {
   }
 }
 
-export function assertAudioKeyOwnedBy(audioKey: string, userId: number, articleId: number): void {
+export function assertAudioKeyOwnedBy(audioKey: string, userId: number, articleId: string): void {
   const parts = audioKey.split('/')
   if (parts.length !== 4) throw new Error('音频路径格式不对')
 
@@ -136,6 +140,6 @@ export function assertAudioKeyOwnedBy(audioKey: string, userId: number, articleI
    */
   if (!/^\d{10,}\.[a-z0-9]{1,5}$/.test(filePart)) throw new Error('音频文件名不对')
 
-  if (Number(articlePart) !== articleId) throw new Error('音频路径里的文章与提交的不一致')
+  if (articlePart !== articleId) throw new Error('音频路径里的文章与提交的不一致')
   if (Number(userPart) !== userId) throw new Error('音频路径不属于当前用户')
 }

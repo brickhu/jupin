@@ -1,3 +1,4 @@
+import { plainWordsOf } from '@jushuo/shared'
 import type { ScoreEngine, ScoreOptions, ScoreResult } from './types'
 
 /**
@@ -24,10 +25,8 @@ export class MockEngine implements ScoreEngine {
     const seed = hash(`${refText}:${audio.length}`)
     const total = clamp(base + ((seed % 1000) / 1000 - 0.5) * 2 * jitter, 0, 100)
 
-    const words = refText
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word, i) => {
+    // ⚠️ 切词走唯一实现（plainWordsOf）—— 下标要和客户端点词的下标一致
+    const words = plainWordsOf(refText).map((word, i) => {
         const wSeed = hash(`${word}:${i}:${audio.length}`)
         const score = clamp(total + ((wSeed % 1000) / 1000 - 0.5) * 30, 0, 100)
         const startMs = i * 380

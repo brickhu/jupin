@@ -10,10 +10,10 @@
  *
  *  ① **剔除今日那一句**：今日那张卡就在它上面，再列一次等于同一个榜单看两遍。
  *     ⚠️ 池子小的时候必然发生（池子 5 句时，隔 5 天就轮回到同一句）。
- *  ② **按句子 id 倒序**（新句在前）。
+ *  ② **按句子 id 倒序**（一个稳定顺序）。
  *     ⚠️ 显式排序，不依赖调用方 SQL 的 order by：这个顺序是产品语义。
- *     ⚠️ id 由内容流水线分配、**只增不减**（schema 里写着「稳定不变」），
- *        所以 id 越大 = 内容越新。
+ *     ⚠️ id 已是**内容 hash**（sha256(text) 前 16 位，见 db/schema.ts）—— 它**不编码新旧**，
+ *        所以这里的倒序只是一个确定的稳定顺序，不再意味着「id 越大 = 内容越新」。
  */
 
 /**
@@ -23,13 +23,15 @@
  * @param todayArticleId 今日那一句的 id（null = 不剔除）
  * @param limit          最多几条
  */
-export function pickHistoryArticles<T extends { articleId: number }>(
+export function pickHistoryArticles<T extends { articleId: string }>(
   rows: T[],
-  todayArticleId: number | null,
+  todayArticleId: string | null,
   limit: number,
 ): T[] {
-  /** ② 新句在前 */
-  const sorted = [...rows].sort((a, b) => b.articleId - a.articleId)
+  /** ② 按 id 倒序（字符串比较，稳定顺序） */
+  const sorted = [...rows].sort((a, b) =>
+    a.articleId < b.articleId ? 1 : a.articleId > b.articleId ? -1 : 0,
+  )
 
   const out: T[] = []
   for (const r of sorted) {

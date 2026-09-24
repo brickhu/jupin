@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -50,9 +51,11 @@ describe('MP3 时长解析', () => {
    *    而钉死一个数会让「换了配音」这种正常操作变成测试失败。
    */
   it('仓库里的标准音能算出合理时长（1–60 秒）', () => {
-    const file = fileURLToPath(new URL('../../../../content/audio/1.mp3', import.meta.url))
-    if (!existsSync(file)) return
-    const ms = mp3DurationMs(readFileSync(file))
+    // ⚠️ 文件名现在是内容 hash —— 取仓库里第一个标准音，不写死
+    const dir = fileURLToPath(new URL('../../../../content/audio', import.meta.url))
+    const name = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith('.mp3')) : undefined
+    if (!name) return
+    const ms = mp3DurationMs(readFileSync(join(dir, name)))
     expect(ms).not.toBeNull()
     expect(ms as number).toBeGreaterThan(1000)
     expect(ms as number).toBeLessThan(60000)

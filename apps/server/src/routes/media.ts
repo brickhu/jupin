@@ -3,7 +3,14 @@ import type { Context } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { submissions } from '../db/schema'
+import { SUBMISSION_ID_LENGTH } from '@jushuo/shared'
 import { readStaticFile } from '../services/content'
+
+/**
+ * 提交 id 的形状 —— 从**唯一的长度常量**拼，不要写死位数
+ * （它同时决定列的宽度和派生函数，三处各写一个数就会漂）。
+ */
+const RE_SUBMISSION_ID = new RegExp('^[0-9a-f]{' + SUBMISSION_ID_LENGTH + '}$')
 import { env } from '../env'
 import { playableBytesOf } from '../services/recording'
 import { getStorage } from '../storage'
@@ -34,8 +41,8 @@ export const mediaRoutes = new Hono()
  *    把录音挂成一条无条件的公开路由会是一次真实的隐私事故（见那条路由的说明）。
  */
 mediaRoutes.get('/articles/:file', async (c) => {
-  // 形如 1.mp3
-  const m = /^(\d+)\.mp3$/.exec(c.req.param('file'))
+  // 形如 <articleId>.mp3 —— articleId 是内容 hash（sha256 十六进制）
+  const m = /^([0-9a-f]+)\.mp3$/.exec(c.req.param('file'))
   if (!m) return c.json({ ok: false, error: '音频不存在' }, 404)
   return serveAudio(c, `content/audio/${m[1]}.mp3`)
 })
@@ -48,10 +55,11 @@ mediaRoutes.get('/articles/:file', async (c) => {
  *    ⇒ 让每段就是一个干净的参数，后缀在代码里解析。
  */
 mediaRoutes.get('/articles/:id/:file', async (c) => {
-  const id = Number(c.req.param('id'))
+  // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**；index 仍是数字
+  const id = c.req.param('id')
   const m = /^w(\d+)\.mp3$/.exec(c.req.param('file'))
   const index = m ? Number(m[1]) : -1
-  if (!Number.isInteger(id) || id <= 0 || index < 0) {
+  if (!id || index < 0) {
     return c.json({ ok: false, error: '音频不存在' }, 404)
   }
   return serveAudio(c, `content/audio/${id}/w${index}.mp3`)
@@ -80,9 +88,9 @@ mediaRoutes.get('/recording/:id', async (c) => {
   }
 
   const id = c.req.param('id')
-  // ⚠️ 先按形状挡一道：提交 id 是 24 位十六进制。
+  // ⚠️ 先按形状挡一道：提交 id 是 SUBMISSION_ID_LENGTH 位十六进制。
   //    这样任何手写的路径都到不了数据库查询那一步。
-  if (!/^[0-9a-f]{24}$/.test(id)) {
+  if (!RE_SUBMISSION_ID.test(id)) {
     return c.json({ ok: false, error: '录音不存在' }, 404)
   }
 

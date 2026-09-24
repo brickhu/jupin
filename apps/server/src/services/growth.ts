@@ -21,7 +21,7 @@ const MAX_SCORE = sql<number | null>`MAX(${submissions.score})`
 /** 我在这句上的历史最高分（本次之前）—— 句子级自我超越的基准 */
 export async function highestInSentence(
   userId: number,
-  articleId: number,
+  articleId: string,
   excludeSubmissionId: string,
 ): Promise<number | null> {
   const [row] = await db
@@ -65,7 +65,7 @@ export async function highestInUser(
  *    不这么算的话，一个人反复读就能把权重 w 顶到 1.2、把中位数拉低（等于替别人刷分）。
  */
 export async function arenaSnapshot(
-  articleId: number,
+  articleId: string,
   excludeSubmissionId: string,
 ): Promise<number[]> {
   const rows = await db

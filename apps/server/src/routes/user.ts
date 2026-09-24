@@ -12,7 +12,7 @@ import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../service
 import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
-import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE } from '@jushuo/shared'
+import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
 import type { ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
 
@@ -37,13 +37,12 @@ userRoutes.get('/challenges', async (c) => {
       articleId: submissions.articleId,
       scheduleDate: submissions.scheduleDate,
       score: submissions.score,
-      isConquered: submissions.isConquered,
       status: submissions.status,
       aiComment: submissions.aiComment,
       wordScores: submissions.wordScores,
       scoredAt: submissions.scoredAt,
       createdAt: submissions.createdAt,
-      contentJson: articles.contentJson,
+      theme: articles.theme,
     })
     .from(submissions)
     .innerJoin(articles, eq(articles.id, submissions.articleId))
@@ -58,8 +57,8 @@ userRoutes.get('/challenges', async (c) => {
        *    两边切法不一致就会整行错位，而界面上完全看不出来。
        *    这条切词规则同时被内容流水线、服务端拼 fileID、朗读页共用。
        */
-      const text = await loadArticleRefText(r.contentJson)
-      const words = text.split(/\s+/).filter(Boolean)
+      const text = await loadArticleRefText(r.articleId)
+      const words = plainWordsOf(text)
 
       return {
         submissionId: r.id,
@@ -74,6 +73,7 @@ userRoutes.get('/challenges', async (c) => {
         aiComment: r.aiComment,
         text,
         wordScores: parseWordScores(r.wordScores, words.length),
+        theme: r.theme,
         at: (r.scoredAt ?? r.createdAt).toISOString(),
       }
     }),
@@ -131,18 +131,18 @@ userRoutes.get('/participations', async (c) => {
       best: max(submissions.score),
       worst: min(submissions.score),
       lastAt: max(submissions.createdAt),
-      contentJson: articles.contentJson,
+      theme: articles.theme,
     })
     .from(submissions)
     .innerJoin(articles, eq(articles.id, submissions.articleId))
     .where(and(eq(submissions.userId, userId), eq(submissions.status, 'scored')))
-    .groupBy(submissions.articleId, articles.contentJson)
+    .groupBy(submissions.articleId, articles.theme)
     // ⚠️ 按「最近一次挑战」倒序 —— 注意排的是 max(created_at)，不是某一行的值
     .orderBy(desc(max(submissions.createdAt)))
 
   const items = await Promise.all(
     rows.map(async (r) => {
-      const text = await loadArticleRefText(r.contentJson)
+      const text = await loadArticleRefText(r.articleId)
       const rankInfo = await getRank(r.articleId, userId)
       /**
        * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
@@ -164,7 +164,7 @@ userRoutes.get('/participations', async (c) => {
       return {
         articleId: r.articleId,
         text,
-        words: text.split(/\s+/).filter(Boolean).length,
+        words: plainWordsOf(text).length,
         attempts: Number(r.attempts ?? 0),
         bestScore: Number(r.best ?? 0),
         worstScore: Number(r.worst ?? 0),
@@ -172,6 +172,7 @@ userRoutes.get('/participations', async (c) => {
         participantCount: rankInfo.participantCount,
         lastAt: new Date(r.lastAt as unknown as string).toISOString(),
         lastScheduleDate: latest?.scheduleDate ?? '',
+        theme: r.theme,
       }
     }),
   )
@@ -196,10 +197,11 @@ userRoutes.get('/participations', async (c) => {
  */
 userRoutes.get('/arena-records', async (c) => {
   const userId = c.get('userId')
+  // ⚠️ articleId 是内容 hash（字符串）—— 按原样解析，**不再转数字**
   const ids = (c.req.query('ids') ?? '')
     .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
     .slice(0, 20)
   if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
   const wantRanks = c.req.query('ranks') === '1'
@@ -263,6 +265,9 @@ userRoutes.get('/me', async (c) => {
       id: user.id,
       nickname: user.nickname,
       avatarUrl: user.avatarUrl,
+      gender: (user.gender ?? null) as 'male' | 'female' | null,
+      age: user.age ?? null,
+      bio: user.bio ?? null,
       status: user.status,
       // ⭐ **能量点数**（替代旧的「每天 N 次挑战机会」）。
       //    每次挑战消耗 2 点、每日补足到 3 点；端侧只管展示，不自己算余额。
@@ -402,7 +407,13 @@ userRoutes.post('/unfreeze', async (c) => {
  */
 userRoutes.post('/profile', async (c) => {
   const userId = c.get('userId')
-  const body = await c.req.json<{ nickname?: string; avatarUrl?: string }>()
+  const body = await c.req.json<{
+    nickname?: string
+    avatarUrl?: string
+    gender?: string | null
+    age?: number | string | null
+    bio?: string | null
+  }>()
 
   const nickname = normalizeNickname(body.nickname)
   if (!nickname) {
@@ -410,10 +421,28 @@ userRoutes.post('/profile', async (c) => {
   }
   const avatarUrl = normalizeAvatarUrl(body.avatarUrl)
 
-  await db
-    .update(users)
-    .set({ nickname, ...(avatarUrl ? { avatarUrl } : {}) })
-    .where(eq(users.id, userId))
+  /**
+   * ⭐⭐ 三态语义：**键不存在 = 这次不改这一格；显式 null / 空串 = 清空；有值 = 设置**。
+   *
+   *    ⚠️ 不能把「没传」和「传了 null」当成一回事：
+   *       前者是「这次不编辑这一格」，后者是用户明确要把它清掉。
+   *       混在一起，编辑页就永远清不掉一个字段。
+   *    ⚠️ 头像沿用旧规则：只有真的选了新头像才传 avatarUrl，没传就保持库里那张。
+   */
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
+  const patch: {
+    nickname: string
+    avatarUrl?: string
+    gender?: 'male' | 'female' | null
+    age?: number | null
+    bio?: string | null
+  } = { nickname }
+  if (avatarUrl) patch.avatarUrl = avatarUrl
+  if (has('gender')) patch.gender = normalizeGender(body.gender)
+  if (has('age')) patch.age = normalizeAge(body.age)
+  if (has('bio')) patch.bio = normalizeBio(body.bio)
+
+  await db.update(users).set(patch).where(eq(users.id, userId))
 
   /**
    * ⚠️⚠️ 回**库里存着的**那一份，而不是把入参回显出去。
@@ -424,13 +453,25 @@ userRoutes.post('/profile', async (c) => {
    *    所以它必须是**更新之后的真相**，不是这次请求的输入。
    */
   const [row] = await db
-    .select({ nickname: users.nickname, avatarUrl: users.avatarUrl })
+    .select({
+      nickname: users.nickname,
+      avatarUrl: users.avatarUrl,
+      gender: users.gender,
+      age: users.age,
+      bio: users.bio,
+    })
     .from(users)
     .where(eq(users.id, userId))
 
   return c.json({
     ok: true,
-    data: { nickname: row?.nickname ?? nickname, avatarUrl: row?.avatarUrl ?? null },
+    data: {
+      nickname: row?.nickname ?? nickname,
+      avatarUrl: row?.avatarUrl ?? null,
+      gender: (row?.gender ?? null) as 'male' | 'female' | null,
+      age: row?.age ?? null,
+      bio: row?.bio ?? null,
+    },
   })
 })
 
@@ -465,4 +506,37 @@ export function normalizeAvatarUrl(raw: string | undefined): string | null {
   if (!env.WX_CLOUD_ENV_ID || !env.COS_BUCKET || !value.startsWith(prefix)) return null
   // 只允许头像目录 —— 免得有人把它当任意文件的分布器
   return value.slice(prefix.length).startsWith('avatars/') ? value : null
+}
+
+/**
+ * 性别净化：只认 'male' / 'female'，其余（含未填、乱填）一律 null。
+ * ⚠️ 不做「猜」——把 '男' / 'M' / '1' 映射过来，等于替用户改数据。
+ */
+export function normalizeGender(raw: unknown): 'male' | 'female' | null {
+  return raw === 'male' || raw === 'female' ? raw : null
+}
+
+/**
+ * 年龄净化：整数、6–120；空 / 非数字 / 越界一律 null。
+ * ⚠️ 上限存在是因为 age 会进榜/进主页那类展示，一个 99999 摆上去就是脏数据。
+ */
+export function normalizeAge(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (!Number.isInteger(n) || n < 6 || n > 120) return null
+  return n
+}
+
+/**
+ * 简介净化：剥控制字符 / 折叠空白 / 限 200 字；空 → null。
+ * ⚠️ 与昵称共用同一类风险：它会显示在界面上，换行和零宽字符会把排版搞乱。
+ */
+export function normalizeBio(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const value = raw
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+  return value || null
 }

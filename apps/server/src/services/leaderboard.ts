@@ -34,7 +34,7 @@ export interface RankInfo {
 }
 
 /** 每个用户在这个竞技场（句子）里的最高分（派生表） */
-function bestPerUser(articleId: number) {
+function bestPerUser(articleId: string) {
   return db
     .select({
       userId: submissions.userId,
@@ -48,7 +48,7 @@ function bestPerUser(articleId: number) {
 }
 
 /** 我在这个竞技场里的最高分 */
-export async function getMyBest(articleId: number, userId: number): Promise<number | null> {
+export async function getMyBest(articleId: string, userId: number): Promise<number | null> {
   const [row] = await db
     .select({ best: sql<number | null>`MAX(${submissions.score})` })
     .from(submissions)
@@ -75,7 +75,7 @@ export async function getMyBest(articleId: number, userId: number): Promise<numb
  * @returns null 表示这是我在该竞技场的第一条记录
  */
 export async function getBestExcluding(
-  articleId: number,
+  articleId: string,
   userId: number,
   excludeSubmissionId: string,
 ): Promise<number | null> {
@@ -93,7 +93,7 @@ export async function getBestExcluding(
   return row?.best === null || row?.best === undefined ? null : Number(row.best)
 }
 
-export async function getRank(articleId: number, userId: number): Promise<RankInfo> {
+export async function getRank(articleId: string, userId: number): Promise<RankInfo> {
   const myBest = await getMyBest(articleId, userId)
   if (myBest === null) return { rank: 0, participantCount: 0, beatenCount: 0, gapToPrev: null }
 
@@ -150,7 +150,7 @@ export interface LeaderboardRow {
  *    这个是**从头往下数**，还没挑战过的人也要能看到前面是谁。
  */
 export async function getTopLeaderboard(
-  articleId: number,
+  articleId: string,
   userId: number,
   limit = 20,
 ): Promise<LeaderboardRow[]> {
@@ -172,7 +172,7 @@ export async function getTopLeaderboard(
 
 /** 榜心：我的上下各两条 */
 export async function getLeaderboardAround(
-  articleId: number,
+  articleId: string,
   userId: number,
   limit = 5,
 ): Promise<LeaderboardRow[]> {
@@ -229,10 +229,10 @@ export interface ArenaStats {
 }
 
 export async function getArenaStatsBatch(
-  articleIds: number[],
+  articleIds: string[],
   userId: number,
-): Promise<Map<number, ArenaStats>> {
-  const out = new Map<number, ArenaStats>()
+): Promise<Map<string, ArenaStats>> {
+  const out = new Map<string, ArenaStats>()
   if (articleIds.length === 0) return out
   for (const id of articleIds) out.set(id, { participantCount: 0, topScore: null, myBest: null, myAttempts: 0 })
 
@@ -260,7 +260,7 @@ export async function getArenaStatsBatch(
   ])
 
   for (const row of totals) {
-    out.set(Number(row.articleId), {
+    out.set(row.articleId, {
       participantCount: Number(row.participants ?? 0),
       topScore: row.top === null ? null : Number(row.top),
       myBest: null,
@@ -268,7 +268,7 @@ export async function getArenaStatsBatch(
     })
   }
   for (const row of mine) {
-    const cur = out.get(Number(row.articleId))
+    const cur = out.get(row.articleId)
     if (!cur) continue
     cur.myBest = row.best === null ? null : Number(row.best)
     cur.myAttempts = Number(row.attempts ?? 0)

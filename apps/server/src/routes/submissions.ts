@@ -17,7 +17,6 @@ import { holdChallengeEnergy, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { describe } from '../services/submission-view'
-import { playbackRefOf } from '../services/recording'
 import { resolveScheduleDate } from '../services/schedule-date'
 import { ensureSchedules } from '../services/schedules'
 import type { Variables } from '../middleware/auth'
@@ -60,17 +59,18 @@ submissionsRoutes.post('/', async (c) => {
   const user = c.get('user')
 
   const body = await c.req.json<{
-    articleId?: number
+    articleId?: string
     audioKey?: string
     audioUrl?: string
     isPublic?: boolean
     scheduleDate?: string
   }>()
-  const articleId = Number(body.articleId)
+  const articleId = body.articleId
   const audioKey = body.audioKey
   const audioUrl = body.audioUrl
-  // ⚠️ 缺省必须是 true（与 DB 默认值一致）—— 别写成 false，那会让「没传」变成「悄悄私有」
-  const isPublic = body.isPublic !== false
+  // ⚠️ 缺省必须是 false（与 DB 默认值一致）—— 公开是用户**自己打开开关**的结果，
+  //    不是默认。没传就是私密，由结果页那个「允许公众收听」开关改成 true。
+  const isPublic = body.isPublic === true
   if (!articleId || !audioKey) {
     return c.json({ ok: false, error: '缺少 articleId 或 audioKey' }, 400)
   }
@@ -261,34 +261,6 @@ submissionsRoutes.get('/:id', async (c) => {
   await runScoring(id)
   const recovered = await describe(userId, id)
   return c.json({ ok: true, data: recovered ?? { submissionId: id, status: 'scoring' as const } })
-})
-
-/**
- * ⭐ 拿这段录音的**可播地址** —— 「我的挑战」列表里那个播放按钮。
- *
- * ⚠️ 为什么单独一个端点、而不是把它塞进列表响应：
- *    「这段音频还在不在」要问一次对象存储，而且老记录可能还要转一次码；
- *    几十条一次性全问 = 让「打开列表」变成一次批量探测 + 批量转码。
- *    播放是用户的动作，就按需做（见 services/recording.ts）。
- *
- * ⚠️ 归属校验与 GET /:id 完全一致：不属于本人一律当作不存在。
- *    这是隐私边界 —— 用户录音不是公开内容，只有本人能听。
- */
-submissionsRoutes.get('/:id/audio', async (c) => {
-  const userId = c.get('userId')
-  const id = c.req.param('id')
-
-  const [row] = await db
-    .select({ userId: submissions.userId, audioKey: submissions.audioKey })
-    .from(submissions)
-    .where(eq(submissions.id, id))
-    .limit(1)
-  if (!row || row.userId !== userId) {
-    return c.json({ ok: false, error: '提交记录不存在' }, 404)
-  }
-
-  const audio = await playbackRefOf(id, row.audioKey)
-  return c.json({ ok: true, data: { audio } })
 })
 
 /**

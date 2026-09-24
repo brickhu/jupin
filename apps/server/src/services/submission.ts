@@ -38,7 +38,7 @@ export async function challengeStats(
  * 取该用户在该文章的下一个序列号（从 1 开始）。
  * ⚠️ 并发提交可能撞号，由 uniqueIndex(userId, articleId, seq) 兜底。
  */
-export async function nextSeq(userId: number, articleId: number): Promise<number> {
+export async function nextSeq(userId: number, articleId: string): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(submissions)

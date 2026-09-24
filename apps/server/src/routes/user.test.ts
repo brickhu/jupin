@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { env } from '../env'
-import { normalizeAvatarUrl, normalizeNickname } from './user'
+import { normalizeAge, normalizeAvatarUrl, normalizeBio, normalizeGender, normalizeNickname } from './user'
 
 /**
  * ⚠️ 这两个函数是**用户资料的唯一关卡**，而且两者的失败方式都很难发现：
@@ -74,5 +74,69 @@ describe('normalizeAvatarUrl —— 只认本环境云存储的头像', () => {
     withStorage('dev-abc', 'bucket-1')
     expect(normalizeAvatarUrl(undefined)).toBe(null)
     expect(normalizeAvatarUrl('   ')).toBe(null)
+  })
+})
+
+describe('normalizeGender —— 只认 male / female', () => {
+  it('合法值原样收下', () => {
+    expect(normalizeGender('male')).toBe('male')
+    expect(normalizeGender('female')).toBe('female')
+  })
+
+  it('⭐ 不做翻译：男 / M / 1 一律 null（不替用户改数据）', () => {
+    expect(normalizeGender('男')).toBe(null)
+    expect(normalizeGender('M')).toBe(null)
+    expect(normalizeGender(1)).toBe(null)
+  })
+
+  it('空 / 未填 → null', () => {
+    expect(normalizeGender(undefined)).toBe(null)
+    expect(normalizeGender(null)).toBe(null)
+    expect(normalizeGender('')).toBe(null)
+  })
+})
+
+describe('normalizeAge —— 整数、6–120', () => {
+  it('合法整数原样收下（数字或数字字符串）', () => {
+    expect(normalizeAge(28)).toBe(28)
+    expect(normalizeAge('28')).toBe(28)
+    expect(normalizeAge(6)).toBe(6)
+    expect(normalizeAge(120)).toBe(120)
+  })
+
+  it('⭐ 越界 / 小数 / 非数字 → null', () => {
+    expect(normalizeAge(5)).toBe(null)
+    expect(normalizeAge(121)).toBe(null)
+    expect(normalizeAge(28.5)).toBe(null)
+    expect(normalizeAge('abc')).toBe(null)
+    expect(normalizeAge(99999)).toBe(null)
+  })
+
+  it('空 → null（清空年龄）', () => {
+    expect(normalizeAge(null)).toBe(null)
+    expect(normalizeAge(undefined)).toBe(null)
+    expect(normalizeAge('')).toBe(null)
+    expect(normalizeAge('   ')).toBe(null)
+  })
+})
+
+describe('normalizeBio —— 剥控制字符 / 折叠空白 / 限 200', () => {
+  it('折叠空白、去掉首尾空格', () => {
+    expect(normalizeBio('  喜欢  读   句子 ')).toBe('喜欢 读 句子')
+  })
+
+  it('剥掉换行 / 控制字符 / 零宽字符', () => {
+    expect(normalizeBio('第一行\n第二行\u200b')).toBe('第一行第二行')
+  })
+
+  it('超长截到 200', () => {
+    expect(normalizeBio('读'.repeat(260))).toHaveLength(200)
+  })
+
+  it('空 / 非字符串 → null', () => {
+    expect(normalizeBio('')).toBe(null)
+    expect(normalizeBio('   ')).toBe(null)
+    expect(normalizeBio(undefined)).toBe(null)
+    expect(normalizeBio(123)).toBe(null)
   })
 })

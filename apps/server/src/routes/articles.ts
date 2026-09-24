@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import { desc, eq } from 'drizzle-orm'
-import { normalizeDifficulty, normalizeTags } from '@jushuo/shared'
+import { normalizeDifficulty, normalizeTags, plainWordsOf } from '@jushuo/shared'
 import type { ArticleListItem } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
-import { loadArticleContent } from '../services/content'
+import { contentPathOf, loadArticleContent } from '../services/content'
 import { audioRefOf, fileIdOf, wordAudioKeyOf } from '../services/standard-audio'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
@@ -26,8 +26,8 @@ articlesRoutes.get('/', async (c) => {
   const rows = await db
     .select({
       id: articles.id,
-      contentJson: articles.contentJson,
       standardAudio: articles.standardAudio,
+      theme: articles.theme,
     })
     .from(articles)
     .where(eq(articles.isActive, true))
@@ -36,7 +36,7 @@ articlesRoutes.get('/', async (c) => {
   const items = (
     await Promise.all(
       rows.map(async (a): Promise<ArticleListItem | null> => {
-        const content = await loadArticleContent(a.contentJson)
+        const content = await loadArticleContent(a.id)
         // ⚠️ 正文读不到就**丢掉这一条**（而不是给一张空卡片）：见 services/content.ts
         if (!content) return null
         return {
@@ -46,6 +46,7 @@ articlesRoutes.get('/', async (c) => {
           difficulty: normalizeDifficulty(content.difficulty),
           tags: normalizeTags(content.tags),
           audio: await scheduleAudioOf({ id: a.id, standardAudio: a.standardAudio }),
+          theme: a.theme,
         }
       }),
     )
@@ -63,13 +64,14 @@ articlesRoutes.get('/', async (c) => {
  *    等流水线把 contentJson 变成 CDN 绝对地址后，客户端可以直连、这条路由退化成透传甚至下线。
  */
 articlesRoutes.get('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
+  const id = c.req.param('id')
   const [article] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
   if (!article) return c.json({ ok: false, error: '文章不存在' }, 404)
 
-  const content = await loadArticleContent(article.contentJson)
+  // ⚠️ 正文路径由 id 推导（contentPathOf），库里不再存路径
+  const content = await loadArticleContent(article.id)
   if (!content) {
-    return c.json({ ok: false, error: `正文加载失败：${article.contentJson}` }, 404)
+    return c.json({ ok: false, error: `正文加载失败：${contentPathOf(article.id)}` }, 404)
   }
 
   /**
@@ -78,7 +80,7 @@ articlesRoutes.get('/:id', async (c) => {
    *    写死在任何静态文件里都会让同一份内容指向某一个环境的桶。
    *
    * ⚠️ 每个词的 fileID 按下标拼，**下标必须与客户端切词一致**
-   *    （客户端是 text.split(/\s+/).filter(Boolean)，生成脚本用的是同一条规则）。
+   *    （客户端、流水线、这里**共用** shared 的 plainWordsOf —— 不再各抄一份规则）。
    *
    * ⭐ 两种形态二选一，取决于这个环境有没有对象存储：
    *    · 云托管：音频在对象存储里 → 给 fileID，客户端用 getTempFileURL 换地址
@@ -90,11 +92,14 @@ articlesRoutes.get('/:id', async (c) => {
    *    此时必须老实返回 null，让客户端**隐藏播放入口**。
    *    否则会渲染一个能点、点了报 404 的喇叭 —— 那比没有按钮更难排查。
    */
-  const words = content.text.split(/\s+/).filter(Boolean)
+  // ⚠️ 切词走唯一实现（plainWordsOf）：下标必须与客户端点词的下标一致
+  const words = plainWordsOf(content.text)
   const ref = audioRefOf(article)
-  const audio = !ref
-    ? { full: null, words: [], kind: 'cloud' as const }
-    : {
+  // ⚠️ 没有标准音就是 **null**，不是 { full: null }：客户端据此隐藏播放入口。
+  //    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定 ——
+  //    同一个事实（「这段音频存不存在」）在三个接口里必须是同一种表达。
+  const audio = ref
+    ? {
         ...ref,
         words: words.map((_, i) =>
           ref.kind === 'cloud'
@@ -102,6 +107,8 @@ articlesRoutes.get('/:id', async (c) => {
             : `/media/articles/${id}/w${i}.mp3`,
         ),
       }
+    : null
 
-  return c.json({ ok: true, data: { ...content, audio } })
+  // ⚠️ 返回体的类型是 shared 的 ArticleDetail（= ArticleContent + audio + theme）
+  return c.json({ ok: true, data: { ...content, audio, theme: article.theme } })
 })
