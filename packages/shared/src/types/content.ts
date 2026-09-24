@@ -32,9 +32,9 @@ export interface AudioRef {
  *
  * ⚠️⚠️ 不是阅读难度，两者的区别与依据写在 difficulty.ts（那里有实测例子）。
  * ⚠️ 值就是**档位数字**：0–3 单调、可排序、可直接落库按档位筛。
- *    中文只在 UI 与运营 CLI 上出现（DIFFICULTY_LABEL），别写进数据里。
+ *    中文只在 UI 与运营 CLI 上出现（LEVEL_LABEL），别写进数据里。
  */
-export type ArticleDifficulty = 0 | 1 | 2 | 3
+export type ArticleLevel = 0 | 1 | 2 | 3
 
 /**
  * ⭐ 句子的**视觉主题** —— 卡片配图与配色：{ image, background, foreground }。
@@ -70,24 +70,48 @@ export interface ArticleContent {
   words: ArticleWord[]
 
   /**
-   * ⭐ **朗读难度**（见 difficulty.ts）。
+   * ⭐ **发音难度** —— 中文母语者读出来有多难念：易错音（/θ/ /ð/ /v/、r–l）、
+   *    词尾辅音丛、音素反复切换、必须连读才自然的地方。
    *
-   * ⚠️ 可选，**这不是省事、是必须的**：正文在静态资源 / CDN 上，
-   *    可能比代码旧 —— 老 JSON 里没有这个字段。
-   *    所以端侧与服务端一律 fail-soft，并且**不许**在这里补一个默认档位：
-   *    编出来的难度比没有难度更糟。
+   * ⚠️⚠️ 与 vocabLevel **是两条独立的轴，刻意不合成一个加权分**（2026-09 决定）。
+   *    反例就是它们各自的地盘：
+   *      · "She sells seashells by the seashore…" → 词汇**初级** / 发音**专家**
+   *      · "The only thing we have to fear is fear itself, nameless, unreasoning,
+   *         unjustified terror which paralyzes needed efforts." → 词汇**中级** / 发音**专家**
+   *    任何单轴公式都必然牺牲其中一个。
    *
-   * ⚠️ 目前**不对外展示**（卡片上不放难度徽标）—— 字段先预留，
-   *    服务端已经在卡片/详情接口里透出，要显示时端侧直接用，不用再动后端。
+   * ⚠️ 可选，**这不是省事、是必须的**：正文在静态资源 / CDN 上，可能比代码旧 ——
+   *    老 JSON 里没有这个字段。所以一律 fail-soft，并且**不许**补一个默认档位。
    */
-  difficulty?: ArticleDifficulty
+  pronLevel?: ArticleLevel
+  /**
+   * ⭐ **词汇难度** —— 小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / GRE 那套口径，
+   *    **含句式复杂度**（长句、从句会拉高它）。
+   *
+   * ⚠️ 与 pronLevel 独立、理由同上。判据与锚点样本写在
+   *    tools/pipeline/src/lib/article-meta.ts 的 SYSTEM 里（代码是真相）。
+   */
+  vocabLevel?: ArticleLevel
+  /**
+   * ⭐ **给用户看的一句话** —— 固定格式：以「相当于<级别>水平」开头，
+   *    随后是发音难点，`；` 后是词汇与句式点评。例：
+   *
+   *    「相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；
+   *      词都比较常见，只有 sophistication 稍超纲。」
+   *
+   * ⚠️ 它是**产品文案**（detail 接口返回给客户端），不是给审核的术语堆：
+   *    说人话、可以带音标、**不用语法行话**、不贬低用户、必须点到具体的词或音。
+   * ⚠️ 与两个档位**同源**：同一次 LLM 调用产出，一起写、一起重跑 ——
+   *    所以它进这份 JSON（真相），而不是单开一列。
+   */
+  reason?: string
   /**
    * ⭐ 主题 / 朗读特征标签（自由文本，顺序即重要程度）。
    *
    * ⚠️ 与难度一样是**可选**的，理由同上。
    * ⚠️ 读到的值不必假设干净：入库前一律走 normalizeTags（去空 / 去重 / 限个数）。
-   * ⚠️ tags **会**被物化进 article_tags（和 difficulty 一起，见 services/article-index.ts）：
-   *    那份索引只为「按标签/难度筛选」能走 SQL 而存在，**真相永远是这份 JSON**。
+   * ⚠️ tags **会**被物化进 article_tags（和两个档位一起，见 services/article-index.ts）：
+   *    那份索引只为「按标签/档位筛选」能走 SQL 而存在，**真相永远是这份 JSON**。
    *    规矩只有一条：索引只由 syncArticleIndex 写，随时可从 JSON 全量重建。
    * ⚠️ 顺序有意义（第一个最重要），而 article_tags 是**集合**语义、丢了顺序 ——
    *    要展示顺序就读这份 JSON（详情接口就是这么做的）。

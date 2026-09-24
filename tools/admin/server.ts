@@ -42,7 +42,8 @@ import { themeFromHash } from '../../packages/shared/src/theme'
 import { ARTICLE_ID_LENGTH } from '../../packages/shared/src/constants'
 import { contentPathOf } from '../../packages/shared/src/content-path'
 import { plainWordsOf } from '../../packages/shared/src/tokenize'
-import { DIFFICULTY_LABEL, DIFFICULTY_ORDER, normalizeDifficulty, normalizeTags } from '../../packages/shared/src/difficulty'
+import { LEVEL_LABEL, LEVEL_ORDER, normalizeLevel } from '../../packages/shared/src/level'
+import { normalizeTags } from '../../packages/shared/src/tags'
 import { addDays, isValidDay, today } from '../../packages/shared/src/day'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -380,13 +381,13 @@ async function serveFile(req: IncomingMessage, res: ServerResponse, abs: string)
  * ================================================================ */
 
 /**
- * 难度 → 中文档位。
- * ⚠️ 库里的 difficulty 是裸 int（可能是历史脏值 / null），必须先过 normalizeDifficulty ——
- *    直接拿它索引 DIFFICULTY_LABEL 会得到 undefined，页面上就是一片空白档位。
+ * 档位 → 中文标签。**两条轴共用**（标签一样，刻度一样）。
+ * ⚠️ 库里的两列都是裸 int（可能是历史脏值 / null），必须先过 normalizeLevel ——
+ *    直接拿它索引 LEVEL_LABEL 会得到 undefined，页面上就是一片空白档位。
  */
-function difficultyLabelOf(v: unknown): string | null {
-  const d = normalizeDifficulty(v)
-  return d === null ? null : DIFFICULTY_LABEL[d]
+function levelLabelOf(v: unknown): string | null {
+  const d = normalizeLevel(v)
+  return d === null ? null : LEVEL_LABEL[d]
 }
 
 async function contentOf(id: string): Promise<Record<string, unknown> | null> {
@@ -417,8 +418,11 @@ async function listArticles(mode: Mode, q: string, limit: number) {
     out.push({
       id: r.id,
       isActive: r.isActive,
-      difficulty: r.difficulty ?? null,
-      difficultyLabel: difficultyLabelOf(r.difficulty),
+      // ⭐ 两条轴分别给值 + 分别给中文标签（不合成、不互相兜底）
+      pronLevel: r.pronLevel ?? null,
+      pronLabel: levelLabelOf(r.pronLevel),
+      vocabLevel: r.vocabLevel ?? null,
+      vocabLabel: levelLabelOf(r.vocabLevel),
       /** ⭐ 发布时间（草稿为 null）—— 列表里替代原来的标签列展示 */
       publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
       standardAudio: r.standardAudio ?? null,
@@ -544,7 +548,12 @@ async function upsertArticle(
     id: string
     text: string
     translation: string
-    difficulty: number
+    /** 发音难度（0–3） */
+    pronLevel: number
+    /** 词汇难度（0–3） */
+    vocabLevel: number
+    /** 给用户看的一句话（格式见 article-meta.ts 的 SYSTEM）；可手改 */
+    reason: string
     tags: string[]
     /**
      * true = 发布，false = 下架，**undefined = 保持现状**。
@@ -556,12 +565,13 @@ async function upsertArticle(
     words?: ArticleWord[]
   },
 ): Promise<boolean> {
-  // ⚠️ 不传 words：那是 pipeline 的产物，这里只负责译文/难度/标签这几个字段
+  // ⚠️ 不传 words：那是 pipeline 的产物，这里只负责译文/两个档位/标签这几个字段
   await writeContentFile(input.id, {
     id: input.id,
     text: input.text,
     translation: input.translation,
-    difficulty: input.difficulty,
+    pronLevel: input.pronLevel,
+    vocabLevel: input.vocabLevel,
     tags: input.tags,
     // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的时间戳」
     ...(input.words ? { words: input.words } : {}),
@@ -586,7 +596,9 @@ async function upsertArticle(
     isActive: publish,
     theme: themeFromHash(input.id),
     standardAudio: audioKeyOf(input.id),
-    difficulty: input.difficulty,
+    // ⚠️ 两列都是**派生索引**（真相在正文 JSON）—— 这里写，reindex 也会重写
+    pronLevel: input.pronLevel,
+    vocabLevel: input.vocabLevel,
     /**
      * ⭐ 发布时间只在**草稿 → 已发布**那一刻写，而且**只由这一处写**。
      *
@@ -626,14 +638,21 @@ async function runGenerate(job: Job, mode: Mode, text: string): Promise<void> {
   const id = articleIdOf(text)
   job.log.push('id = ' + id.slice(0, 16) + '…')
 
-  job.step = 'LLM：译文 / 难度 / 标签'
+  job.step = 'LLM：译文 / 两个难度 / 标签'
   const meta = await generateArticleMeta(text)
+  const lb = (v: typeof meta.pronLevel) => (v === null ? '—' : LEVEL_LABEL[v])
   job.log.push(
-    '难度 ' + (meta.difficulty === null ? '—' : DIFFICULTY_LABEL[meta.difficulty]) +
+    '发音 ' + lb(meta.pronLevel) + '｜词汇 ' + lb(meta.vocabLevel) +
       '｜标签 ' + (meta.tags.join(' / ') || '—'),
-    '理由：' + (meta.reason || '—'),
+    '这句话难在哪：' + (meta.reason || '—'),
   )
-  if (meta.difficulty === null) throw new Error('模型没给出可用的难度档位（0–3），这条先别发')
+  /**
+   * ⚠️ 两条轴**都要**，缺一个就不发：正文 JSON 里两个档位是并列的事实，
+   *    只写一个会让「另一条轴没评过」和「评出来是 null」分不清。
+   */
+  if (meta.pronLevel === null || meta.vocabLevel === null) {
+    throw new Error('模型没给全两个难度档位（发音 / 词汇都要 0–3），这条先别发')
+  }
 
   /**
    * ⭐ 正文必须**在跑音频之前**落盘。
@@ -656,7 +675,10 @@ async function runGenerate(job: Job, mode: Mode, text: string): Promise<void> {
       id,
       text,
       translation: meta.translation,
-      difficulty: meta.difficulty,
+      pronLevel: meta.pronLevel,
+      vocabLevel: meta.vocabLevel,
+      // ⭐ 给用户看的一句话 —— 与两个档位同源，一起写进正文
+      reason: meta.reason,
       tags: meta.tags,
       words: [],
     })
@@ -678,7 +700,9 @@ async function runGenerate(job: Job, mode: Mode, text: string): Promise<void> {
     id,
     text,
     translation: meta.translation,
-    difficulty: meta.difficulty,
+    pronLevel: meta.pronLevel,
+    vocabLevel: meta.vocabLevel,
+    reason: meta.reason,
     tags: meta.tags,
     publish: false,
   })
@@ -689,8 +713,10 @@ async function runGenerate(job: Job, mode: Mode, text: string): Promise<void> {
     id,
     text,
     translation: meta.translation,
-    difficulty: meta.difficulty,
-    difficultyLabel: DIFFICULTY_LABEL[meta.difficulty],
+    pronLevel: meta.pronLevel,
+    pronLabel: meta.pronLevel === null ? null : LEVEL_LABEL[meta.pronLevel],
+    vocabLevel: meta.vocabLevel,
+    vocabLabel: meta.vocabLevel === null ? null : LEVEL_LABEL[meta.vocabLevel],
     tags: meta.tags,
     reason: meta.reason,
     wordCount: audio?.wordCount ?? 0,
@@ -847,7 +873,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const q = url.searchParams.get('q') ?? ''
     const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 500)
     const list = await listArticles(S.env, q, limit)
-    return ok(res, { env: S.env, list, difficultyLabels: DIFFICULTY_LABEL, difficultyOrder: DIFFICULTY_ORDER })
+    // ⚠️ 标签与顺序**两条轴共用**（同一套刻度），所以只给一份
+    return ok(res, { env: S.env, list, levelLabels: LEVEL_LABEL, levelOrder: LEVEL_ORDER })
   }
 
   // ---- 生成（异步任务）----
@@ -883,7 +910,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return ok(res, {
       id: row.id,
       isActive: row.isActive,
-      difficulty: row.difficulty ?? null,
+      // ⭐ 两条轴分别给值 + 中文标签（库列是派生索引，正文 JSON 才是真相）
+      pronLevel: row.pronLevel ?? null,
+      pronLabel: levelLabelOf(row.pronLevel),
+      vocabLevel: row.vocabLevel ?? null,
+      vocabLabel: levelLabelOf(row.vocabLevel),
+      /**
+       * ⭐ 给用户看的那句话 —— **真相在正文 JSON**（它不进库，见 types/content.ts）。
+       *    读出来给运营看：运营就是照它审的（"这句话难在哪"读者能不能看懂）。
+       */
+      reason: typeof c?.reason === 'string' ? c.reason : null,
       /** ⭐ 详情页也要显示发布时间（列表里有，详情里没有会很奇怪） */
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       /**
@@ -917,8 +953,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(res, '这条句子的正文不在本机仓库里（content/articles/' + id + '.json 不存在），改不了')
     }
     const translation = String(b.translation ?? c.translation ?? '').trim()
-    const difficulty = normalizeDifficulty(b.difficulty ?? c.difficulty)
-    if (difficulty === null) return fail(res, 'difficulty 必须是 0–3 之一')
+    // ⚠️ 两条轴**各读各的**：不传就沿用正文里的旧值，绝不拿一条兜另一条
+    const pronLevel = normalizeLevel(b.pronLevel ?? c.pronLevel)
+    if (pronLevel === null) return fail(res, 'pronLevel（发音难度）必须是 0–3 之一')
+    const vocabLevel = normalizeLevel(b.vocabLevel ?? c.vocabLevel)
+    if (vocabLevel === null) return fail(res, 'vocabLevel（词汇难度）必须是 0–3 之一')
+    /**
+     * ⭐ 给用户看的那句话：**可以手改**（它要过运营的眼）。
+     * ⚠️ 不传就沿用正文里的旧值 —— 保存译文不该把这句话弄丢。
+     */
+    const reason = typeof b.reason === 'string' ? b.reason.trim() : (typeof c.reason === 'string' ? c.reason : '')
     const tags = normalizeTags(b.tags ?? c.tags)
 
     /**
@@ -946,7 +990,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       id,
       text: String(c.text ?? ''),
       translation,
-      difficulty,
+      pronLevel,
+      vocabLevel,
+      reason,
       tags,
       publish: b.publish === undefined ? undefined : b.publish === true,
       words: words,
@@ -954,7 +1000,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return ok(res, {
       id,
       translation,
-      difficulty,
+      pronLevel,
+      vocabLevel,
+      reason,
       tags,
       /** ⭐ 保存后的发布状态 —— 唯一真相是 is_active（content_status 已删） */
       published: publish,

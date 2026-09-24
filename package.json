@@ -32,6 +32,7 @@
     "seed:arena": "node_modules/.bin/tsx apps/server/src/db/seed-dev-arena.ts",
     "pipeline": "pnpm --filter @jushuo/pipeline start",
     "content:audio": "tsx tools/build-content-audio.ts",
+    "content:regrade": "tsx tools/regrade-content.ts",
     "dev:unlock": "node tools/dev-unlock.mjs",
     "dev:unlock:status": "node tools/dev-unlock.mjs --status",
     "db:info": "node tools/cloud-db-info.mjs",

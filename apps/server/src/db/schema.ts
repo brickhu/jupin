@@ -14,13 +14,20 @@ import { ARTICLE_ID_LENGTH, SUBMISSION_ID_LENGTH, type ArticleTheme } from '@jus
  *    库里只留「能被索引和排序」的字段（排期 / 竞技统计）。
  *
  * ⚠️ 分类已经**整体下线**；难度作为**正文属性**重新加回来了
- *    （写在 content/articles/*.json 里，见 shared/difficulty.ts）。
+ *    （写在 content/articles/*.json 里，见 shared/level.ts）。
  *
- * ⭐ 难度与标签**另有一份派生索引**：articles.difficulty + article_tags。
- *    · **真相永远是正文 JSON**；这两处只是「能被 SQL 筛选 / 排序」用的副本；
+ * ⭐ **难度是两条独立的轴**（2026-09 决定）：发音难度 pronLevel + 词汇难度 vocabLevel。
+ *    刻意不合成一个加权分 —— 反例各占一边：
+ *      · "She sells seashells…" 词汇初级 / 发音专家
+ *      · "The only thing we have to fear … unreasoning … paralyzes …" 词汇中级 / 发音专家
+ *
+ * ⭐ 两个档位与标签**另有一份派生索引**：articles.pron_level + articles.vocab_level + article_tags。
+ *    · **真相永远是正文 JSON**；这三处只是「能被 SQL 筛选 / 排序」用的副本；
  *    · 由 services/article-index.ts 的 syncArticleIndex 从正文物化（幂等）；
  *    · 内容改了要重跑（CLI 的 reindex；导入 / 新增句会自动跑）。
- *    ⚠️ 不要手写这两处 —— 与正文不一致时，以正文为准重跑 reindex。
+ *    ⚠️ 不要手写这三处 —— 与正文不一致时，以正文为准重跑 reindex。
+ *
+ * 📌 注释里说的「正文 JSON」= content/articles/<id>.json；「档位」= 0 初级 / 1 中级 / 2 高级 / 3 专家。
  *    历史迁移 0003 / 0004 是当年分类那两列的删除过程。
  *
  * ⚠️ MySQL 的 DATETIME 不存时区 —— 全链路按 UTC 读写（见 db/index.ts 的 timezone 设置）。
@@ -177,15 +184,22 @@ export const articles = mysqlTable('articles', {
    */
   theme: json('theme').$type<ArticleTheme>(),
   /**
-   * ⭐ **朗读难度**的派生索引（0 初级 / 1 中级 / 2 高级 / 3 专家）。
+   * ⭐ **发音难度**的派生索引（0 初级 / 1 中级 / 2 高级 / 3 专家）。
    *
-   * ⚠️ 真相在正文 JSON 的 difficulty 里（见 shared/difficulty.ts）——
-   *    这一列只是让「按难度筛选 / 排序」能走 SQL，**不是第二份真相**：
+   * ⚠️ 真相在正文 JSON 的 `pronLevel` 里（见 shared/level.ts）——
+   *    这一列只是让「按档位筛选 / 排序」能走 SQL，**不是第二份真相**：
    *    正文改了要重跑 syncArticleIndex（CLI: reindex），它是幂等的。
-   * ⚠️ 可空：正文没写难度（或还没评过级）就是 NULL ——
-   *    **绝不填默认档位**（见 normalizeDifficulty 的说明）。
+   * ⚠️ 可空：正文没写（或还没评过级）就是 NULL ——
+   *    **绝不填默认档位**（见 normalizeLevel 的说明）。
    */
-  difficulty: int('difficulty'),
+  pronLevel: int('pron_level'),
+  /**
+   * ⭐ **词汇难度**的派生索引 —— 与 pronLevel 同一套 0–3 刻度，但**是另一条轴**。
+   *
+   * ⚠️ 别把两列当成一个档位用（比如取 max 当「总难度」）：它们是独立的事实，
+   *    合并使用正是 2026-09 决定要避免的（见本文件顶部）。
+   */
+  vocabLevel: int('vocab_level'),
   /**
    * ⭐⭐ **发布状态 —— 全仓库唯一的那个真相**（列名 is_active，语义是「已发布 / 在线」）。
    *
@@ -295,7 +309,7 @@ export const schedules = mysqlTable('schedules', {
 /**
  * 标签关联表 —— 独立成表才能**按单个标签索引**（这是它不做成 JSON 列的唯一理由）。
  *
- * ⚠️ 与 articles.difficulty 同一条规矩：真相在正文 JSON 的 tags 里，
+ * ⚠️ 与 articles.pron_level / vocab_level 同一条规矩：真相在正文 JSON 的 tags 里，
  *    这张表是 syncArticleIndex 物化出来的**派生索引**，可随时重建。
  * ⚠️ 它丢掉了标签顺序（JSON 里第一个最重要）：这里只有集合语义。
  *    要展示顺序就读正文 —— 接口目前正是这么做的（见 routes/schedules.ts）。

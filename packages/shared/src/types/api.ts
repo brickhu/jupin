@@ -1,5 +1,5 @@
 import type { ScoreParts } from '../scoring'
-import type { ArticleContent, ArticleDifficulty, ArticleTheme, AudioRef } from './content'
+import type { ArticleLevel, ArticleTheme, ArticleWord, AudioRef } from './content'
 
 /**
  * 引擎输出的词级结果。
@@ -410,7 +410,10 @@ export interface ArticleListItem {
   id: string
   text: string
   translation: string
-  difficulty: ArticleDifficulty | null
+  /** ⭐ 发音难度 —— 中文母语者读出来有多难念（易错音 / 辅音丛 / 必须连读的地方） */
+  pronLevel: ArticleLevel | null
+  /** ⭐ 词汇难度 —— 小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度 */
+  vocabLevel: ArticleLevel | null
   tags: string[]
   /** 标准音（可播引用 + 时长）；这一句没有标准音时是 null ⇒ 端侧不画播放入口 */
   audio: ScheduleAudio | null
@@ -427,12 +430,24 @@ export interface ArticleListItem {
  *    对象存储地址的代价）。
  */
 export interface ArticleDetailAudio extends AudioRef {
-  /** 逐词音频地址；下标与 plainWordsOf(text) 一一对应 */
-  words: string[]
+  /**
+   * 逐词音频地址；**下标与 plainWordsOf(text) 一一对应**。
+   *
+   * ⚠️ 元素可能是 **null** —— 服务端拼不出这个 fileID 时（环境缺
+   *    WX_CLOUD_ENV_ID / COS_BUCKET，见 standard-audio.ts 的 fileIdOf）就是 null。
+   *    **不能把 null 挤掉**：一挤下标就整体错位，客户端点第 i 个词会播到第 i+1 个的音。
+   *    ⇒ 客户端遇到 null 应当**跳过播放**（那个词没有音频），而不是播一个空地址。
+   */
+  words: (string | null)[]
 }
 
 /**
  * ⭐ 句库**详情**（全量）—— GET /api/articles/:id，阅读页要的那一份。
+ *
+ * ⚠️⚠️ **这里就是「公不公开」的那一处定义** —— 列在这里的字段才会下发给客户端。
+ *    以前这个接口写的是 `{ ...content }`（展开正文 JSON），那等于
+ *    「正文里有什么就漏什么」，**不是决定而是事故**。
+ *    ⇒ 以后往正文 JSON 加字段时，必须回到这里想一遍：它该不该给客户端。
  *
  * ⚠️ 它是「**静态 JSON + 两个运行期字段**」的合成体：
  *    · 其余字段来自 `content/articles/<id>.json`（见 ArticleContent）；
@@ -440,8 +455,23 @@ export interface ArticleDetailAudio extends AudioRef {
  *      fileID 里带环境 ID 与桶名，绝不能写进仓库里的那份 JSON。
  * ⚠️ 没有标准音时 audio 是 **null**（不是给一个 full=null 的壳）——
  *    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定。
+ * ⚠️ 两个档位与 reason 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
  */
-export interface ArticleDetail extends ArticleContent {
+export interface ArticleDetail {
+  id: string
+  text: string
+  translation: string
+  words: ArticleWord[]
+  /** ⭐ 发音难度（中文母语者读出来有多难念） */
+  pronLevel: ArticleLevel | null
+  /** ⭐ 词汇难度（小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度） */
+  vocabLevel: ArticleLevel | null
+  /**
+   * ⭐ **给用户看的一句话** —— 以「相当于<级别>水平」开头，说清这句难在哪
+   *    （完整格式与写法要求见 ArticleContent.reason）。
+   */
+  reason: string | null
+  tags: string[]
   audio: ArticleDetailAudio | null
   theme: ArticleTheme | null
 }
@@ -494,8 +524,10 @@ export interface ScheduleEntry {
   /** 句子原文 */
   text: string
   translation: string
-  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
-  difficulty: ArticleDifficulty | null
+  /** ⭐ 发音难度 —— 中文母语者读出来有多难念（易错音 / 辅音丛 / 必须连读的地方） */
+  pronLevel: ArticleLevel | null
+  /** ⭐ 词汇难度 —— 小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度 */
+  vocabLevel: ArticleLevel | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]
   /**
@@ -543,8 +575,10 @@ export interface ScheduleDetail {
   submissionDate: string
   text: string
   translation: string
-  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
-  difficulty: ArticleDifficulty | null
+  /** ⭐ 发音难度 —— 中文母语者读出来有多难念（易错音 / 辅音丛 / 必须连读的地方） */
+  pronLevel: ArticleLevel | null
+  /** ⭐ 词汇难度 —— 小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度 */
+  vocabLevel: ArticleLevel | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]
   isScheduled: boolean
@@ -573,8 +607,10 @@ export interface ArenaDetail {
   articleId: string
   text: string
   translation: string
-  /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
-  difficulty: ArticleDifficulty | null
+  /** ⭐ 发音难度 —— 中文母语者读出来有多难念（易错音 / 辅音丛 / 必须连读的地方） */
+  pronLevel: ArticleLevel | null
+  /** ⭐ 词汇难度 —— 小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度 */
+  vocabLevel: ArticleLevel | null
   /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
   tags: string[]
   /** ⭐ 这次挑战该记到哪一天 —— 按句子寻址时是服务端的**今天** */

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { normalizeDifficulty, normalizeTags, today } from '@jushuo/shared'
+import { normalizeLevel, normalizeTags, today } from '@jushuo/shared'
 import type { ArenaDetail } from '@jushuo/shared'
 
 import { db } from '../db'
@@ -51,8 +51,9 @@ arenasRoutes.get('/:articleId', async (c) => {
     articleId,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
-    // ⭐ 难度 / 标签是正文的属性；内容里没写 ⇒ null / []（不补默认档位）
-    difficulty: normalizeDifficulty(content?.difficulty),
+    // ⭐ 两个档位 / 标签都是正文的属性；内容里没写 ⇒ null / []（不补默认档位）
+    pronLevel: normalizeLevel(content?.pronLevel),
+    vocabLevel: normalizeLevel(content?.vocabLevel),
     tags: normalizeTags(content?.tags),
     // ⭐ 按句子进来的挑战算**今天**（用户在读，就是今天这一句）
     submissionDate,

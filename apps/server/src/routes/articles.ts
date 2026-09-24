@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { desc, eq } from 'drizzle-orm'
-import { normalizeDifficulty, normalizeTags, plainWordsOf } from '@jushuo/shared'
-import type { ArticleListItem } from '@jushuo/shared'
+import { normalizeLevel, normalizeTags, plainWordsOf } from '@jushuo/shared'
+import type { ArticleDetail, ArticleListItem } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { contentPathOf, loadArticleContent } from '../services/content'
@@ -43,7 +43,9 @@ articlesRoutes.get('/', async (c) => {
           id: a.id,
           text: content.text,
           translation: content.translation,
-          difficulty: normalizeDifficulty(content.difficulty),
+          // ⭐ 两个档位各归各的（两条独立的轴，不合成分）
+          pronLevel: normalizeLevel(content.pronLevel),
+          vocabLevel: normalizeLevel(content.vocabLevel),
           tags: normalizeTags(content.tags),
           audio: await scheduleAudioOf({ id: a.id, standardAudio: a.standardAudio }),
           theme: a.theme,
@@ -109,6 +111,26 @@ articlesRoutes.get('/:id', async (c) => {
       }
     : null
 
-  // ⚠️ 返回体的类型是 shared 的 ArticleDetail（= ArticleContent + audio + theme）
-  return c.json({ ok: true, data: { ...content, audio, theme: article.theme } })
+  /**
+   * ⚠️⚠️ **逐个字段列出**，不再 `{ ...content }`。
+   *
+   *    展开正文 JSON 等于「正文里有什么就漏什么」—— 加一个内部字段（比如将来的
+   *    审核备注、流水线指纹）就会**静默**发给所有客户端。公不公开必须是一个决定：
+   *    决定写在 shared 的 ArticleDetail 里，这里照着它构造。
+   */
+  const detail: ArticleDetail = {
+    id: content.id,
+    text: content.text,
+    translation: content.translation,
+    words: content.words,
+    // ⭐ 两个档位各归各的；正文里没写（老 JSON）就是 null，不补默认值
+    pronLevel: normalizeLevel(content.pronLevel),
+    vocabLevel: normalizeLevel(content.vocabLevel),
+    // ⭐ 给用户看的一句话（也是正文属性，与两个档位同源）
+    reason: typeof content.reason === 'string' && content.reason.trim() !== '' ? content.reason.trim() : null,
+    tags: normalizeTags(content.tags),
+    audio,
+    theme: article.theme,
+  }
+  return c.json({ ok: true, data: detail })
 })

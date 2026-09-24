@@ -10,7 +10,15 @@
    环境不在这里切：它在**登录页**选定，header 只显示一个标识。 */
 
 const $ = (sel, root) => (root || document).querySelector(sel)
-const DIFF = { 0: "初级", 1: "中级", 2: "高级", 3: "专家" }
+/**
+ * ⭐ 档位 → 中文标签。**前端不硬编码这份映射** —— 服务端随列表下发 levelLabels
+ *    （唯一来源是 shared/level.ts 的 LEVEL_LABEL，见 /api/articles）。
+ *    （这里原来硬编码了一份 DIFF，与 shared 各写一遍 —— 同一事实两个来源。）
+ */
+function levelLabel(v) {
+  if (v === null || v === undefined) return "未定"
+  return (state.levelLabels && state.levelLabels[String(v)]) || "未定"
+}
 const ENV_LABEL = { local: "本机", dev: "dev", prod: "prod" }
 
 const state = {
@@ -279,6 +287,8 @@ async function loadList() {
   try {
     const data = await api("/api/articles?q=" + encodeURIComponent($("#q").value.trim()))
     state.list = data.list
+    // ⭐ 标签映射来自服务端（shared/level.ts）—— 前端不再自己抄一份
+    state.levelLabels = data.levelLabels || {}
     renderList()
   } catch (e) {
     errBox("#list-error", e.message)
@@ -310,7 +320,8 @@ function renderList() {
 
     tr.appendChild(cell(row.text || row.id.slice(0, 12) + "…", "en"))
     tr.appendChild(cell(row.translation || "—", "zh"))
-    tr.appendChild(cell(row.difficultyLabel || "—", "c-diff nowrap"))
+    // ⭐ 两条轴分列显示：发音 / 词汇
+    tr.appendChild(cell(levelLabel(row.pronLevel) + " / " + levelLabel(row.vocabLevel), "c-diff nowrap"))
     tr.appendChild(cell(fmtTime(row.publishedAt), "c-time nowrap"))
 
     const stTd = document.createElement("td")
@@ -503,8 +514,11 @@ function renderDetailValues(d) {
   st.className = "badge " + (live ? "live" : "draft")
   st.textContent = live ? "已发布" : "草稿"
 
-  const diff = pick("difficulty", d.difficulty)
-  $("#dt-difficulty").textContent = diff === null || diff === undefined ? "未定" : DIFF[diff]
+  // ⭐ 两条轴分别显示（编辑中的值优先，见 pick）
+  $("#dt-pron").textContent = levelLabel(pick("pronLevel", d.pronLevel))
+  $("#dt-vocab").textContent = levelLabel(pick("vocabLevel", d.vocabLevel))
+  /** ⭐ 给用户看的那句话 —— 运营就是照它审的（"读者能不能看懂这句难在哪"） */
+  $("#dt-reason").textContent = pick("reason", d.reason) || "—"
   $("#dt-published").textContent = fmtTime(pick("publishedAt", d.publishedAt))
 
   /**
@@ -645,17 +659,27 @@ function openInlineEditor(field) {
     return
   }
 
-  if (field === "difficulty") {
-    const cur = pick("difficulty", d.difficulty)
-    // ⚠️ 只给四档、没有「未定」：正文 JSON 里的 difficulty 必须是 0–3 之一
+  if (field === "pronLevel" || field === "vocabLevel") {
+    const cur = pick(field, d[field])
+    // ⚠️ 只给四档、没有「未定」：正文 JSON 里的档位必须是 0–3 之一
     //    （content-files.test.ts 会查），存不了「未定」就别把它做成选项。
+    const levels = [0, 1, 2, 3].map(function (n) { return { v: String(n), t: levelLabel(n) } })
     startInlineEdit(
-      $("#dt-difficulty"),
-      selectInput([
-        { v: "0", t: "初级" }, { v: "1", t: "中级" }, { v: "2", t: "高级" }, { v: "3", t: "专家" },
-      ], cur === null || cur === undefined ? "0" : String(cur)),
+      field === "pronLevel" ? $("#dt-pron") : $("#dt-vocab"),
+      selectInput(levels, cur === null || cur === undefined ? "0" : String(cur)),
       function (el) { return Number(el.value) },
-      function (v) { setPending("difficulty", v) },
+      function (v) { setPending(field, v) },
+    )
+    return
+  }
+
+  if (field === "reason") {
+    // ⚠️ 给用户看的一句话是**产品文案**，运营可以直接改（它要过人的眼）
+    startInlineEdit(
+      $("#dt-reason"),
+      textInput(pick("reason", d.reason) || ""),
+      function (el) { return el.value.trim() },
+      function (v) { setPending("reason", v) },
     )
     return
   }
@@ -707,7 +731,9 @@ async function updateArticle() {
   const has = function (k) { return Object.prototype.hasOwnProperty.call(p, k) }
   const body = {}
   if (has("translation")) body.translation = p.translation
-  if (has("difficulty")) body.difficulty = p.difficulty
+  if (has("pronLevel")) body.pronLevel = p.pronLevel
+  if (has("vocabLevel")) body.vocabLevel = p.vocabLevel
+  if (has("reason")) body.reason = p.reason
   if (has("tags")) body.tags = p.tags
   if (has("isActive")) body.publish = p.isActive
   if (has("words")) body.words = p.words
@@ -1109,14 +1135,8 @@ function openCreate() {
  *    编辑已经全部挪到句子详情页的行内编辑 + 一个「更新」按钮上，
  *    所以这里没有 openEdit。
  */
-function fillFields(d) {
-  state.edit = d
-  state.editWords = Array.isArray(d.words) ? d.words : []
-  $("#ed-id").textContent = "id " + d.id
-  $("#ed-text-ro").value = d.text || ""
-  $("#ed-translation").value = d.translation || ""
-  $("#ed-tags").value = (d.tags || []).join(" ")
-  const sel = $("#ed-difficulty")
+/** 填一个档位下拉（两条轴共用；标签来自服务端，见 levelLabel） */
+function fillLevelSelect(sel, value) {
   sel.textContent = ""
   const none = document.createElement("option")
   none.value = ""
@@ -1128,10 +1148,22 @@ function fillFields(d) {
   levels.forEach(function (n) {
     const o = document.createElement("option")
     o.value = String(n)
-    o.textContent = DIFF[n]
+    o.textContent = levelLabel(n)
     sel.appendChild(o)
   })
-  sel.value = d.difficulty === null || d.difficulty === undefined ? "" : String(d.difficulty)
+  sel.value = value === null || value === undefined ? "" : String(value)
+}
+
+function fillFields(d) {
+  state.edit = d
+  state.editWords = Array.isArray(d.words) ? d.words : []
+  $("#ed-id").textContent = "id " + d.id
+  $("#ed-text-ro").value = d.text || ""
+  $("#ed-translation").value = d.translation || ""
+  $("#ed-tags").value = (d.tags || []).join(" ")
+  fillLevelSelect($("#ed-pron"), d.pronLevel)
+  fillLevelSelect($("#ed-vocab"), d.vocabLevel)
+  $("#ed-reason").value = d.reason || ""
   audioSrc(d.id)
   renderTagChips()
   state.editWordsDirty = false
@@ -1247,12 +1279,14 @@ function onGenerated(result) {
     id: result.id,
     text: result.text,
     translation: result.translation,
-    difficulty: result.difficulty,
+    pronLevel: result.pronLevel,
+    vocabLevel: result.vocabLevel,
+    reason: result.reason,
     tags: result.tags,
     isActive: false,
     words: result.words,
   })
-  if (result.reason) logLine("理由：" + result.reason)
+  if (result.reason) logLine("这句话难在哪：" + result.reason)
   loadList()
   toast("生成完成，检查后点发布")
 }
@@ -1266,7 +1300,9 @@ async function saveArticle(publish) {
   try {
     const body = {
       translation: $("#ed-translation").value.trim(),
-      difficulty: Number($("#ed-difficulty").value),
+      pronLevel: Number($("#ed-pron").value),
+      vocabLevel: Number($("#ed-vocab").value),
+      reason: $("#ed-reason").value.trim(),
       tags: parseTags($("#ed-tags").value),
     }
     if (publish) body.publish = true

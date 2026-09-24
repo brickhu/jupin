@@ -91,7 +91,9 @@
           <div class="meta-head"><span>句子信息</span></div>
           <dl class="meta-list">
             <dt>状态</dt><dd><span id="dt-status" class="badge"></span><button type="button" class="edit-icon" data-field="isActive" title="改发布状态">✎</button></dd>
-            <dt>难度</dt><dd><span id="dt-difficulty"></span><button type="button" class="edit-icon" data-field="difficulty" title="改难度">✎</button></dd>
+            <dt>发音难度</dt><dd><span id="dt-pron"></span><button type="button" class="edit-icon" data-field="pronLevel" title="改发音难度">✎</button></dd>
+            <dt>词汇难度</dt><dd><span id="dt-vocab"></span><button type="button" class="edit-icon" data-field="vocabLevel" title="改词汇难度">✎</button></dd>
+            <dt>一句话<br /><span class="muted tiny">难在哪（给用户看）</span></dt><dd><span id="dt-reason"></span><button type="button" class="edit-icon" data-field="reason" title="改这句话">✎</button></dd>
             <dt>发布时间</dt><dd><span id="dt-published"></span></dd>
             <dt>标签</dt><dd><span id="dt-tags" class="tags"></span><button type="button" class="edit-icon" data-field="tags" title="改标签">✎</button></dd>
             <dt>句子 id</dt><dd id="dt-id" class="mono tiny"></dd>
@@ -174,13 +176,19 @@
           <textarea id="ed-translation" rows="3"></textarea>
         </label>
         <div class="row">
-          <label class="block">难度
-            <select id="ed-difficulty"></select>
+          <label class="block">发音难度
+            <select id="ed-pron"></select>
+          </label>
+          <label class="block">词汇难度
+            <select id="ed-vocab"></select>
           </label>
           <label class="block grow">标签（空格或逗号分隔，最多 8 个）
             <input id="ed-tags" type="text" />
           </label>
         </div>
+        <label class="block">一句话（难在哪，给用户看）
+          <input id="ed-reason" type="text" />
+        </label>
         <div class="row" id="ed-tagchips"></div>
 
         <div class="block">语音预览

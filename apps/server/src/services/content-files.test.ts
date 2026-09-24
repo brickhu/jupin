@@ -8,7 +8,7 @@ import {
   plainWordsOf,
   MAX_ARTICLE_TAGS,
   MAX_ARTICLE_TAG_CHARS,
-  normalizeDifficulty,
+  normalizeLevel,
   normalizeTags,
 } from '@jushuo/shared'
 import { resolveStaticRoot } from './content'
@@ -17,9 +17,11 @@ import { resolveStaticRoot } from './content'
  * 正文静态 JSON 的内容校验。
  *
  * ⚠️ 为什么值得单独测仓库里这几份 JSON：**它们不是代码，tsc 看不见它们**。
- *    难度值写错、标签写重复、标签前后带空格，构建与类型检查全都不会吭声 ——
- *    而难度目前**不对外展示**，写错了连界面都不会变（要等将来按难度筛选，
- *    才会以「少了一句」的形式暴露）⇒ 只能靠这道校验出声。
+ *    档位写错、标签写重复、标签前后带空格，构建与类型检查全都不会吭声 ——
+ *    只能靠这道校验出声。
+ *
+ * ⚠️⚠️ 两个档位都要在场：**它们是两条独立的轴**（2026-09），
+ *    只写一个会让「另一条轴没评过」和「评出来是 null」分不清。
  *
  * ⚠️ 走 resolveStaticRoot() 而不是自己拼路径：顺带证明了正文目录在
  *    容器与本机两种 cwd 下都能解析到（那段路径踩过坑，见 content.ts）。
@@ -27,9 +29,25 @@ import { resolveStaticRoot } from './content'
 const dir = join(resolveStaticRoot() ?? '', 'content/articles')
 
 describe('content/articles/*.json', () => {
-  it('难度必须是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
+  it('两个档位都必须在场，且各是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
     for (const [file, raw] of await loadAll()) {
-      expect(normalizeDifficulty(raw.difficulty), file + ' 的 difficulty').not.toBeNull()
+      // ⚠️ 两条轴分别断言 —— 绝不能「有一个就算过」
+      expect(normalizeLevel(raw.pronLevel), file + ' 的 pronLevel（发音难度）').not.toBeNull()
+      expect(normalizeLevel(raw.vocabLevel), file + ' 的 vocabLevel（词汇难度）').not.toBeNull()
+      // ⚠️ 旧的 difficulty 字段已改名成 pronLevel —— 留着它就是一份没人读的死数据
+      expect(raw.difficulty, file + ' 还留着旧的 difficulty 字段（已改名成 pronLevel）').toBeUndefined()
+    }
+  })
+
+  it('⭐ 一句话（难在哪）必须以「相当于…水平」开头 —— 它是给用户看的文案，不是审核术语', async () => {
+    for (const [file, raw] of await loadAll()) {
+      const reason = raw.reason
+      expect(typeof reason, file + ' 的 reason 应当是字符串').toBe('string')
+      expect(String(reason).trim(), file + ' 的 reason 为空').not.toBe('')
+      // 格式：相当于<级别>水平，<发音难在哪>；<词汇与句式点评>
+      expect(String(reason), file + ' 的 reason 没以「相当于…水平」开头').toMatch(/^相当于.+水平[，,]/)
+      expect(String(reason), file + ' 的 reason 缺少分号后的词汇点评').toContain('；')
+      expect(String(reason).length, file + ' 的 reason 太长（应 ≤80 字）').toBeLessThanOrEqual(80)
     }
   })
 

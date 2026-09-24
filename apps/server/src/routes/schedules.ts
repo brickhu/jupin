@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { desc, eq, lt } from 'drizzle-orm'
-import { normalizeDifficulty, normalizeTags, today } from '@jushuo/shared'
-import type { ArticleDifficulty, ArticleTheme, ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
+import { normalizeLevel, normalizeTags, today } from '@jushuo/shared'
+import type { ArticleLevel, ArticleTheme, ScheduleAudio, ScheduleEntry, ScheduleDetail } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
 import { loadArticleContent } from '../services/content'
@@ -114,15 +114,15 @@ schedulesRoutes.get('/', async (c) => {
 
   // ⚠️ 正文按**文章 id**去重后一次性读（id 就是内容 hash，同内容必然同 id）
   // ⚠️ 这里的 type 必须与 loadArticleContent 的解析口径一致：
-  //    难度 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
+  //    两个档位 / 标签是**正文的属性**，跟正文一起读、一起缓存，不再单独查库
   //    （articles 表只是索引，见 db/schema.ts）。
   const byArticleId = new Map<
     string,
-    { text: string; translation: string; difficulty: ArticleDifficulty | null; tags: string[] }
+    { text: string; translation: string; pronLevel: ArticleLevel | null; vocabLevel: ArticleLevel | null; tags: string[] }
   >()
   for (const id of articleIds) {
     const a = articleById.get(id)
-    if (a) byArticleId.set(a.id, { text: '', translation: '', difficulty: null, tags: [] })
+    if (a) byArticleId.set(a.id, { text: '', translation: '', pronLevel: null, vocabLevel: null, tags: [] })
   }
   await Promise.all(
     [...byArticleId.keys()].map(async (articleId) => {
@@ -130,9 +130,10 @@ schedulesRoutes.get('/', async (c) => {
       byArticleId.set(articleId, {
         text: content?.text ?? '',
         translation: content?.translation ?? '',
-        // ⚠️ 内容可能比代码旧（CDN 上的老 JSON 没有这两个字段）⇒ 一律过规范化，
-        //    认不出就是 null / []，**不补默认档位**（见 shared/difficulty.ts）
-        difficulty: normalizeDifficulty(content?.difficulty),
+        // ⚠️ 内容可能比代码旧（CDN 上的老 JSON 没有这些字段）⇒ 一律过规范化，
+        //    认不出就是 null / []，**不补默认档位**（见 shared/level.ts）
+        pronLevel: normalizeLevel(content?.pronLevel),
+        vocabLevel: normalizeLevel(content?.vocabLevel),
         tags: normalizeTags(content?.tags),
       })
     }),
@@ -159,8 +160,9 @@ schedulesRoutes.get('/', async (c) => {
     return {
       text: c?.text ?? '',
       translation: c?.translation ?? '',
-      // ⭐ 难度 / 标签跟正文一起走，卡片与详情页共用同一份口径
-      difficulty: c?.difficulty ?? null,
+      // ⭐ 两个档位 / 标签跟正文一起走，卡片与详情页共用同一份口径
+      pronLevel: c?.pronLevel ?? null,
+      vocabLevel: c?.vocabLevel ?? null,
       tags: c?.tags ?? [],
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
@@ -239,7 +241,8 @@ schedulesRoutes.get('/:date', async (c) => {
     articleId: pick.article.id,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
-    difficulty: normalizeDifficulty(content?.difficulty),
+    pronLevel: normalizeLevel(content?.pronLevel),
+    vocabLevel: normalizeLevel(content?.vocabLevel),
     tags: normalizeTags(content?.tags),
     isScheduled: pick.source === 'scheduled',
     isToday: date === now,

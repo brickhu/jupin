@@ -52,7 +52,7 @@
 - [ ] **B4** `packages/shared/src/streak.ts` 的 `freeze*` 命名统一成 `unfreeze*` —— 卡叫「解冻卡」，代码名还留着一半
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
-- [ ] **B13** 用新口径**重判存量内容**的难度（B12/B14 已完成，可直接开工）—— 只改正文 JSON 的 `difficulty` 字段（`text` 不动 ⇒ **id 不变**），改完跑 reindex 让 articles.difficulty 索引跟上 —— 做完的标志：每句的 difficulty 都是新提示词判出来的
+- [ ] **B13** 用新口径**重判存量内容**（B12/B14 已完成）—— 只改正文 JSON 的 `pronLevel` / `vocabLevel` / `reason`（`text` 不动 ⇒ **id 不变**），改完刷 `articles` 的派生索引（`pnpm content:regrade --apply`）—— 做完的标志：8 句的两轴与 reason 都是当前提示词判出来的，且 `articles.pron_level` / `vocab_level` 与 JSON 一致
 - [ ] **B16** **难度拆成两维**（词汇难度 + 发音难度）—— 轴已定（2026-09）。要做四件：
   ① 数据上两个档位（`vocabLevel` / `pronLevel`），库里两列（派生索引，供筛选排序）；
   ② `reason` **进正文 JSON 且给用户看**，固定格式：**以「相当于<级别>水平」开头**（级别用考试口径：小学 / 初中 / 高中 / 大学四级 / 六级 / 考研 / 雅思 6.5 / GRE），随后是发音难点，`；` 后是词汇与句式点评。例：
