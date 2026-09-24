@@ -18,9 +18,9 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
-import { extname, join, resolve, sep } from 'node:path'
+import { basename, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -57,6 +57,48 @@ import { addDays, isValidDay, today } from '../../packages/shared/src/day'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const WEB_DIR = join(HERE, 'web')
+
+/**
+ * ⚠️⚠️ **提示词与规则是进程启动时读进内存的** —— 改了它们**不重启**，生成出来的还是旧口径，
+ *    而输出**看起来完全正常**（只是旧文案又回来了）。这个坑真实踩到过两次：
+ *      · DB 列改名后，旧进程还在查 `pron_level`（报错倒是看得见）；
+ *      · 改完 reason 提示词没重启，生成出来的还是「相当于初中水平，词都很常见」（**完全静默**）。
+ *
+ *    ⚠️ 静态文件（web/ 下那几个）**不受影响**：它们是每个请求现读盘的，
+ *       所以改了 app.js / index.html 刷新就生效 —— 只有 .ts 会被冻在启动那一刻。
+ *
+ *    ⇒ 启动时记下这几个文件的 mtime，生成前比一次，变了就往任务日志里塞一行醒目提示。
+ */
+const LOADED_FILES = [
+  join(HERE, 'server.ts'),
+  join(HERE, '..', 'pipeline', 'src', 'lib', 'article-meta.ts'),
+  join(HERE, '..', 'pipeline', 'src', 'lib', 'word-info.ts'),
+]
+const LOADED_MTIMES = new Map<string, number>()
+for (const f of LOADED_FILES) {
+  try {
+    LOADED_MTIMES.set(f, statSync(f).mtimeMs)
+  } catch {
+    // 读不到就算了：这个守卫是"提醒"，不该让服务起不来
+  }
+}
+
+/** 有文件在启动后被改过 ⇒ 返回一句警告；一致就返回 null */
+function staleCodeWarning(): string | null {
+  const changed: string[] = []
+  for (const [f, t] of LOADED_MTIMES) {
+    try {
+      if (statSync(f).mtimeMs !== t) changed.push(basename(f))
+    } catch {
+      /* ignore */
+    }
+  }
+  if (changed.length === 0) return null
+  return (
+    '⚠️⚠️ ' + changed.join('、') + ' 在进程启动后被改过 —— 本次生成用的还是**旧代码**，' +
+    '结果可能不符合当前口径。重启（pnpm admin）后再跑一次。'
+  )
+}
 const STATE_FILE = join(HERE, '.state.json')
 
 const args = process.argv.slice(2)
@@ -662,6 +704,9 @@ interface IngestResult {
  *    省掉的正是**唯一按量花钱**的 TTS（顺序的理由见 spec.md 第九节）。
  */
 async function runSplit(job: Job, text: string): Promise<void> {
+  // ⚠️ 先喊一声"代码可能过期了" —— 见 staleCodeWarning 的说明（这是静默错，最值得防）
+  const stale = staleCodeWarning()
+  if (stale) job.log.push(stale)
   // ⚠️ 拆分是**代码按空行**做的（shared 的 splitParagraphs，确定性）——
   //    模型只负责纠错 + 四项元数据，见 spec.md 第九节
   job.step = 'LLM：纠错 + 难度 / 标签（分段由代码按空行做）'
@@ -1215,6 +1260,14 @@ const server = createServer((req, res) => {
 })
 
 server.listen(PORT, '127.0.0.1', () => {
+  /**
+   * ⚠️ 把**加载进来的**那几个 .ts 的时间打出来：改了它们必须重启本进程，
+   *    而"没重启"这件事不会自己暴露（生成结果看起来完全正常）。
+   */
+  console.log('   提示词 / 规则（改动后必须重启本进程）：')
+  for (const [f, t] of LOADED_MTIMES) {
+    console.log('     ' + basename(f).padEnd(18) + new Date(t).toLocaleString('zh-CN'))
+  }
   console.log('')
   console.log('⭐ 句拼 admin   http://127.0.0.1:' + PORT)
   console.log('')
