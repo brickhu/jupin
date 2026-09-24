@@ -6,8 +6,8 @@
  *   content/audio/{id}.mp3        整句标准音
  *   content/audio/{id}/w{i}.mp3   第 i 个单词的发音
  *
- * ⚠️⚠️ 逐词的**下标必须与客户端切词完全一致** —— 客户端是
- *    `text.split(/\s+/).filter(Boolean)`，这里必须一模一样。
+ * ⚠️⚠️ 逐词的**下标必须与客户端切词完全一致** —— 规则只有一处：
+ *    shared 的 `plainWordsOf`（这里只是引用它，不再抄一份）。
  *    两边规则一旦不同，点第 3 个词会听到第 4 个词的音，
  *    而界面上完全看不出来（都是正常发音，只是不对应）。
  *
@@ -21,9 +21,10 @@
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { plainWordsOf } from '@jushuo/shared'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CONTENT = resolve(ROOT, 'content')
@@ -35,13 +36,6 @@ const VOICE = 'Samantha'
 
 const ffmpeg = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
 const say = (text, aiff) => execFileSync('say', ['-v', VOICE, '-o', aiff, text])
-
-/**
- * ⚠️ 与客户端**逐字一致**的切词。改这里就必须同步改 reading.ts。
- */
-function splitWords(text) {
-  return text.split(/\s+/).filter(Boolean)
-}
 
 /**
  * 送给 TTS 的文本：去掉首尾标点。
@@ -67,16 +61,36 @@ function main() {
   mkdirSync(OUT, { recursive: true })
   const manifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {}
 
+  // ⭐ 内容寻址：扫描 content/articles/*.json，id 直接取 JSON 里的 id（= sha256(text) = 文件名）
+  const names = existsSync(resolve(CONTENT, 'articles'))
+    ? readdirSync(resolve(CONTENT, 'articles')).filter((n) => n.endsWith('.json')).sort()
+    : []
+
   let made = 0
   let skipped = 0
-  for (const id of [1, 2, 3, 4, 5]) {
-    const file = resolve(CONTENT, 'articles', id + '.json')
-    if (!existsSync(file)) continue
-    const { text } = JSON.parse(readFileSync(file, 'utf8'))
-    const words = splitWords(text)
+  for (const name of names) {
+    const file = resolve(CONTENT, 'articles', name)
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    const id = String(parsed.id ?? '')
+    const text = String(parsed.text ?? '')
+    if (!id || !text) continue
+    // ⚠️ 切词走 shared 的唯一实现（plainWordsOf）—— 以前这里抄了一份，
+    //    靠一句「改这里必须同步改 reading.ts」的注释约束，那不是约束
+    const words = plainWordsOf(text)
     // ⚠️ 指纹带上语音名：换发音人时必须重新生成，否则新旧音色混在一套内容里
     const hash = createHash('sha256').update(VOICE + '|' + text).digest('hex').slice(0, 16)
     const full = resolve(OUT, id + '.mp3')
+
+    /**
+     * ⚠️⚠️ 这不是本脚本产出的（前缀 fish: = fish-audio 的标准音，见
+     *    tools/pipeline/src/lib/fishaudio.ts 的 fingerprintOf）⇒ **不覆盖**。
+     *    不加这一条的话：改一句正文再跑 content:audio，
+     *    全库音色会被悄悄换成 macOS say —— 而且没有任何报错。
+     */
+    if (typeof manifest[id] === 'string' && manifest[id].startsWith('fish:') && existsSync(full)) {
+      skipped++
+      continue
+    }
 
     if (manifest[id] === hash && existsSync(full)) {
       skipped++
@@ -87,7 +101,7 @@ function main() {
     words.forEach((w, i) => synth(speakable(w), resolve(OUT, String(id), 'w' + i + '.mp3')))
     manifest[id] = hash
     made++
-    console.log(`  #${id}  ${words.length} 词  ${(statSync(full).size / 1024).toFixed(0)}KB  ${text.slice(0, 40)}…`)
+    console.log(`  #${String(id).slice(0, 12)}…  ${words.length} 词  ${(statSync(full).size / 1024).toFixed(0)}KB  ${text.slice(0, 40)}…`)
   }
 
   writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2) + '\n')

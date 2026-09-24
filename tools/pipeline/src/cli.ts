@@ -9,7 +9,15 @@
  *   pnpm pipeline run --from 01 --to 09
  *   pnpm pipeline run --only 04 --force
  */
+import { loadEnv } from '../../env.mjs'
 import { listSteps } from './steps/index'
+
+/**
+ * ⚠️ 必须在这里加载 —— 内容生产是**本机动作**，FISH_* 凭据都在 .env.local。
+ *    以前没这一步，直接 `pnpm pipeline run` 会报「缺少 FISH_API_KEY」，
+ *    只有手动 export 到 shell 里才跑得起来（那不是一个能交给别人的入口）。
+ */
+loadEnv('local')
 
 interface Args {
   command: 'run' | 'list'

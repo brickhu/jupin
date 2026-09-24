@@ -1,25 +1,23 @@
 /**
  * ④ 标准音 + 词级时间戳（fish-audio）。
  *
- * spec 第九节：整篇一份标准音 + 词级时间戳，并按时间戳预切单词音频。
+ * 这一步产出**两样**东西，别只记得第一样：
+ *   ① content/audio/{id}.mp3 —— 整句标准音
+ *   ② 正文 JSON 的 words[] —— 每个词的**播放区间**（startMs/endMs）
+ * ② 就是客户端「点词定位播放」用的那份数据；它的区间与预切切片同源
+ * （见 lib/audio-assets.ts 的 wordRangesOf）。
  *
- * ⚠️ 这一步和 `tools/jushuo-admin.ts add-sentence` 走的是**同一段代码**
- *    （lib/audio-assets.ts 的 produceStandardAudio）—— 不要在这里另写一套。
- *    两边一旦分叉，就会出现「CLI 加的句子有切片、跑流水线补的没有」这种
- *    只有到客户端点词没声才会发现的漂移。
+ * ⚠️ 这一步和 `pnpm admin`（tools/admin，加句子）走的是**同一段代码**
+ *    （produceStandardAudio + writeWordTimestamps）—— 不要在这里另写一套。
+ *    两边一旦分叉，就会出现「后台加的句子有时间戳、跑流水线补的没有」这种
+ *    只有到客户端点词没反应才会发现的漂移。
  *
  * ⚠️ 与 spec 的一处偏差，**是有意的**：spec 写「整篇一份 + 每个竞技场各一份」，
  *    但竞技场切分（②步）还没实现，而当前句库的粒度就是「一句 = 一个朗读单元」
  *    （articles 表注释：文章 = 句子）。所以现在按**句**生产。
- *    ②步落地后，这里要改成对每个句群各合成一份 —— 届时 produceStandardAudio
- *    需要接受一个「子 id」来避免文件名冲突。
  */
 
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-
-import { ROOT } from '../../../env.mjs'
-import { listArticleIdsOnDisk, produceStandardAudio, readArticleText } from '../lib/audio-assets'
+import { listArticleIdsOnDisk, produceStandardAudio, readArticleText, writeWordTimestamps } from '../lib/audio-assets'
 import type { Step } from './index'
 
 export const step04: Step = {
@@ -33,7 +31,7 @@ export const step04: Step = {
     }
 
     let done = 0
-    let skipped = 0
+    let reused = 0
     let failed = 0
 
     for (const id of ids) {
@@ -44,18 +42,18 @@ export const step04: Step = {
         continue
       }
 
-      const audioPath = resolve(ROOT, 'content/audio', `${id}.mp3`)
-      if (!ctx.force && existsSync(audioPath)) {
-        // 幂等：切片先留着，这里不重复烧额度
-        skipped++
-        continue
-      }
-
       try {
+        /**
+         * ⚠️ 刻意**不在这里**按「音频已存在」跳过：时间戳也要写，它是本步的产物之一。
+         *    音频已存在时 produceStandardAudio 会直接复用缓存里的对齐，**不再调引擎**
+         *    —— 所以重跑这一步是安全的、也是补时间戳的正确方式。
+         */
         const r = await produceStandardAudio(id, text, { force: ctx.force })
+        const n = await writeWordTimestamps(id, r.alignment)
+        if (r.skipped) reused++
         console.log(
           `  ✓ #${id}  ${r.wordCount} 个切片  ${r.alignment.audioDuration.toFixed(2)}s` +
-            `${r.skipped ? '（跳过）' : ''}`,
+            `  时间戳 ${n} 条${r.skipped ? '（复用已有音频）' : ''}`,
         )
         done++
       } catch (err) {
@@ -66,7 +64,7 @@ export const step04: Step = {
       }
     }
 
-    console.log(`  小计：新生成 ${done}，跳过 ${skipped}，失败 ${failed}`)
+    console.log(`  小计：处理 ${done}（其中复用已有音频 ${reused}），失败 ${failed}`)
     if (failed > 0) throw new Error(`④ 步有 ${failed} 条没跑成`)
   },
 }

@@ -19,29 +19,50 @@ export interface AudioRef {
   kind: 'cloud' | 'http'
 }
 
-/** 整句 + 逐词 */
-export interface ArticleAudio extends AudioRef {
-  /** 与 text 切词后的下标一一对应 */
-  words: (string | null)[]
-}
-
 /**
  * 内容静态资源结构。
  * ⚠️ 内容不走后端 API 查库，全部由 CDN 分发。
- *    articles.contentJson / tipsJson / standardAudio 分别指向下面的 JSON / MP3。
+ *    正文的位置**由 id 推导**（`content/articles/<id>.json`，见 services/content.ts
+ *    的 contentPathOf）—— 库里**不存路径**（曾经那列 \`content_json\` 已删除，
+ *    因为它是同一件事的第二个真相）；standardAudio 那一列仍存对象存储的 key。
  */
 
 /**
- * ⭐ 句子难度 —— **朗读难度**，三档。
+ * ⭐ 句子难度 —— **朗读难度**，四档：0 初级 / 1 中级 / 2 高级 / 3 专家。
  *
  * ⚠️⚠️ 不是阅读难度，两者的区别与依据写在 difficulty.ts（那里有实测例子）。
- * ⚠️ 存 ASCII 值，中文只在 UI 上出现（DIFFICULTY_LABEL）。
+ * ⚠️ 值就是**档位数字**：0–3 单调、可排序、可直接落库按档位筛。
+ *    中文只在 UI 与运营 CLI 上出现（DIFFICULTY_LABEL），别写进数据里。
  */
-export type ArticleDifficulty = 'easy' | 'medium' | 'hard'
+export type ArticleDifficulty = 0 | 1 | 2 | 3
 
-/** 文章正文静态 JSON —— articles.contentJson 指向它 */
+/**
+ * ⭐ 句子的**视觉主题** —— 卡片配图与配色：{ image, background, foreground }。
+ *
+ * ⚠️ 三个字段都是「怎么画」：
+ *    · image      —— 配图（静态资源路径 / 云存储引用）
+ *    · background —— 背景色
+ *    · foreground —— 前景（文字）色
+ * ⚠️ 整份 theme 可以为空（老内容没有），端侧据此退回默认配色。
+ */
+export interface ArticleTheme {
+  /** 配图；暂时留 null（见 theme.ts 的说明） */
+  image: string | null
+  background: string
+  foreground: string
+}
+
+/** 文章正文静态 JSON —— 路径由文章 id 推导：content/articles/<id>.json */
 export interface ArticleContent {
-  id: number
+  /**
+   * ⭐ 文章 id = **内容 hash**（sha256(正文 trim 后) 的十六进制**前 16 位**，
+   *    长度定义在 shared 的 constants:ARTICLE_ID_LENGTH）。
+   *
+   * ⚠️ 三处必须**同一个值**：文件名、这份 JSON 的 id、articles.id。
+   *    内容一改就是新文章（老提交/排期仍指向老正文）。
+   *    口径的唯一定义在 tools/pipeline/src/lib/article-id.ts（articleIdOf）。
+   */
+  id: string
   /** 句子原文 —— 评分的参考文本 */
   text: string
   translation: string
@@ -65,33 +86,37 @@ export interface ArticleContent {
    *
    * ⚠️ 与难度一样是**可选**的，理由同上。
    * ⚠️ 读到的值不必假设干净：入库前一律走 normalizeTags（去空 / 去重 / 限个数）。
-   * ⚠️ 为什么不落 article_tags 表：那张表是为「按标签索引」准备的，而目前
-   *    没有任何查询用它 —— 现在同步只会多出一份会和这份 JSON 漂移的第二真相。
-   *    真要按标签筛选时，这里就是回填源（表已经建好，见 db/schema.ts）。
+   * ⚠️ tags **会**被物化进 article_tags（和 difficulty 一起，见 services/article-index.ts）：
+   *    那份索引只为「按标签/难度筛选」能走 SQL 而存在，**真相永远是这份 JSON**。
+   *    规矩只有一条：索引只由 syncArticleIndex 写，随时可从 JSON 全量重建。
+   * ⚠️ 顺序有意义（第一个最重要），而 article_tags 是**集合**语义、丢了顺序 ——
+   *    要展示顺序就读这份 JSON（详情接口就是这么做的）。
    */
   tags?: string[]
-
   /**
-   * ⭐ 标准音的**云存储 fileID** —— 由服务端按当前环境拼好返回。
+   * ⚠️ 这里**曾经有一个 `audio?: ArticleAudio`**，已删除。
    *
-   * ⚠️ 刻意不写进仓库里的 content JSON：fileID 里带**环境 ID 和桶名**，
-   *    写死就会让同一份内容只能指向某一个环境的桶。
+   *    它是**放错了类型**的字段：这个接口描述的是仓库里那份**静态 JSON**
+   *    （`content/articles/<id>.json`），而 audio 从来不在文件里 ——
+   *    它是服务端在**返回时**按当前环境拼出来的（fileID 带环境 ID 与桶名，
+   *    写进文件就会让同一份内容只能指向某一个环境的桶）。
+   *    更糟的是它声明的形状**和服务端实际返回的也不是一回事**
+   *    （声明说 `full: string`、`words: (string|null)[]`；实际是 `full: string|null`、
+   *      `words: string[]` —— 见 api.ts 的 ArticleDetailAudio）。
    *
-   * ⚠️ 客户端拿到后必须用 wx.cloud.getTempFileURL 换成可播地址 ——
-   *    InnerAudioContext 不认 cloud:// 协议。
-   *    这条路的代价为零：小程序不需要为云存储配 downloadFile 合法域名。
-   *
-   * ⚠️ 没有标准音时是 null，客户端据此**隐藏播放入口**，
-   *    而不是渲染一个点了没反应的图标。
+   *    ⇒ 响应体裁归 api.ts：详情用 **ArticleDetail**（= ArticleContent + audio + theme），
+   *      这份类型只管**文件里真有的东西**。
    */
-  audio?: ArticleAudio
 }
 
-/** 朗读技巧静态 JSON —— articles.tipsJson 指向它 */
-export interface ArticleTips {
-  tips: ReadingTip[],
-}
-
+/**
+ * ⚠️ 这里**曾经有 ArticleTips / ReadingTip / TipType**（朗读技巧的整套类型），已删除。
+ *
+ *    它们对应的那条流水线从来没有建过：全仓库没有一处 import、没有一处读写，
+ *    articles.tips_json 那一列也一起删了（迁移 0033）。
+ *    类型不是「先放着不碍事」—— 它会让下一个读代码的人以为技巧已经做了一半，
+ *    于是去猜「数据从哪来」。真要做的时候再定义，那时才知道它该长什么样。
+ */
 export interface ArticleWord {
   pos: number
   word: string
@@ -101,29 +126,14 @@ export interface ArticleWord {
   posTag: string | null
   /** 该词在此语境下的中文释义 */
   meaningZh: string | null,
+  /**
+   * ⭐ **点这个词时该播的那一段**（毫秒）—— 从整句标准音上定位到 startMs、播到 endMs。
+   *
+   * ⚠️⚠️ 它**不是**引擎给的原始词时间戳：两侧按「相邻两词的中点」夹取、再各留 0.09s，
+   *    与预切切片用的是**同一条规则**（见 tools/pipeline 的 wordRangesOf）。
+   *    所以它描述的是「这个词连同前后一点点」的区间 —— 短词（the 只有 80ms）
+   *    裸切出来只剩一声爆音，夹取之后才听得清。
+   */
   startMs: number
   endMs: number
-  /** 预切的单词音频 ⭐ 精度优于运行时 seek() */
-  audioUrl: string
-}
-
-export type TipType =
-  | 'linking'          // 连读
-  | 'weak_form'        // 弱读
-  | 'stress'           // 重音
-  | 'intonation'       // 语调
-  | 'pause'            // 停顿
-  | 'difficult_sound'  // 难音
-
-/** 朗读技巧 —— 规则检测产出，LLM 只做润色 */
-export interface ReadingTip {
-  type: TipType
-  /** 涉及的词区间，用于高亮 */
-  wordStart: number
-  wordEnd: number
-  noteZh: string
-  ipa?: string
-  /** 针对性示范音频区间 ⭐ 用词级时间戳切出 */
-  audioStartMs: number
-  audioEndMs: number
 }

@@ -15,7 +15,7 @@
  *      所以要保留「最后一个非 null 的 alignment」，不是第一个。
  *
  *   ③ `segments[].text` 与**空格分词**逐项一致
- *      （`text.split(/\s+/)`）—— 这正是 services/standard-audio.ts
+ *      （shared 的 `plainWordsOf`）—— 这正是 services/standard-audio.ts
  *      的 filesOf() 算 w{i}.mp3 个数用的规则。spec 第九节要求
  *      「必须与自建词表逐项一致」，本文件用 assertAlignment 把这个假设
  *      变成一条会炸的断言，而不是一个静默的错位。
@@ -35,6 +35,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import { SocksProxyAgent } from 'socks-proxy-agent'
+import { plainWordsOf } from '@jushuo/shared'
 
 import { ROOT } from '../../../env.mjs'
 
@@ -60,6 +61,10 @@ export interface Synthesis {
   text: string
   /** 是否命中缓存 */
   cached: boolean
+  /** 本次用的音色（清单要记它，否则换音色后没人知道音频是谁念的） */
+  voiceId: string
+  /** 「这份音频是怎么来的」指纹 —— 落进 content/audio/manifest.json，见 fingerprintOf */
+  fingerprint: string
 }
 
 /** 缓存目录 —— 同一段文本重跑不该再烧一次额度（README 的硬要求） */
@@ -67,6 +72,17 @@ const CACHE_DIR = resolve(ROOT, 'tools/pipeline/data/cache/fishaudio')
 
 /** 默认模型。⚠️ 免费额度走的就是这个；换模型改 FISH_MODEL 即可，不用动代码 */
 const DEFAULT_MODEL = 's2.1-pro-free'
+
+/**
+ * ⭐ 默认**音色** —— fish-audio 的 `reference_id`（在 fish.audio 上训练/收藏的音色 id）。
+ *
+ * ⚠️ 它和模型不一样，是**产品决定**，所以写死在代码里而不是只放本机 .env：
+ *    换音色 = 全库标准音的音色一起换，必须是可评审、可回滚、跨环境一致的一处改动。
+ *    临时试音色用 FISH_VOICE_ID 覆盖，别改这里。
+ * ⚠️ 不传 reference_id 时引擎会用它自己当前推荐的默认音色 ——
+ *    那等于把「我们的内容是什么声音」交给对方随时改，所以必须显式传。
+ */
+const DEFAULT_VOICE_ID = 'b347db033a6549378b48d00acb0d06cd'
 
 const DEFAULT_BASE_URL = 'https://api.fish.audio'
 
@@ -78,6 +94,8 @@ interface FishEnv {
   proxy: string | undefined
   baseUrl: string
   model: string
+  /** 音色（reference_id） */
+  voiceId: string
 }
 
 function readEnv(): FishEnv {
@@ -92,6 +110,7 @@ function readEnv(): FishEnv {
     proxy: process.env.FISH_PROXY_URL || undefined,
     baseUrl: (process.env.FISH_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
     model: process.env.FISH_MODEL || DEFAULT_MODEL,
+    voiceId: process.env.FISH_VOICE_ID || DEFAULT_VOICE_ID,
   }
 }
 
@@ -118,7 +137,7 @@ function normalizeToken(w: string): string {
 }
 
 export function assertAlignment(text: string, alignment: Alignment): void {
-  const ours = text.split(/\s+/).filter(Boolean)
+  const ours = plainWordsOf(text)
   const theirs = alignment.segments.map((s) => s.text)
   if (ours.length !== theirs.length) {
     throw new Error(
@@ -195,8 +214,23 @@ export function parseSse(raw: string): { audio: Buffer; alignment: Alignment } {
   return { audio: Buffer.concat(chunks), alignment }
 }
 
-function cacheKeyOf(text: string, model: string): string {
-  return createHash('sha1').update(`${model}\n${text}`).digest('hex')
+/**
+ * ⚠️⚠️ 缓存键必须**带上音色**：只按 model+text 缓存的话，换了音色重跑会直接
+ *    命中旧音频 —— 表现是「改了音色却什么都没变」，不报错、只能靠人听出来。
+ */
+/**
+ * 清单指纹 —— 记「这份音频是谁生成的」。
+ *
+ * ⚠️ 前缀 fish: 有用途：另一个生产者（tools/build-content-audio.ts 的 macOS say，
+ *    离线兜底用）靠它认出「这不是我的产物，别覆盖」—— 否则改一句正文再跑
+ *    content:audio，全库音色就会被悄悄换掉一部分。
+ */
+export function fingerprintOf(text: string, model: string, voiceId: string): string {
+  return `fish:${model}:${voiceId}:${createHash('sha1').update(text).digest('hex').slice(0, 16)}`
+}
+
+function cacheKeyOf(text: string, model: string, voiceId: string): string {
+  return createHash('sha1').update(`${model}\n${voiceId}\n${text}`).digest('hex')
 }
 
 /**
@@ -211,7 +245,8 @@ export async function synthesize(
 ): Promise<Synthesis> {
   const env = readEnv()
   const useCache = opts.cache ?? true
-  const key = cacheKeyOf(text, env.model)
+  const key = cacheKeyOf(text, env.model, env.voiceId)
+  const fingerprint = fingerprintOf(text, env.model, env.voiceId)
   const audioPath = resolve(CACHE_DIR, `${key}.mp3`)
   const alignPath = resolve(CACHE_DIR, `${key}.json`)
 
@@ -221,6 +256,8 @@ export async function synthesize(
       alignment: JSON.parse(await readFile(alignPath, 'utf8')) as Alignment,
       text,
       cached: true,
+      voiceId: env.voiceId,
+      fingerprint,
     }
   }
 
@@ -232,7 +269,7 @@ export async function synthesize(
   await writeFile(audioPath, audio)
   await writeFile(alignPath, JSON.stringify(alignment, null, 2))
 
-  return { audio, alignment, text, cached: false }
+  return { audio, alignment, text, cached: false, voiceId: env.voiceId, fingerprint }
 }
 
 /**
@@ -255,7 +292,8 @@ function normalizeProxy(raw: string): string {
 /** 真正的网络调用 —— 只有这一处碰网 */
 function requestSse(env: FishEnv, text: string): Promise<string> {
   const url = new URL(`${env.baseUrl}/v1/tts/stream/with-timestamp`)
-  const body = JSON.stringify({ text })
+  // ⚠️ reference_id = 音色（见文件头的 DEFAULT_VOICE_ID）；不传就是「对方的默认音色」
+  const body = JSON.stringify({ text, reference_id: env.voiceId })
 
   // ⚠️ Node 的 fetch 不认 socks5，所以走 node:https + agent
   const agent = env.proxy ? new SocksProxyAgent(normalizeProxy(env.proxy)) : undefined

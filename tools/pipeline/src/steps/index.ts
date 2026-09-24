@@ -35,7 +35,7 @@ export function listSteps(): Step[] {
   return [
     stub('01', '选文', '人工挑选短文，写入 data/drafts/{passageId}/source.json'),
     stub('02', '切分竞技场', 'LLM 提案句群切分 → 人工确认（语义完整 / 10–20 秒 / 自然停顿）'),
-    stub('03', '朗读难度定级', '脚本算特征 → LLM 带锚点判断 → 输出三档 difficulty（easy/medium/hard）+ reason'),
+    stub('03', '朗读难度定级', '脚本算特征 → LLM 带锚点判断 → 输出四档 difficulty（0/1/2/3）+ tags + reason'),
     step04,
     stub('05', '整篇翻译', 'LLM 翻译'),
     stub('06', '音标 / 词性 / 义项', 'ECDICT 查表（⚠️ 音标绝不能让 LLM 生成）'),

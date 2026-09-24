@@ -16,6 +16,8 @@
  *    不归一化会把每个带标点的词都当成对不上。
  */
 
+import { plainWordsOf } from './tokenize'
+
 /** 归一化：小写 + 只留字母数字和撇号（it. → it；The → the） */
 function norm(w: string): string {
   return w.toLowerCase().replace(/[^a-z0-9']/g, '')
@@ -29,10 +31,8 @@ function norm(w: string): string {
  * ⚠️ 词量是几十个量级，O(n·m) 完全够用 —— 不要为此引任何库。
  */
 export function alignWordScores(refText: string, engineWords: string[]): (number | null)[] {
-  const refNorm = refText
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(norm)
+  // ⚠️ 切词走唯一实现（plainWordsOf）—— 这里的下标就是客户端点词的下标
+  const refNorm = plainWordsOf(refText).map(norm)
   const engNorm = engineWords.map(norm)
   const n = refNorm.length
   const m = engNorm.length

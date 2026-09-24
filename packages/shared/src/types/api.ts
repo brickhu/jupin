@@ -1,5 +1,5 @@
 import type { ScoreParts } from '../scoring'
-import type { ArticleDifficulty } from './content'
+import type { ArticleContent, ArticleDifficulty, ArticleTheme, AudioRef } from './content'
 
 /**
  * 引擎输出的词级结果。
@@ -58,7 +58,7 @@ export type ApiResult<T> =
 /* ---------- 提交检测（核心） ---------- */
 
 export interface SubmitRequest {
-  articleId: number
+  articleId: string
   /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.pcm */
   audioKey: string
   /**
@@ -74,11 +74,13 @@ export interface SubmitRequest {
    */
   audioUrl?: string
   /**
-   * ⭐ 是否**公开这次录音** —— 别人能不能听到这段声音。默认 true。
+   * ⭐ 是否**公开这次录音** —— 决定「卡片之外的入口」能不能听到这段声音。默认 false。
    *
    * ⚠️ 它不是「能不能上榜」：无论公开与否，成绩都进榜、音频都存在对象存储里。
    *    区别只是**别人能不能听到**。
-   *    语音是生物特征 —— 「默认公开」这件事必须给用户一个关掉的开关。
+   * ⚠️ 它也不是「分享卡片能不能听」：从挑战详情的分享卡片（群聊 / 个人聊天 /
+   *    通知）进来的任何人都能听，不受这一位影响（链接即凭据）。
+   *    语音是生物特征 —— 默认必须是不公开，公开由用户自己打开开关。
    */
   isPublic?: boolean
 }
@@ -156,7 +158,7 @@ export interface SubmitResponse {
    *    必须由服务端回传：终端自己从 URL 里取的话，取错了就是
    *    「提交完参与状态不刷新」，而每一处代码单独看都是对的。
    */
-  articleId: number
+  articleId: string
   /**
    * ⭐ 这段录音当前的可见性（别人能不能听到）。
    *
@@ -165,6 +167,8 @@ export interface SubmitResponse {
    *    用户可能已经改过，而结果页会被反复拉到。
    */
   isPublic: boolean
+  /** ⭐ 这一句的视觉主题 —— 结果卡用它上色；老内容为 null ⇒ 品牌色兜底 */
+  theme: ArticleTheme | null
   /** 上一次成绩，用于「🎉 62 → 87」 */
   previousBest: number | null
   /** 榜单中心 5 条 */
@@ -392,9 +396,7 @@ export interface StreakDelta {
  *    · http  → 服务端路径，加 BASE_URL 前缀直接用
  * ⚠️ durationMs 可能是 null（算不出来）—— 那时端侧只显示按钮、不显示时长。
  */
-export interface ScheduleAudio {
-  full: string
-  kind: 'cloud' | 'http'
+export interface ScheduleAudio extends AudioRef {
   durationMs: number | null
 }
 
@@ -405,13 +407,43 @@ export interface ScheduleAudio {
  *    （GET /api/articles/:id）。要塞进列表，首屏就得为全站句子付一遍这个代价。
  */
 export interface ArticleListItem {
-  id: number
+  id: string
   text: string
   translation: string
   difficulty: ArticleDifficulty | null
   tags: string[]
   /** 标准音（可播引用 + 时长）；这一句没有标准音时是 null ⇒ 端侧不画播放入口 */
   audio: ScheduleAudio | null
+  /** ⭐ 视觉主题（背景/前景/配图）；老内容为 null ⇒ 端侧按 id 复算（见 shared/theme.ts） */
+  theme: ArticleTheme | null
+}
+
+/**
+ * ⭐ 详情里那一段标准音 —— 比卡片上的 ScheduleAudio 多一份**逐词音频地址**。
+ *
+ * ⚠️ words 的下标与 `plainWordsOf(text)` 一一对应（同一个切词实现，见 shared/tokenize.ts）；
+ *    点第 i 个词就播 words[i]。
+ * ⚠️ 这个形状**只有详情接口**用：列表/卡片只给整句地址（多给的每个词都要付一遍
+ *    对象存储地址的代价）。
+ */
+export interface ArticleDetailAudio extends AudioRef {
+  /** 逐词音频地址；下标与 plainWordsOf(text) 一一对应 */
+  words: string[]
+}
+
+/**
+ * ⭐ 句库**详情**（全量）—— GET /api/articles/:id，阅读页要的那一份。
+ *
+ * ⚠️ 它是「**静态 JSON + 两个运行期字段**」的合成体：
+ *    · 其余字段来自 `content/articles/<id>.json`（见 ArticleContent）；
+ *    · audio / theme 由服务端**按当前环境**拼出来 ——
+ *      fileID 里带环境 ID 与桶名，绝不能写进仓库里的那份 JSON。
+ * ⚠️ 没有标准音时 audio 是 **null**（不是给一个 full=null 的壳）——
+ *    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定。
+ */
+export interface ArticleDetail extends ArticleContent {
+  audio: ArticleDetailAudio | null
+  theme: ArticleTheme | null
 }
 
 /**
@@ -426,7 +458,7 @@ export interface ArticleListItem {
  *    （公开榜单只给前 20，客户端自己算不出第 500 名），所以只在该算的那一屏算。
  */
 export interface ArenaRecord {
-  articleId: number
+  articleId: string
   /** 我的最好成绩；没参与过为 null */
   bestScore: number | null
   /** 我在这句打过几次分（只数打分成功的，与「参与人数」同口径） */
@@ -458,7 +490,7 @@ export interface ScheduleEntry {
    * ⚠️ 它**不是**竞技场的地址 —— 那个是 articleId。
    */
   date?: string
-  articleId: number
+  articleId: string
   /** 句子原文 */
   text: string
   translation: string
@@ -490,6 +522,8 @@ export interface ScheduleEntry {
   participantCount: number
   /** 最高分；无人参与为 null */
   topScore: number | null
+  /** ⭐ 视觉主题（背景/前景/配图）；老内容为 null ⇒ 端侧用品牌色兜底 */
+  theme: ArticleTheme | null
 }
 
 /**
@@ -500,7 +534,7 @@ export interface ScheduleEntry {
  */
 export interface ScheduleDetail {
   date: string
-  articleId: number
+  articleId: string
   /**
    * ⭐ 从这里发起的挑战该**记到哪一天**。
    * ⚠️ 按日期寻址时就是那个日期（历史挑战的「再次挑战」必须归到那一天，
@@ -517,6 +551,8 @@ export interface ScheduleDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
+  /** ⭐ 视觉主题（背景/前景/配图） */
+  theme: ArticleTheme | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
@@ -534,7 +570,7 @@ export interface ScheduleDetail {
  *    而按日期进来的是「回到那一天再挑战一次」，submissionDate 就是那一天。
  */
 export interface ArenaDetail {
-  articleId: number
+  articleId: string
   text: string
   translation: string
   /** ⭐ 朗读难度（**字段先预留、暂不对外展示**）；内容里没写（老 JSON）就是 null */
@@ -547,6 +583,8 @@ export interface ArenaDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
+  /** ⭐ 视觉主题（背景/前景/配图） */
+  theme: ArticleTheme | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
@@ -606,10 +644,43 @@ export interface GrowthView {
   standout: number
 }
 
+/** ⭐ 性别 —— 只认这两个值；null = 未填 */
+export type Gender = 'male' | 'female'
+
+/**
+ * ⭐ 保存资料的表单 —— POST /api/user/profile 的请求体。
+ *
+ * ⚠️ 三态语义：**键不存在 = 这次不改这一格；显式 null / 空串 = 清空；有值 = 设置**。
+ *    头像特殊：avatarUrl 只在真的换了头像时才传，不传就保持库里那张
+ *    （见 routes/user.ts 的说明）。
+ */
+export interface ProfileUpdate {
+  nickname: string
+  avatarUrl?: string
+  gender?: Gender | null
+  age?: number | null
+  bio?: string | null
+}
+
+/** POST /api/user/profile 的返回 —— **落库后的真相**，客户端直接拿它更新全局 state */
+export interface ProfileUpdateResponse {
+  nickname: string | null
+  avatarUrl: string | null
+  gender: Gender | null
+  age: number | null
+  bio: string | null
+}
+
 export interface MeResponse {
   id: number
   nickname: string | null
   avatarUrl: string | null
+  /** 性别：'male' | 'female'；null = 未填 */
+  gender: Gender | null
+  /** 年龄（岁，6–120）；null = 未填 */
+  age: number | null
+  /** 简介（≤200 字）；null = 未填 */
+  bio: string | null
   /** 'active' / 'banned'；界面目前只区分「能不能用」 */
   status: string
   /**
@@ -692,16 +763,16 @@ export interface ChallengeWordScore {
  *    （GET /api/challenge/:sid，不需要登录）。
  *
  * ⚠️ 与 UserProfileResponse 是同一个模型：**一份数据人人（包括本人）都一样**，
- *    「谁在看」只决定**哪些模块给**：
- *      · 录音 —— 公开的给所有人看，**本人的（不管公开没公开）也给**
- *      · isOwner —— 本人专属的模块（可见性开关等）据此显示
+ *    「谁在看」不改变服务端给什么 —— 只有出分了才有这一份。
+ *      · 录音 —— **无条件返回**（链接即凭据；从挑战详情分享卡片进来的都能听）
+ *      · owner.id —— 端侧拿它跟自己的 id 比，决定「是不是本人」（标题 / 开关 / 按钮）
  */
 export interface ChallengeShareResponse {
-  /** 这条挑战是谁读的 */
-  owner: { nickname: string; avatarUrl: string | null }
+  /** 这条挑战是谁读的；id 用于端侧判断 owner */
+  owner: { id: number; nickname: string; avatarUrl: string | null }
   /** 与本人看到的 result 同构（同一处 describe() 产出）—— **只有 status='scored' 才有** */
   result: SubmitResponse
-  /** 这段录音的可播地址；**不公开时为 null**（本人不受此限）—— 同上，只有出分了才有 */
+  /** 这段录音的可播地址 —— 出分了就返回，不看 isPublic；没有录音时为 null */
   audio: SubmissionAudioRef | null
   /** 提交时刻（ISO）—— 分享页只显示到分钟 */
   at: string
@@ -709,7 +780,7 @@ export interface ChallengeShareResponse {
 
 export interface ChallengeRecord {
   submissionId: string
-  articleId: number
+  articleId: string
   /** 这次挑战归属哪一天（老数据可能为空） */
   scheduleDate: string | null
   /** 0–100，一位小数；没打完分时为空 */
@@ -727,27 +798,29 @@ export interface ChallengeRecord {
    *    那时列表退回**不标色**的整句，而不是猜着上色。
    */
   wordScores: ChallengeWordScore[] | null
+  /** ⭐ 这一句的视觉主题（bar 卡用它上色） */
+  theme: ArticleTheme | null
   /** 时间（ISO 字符串），列表按它倒序 */
   at: string
 }
 
 /**
- * ⭐ 一段**用户录音**的可播地址 —— 与 ArticleContent.audio 同构（kind + src）。
+ * ⭐ 一段**用户录音**的可播地址 —— 与 AudioRef 同构，只是字段名叫 src 而不是 full。
  *
  * ⚠️ 两条通道各有一套，客户端那侧只有一处分支（lib/audio/standard.ts 已处理）：
  *      · 'cloud' —— 云存储 fileID，客户端用 wx.cloud.getTempFileURL 换地址。
  *        云开发通道**不需要配 downloadFile 合法域名**，真机正式版才播得响。
  *      · 'http'  —— 服务端路径（本机联调，客户端自己拼 BASE_URL）。
- * ⚠️ 地址**只从「校验过归属的接口」发出来**（GET /api/submissions/:id/audio），
- *    这一页也是私人复盘页（只有本人看自己的记录），所以没有再套一层签名；
- *    真要把这条地址公开使用时，得先把鉴权加回去 —— 见 routes/media.ts。
+ * ⚠️ 地址从**开放接口**发出来（GET /api/challenge/:sid 与 /:sid/audio）：
+ *    音频可见性由**入口**决定，不再分「本人接口 / 公开接口」两条路。
+ *    分享卡片（群聊 / 个人聊天 / 通知）的链接本身就是凭据（sid 是 SUBMISSION_ID_LENGTH 位 hash）。
  */
 export interface SubmissionAudioRef {
   kind: 'cloud' | 'http'
   src: string
 }
 
-/** GET /api/submissions/:id/audio —— 拿一段自己录音的可播地址（audio 为 null = 音频不在了） */
+/** GET /api/challenge/:sid/audio —— 拿一段录音的可播地址（audio 为 null = 音频不在了） */
 export interface SubmissionAudioResponse {
   audio: SubmissionAudioRef | null
 }
@@ -759,7 +832,7 @@ export interface SubmissionAudioResponse {
  *    同一句读十次，这里仍然只是一条（次数在 attempts 里）。
  */
 export interface ParticipationRecord {
-  articleId: number
+  articleId: string
   /** 句子原文 —— 列表里靠它认出是哪一句 */
   text: string
   /** 这句有多少个词（句子本身的长度，不是我能控制的） */
@@ -782,6 +855,8 @@ export interface ParticipationRecord {
    * ⚠️ 老数据可能没有（schedule_date 为空）→ 空串，端侧那时不给跳。
    */
   lastScheduleDate: string
+  /** ⭐ 视觉主题（保留字段，本页暂不消费） */
+  theme: ArticleTheme | null
 }
 
 export interface ParticipationsResponse {
