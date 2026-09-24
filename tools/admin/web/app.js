@@ -631,6 +631,7 @@ function renderDetailValues(d) {
   renderWordInfo($("#dt-words"), $("#dt-wordcount"), state.detailWords, d.links)
 
   /** ⭐ 给用户看的「朗读建议及收益」—— 运营就是照它审的（"读者读了会不会想张嘴"） */
+  $("#dt-challenge").textContent = pick("challenge", d.challenge) || "—"
   $("#dt-advice").textContent = pick("advice", d.advice) || "—"
   $("#dt-published").textContent = fmtTime(pick("publishedAt", d.publishedAt))
 
@@ -795,8 +796,19 @@ function openInlineEditor(field) {
     return
   }
 
+  if (field === "challenge") {
+    // ⚠️ 挑战宣言还要当**分享卡标题**（客户端拼「朗读挑战:」）⇒ 运营改的时候要盯着字数
+    startInlineEdit(
+      $("#dt-challenge"),
+      textInput(pick("challenge", d.challenge) || ""),
+      function (el) { return el.value.trim() },
+      function (v) { setPending("challenge", v) },
+    )
+    return
+  }
+
   if (field === "advice") {
-    // ⚠️ 给用户看的「朗读建议及收益」是**产品文案**，运营可以直接改（它要过人的眼）
+    // ⚠️ 朗读建议是**产品文案**，运营可以直接改（它要过人的眼）
     startInlineEdit(
       $("#dt-advice"),
       textInput(pick("advice", d.advice) || ""),
@@ -854,6 +866,7 @@ async function updateArticle() {
   const body = {}
   if (has("translation")) body.translation = p.translation
   if (has("scores")) body.scores = p.scores
+  if (has("challenge")) body.challenge = p.challenge
   if (has("advice")) body.advice = p.advice
   if (has("tags")) body.tags = p.tags
   if (has("isActive")) body.publish = p.isActive
@@ -1319,11 +1332,20 @@ function candidateRow(it) {
   row.appendChild(mk("标签", tags))
   li.appendChild(row)
 
+  const challenge = document.createElement("input")
+  challenge.type = "text"
+  challenge.className = "cand-challenge"
+  // ⚠️ 18 字是**分享卡标题**的硬约束（拼上「朗读挑战:」后两行约 25 字）—— 界面上要看得见
+  challenge.maxLength = 24
+  challenge.value = it.challenge || ""
+  challenge.placeholder = "挑战宣言（≤18 字，兼分享卡标题）：这句是真硬，母语者都读不顺"
+  li.appendChild(challenge)
+
   const advice = document.createElement("input")
   advice.type = "text"
   advice.className = "cand-advice"
   advice.value = it.advice || ""
-  advice.placeholder = "怎么读 + 读完得着什么（口语收益）"
+  advice.placeholder = "朗读建议（把挑战框小）：真难的就三点…攻下就一气呵成"
   li.appendChild(advice)
 
   /**
@@ -1361,7 +1383,8 @@ function collectCandidates() {
       // ⚠️ 三个下拉都没有空选项 ⇒ 这里恒是 1–5 的三个整数
       scores: [1, 2, 3].map(function (_, i) { return Number(li.querySelector(".cand-s" + (i + 1)).value) }),
       tags: parseTags(li.querySelector(".cand-tags").value),
-      advice: li.querySelector(".cand-advice").value.trim(),
+      challenge: li.querySelector(".cand-challenge").value.trim(),
+    advice: li.querySelector(".cand-advice").value.trim(),
       /**
        * ⭐ 句中释义**原样带回**：词表（音节/音标/重音/连读）由服务端按**最终正文**重算，
        *    只有释义是模型给的、重算不出来。少带它不会报错，但新句子会没有释义。

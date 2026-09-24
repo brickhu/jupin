@@ -439,7 +439,7 @@ export interface ArticleListItem {
  *      fileID 里带环境 ID 与桶名，绝不能写进仓库里的那份 JSON。
  * ⚠️ 没有标准音时 audio 是 **null**（不是给一个 full=null 的壳）——
  *    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定。
- * ⚠️ 难度与 advice 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
+ * ⚠️ 难度、challenge 与 advice 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
  */
 export interface ArticleDetail {
   id: string
@@ -451,8 +451,13 @@ export interface ArticleDetail {
   /** ⭐ 难度档位（初级 / 中级 / 高级 / 专家）—— 由词汇/发音/长度三个判据分合成 */
   difficulty: ArticleLevel | null
   /**
-   * ⭐ **给用户看的「朗读建议及收益」** —— 怎么读 + 读完得着什么
-   *    （完整定义与写法要求见 ArticleContent.advice）。
+   * ⭐ **给用户看的第一句：挑战宣言** —— 判决 + 依据（如「这句是真硬，母语者都读不顺」）。
+   *    ⚠️ 它同时是**分享卡标题**的正文：客户端会拼成「朗读挑战:」+ challenge。
+   */
+  challenge: string | null
+  /**
+   * ⭐ **给用户看的第二句：朗读建议** —— 把挑战框小（真难的只有这几点）。
+   *    与 challenge 拼接成一段显示（完整定义见 ArticleContent.challenge / .advice）。
    */
   advice: string | null
   tags: string[]

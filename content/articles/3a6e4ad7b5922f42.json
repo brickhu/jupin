@@ -2,13 +2,14 @@
   "id": "3a6e4ad7b5922f42",
   "text": "Success is not final, failure is not fatal: it is the courage to continue that counts.",
   "translation": "成功不是终点，失败也并非末日，重要的是继续前行的勇气。",
-  "difficulty": 1,
+  "difficulty": 0,
   "scores": [
-    3,
-    3,
+    2,
+    2,
     2
   ],
-  "advice": "看着像句大白话，节奏却卡在冒号前后：前半句平着推、别提前使劲，重音攒到最后那个 counts，把 that counts 一口气带过去。这么念完，出口的是一句笃定的话，不是一段格言。",
+  "challenge": "读着像大白话，想读顺不容易",
+  "advice": "别急，真难的只有三处：counts 的 -nts 收住别拖，courage 的 r 卷起来，final 和 fatal 重音都在前头；这三处咬住，整句就能一口气念完不打结。",
   "tags": [
     "励志",
     "名言",
@@ -23,7 +24,7 @@
         "cess"
       ],
       "ipa": "/səkˈsɛs/",
-      "meaning": "成功（一时的成就）",
+      "meaning": "成功、成就",
       "tip": "主重音在第 2 拍"
     },
     {
@@ -54,7 +55,7 @@
         "nal,"
       ],
       "ipa": "/ˈfaɪnəl/",
-      "meaning": "到此为止的、终点的",
+      "meaning": "最终的、定局的（此句指终点）",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -65,7 +66,7 @@
         "ure"
       ],
       "ipa": "/ˈfeɪljɚ/",
-      "meaning": "失败（一次失利）",
+      "meaning": "失败、失利",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -96,7 +97,7 @@
         "tal:"
       ],
       "ipa": "/ˈfeɪtəl/",
-      "meaning": "致命的、全盘完蛋的",
+      "meaning": "致命的、毁掉一切的",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -158,7 +159,7 @@
         "ue"
       ],
       "ipa": "/kənˈtɪnju/",
-      "meaning": "继续往前、坚持走下去",
+      "meaning": "继续、接着走下去",
       "tip": "主重音在第 2 拍"
     },
     {
@@ -178,7 +179,7 @@
         "counts."
       ],
       "ipa": "/ˈkaʊnts/",
-      "meaning": "才算数、才是关键",
+      "meaning": "算数、真正重要",
       "tip": "词尾辅音连着收，别加元音"
     }
   ],

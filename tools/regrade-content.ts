@@ -11,7 +11,7 @@
  *   pnpm content:regrade --apply         写回正文 JSON，并刷新 articles 的派生索引
  *   pnpm content:regrade --only <子串>   只处理文件名含这个子串的（先拿一条试口径）
  *
- * ⚠️ 只改 difficulty / scores / advice / tags —— **text 一个字都不动**，
+ * ⚠️ 只改 difficulty / scores / challenge / advice / tags —— **text 一个字都不动**，
  *    所以 id 不变（内容寻址：id = sha256(text)），老提交与老排期仍然对得上这条句子。
  *    ⚠️ 顺手丢掉旧字段（两条轴的 `pronLevel` / `vocabLevel`，以及改名前那句的 `reason`）。
  * ⚠️ 写完必须刷索引：articles.difficulty 是**派生索引**（真相在正文 JSON，
@@ -31,11 +31,15 @@ import type { ArticleLevel, DifficultyScores } from '../packages/shared/src/type
 loadEnv('local')
 
 /**
- * ⚠️ advice 的字数上限 —— 与 `content-files.test.ts` 的断言**同一根线**（100）。
+ * ⚠️ 两句的字数上限 —— 与 `content-files.test.ts` 的断言**同一根线**。
  *    两处不一致的话，模型永远按宽的那个来（踩过：提示词写 45、测试放到 80，结果写出 88 字）。
- *    100 是「三拍（预期差／动作／收益）刚好装得下」的量，收太紧会逼模型砍掉第③拍的收益。
+ *
+ * ⚠️ challenge 的 18 字**不是排版偏好，是分享卡标题的硬约束**：客户端会拼成
+ *    「朗读挑战:」+ challenge，卡片标题两行约 25 字 —— 18 是给前缀留的余量。
  */
-const ADVICE_MAX_CHARS = 100
+const CHALLENGE_MAX_CHARS = 18
+/** advice：把挑战框小（边界 + 2–3 个坑 + 口语落点）；收紧到 90 是因为它只承担"建议"这一件事 */
+const ADVICE_MAX_CHARS = 90
 
 const apply = process.argv.includes('--apply')
 const onlyIdx = process.argv.indexOf('--only')
@@ -95,19 +99,26 @@ for (const f of files) {
     !legacy &&
     raw.difficulty === meta.difficulty &&
     JSON.stringify(raw.scores) === JSON.stringify(meta.scores) &&
+    raw.challenge === meta.challenge &&
     raw.advice === meta.advice
 
   console.log('【' + f + '】 ' + before + ' → ' + after + (noop ? '  （无变化）' : ''))
   console.log('    ' + String(raw.text))
+  console.log('    ' + meta.challenge)
   console.log('    ' + meta.advice)
   /**
-   * ⚠️ 超长就喊一声：advice 是**卡片上的一行小字**，超过 100 字就没人读完，
-   *    content-files.test.ts 也会红。而模型对这一条并不稳定（实测同一条句子
-   *    两次跑出 65 字和 71 字，都点了不止一个卡点）⇒ 这里提示人工在管理台改短
-   *    （详情页那一行 advice 可以直接编辑）。
+   * ⚠️ 超长就喊一声：challenge 上不了分享卡标题、advice 没人读完，
+   *    content-files.test.ts 也会红。模型对这两条都不稳定（实测同一条句子两次
+   *    跑出的长度能差 10 字以上）⇒ 这里提示人改短（详情页这两行都能直接编辑）。
    */
+  if (meta.challenge.length > CHALLENGE_MAX_CHARS) {
+    console.log(
+      '    ⚠️ challenge 太长（' + meta.challenge.length + ' 字 > ' + CHALLENGE_MAX_CHARS +
+        '）—— 分享卡标题装不下，请改短',
+    )
+  }
   if (meta.advice.length > ADVICE_MAX_CHARS) {
-    console.log('    ⚠️ 太长（' + meta.advice.length + ' 字 > ' + ADVICE_MAX_CHARS + '）—— 请在管理台改短')
+    console.log('    ⚠️ advice 太长（' + meta.advice.length + ' 字 > ' + ADVICE_MAX_CHARS + '）—— 请在管理台改短')
   }
   console.log('')
 
@@ -120,6 +131,7 @@ for (const f of files) {
     translation: String(raw.translation ?? ''),
     difficulty: meta.difficulty,
     scores: meta.scores,
+    challenge: meta.challenge,
     advice: meta.advice,
     tags: meta.tags,
     // ⭐ 词表与连读标注也一起重算 —— 它们同样出自这次 LLM 调用（句中释义）
@@ -129,7 +141,7 @@ for (const f of files) {
   }
   for (const k of Object.keys(raw)) {
     // ⚠️ 旧字段一个都不带过去：两条轴（pronLevel / vocabLevel）与改名前的 reason 都已废弃，
-    //    difficulty / scores / advice 一律用新算出来的值
+    //    difficulty / scores / challenge / advice 一律用新算出来的值
     if (k === 'pronLevel' || k === 'vocabLevel' || k === 'reason' || k === 'difficulty' || k === 'scores') continue
     if (!(k in next)) next[k] = raw[k]
   }

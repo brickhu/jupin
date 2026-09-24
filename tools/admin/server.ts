@@ -63,7 +63,7 @@ const WEB_DIR = join(HERE, 'web')
  * ⚠️⚠️ **提示词与规则是进程启动时读进内存的** —— 改了它们**不重启**，生成出来的还是旧口径，
  *    而输出**看起来完全正常**（只是旧文案又回来了）。这个坑真实踩到过两次：
  *      · DB 列改名后，旧进程还在查 `pron_level`（报错倒是看得见）；
- *      · 改完 advice 提示词没重启，生成出来的还是「相当于初中水平，词都很常见」（**完全静默**）。
+ *      · 改完 challenge / advice 提示词没重启，生成出来的还是旧口径（**完全静默**）。
  *
  *    ⚠️ 静态文件（web/ 下那几个）**不受影响**：它们是每个请求现读盘的，
  *       所以改了 app.js / index.html 刷新就生效 —— 只有 .ts 会被冻在启动那一刻。
@@ -591,7 +591,9 @@ async function upsertArticle(
      *    就可能互相矛盾，而没有任何东西会发现（content-files.test.ts 会查）。
      */
     scores: DifficultyScores
-    /** 给用户看的「朗读建议及收益」（定义见 article-meta.ts 的 SYSTEM）；可手改 */
+    /** 给用户看的**第一句**：挑战宣言（兼分享卡标题，≤18 字）；可手改 */
+    challenge: string
+    /** 给用户看的**第二句**：朗读建议（定义见 article-meta.ts 的 SYSTEM）；可手改 */
     advice: string
     tags: string[]
     /**
@@ -616,8 +618,9 @@ async function upsertArticle(
     translation: input.translation,
     difficulty,
     scores: input.scores,
-    // ⚠️ 这一行曾经漏了 —— 详情页改那句「建议及收益」会**静默丢失**（文件里还是旧值），
+    // ⚠️ 这一行曾经漏了 —— 详情页改那句「建议」会**静默丢失**（文件里还是旧值），
     //    而接口把新值回给了前端，看起来像保存成功。手动改的内容必须真的落盘。
+    challenge: input.challenge,
     advice: input.advice,
     tags: input.tags,
     // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的词表」
@@ -695,6 +698,7 @@ interface IngestResult {
   difficulty: number
   /** 三个判据分 [词汇, 发音, 长度]；没给就是 null */
   scores: DifficultyScores | null
+  challenge: string
   advice: string
   tags: string[]
   status: 'done' | 'skipped' | 'failed'
@@ -731,6 +735,7 @@ async function runSplit(job: Job, text: string): Promise<void> {
     const sc = it.scores === null ? '判据分缺' : '词汇/发音/长度 ' + it.scores.join('/')
     job.log.push((it.exists ? '⏭ 已存在 ' : '· ') + it.id + '  ' + lb(it.difficulty) +
       (total === null ? '' : ' ' + total.toFixed(1)) + '（' + sc + '）  ' + it.text)
+    job.log.push('    ' + it.challenge)
     job.log.push('    ' + it.advice)
   }
   job.step = '完成'
@@ -759,7 +764,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
   const base = (it: SplitItem): Omit<IngestResult, 'status' | 'error'> => ({
     id: it.id, text: it.text, translation: it.translation,
     difficulty: it.difficulty ?? -1, scores: it.scores,
-    advice: it.advice, tags: it.tags,
+    challenge: it.challenge, advice: it.advice, tags: it.tags,
   })
 
   // ① 落正文
@@ -793,7 +798,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
     await writeContentFile(it.id, {
       id: it.id, text: it.text, translation: it.translation,
       difficulty: it.difficulty, scores: it.scores,
-      advice: it.advice, tags: it.tags,
+      challenge: it.challenge, advice: it.advice, tags: it.tags,
       words: info.words, links: info.links,
     })
     prepared.push({ it, created })
@@ -828,7 +833,7 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
       await upsertArticle(mode, {
         id: p.it.id, text: p.it.text, translation: p.it.translation,
         scores: p.it.scores!,
-        advice: p.it.advice, tags: p.it.tags, publish: false,
+        challenge: p.it.challenge, advice: p.it.advice, tags: p.it.tags, publish: false,
       })
       results.push({ ...base(p.it), status: 'done' })
       job.log.push('✓ 入库（草稿）：' + p.it.id)
@@ -1087,9 +1092,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       scores: normalizeScores(c?.scores),
       score: weightedScoreOf(c?.scores),
       /**
-       * ⭐ 给用户看的「朗读建议及收益」—— **真相在正文 JSON**（它不进库，见 types/content.ts）。
-       *    读出来给运营看：运营就是照它审的（读者读了会不会想张嘴）。
+       * ⭐ 给用户看的两句（挑战宣言 + 朗读建议）—— **真相在正文 JSON**（它们不进库，见 types/content.ts）。
+       *    读出来给运营看：运营就是照它审的（分享卡标题够不够短 / 读者读了会不会想张嘴）。
        */
+      challenge: typeof c?.challenge === 'string' ? c.challenge : null,
       advice: typeof c?.advice === 'string' ? c.advice : null,
       /** ⭐ 详情页也要显示发布时间（列表里有，详情里没有会很奇怪） */
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
@@ -1142,9 +1148,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (scores === null) return fail(res, 'scores（三个判据分）必须是 1–5 的三个整数')
     const difficulty = difficultyFromScores(scores)!
     /**
-     * ⭐ 给用户看的「朗读建议及收益」：**可以手改**（它要过运营的眼）。
-     * ⚠️ 不传就沿用正文里的旧值 —— 保存译文不该把这句话弄丢。
+     * ⭐ 给用户看的两句：**都可以手改**（它们要过运营的眼；挑战宣言还要当分享卡标题）。
+     * ⚠️ 不传就沿用正文里的旧值 —— 保存译文不该把这两句弄丢。
      */
+    const challenge =
+      typeof b.challenge === 'string' ? b.challenge.trim() : (typeof c.challenge === 'string' ? c.challenge : '')
     const advice = typeof b.advice === 'string' ? b.advice.trim() : (typeof c.advice === 'string' ? c.advice : '')
     const tags = normalizeTags(b.tags ?? c.tags)
 
@@ -1179,6 +1187,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       text: String(c.text ?? ''),
       translation,
       scores,
+      challenge,
       advice,
       tags,
       publish: b.publish === undefined ? undefined : b.publish === true,
@@ -1190,6 +1199,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       translation,
       difficulty,
       scores,
+      challenge,
       advice,
       tags,
       /** ⭐ 保存后的发布状态 —— 唯一真相是 is_active（content_status 已删） */
