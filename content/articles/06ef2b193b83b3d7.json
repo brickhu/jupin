@@ -5,14 +5,13 @@
   "difficulty": 0,
   "scores": [
     2,
-    2,
+    3,
     2
   ],
-  "reason": "看着像大白话，真坑是 made as 和 simple as 要连成一串，别一个个蹦。",
+  "reason": "看着像谁都会念，坑在 everything 的 /θ/ 和 as simple as possible 那一串连读；这两处一顺，这种慢条斯理的话你张口就稳。",
   "tags": [
     "名言",
-    "哲理",
-    "极简"
+    "哲理"
   ],
   "words": [
     {
@@ -23,7 +22,7 @@
         "thing"
       ],
       "ipa": "/ˈɛvɹiˌθɪŋ/",
-      "meaning": "一切事物、所有事情",
+      "meaning": "一切事物、所有东西",
       "tip": "主重音在第 1 拍；th 要咬舌尖"
     },
     {
@@ -53,7 +52,7 @@
         "made"
       ],
       "ipa": "/ˈmeɪd/",
-      "meaning": "使…变得（被动语态）",
+      "meaning": "被弄成、被做得（此句指把事情处理成）",
       "tip": ""
     },
     {
@@ -74,7 +73,7 @@
         "ple"
       ],
       "ipa": "/ˈsɪmpəl/",
-      "meaning": "简单的、简洁的",
+      "meaning": "简单、简洁",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -96,7 +95,7 @@
         "ble,"
       ],
       "ipa": "/ˈpɑsəbəl/",
-      "meaning": "尽可能（as…as possible）",
+      "meaning": "可能的（as…as possible 即尽可能）",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -127,7 +126,7 @@
         "pler."
       ],
       "ipa": "/ˈsɪmpəlɚ/",
-      "meaning": "更简单（此处指简化过头）",
+      "meaning": "更简单（比「简单」还过头）",
       "tip": "主重音在第 1 拍"
     }
   ],

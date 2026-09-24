@@ -31,10 +31,11 @@ import type { ArticleLevel, DifficultyScores } from '../packages/shared/src/type
 loadEnv('local')
 
 /**
- * ⚠️ reason 的字数上限 —— 与 `content-files.test.ts` 的断言**同一根线**（60）。
+ * ⚠️ reason 的字数上限 —— 与 `content-files.test.ts` 的断言**同一根线**（90）。
  *    两处不一致的话，模型永远按宽的那个来（踩过：提示词写 45、测试放到 80，结果写出 88 字）。
+ *    90 是「三拍（定位／难点／收益）刚好装得下」的量，收太紧会逼模型砍掉第③拍的收益。
  */
-const REASON_MAX_CHARS = 60
+const REASON_MAX_CHARS = 90
 
 const apply = process.argv.includes('--apply')
 const onlyIdx = process.argv.indexOf('--only')
@@ -100,7 +101,7 @@ for (const f of files) {
   console.log('    ' + String(raw.text))
   console.log('    ' + meta.reason)
   /**
-   * ⚠️ 超长就喊一声：reason 是**卡片上的一行小字**，超过 60 字就没人读完，
+   * ⚠️ 超长就喊一声：reason 是**卡片上的一行小字**，超过 90 字就没人读完，
    *    content-files.test.ts 也会红。而模型对这一条并不稳定（实测同一条句子
    *    两次跑出 65 字和 71 字，都点了不止一个卡点）⇒ 这里提示人工在管理台改短
    *    （详情页那一行 reason 可以直接编辑）。
