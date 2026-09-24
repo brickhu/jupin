@@ -2,17 +2,17 @@
   "id": "3a6e4ad7b5922f42",
   "text": "Success is not final, failure is not fatal: it is the courage to continue that counts.",
   "translation": "成功不是终点，失败也并非末日，重要的是继续前行的勇气。",
-  "difficulty": 0,
+  "difficulty": 1,
   "scores": [
-    2,
+    3,
     2,
     2
   ],
-  "reason": "相当于初中水平，counts 结尾的 -nts 要连着念顺；其余词都很常见。",
+  "reason": "相当于高中水平，counts 的 -nts 尾音连读容易含糊；只有 fatal 稍超纲。",
   "tags": [
     "名言",
-    "励志",
-    "短句"
+    "哲理",
+    "励志"
   ],
   "words": [
     {
@@ -23,7 +23,7 @@
         "cess"
       ],
       "ipa": "/səkˈsɛs/",
-      "meaning": "成功（此句指一时的成功）",
+      "meaning": "成功",
       "tip": "主重音在第 2 拍"
     },
     {
@@ -54,7 +54,7 @@
         "nal,"
       ],
       "ipa": "/ˈfaɪnəl/",
-      "meaning": "最终的、到此为止的",
+      "meaning": "最终的、定局的",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -65,7 +65,7 @@
         "ure"
       ],
       "ipa": "/ˈfeɪljɚ/",
-      "meaning": "失败（一时的失利）",
+      "meaning": "失败",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -96,7 +96,7 @@
         "tal:"
       ],
       "ipa": "/ˈfeɪtəl/",
-      "meaning": "致命的、彻底完蛋的",
+      "meaning": "致命的、毁灭性的",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -136,7 +136,7 @@
         "courage"
       ],
       "ipa": "/ˈkɝədʒ/",
-      "meaning": "勇气、胆量",
+      "meaning": "勇气",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -158,7 +158,7 @@
         "ue"
       ],
       "ipa": "/kənˈtɪnju/",
-      "meaning": "继续（往前走）",
+      "meaning": "继续（前行）",
       "tip": "主重音在第 2 拍"
     },
     {
@@ -178,7 +178,7 @@
         "counts."
       ],
       "ipa": "/ˈkaʊnts/",
-      "meaning": "重要、算数",
+      "meaning": "起作用、才最重要",
       "tip": "词尾辅音连着收，别加元音"
     }
   ],

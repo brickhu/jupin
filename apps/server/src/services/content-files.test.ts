@@ -76,6 +76,20 @@ describe('content/articles/*.json', () => {
       // ⚠️ 与规范化结果逐项相等 = 没有被吃掉的东西（空串 / 重复 / 首尾空格 / 非字符串）
       expect(normalizeTags(tags), file + ' 的 tags 规范化后应无变化').toEqual(tags)
       expect(tags.length, file + ' 的标签个数').toBeLessThanOrEqual(MAX_ARTICLE_TAGS)
+      /**
+       * ⚠️⚠️ 标签只许写**主题与体裁**，不许写难度/发音的元描述。
+       *
+       *    用户 2026-09 直接指出：标签里出现了「发音难点」这种东西。
+       *    它和档位徽章、那句「难在哪」、词表里的发音技巧**说的是同一件事**，
+       *    当一个标签摆出来就是重复的内部黑话 —— 而且这个词组是提示词自己举例带出来的，
+       *    所以光改提示词不够，这里钉一道，防止再漂回去。
+       *    ⚠️ 「绕口令」不在黑名单里：它是体裁（说的是"这是绕口令"，不是"这句难"）。
+       */
+      for (const banned of ['发音难点', '难词', '长词', '短句', '难句', '拗口', '发音', '简单', '容易']) {
+        expect(tags.includes(banned), file + ' 的标签不该出现「' + banned + '」（那是难度元描述，不是主题）').toBe(
+          false,
+        )
+      }
       for (const tag of tags) {
         expect(tag.length, file + ' 的标签「' + tag + '」太长').toBeLessThanOrEqual(MAX_ARTICLE_TAG_CHARS)
       }
