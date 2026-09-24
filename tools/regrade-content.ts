@@ -30,6 +30,12 @@ import type { ArticleLevel, DifficultyScores } from '../packages/shared/src/type
 
 loadEnv('local')
 
+/**
+ * ⚠️ reason 的字数上限 —— 与 `content-files.test.ts` 的断言**同一根线**（60）。
+ *    两处不一致的话，模型永远按宽的那个来（踩过：提示词写 45、测试放到 80，结果写出 88 字）。
+ */
+const REASON_MAX_CHARS = 60
+
 const apply = process.argv.includes('--apply')
 const onlyIdx = process.argv.indexOf('--only')
 const only = onlyIdx >= 0 ? (process.argv[onlyIdx + 1] ?? null) : null
@@ -93,6 +99,15 @@ for (const f of files) {
   console.log('【' + f + '】 ' + before + ' → ' + after + (noop ? '  （无变化）' : ''))
   console.log('    ' + String(raw.text))
   console.log('    ' + meta.reason)
+  /**
+   * ⚠️ 超长就喊一声：reason 是**卡片上的一行小字**，超过 60 字就没人读完，
+   *    content-files.test.ts 也会红。而模型对这一条并不稳定（实测同一条句子
+   *    两次跑出 65 字和 71 字，都点了不止一个卡点）⇒ 这里提示人工在管理台改短
+   *    （详情页那一行 reason 可以直接编辑）。
+   */
+  if (meta.reason.length > REASON_MAX_CHARS) {
+    console.log('    ⚠️ 太长（' + meta.reason.length + ' 字 > ' + REASON_MAX_CHARS + '）—— 请在管理台改短')
+  }
   console.log('')
 
   if (noop || !apply) continue
