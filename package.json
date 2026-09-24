@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "check:docs": "node tools/check-docs.mjs",
     "plan:status": "node tools/plan-status.mjs",
+    "plan:sync": "node tools/plan-status.mjs --write",
     "check": "pnpm typecheck && pnpm test && pnpm check:docs && pnpm plan:status --strict",
     "dev:docker": "docker compose --profile full up -d --build",
     "dev:docker:logs": "docker compose logs -f api",

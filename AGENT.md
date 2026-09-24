@@ -52,7 +52,7 @@ docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · �
 | **① 落任务** | 需求如果是明确的 plan/todo，**先写进 [plan.md](plan.md)**（带 ID + 做完的标志），再动手 | plan.md 里有这一条 |
 | **② 对齐文档** | 如果是**新需求 / 新概念**，先改 [prd.md](prd.md)（名词、概念、应该是什么）；涉及「为什么这么选」再动 [spec.md](spec.md) | 文档没对齐不写代码 |
 | **③ 编码 + 注释** | 写代码，**同时**把规则变更写进注释（代码是真相，注释是它的一部分） | 改代码不改注释 = bug |
-| **④ 提交时闭环** | commit 信息带 `plan <ID>`；提交前跑 `pnpm check`；再核对 plan 状态 | `pnpm plan:status` 认得出这条 |
+| **④ 提交时闭环** | commit 信息带 `plan <ID>`；提交前跑 `pnpm check`；然后 `pnpm plan:sync` 按 git 把 `- [ ]` 勾成 `- [x]` 并归档进「已完成」 | `pnpm plan:status` 认得出这条，且没有 🔲 |
 | **⑤ 无 commit 的完成项** | 真机实验 / 外部配置 / 决定这类做完也没有 commit 的，在 plan.md 手写一行并标 `[无 commit]` | 这类条目要少 |
 
 **提交信息格式**（scope 里挂任务 ID）：
@@ -77,8 +77,11 @@ fix(plan C3): prod 建库后迁移 0031 才跑得通
 `pnpm plan:status` 读的是**本地** git 历史，但它会把「已推送 / 仅本地」分开标 ——
 因为仅本地的 commit 只在**这台机器**上成立，换一台机器或 CI 就是另一个答案。
 
-**「已完成」由 git 派生，不手写。** `pnpm plan:status` 扫提交信息里的 `plan <ID>`，
-把每个任务对上它的 commit（时间 + sha + 数量）。一份手写的完成清单一定会漂，git 不会。
+**「已完成」由 git 派生，不手写。** plan.md 里 `- [ ]` = 未完成、`- [x]` = 已完成；
+`pnpm plan:status` 扫提交信息里的 `plan <ID>`，把每个任务对上它的 commit（时间 + sha + 推送状态），
+`pnpm plan:sync` 再据此**回写** checkbox 并把整行搬进「## 已完成」段。
+⇒ `[x]` 是 git 的**投影**，不是第二份真相；人只写 `- [ ]`，机器只写 `[x]`。
+天生没有 commit 的完成项（真机实验 / 外部配置 / 决定）手写进「已完成 · 无 commit」段。
 
 ---
 
@@ -110,7 +113,8 @@ git switch main && git merge dev && git push && git switch dev   # 合主线
 |---|---|
 | `pnpm install` | 装依赖（pnpm workspace） |
 | `pnpm typecheck` / `pnpm test` / `pnpm build` | 全仓类型检查 / 测试 / 构建（`pnpm -r …`） |
-| `pnpm check` | 上面三样 + **文档检查**（`pnpm check:docs`：链接与路径是否存在、spec.md 里不许有 DDL） |
+| `pnpm check` | 上面三样 + **文档检查**（`pnpm check:docs`）+ **plan 闭环检查**（`plan:status --strict`） |
+| `pnpm plan:status` / `pnpm plan:sync` | 打印任务 vs git 证据 / 按 git 回写 plan.md 的 checkbox（**唯一会改 plan.md 的模式**） |
 | `pnpm dev:docker` | 起 db + api（`docker compose --profile full up -d --build`，自动迁移 + 种子） |
 | `pnpm dev:docker:logs` / `:ps` / `:down` / `:reset` | 跟日志 / 看状态 / 停 / 推倒重来（删卷重建） |
 | `pnpm dev:mp` / `pnpm dev` | 小程序 esbuild --watch / 本机直跑后端（配合 `pnpm db:up`） |

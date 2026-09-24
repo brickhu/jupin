@@ -2,58 +2,52 @@
  * ⭐ plan 状态 —— 「做完了没有」的**唯一权威答案是 git，不是人手写的清单**。
  *
  * 统一开发流程的第 4 步（见 AGENT.md「统一开发流程」）是：
- *   提交时闭环 —— commit 信息带 `plan <ID>`，并核对 plan 状态。
- * 这个脚本就是那一步的机械部分：把 plan.md 里的任务 ID 与 git 历史对起来。
+ *   提交时闭环 —— commit 信息带 \`plan <ID>\`，再核对 plan 状态。
+ * 这个脚本就是那一步的机械部分：把 plan.md 的 checkbox 与 git 历史对起来。
  *
  * 分工（元规则：一个事实只有一个地方能回答它）：
- *   · 「还没做 / 决定 / 优先级」→ plan.md（只有文件能承载不存在的东西）
+ *   · 「还没做 / 决定 / 优先级」→ plan.md 的 \`- [ ]\`
  *   · 「做完了没有」          → git（不可伪造、自带时间与 diff 证据）
- *   · 天生没有 commit 的完成项（真机实验 / 外部配置 / 决定）→ plan.md 手写一行并标 [无 commit]
+ *   · 天生没有 commit 的完成项（真机实验 / 外部配置 / 决定）→ plan.md 的「已完成 · 无 commit」段
+ *
+ * ⭐ 所以 \`- [x]\` 不是手写的：\`--write\` 会按 git 把 \`- [ ]\` 改成 \`- [x]\` 并把整行**搬进**
+ *    「## 已完成」段。它是一份**投影**，不是第二份真相。
  *
  * 用法：
- *   pnpm plan:status            打印每个任务的 git 证据
- *   pnpm plan:status --strict   额外把「commit 里写了不存在的 ID」当错误（防手滑打字）
+ *   pnpm plan:status              打印每个任务的 git 证据 + 闭环检查
+ *   pnpm plan:status --strict     额外把「ID 打错 / 勾了却没 commit」当错误（CI 与 pnpm check 用）
+ *   pnpm plan:sync                按 git 回写 plan.md 的 checkbox（唯一会改文件的模式）
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = resolveRoot()
-function resolveRoot() {
-  return join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const argv = process.argv.slice(2)
+const strict = argv.includes('--strict')
+const write = argv.includes('--write')
+
+const PLAN_PATH = join(ROOT, 'plan.md')
+const planText = readFileSync(PLAN_PATH, 'utf8')
+
+/** 任务行：\`- [ ] **B1** 说明…\`（ID 必须在行首的粗体里 —— 避免把正文里的引用当成定义） */
+const TASK_RE = /^- \[([ x])\] \*\*([A-C]\d)\*\* /
+
+/** 抽任务 ID → 它所在的节与当前勾选状态 */
+function parseTasks(text) {
+  const tasks = new Map()
+  let section = '(未知)'
+  for (const line of text.split('\n')) {
+    const h = /^##+\s+(.+?)\s*$/.exec(line)
+    if (h) section = h[1].trim()
+    const m = TASK_RE.exec(line)
+    if (m) tasks.set(m[2], { section, checked: m[1] === 'x', line })
+  }
+  return tasks
 }
 
-const strict = process.argv.includes('--strict')
-
-const plan = readFileSync(join(ROOT, 'plan.md'), 'utf8')
-
-/**
- * 从 plan.md 抽任务 ID 与它所在的节。
- * 只认**表格行首**的 ID（| B1 | …），不认正文里顺口提到的 —— 避免把引用当成定义。
- */
-const tasks = new Map()
-let section = '(未知)'
-let archived = false
-for (const line of plan.split('\n')) {
-  const h = /^##+\s+(.+?)\s*$/.exec(line)
-  if (h) {
-    section = h[1].trim()
-    archived = /已完成|归档/.test(section)
-  }
-  const m = /^\|\s*\*{0,2}([A-C]\d)\*{0,2}\s*\|/.exec(line)
-  if (m) {
-    tasks.set(m[1], section)
-    continue
-  }
-  /**
-   * ⭐ 已完成任务的 **ID 归档**（只列 ID，不写状态与日期 —— 那些从 git 派生）。
-   * 为什么必须有：任务做完就从「待办」里删掉，它的 ID 也就消失了 ——
-   * 那样提交信息里的 ID 会被本脚本当成「打错字」，`--strict` 会在**每次正常收尾时误报**。
-   * 归档只承担两件事：① 校验 ID 拼写；② 保证 ID 不复用。
-   */
-  if (archived) for (const t of line.matchAll(/([A-C]\d)\b/g)) tasks.set(t[1], section)
-}
+const tasks = parseTasks(planText)
 
 const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
 const log = git(['log', '--format=%H%x09%ad%x09%s', '--date=short'])
@@ -66,12 +60,10 @@ const log = git(['log', '--format=%H%x09%ad%x09%s', '--date=short'])
 
 /**
  * ⭐⭐ 本地提交 ≠ 推送。两者是**不同性质的动作**：
- *   · `git commit` = 记账 —— 幂等、可回滚、不影响远程、不影响部署；
- *   · `git push`   = **发布** —— 本仓库的 .github/workflows/deploy.yml 在 push 到 dev 时
- *     会**真的部署到云托管 dev 环境**（只有纯 .md / docs/ / apps/miniprogram/ 的改动不触发）。
- *
- * 所以「已完成」的证据必须分「已推送 / 仅本地」：
- * 仅本地的 commit 只在**这台机器**上成立，换一台机器就是另一个答案。
+ *   · \`git commit\` = 记账 —— 幂等、可回滚、不影响远程、不影响部署；
+ *   · \`git push\`   = **发布** —— .github/workflows/deploy.yml 在 push 到 dev 时会
+ *     真的部署到云托管（只有纯 .md / docs/ / apps/miniprogram/ 的改动不触发）。
+ * 所以证据必须分「已推送 / 仅本地」：仅本地的 commit 只在**这台机器**上成立。
  */
 let aheadSet = new Set()
 let aheadKnown = false
@@ -80,7 +72,7 @@ try {
   aheadSet = new Set(git(['rev-list', 'origin/dev..HEAD']).split('\n').filter(Boolean))
   aheadKnown = true
 } catch {
-  // 没有 origin/dev（比如还没 fetch）→ 就不猜，标「推送状态未知」
+  // 没有 origin/dev（还没 fetch）→ 不猜，标「推送状态未知」
 }
 
 /** commit 信息里的 ID：plan B1 / plan-B1 / (plan B1) 都认 */
@@ -103,14 +95,67 @@ for (const c of log) {
   list.push(c)
   byTask.set(id, list)
 }
+const hasCommit = (id) => (byTask.get(id) ?? []).length > 0
 
+/**
+ * ⭐ 闭环检查 —— 两个方向都要看：
+ *   · 有 commit 但没勾 ⇒ 该跑 \`pnpm plan:sync\`（人忘了回写）
+ *   · 勾了但没有 commit ⇒ 要么忘了提交，要么它该写进「已完成 · 无 commit」段
+ */
+const needCheck = [...tasks].filter(([id, t]) => !t.checked && hasCommit(id)).map(([id]) => id)
+const falseCheck = [...tasks].filter(([id, t]) => t.checked && !hasCommit(id)).map(([id]) => id)
+
+// ---------------------------------------------------------------- --write
+if (write) {
+  const done = new Set([...tasks.keys()].filter(hasCommit))
+  const collected = []
+  const kept = []
+  for (const line of planText.split('\n')) {
+    const m = TASK_RE.exec(line)
+    if (m && (m[1] === 'x' || done.has(m[2]))) {
+      collected.push(m[1] === 'x' ? line : '- [x] ' + line.slice(6))
+      continue
+    }
+    kept.push(line)
+  }
+  collected.sort((a, b) => TASK_RE.exec(a)[2].localeCompare(TASK_RE.exec(b)[2]))
+  const idx = kept.findIndex((l) => /^##\s+已完成/.test(l) && !/无 commit/.test(l))
+  if (idx < 0) {
+    console.error('❌ plan.md 里找不到「## 已完成」段，无法回写')
+    process.exit(1)
+  }
+  /**
+   * ⚠️ 整段**重建**而不是「插一行」—— 插入式写法每次运行都会多留一个空行
+   *    （条目被移走一次、又被插回来一次），跑几次文件就烂了。
+   *    重建的形态是确定的：标题 / 空行 / banner / 空行 / 条目 / 空行 / 下一个标题。
+   */
+  const end = kept.findIndex((l, i) => i > idx && /^##\s/.test(l))
+  const sectionEnd = end < 0 ? kept.length : end
+  let b = idx + 1
+  while (b < sectionEnd && kept[b].trim() === '') b++
+  const banner = []
+  while (b < sectionEnd && /^>/.test(kept[b])) banner.push(kept[b++])
+  const body = ['', ...banner, '', ...collected, '']
+  kept.splice(idx + 1, sectionEnd - (idx + 1), ...body)
+  const next = kept.join('\n')
+  if (next === planText) {
+    console.log('plan:sync —— 已经是同步的，plan.md 未改动')
+    process.exit(0)
+  }
+  writeFileSync(PLAN_PATH, next, 'utf8')
+  console.log('plan:sync —— 已按 git 勾选并归档 ' + collected.length + ' 条：' + collected.map((l) => TASK_RE.exec(l)[2]).join(' '))
+  console.log('（plan.md 已改；记得提交它）')
+  process.exit(0)
+}
+
+// ---------------------------------------------------------------- 报表
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((w, ch) => w + (ch.charCodeAt(0) > 127 ? 2 : 1), 0)))
 
-console.log('plan 任务 vs git 证据（提交信息里的 `plan <ID>`）')
+console.log('plan 任务 vs git 证据（提交信息里的 \`plan <ID>\`）')
 console.log('')
-console.log('  ' + pad('ID', 6) + pad('状态（git）', 16) + pad('在 plan 的哪一节', 30) + '最近一次')
-console.log('  ' + '-'.repeat(84))
-for (const [id, sec] of tasks) {
+console.log('  ' + pad('ID', 6) + pad('checkbox', 12) + pad('状态（git）', 22) + pad('在 plan 的哪一节', 28) + '最近一次')
+console.log('  ' + '-'.repeat(96))
+for (const [id, t] of tasks) {
   const hits = byTask.get(id) ?? []
   const last = hits[0]
   const local = aheadKnown ? hits.filter((c) => aheadSet.has(c.sha)).length : 0
@@ -120,10 +165,13 @@ for (const [id, sec] of tasks) {
   else if (!aheadKnown) state = '✓ ' + hits.length + ' 个 commit'
   else if (local === 0) state = '✓ 已推送 ' + pushed
   else state = '◐ 推送 ' + pushed + ' / 本地 ' + local
-  console.log('  ' + pad(id, 6) + pad(state, 22) + pad(sec, 28) + (last ? last.date + '  ' + last.sha.slice(0, 8) : '—'))
+  console.log(
+    '  ' + pad(id, 6) + pad(t.checked ? '[x]' : '[ ]', 12) + pad(state, 22) + pad(t.section, 28) +
+      (last ? last.date + '  ' + last.sha.slice(0, 8) : '—'),
+  )
 }
 
-const done = [...tasks.keys()].filter((id) => (byTask.get(id) ?? []).length > 0)
+const done = [...tasks.keys()].filter(hasCommit)
 console.log('')
 console.log('  ' + tasks.size + ' 条任务；有 git 证据的 ' + done.length + ' 条')
 if (aheadKnown) {
@@ -136,20 +184,22 @@ if (aheadKnown) {
   )
 }
 
+if (needCheck.length > 0) console.log('\n  🔲 有 commit 但没勾：' + needCheck.join(' ') + ' → 跑 \`pnpm plan:sync\`')
+if (falseCheck.length > 0) console.log('\n  ⚠️ 勾了却没有 commit：' + falseCheck.join(' ') + ' —— 要么还没提交，要么它该写进「已完成 · 无 commit」段')
+
 if (unknown.length > 0) {
   console.log('')
-  console.log((strict ? '❌' : '⚠️ ') + ' commit 里出现的 ID 在 plan.md 里不存在（打错字了？）：')
+  console.log((strict ? '❌' : '⚠️ ') + ' commit 里的 ID 在 plan.md 里不存在（打错字了？）')
   for (const u of unknown) console.log('   · ' + u.id + '  ' + u.date + '  ' + u.subject.slice(0, 70))
-  if (strict) process.exit(1)
 }
 
 if (untagged.length > 0) {
-  const shown = untagged.slice(0, 5)
   console.log('')
   console.log('  ℹ️ 没挂 ID 的 commit：' + untagged.length + ' 个（多数是新流程之前的历史提交）')
-  for (const u of shown) console.log('   · ' + u.date + '  ' + u.subject.slice(0, 70))
-  if (untagged.length > 5) console.log('   · …还有 ' + (untagged.length - 5) + ' 个')
+  for (const u of untagged.slice(0, 3)) console.log('   · ' + u.date + '  ' + u.subject.slice(0, 70))
+  if (untagged.length > 3) console.log('   · …还有 ' + (untagged.length - 3) + ' 个')
 }
 
 console.log('')
-console.log('  记法：提交信息写成 `feat(plan B1): …`，这个脚本就能把它算成 B1 的证据。')
+console.log('  记法：提交信息写成 \`feat(plan B1): …\`；回写勾选跑 \`pnpm plan:sync\`。')
+if (strict && (unknown.length > 0 || falseCheck.length > 0)) process.exit(1)
