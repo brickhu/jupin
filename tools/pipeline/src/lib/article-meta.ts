@@ -51,6 +51,15 @@ export interface ArticleCandidate {
   words: ArticleWordItem[]
   /** ⭐ 词间连读标注（长度 = words.length - 1；空串 = 不连） */
   links: string[]
+  /**
+   * ⭐ LLM 给的**句中释义原始表**（`[{w, m}]`，按词形给的）。
+   *
+   * ⚠️⚠️ 为什么单独带出去：词表的音节/音标/连读都是**由正文算出来的**，而正文在入库前
+   *    还可能在界面上被人手改 —— 所以入库那一步必须**按最终正文重算**，不能直接用
+   *    这里算好的 words（改了正文就会与词表错位）。释义是唯一需要 LLM 的部分，
+   *    因此只有它需要原样带过去。
+   */
+  meanings: Array<{ w: string; m: string }>
   tags: string[]
   /** 给用户看的一句话（格式见 SYSTEM）—— 进正文 JSON，detail 接口会返回 */
   reason: string
@@ -208,7 +217,7 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
 {
   "articles": [
     { "index": 1, "text": "纠错后的英文", "translation": "自然口语化的中文（别用直译腔）",
-      "scores": [4, 2, 3], "difficulty": 2, "tags": ["主题", "特征"], "reason": "相当于…水平，…；…",
+      "scores": [4, 2, 3], "difficulty": 2, "tags": ["主题", "体裁"], "reason": "看着像大白话，真坑是…",
       "words": [ { "w": "sophistication", "m": "精致、考究（此句指格调）" } ] }
   ]
 }`
@@ -225,19 +234,15 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
  *    ECDICT 的字段不完整也不好直接当结论（高级词表也收基础词、屈折形常常没填），
  *    所以工具只给**原始字段**，权衡留给模型 —— 这就是 tool-call 的意义（见 ecdict.ts）。
  */
-/**
- * 模型交回来的 `words: [{w, m}]` → 词形（小写、去标点）→ 中文释义。
- * ⚠️ 按**词形**对齐而不是按下标：让模型数下标一定会数错；同一个词出现两次意思也一样。
- * ⚠️ 空的 / 认不出的条目直接丢掉（宁可没有释义，也不要一条错位的）。
- */
-function meaningsOf(raw: unknown): Map<string, string> {
-  const out = new Map<string, string>()
-  if (!Array.isArray(raw)) return out
+/** 原样收下模型给的 `[{w, m}]`（只清洗空白与非空），给下游「按最终正文重算词表」用 */
+function listMeanings(raw: unknown): Array<{ w: string; m: string }> {
+  if (!Array.isArray(raw)) return []
+  const out: Array<{ w: string; m: string }> = []
   for (const item of raw) {
     const o = (item ?? {}) as Record<string, unknown>
-    const w = String(o.w ?? '').toLowerCase().replace(/[^a-z'’]/g, '')
+    const w = String(o.w ?? '').trim()
     const m = String(o.m ?? '').trim()
-    if (w !== '' && m !== '') out.set(w, m)
+    if (w !== '' && m !== '') out.push({ w, m })
   }
   return out
 }
@@ -277,6 +282,7 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
         scores: null,
         words: fallback.words,
         links: fallback.links,
+        meanings: [],
         tags: [],
         reason: '',
       }
@@ -294,7 +300,8 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
      * ⚠️ 句中释义按**词形**对齐（不是按下标）：模型数下标一定会数错，
      *    而同一个词在句子里出现两次意思也一样。
      */
-    const info = buildWordInfo({ text: corrected, meanings: meaningsOf(a.words) })
+    // ⭐ 词表按**纠错后的正文**算；释义按词形查（归一化在 buildWordInfo 里，只有那一处）
+    const info = buildWordInfo({ text: corrected, meanings: listMeanings(a.words) })
     return {
       text: corrected,
       translation: String(a.translation ?? '').trim(),
@@ -302,6 +309,7 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
       scores,
       words: info.words,
       links: info.links,
+      meanings: listMeanings(a.words),
       tags: normalizeTags(a.tags),
       reason: String(a.reason ?? '').trim(),
     }

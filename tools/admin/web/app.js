@@ -1354,6 +1354,11 @@ function collectCandidates() {
       scores: [1, 2, 3].map(function (_, i) { return Number(li.querySelector(".cand-s" + (i + 1)).value) }),
       tags: parseTags(li.querySelector(".cand-tags").value),
       reason: li.querySelector(".cand-reason").value.trim(),
+      /**
+       * ⭐ 句中释义**原样带回**：词表（音节/音标/重音/连读）由服务端按**最终正文**重算，
+       *    只有释义是模型给的、重算不出来。少带它不会报错，但新句子会没有释义。
+       */
+      meanings: it.meanings || [],
     })
   })
   return out.filter(function (it) { return it.text !== "" })

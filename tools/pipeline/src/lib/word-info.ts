@@ -266,10 +266,12 @@ export interface WordInfoInput {
   /** 纠错**之后**的正文（id 就是按它算的） */
   text: string
   /**
-   * 句中释义：**词 → 中文**（LLM 从 ECDICT 义项里挑的，见 article-meta.ts 的 SYSTEM）。
-   * ⚠️ 不是每个词都有；没有就给空串。
+   * 句中释义（LLM 从 ECDICT 义项里挑的，见 article-meta.ts 的 SYSTEM）。
+   *
+   * ⚠️ 收的是**原始 `[{w, m}]`**（不是 Map）：归一化（小写、去标点）只在这里做一处，
+   *    免得调用方各自实现一遍、慢慢漂开。不是每个词都有；没有就是空串。
    */
-  meanings?: Map<string, string>
+  meanings?: Array<{ w: string; m: string }>
 }
 
 export interface WordInfo {
@@ -304,7 +306,13 @@ export async function applyWordInfo(articleId: string, info: WordInfo): Promise<
  */
 export function buildWordInfo(input: WordInfoInput): WordInfo {
   const tokens = plainWordsOf(input.text)
-  const meanings = input.meanings ?? new Map<string, string>()
+  /** 词形（小写、去标点）→ 中文 —— ⚠️ 唯一一处归一化 */
+  const meanings = new Map<string, string>()
+  for (const item of input.meanings ?? []) {
+    const key = String(item.w ?? '').toLowerCase().replace(/[^a-z'’]/g, '')
+    const m = String(item.m ?? '').trim()
+    if (key !== '' && m !== '') meanings.set(key, m)
+  }
 
   // ① 先判定句重音：功能词 = -1；其余 = 0；**最后一个实词** = 1（英语的默认中性句重音）
   const isFunc = tokens.map((t) => FUNCTION_WORDS.has(t.toLowerCase().replace(/[^a-z'’]/g, '')))

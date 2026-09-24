@@ -38,6 +38,7 @@ import { parseRange } from '../../apps/server/src/lib/http-range'
 import { articleIdOf } from '../pipeline/src/lib/article-id'
 import { produceStandardAudio } from '../pipeline/src/lib/audio-assets'
 import { gradeArticles } from '../pipeline/src/lib/article-meta'
+import { buildWordInfo } from '../pipeline/src/lib/word-info'
 import type { ArticleCandidate } from '../pipeline/src/lib/article-meta'
 import { themeFromHash } from '../../packages/shared/src/theme'
 import { ARTICLE_ID_LENGTH } from '../../packages/shared/src/constants'
@@ -777,12 +778,20 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
       continue
     }
     const created = !existsSync(contentAbsPathOf(it.id))
+    /**
+     * ⭐ 词表**按最终正文重算**，不用 split 那一步算好的那份：
+     *    候选正文可以在界面上手改，而音节 / 音标 / 句重音 / 连读**都是从正文算出来的** ——
+     *    直接用旧的会与正文错位（症状是「点这个词、看那个词的信息」，**没有任何报错**）。
+     *    ⚠️ 只有**句中释义**需要模型，所以它由前端原样带回来（meanings）。
+     *    ⚠️⚠️ 以前这里用的是 `it.words`，而前端**根本不带这个字段** ⇒ 新句子落了空词表
+     *        （用户 2026-09 发现：正文有，词表是 []）。实测就是这么翻的车。
+     */
+    const info = buildWordInfo({ text: it.text, meanings: it.meanings })
     await writeContentFile(it.id, {
       id: it.id, text: it.text, translation: it.translation,
       difficulty: it.difficulty, scores: it.scores,
       reason: it.reason, tags: it.tags,
-      // ⭐ 词表与连读标注来自这一次 LLM 调用（句中释义）—— 与正文一起落盘
-      words: it.words, links: it.links,
+      words: info.words, links: info.links,
     })
     prepared.push({ it, created })
   }

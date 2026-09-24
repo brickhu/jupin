@@ -1,0 +1,167 @@
+{
+  "id": "0a753318e565e6db",
+  "text": "Presumably, this redundancy reduces petty embezzlement and pilferage, albeit at staggering costs.",
+  "translation": "照理说，这种机构重叠能减少小打小闹的贪污和顺手牵羊，尽管代价大得惊人。",
+  "difficulty": 2,
+  "scores": [
+    4,
+    4,
+    2
+  ],
+  "reason": "整句像在读公文，别被吓住；真正卡人的是 pilferage——重音在头，不在结尾的 -age。",
+  "tags": [
+    "社科",
+    "议论",
+    "经济"
+  ],
+  "words": [
+    {
+      "text": "Presumably,",
+      "stress": 0,
+      "syllables": [
+        "Pre",
+        "sum",
+        "ably,"
+      ],
+      "ipa": "/pɹəˈzuməbli/",
+      "meaning": "想必、大概（据推测）",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "this",
+      "stress": -1,
+      "syllables": [
+        "this"
+      ],
+      "ipa": "/ðɪs/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "redundancy",
+      "stress": 0,
+      "syllables": [
+        "re",
+        "dun",
+        "dan",
+        "cy"
+      ],
+      "ipa": "/ɹɪˈdʌndənsi/",
+      "meaning": "冗余、重叠设置（此处指机构重复）",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "reduces",
+      "stress": 0,
+      "syllables": [
+        "re",
+        "duces"
+      ],
+      "ipa": "/ɹəˈdusəz/",
+      "meaning": "减少、压低",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "petty",
+      "stress": 0,
+      "syllables": [
+        "pet",
+        "ty"
+      ],
+      "ipa": "/ˈpɛˌti/",
+      "meaning": "小额的、微不足道的",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "embezzlement",
+      "stress": 0,
+      "syllables": [
+        "em",
+        "bez",
+        "zle",
+        "ment"
+      ],
+      "ipa": "/ɛmˈbɛzəlmənt/",
+      "meaning": "贪污、挪用公款",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "and",
+      "stress": -1,
+      "syllables": [
+        "and"
+      ],
+      "ipa": "/ən/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "pilferage,",
+      "stress": 0,
+      "syllables": [
+        "pil",
+        "fer",
+        "age,"
+      ],
+      "ipa": "/ˈpɪlfɚɪdʒ/",
+      "meaning": "小偷小摸、少量偷窃",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "albeit",
+      "stress": 0,
+      "syllables": [
+        "al",
+        "beit"
+      ],
+      "ipa": "/ɔlˈbiɪt/",
+      "meaning": "尽管、虽然",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "at",
+      "stress": -1,
+      "syllables": [
+        "at"
+      ],
+      "ipa": "/ət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "staggering",
+      "stress": 0,
+      "syllables": [
+        "stag",
+        "ger",
+        "ing"
+      ],
+      "ipa": "/ˈstæɡɚˌɪŋ/",
+      "meaning": "大得惊人的",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "costs.",
+      "stress": 1,
+      "syllables": [
+        "costs."
+      ],
+      "ipa": "/ˈkɑsts/",
+      "meaning": "代价、成本",
+      "tip": "词尾辅音连着收，别加元音"
+    }
+  ],
+  "links": [
+    "",
+    "",
+    "",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音",
+    "美音里这里的 t 变成很轻的 /ɾ/（像汉语的 d）；and 弱读成 /ən/",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    ""
+  ]
+}
