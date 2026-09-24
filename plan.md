@@ -53,6 +53,8 @@
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 
+- [ ] **B21** 冷启动「重试到预算用尽」时**抛的是原始错误、不是人话**：`requestWithRetries` 里预算预检查 `break`（client.ts:421）之后直接 `throw lastErr`（:481），绕过了下面那段 COLD_START / SCORING 的友好错误。而 `callContainer` 单次上限 15s、启动预算 25s，冷启动时请求正是「挂在半路直到超时」——几乎必然走 `break` 这条出口，于是用户看到的是 `request:fail timeout`，那段友好提示成了**死代码**。**只改这一处出口**：把「预算耗尽」的翻译抽成一个 `exhaustedError()`，循环内最后一次失败与 `break` 之后都走它；不动重试节奏、不动任何接口行为 —— 做完的标志：冷启动挂起导致预算耗尽时，页面拿到的是 `code: 'COLD_START'`（或 `SCORING`）的人话，而不再是原始超时串；`tsc` 通过
+
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
