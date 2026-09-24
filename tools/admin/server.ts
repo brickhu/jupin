@@ -37,7 +37,7 @@ import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
 import { articleIdOf } from '../pipeline/src/lib/article-id'
 import { MIN_PLAY_SEC, produceStandardAudio, writeWordTimestamps } from '../pipeline/src/lib/audio-assets'
-import { splitArticles } from '../pipeline/src/lib/article-meta'
+import { gradeArticles } from '../pipeline/src/lib/article-meta'
 import type { ArticleCandidate } from '../pipeline/src/lib/article-meta'
 import { themeFromHash } from '../../packages/shared/src/theme'
 import { ARTICLE_ID_LENGTH } from '../../packages/shared/src/constants'
@@ -661,8 +661,10 @@ interface IngestResult {
  *    省掉的正是**唯一按量花钱**的 TTS（顺序的理由见 spec.md 第九节）。
  */
 async function runSplit(job: Job, text: string): Promise<void> {
-  job.step = 'LLM：拆分 + 纠错 + 难度 / 标签'
-  const list = await splitArticles(text)
+  // ⚠️ 拆分是**代码按空行**做的（shared 的 splitParagraphs，确定性）——
+  //    模型只负责纠错 + 四项元数据，见 spec.md 第九节
+  job.step = 'LLM：纠错 + 难度 / 标签（分段由代码按空行做）'
+  const list = await gradeArticles(text)
   const items: SplitItem[] = []
   const seen = new Set<string>()
   for (const c of list) {

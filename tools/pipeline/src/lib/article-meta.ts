@@ -23,7 +23,7 @@
  *    认不出就是 null / []，**绝不补默认档位**（编出来的档位比没有档位更糟）。
  */
 
-import { normalizeLevel, normalizeTags } from '@jushuo/shared'
+import { normalizeLevel, normalizeTags, splitParagraphs } from '@jushuo/shared'
 import type { ArticleLevel } from '@jushuo/shared'
 import { chatJson } from './llm'
 
@@ -41,8 +41,9 @@ export interface ArticleCandidate {
   reason: string
 }
 
-const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你一段英文（可能有多段，段间用空行分隔）。
-你要把它切成 N 条**朗读单元**，并对每一条给出译文、两个难度档位、标签和一句「难在哪」。
+const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N 段英文（**已经按空行拆好**，每段带编号【第 N 段】）。
+你**不要切分、也不要合并** —— 一段就是一条朗读单元。你要为**每一段**产出：纠错后的正文、
+译文、两个难度档位、标签，以及一句给用户看的「难在哪」。
 
 【第一件事：纠错】⚠️ 输入可能有排版错误，顺手修掉，但**只修错、不改写**：
   · 缺空格：Frown at itand it frowns → Frown at it and it frowns
@@ -50,12 +51,12 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你一�
   · ⚠️ 不要改措辞、不要换词、不要调语序；
   · ⚠️ 修完的 text 会**直接作为正文，并据此算 id** —— 所以每一处改动都必须是你确信的错。
 
-【第二件事：切分】一条 = 一个**完整的语义单元**，读出来约 10–20 秒（约 25–50 个词）：
-  · 空行分隔的段落通常各是一条；**一段太长就按自然停顿切成多条**（句号 / 问号 / 感叹号 / 分号处）；
-  · 一段里的几个短句若语义紧密（并列、同一意象），**合成一条**，别切得太碎；
-  · 不要跨段合并；不要在条内留下首尾空白。
+【第二件事：⚠️ 不要切分、不要合并】
+  · **一段就是一条**，即使某一段很长（超长句由人选文时把关，不由你切）；
+  · 输出的每一条必须带 **index**（第几段，从 1 开始）—— index 用来对回输入段；
+  · 段内如果有硬折行，**当作空格**处理（不要留换行）。
 
-【第三件事：每条给出四项】——对上面切出的**每一条**分别做：
+【第三件事：每段给出四项】——对**每一段**分别做：
 
 ═══ vocabLevel：词汇与句式相当于哪个水平 ═══
   0 初级：简单对话、打招呼、小学生级别
@@ -104,42 +105,59 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你一�
 ═══ tags ═══
   2–4 个，中文，每个不超过 6 个字；先主题（名言 / 励志 / 口语 …）后特征（长句 / 难词 / 发音难点 …）。
 
-【输出】只输出 JSON，不要任何解释：
+【输出】只输出 JSON，不要任何解释。
+⚠️ articles 的**条数必须等于输入段数**，每条带 index（第几段，从 1 开始）：
 {
   "articles": [
-    { "text": "纠错后的英文", "translation": "自然口语化的中文（别用直译腔）",
+    { "index": 1, "text": "纠错后的英文", "translation": "自然口语化的中文（别用直译腔）",
       "vocabLevel": 1, "pronLevel": 1, "tags": ["主题", "特征"], "reason": "相当于…水平，…；…" }
   ]
 }`
 
 /**
- * ⭐ 拆分 + 纠错 + 生成四条元数据（**一次调用出 N 条**）。
+ * ⭐ **代码拆段 → LLM 纠错 + 定级**（一次调用覆盖 N 段）。
  *
- * ⚠️ 为什么一次出 N 条而不是每条一次：
- *    ① 拆分本身是**全局判断**（哪几句该合成一条、哪一段该切开），逐条调用看不到上下文；
- *    ② 少 N−1 次往返，批量入库时快得多。
+ * ⚠️⚠️ **拆分不在这里**：由 shared 的 splitParagraphs 按空行**确定性地**做（2026-09 决定，
+ *    见 paragraphs.ts）—— 段数 = 条数，所以 TTS 要跑几次也是可预期的。
+ *    所以这个函数**永远返回 paragraphs.length 条**：模型漏了哪一段就用原文占位（档位 null），
+ *    界面会标出来让人重试或手填 —— **绝不静默丢段**（丢一段 = 以为入库了 5 条其实只有 4 条）。
+ *
+ * ⚠️ 一次调用而不是每段一次：少 N−1 次往返，且同一条提示词只发一次。
  */
-export async function splitArticles(input: string): Promise<ArticleCandidate[]> {
+export async function gradeArticles(input: string): Promise<ArticleCandidate[]> {
+  const paragraphs = splitParagraphs(input)
+  if (paragraphs.length === 0) return []
+
+  // 带上段号再交给模型 —— 回来的 index 是「对回哪一段」的唯一依据
+  const numbered = paragraphs.map((p, i) => '【第 ' + (i + 1) + ' 段】' + p).join('\n\n')
   const raw = await chatJson<{ articles?: unknown }>([
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: input },
+    { role: 'user', content: numbered },
   ])
   const list = Array.isArray(raw.articles) ? raw.articles : []
-  const out: ArticleCandidate[] = []
+  const byIndex = new Map<number, Record<string, unknown>>()
   for (const item of list) {
     const a = (item ?? {}) as Record<string, unknown>
+    const idx = Number(a.index)
+    if (Number.isInteger(idx) && idx >= 1 && idx <= paragraphs.length) byIndex.set(idx, a)
+  }
+
+  return paragraphs.map((p, i) => {
+    const a = byIndex.get(i + 1)
+    if (!a) {
+      // ⚠️ 模型没给这一段 ⇒ 用原文占位（档位留空，界面会拦住不让生成）
+      return { text: p, translation: '', pronLevel: null, vocabLevel: null, tags: [], reason: '' }
+    }
     const text = String(a.text ?? '').trim()
-    // ⚠️ 没有正文的条目直接丢掉：它什么都生成不了（id 都是从 text 算的）
-    if (text === '') continue
-    out.push({
-      text,
+    return {
+      // ⚠️ 纠错后的 text 为空（模型抽风）就退回原文 —— 宁可没纠错，也不能丢这一条
+      text: text === '' ? p : text,
       translation: String(a.translation ?? '').trim(),
       // ⚠️ 两条轴各读各的键 —— 绝不拿一个兜另一个
       vocabLevel: normalizeLevel(a.vocabLevel),
       pronLevel: normalizeLevel(a.pronLevel),
       tags: normalizeTags(a.tags),
       reason: String(a.reason ?? '').trim(),
-    })
-  }
-  return out
+    }
+  })
 }
