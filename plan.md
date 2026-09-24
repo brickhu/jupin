@@ -53,6 +53,8 @@
 - [ ] **B5** 核对 growth-and-energy.md §11 的冲突清单（A/B/C 三组）是否逐条落地 —— 该文档自标「已实施」，但清单本身没勾；已确认徽章 / 额度 / 门禁三组已改
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 
+- [ ] **B22** **部署后标准音全丢、前端所有播放按钮消失**：`seedStandardAudio` 逐行 `storage.put`，**第一次失败即整趟抛出、没有重试、没有逐行隔离**；调用方只 catch 打日志。迁移 0031–0034 清库后 `standard_audio` 全空，接口返回 `audio: null`，前端 `wx:if="{{entry.audio}}"` 于是**一个播放入口都不渲染**（dev 实测 `standardAudioConfigured: 0`、`fileInBucket: false`，而盘上 mp3 与 `/media` 都正常）。**不要**只做「再灌一次」——要让它抗住启动期的瞬时失败 —— 做完的标志：灌音频按行隔离 + 带退避重试，`/health?deep=1` 能报出**真实的上传错误**（现在只有 `fileInBucket: false`，看不出为什么），且失败不再让列留空
+
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
