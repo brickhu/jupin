@@ -117,22 +117,24 @@ export interface ArticleContent {
    * ⚠️ 一律走 normalizeScores 收口，认不出就是 undefined（绝不补默认分）；
    *    老正文没有这个字段很正常，**不许**因为它缺失就退回某个档位。
    * ⚠️ 它**不进公开 API**：ArticleDetail / ArticleListItem 都不带它 ——
-   *    对外只有 difficulty + reason（怎么公开是 shared/types/api.ts 的决定）。
+   *    对外只有 difficulty + advice（怎么公开是 shared/types/api.ts 的决定）。
    */
   scores?: DifficultyScores
   /**
-   * ⭐ **给用户看的一句话** —— 固定格式：以「相当于<级别>水平」开头，
-   *    随后是发音难点，`；` 后是词汇与句式点评。例：
+   * ⭐ **给用户看的「朗读建议及收益」** —— **不是**难度报告，是**一次邀约**：
+   *    让人想张嘴念一遍，并且知道念的时候盯哪儿。
    *
-   *    「相当于大学4级水平，world 的 r 和 l 挨着念、结尾 -ngths 连读很别扭；
-   *      词都比较常见，只有 sophistication 稍超纲。」
+   *    三拍：① 制造预期差（why）② 反转它并给一个**句子层面**的动作（how）
+   *          ③ 收益（⚠️ 必须落在**口语**上、就近可验证）。
+   *    完整口径见 tools/pipeline/src/lib/article-meta.ts 的 SYSTEM（代码是真相）。
    *
-   * ⚠️ 它是**产品文案**（detail 接口返回给客户端），不是给审核的术语堆：
-   *    说人话、可以带音标、**不用语法行话**、不贬低用户、必须点到具体的词或音。
+   * ⚠️ 它是**产品文案**（detail 接口返回给客户端）：说人话、可以说音标、
+   *    **不用语法行话**、不贬低用户；收益只描述**这一次张口**会发生什么，
+   *    不承诺长期水平（"直逼母语者水平"这类会被分数当场打脸）。
    * ⚠️ 与 difficulty / scores **同源**：同一次 LLM 调用产出，一起写、一起重跑 ——
    *    所以它进这份 JSON（真相），而不是单开一列。
    */
-  reason?: string
+  advice?: string
   /**
    * ⭐ 主题 / 朗读特征标签（自由文本，顺序即重要程度）。
    *

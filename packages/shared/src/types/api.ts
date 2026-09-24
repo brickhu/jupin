@@ -439,7 +439,7 @@ export interface ArticleListItem {
  *      fileID 里带环境 ID 与桶名，绝不能写进仓库里的那份 JSON。
  * ⚠️ 没有标准音时 audio 是 **null**（不是给一个 full=null 的壳）——
  *    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定。
- * ⚠️ 难度与 reason 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
+ * ⚠️ 难度与 advice 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
  */
 export interface ArticleDetail {
   id: string
@@ -448,14 +448,13 @@ export interface ArticleDetail {
   words: ArticleWordItem[]
   /** ⭐ 词间连读标注（与 words 一一对应；`links[i]` 描述 words[i] 与 words[i+1] 之间；"" = 不连） */
   links: string[]
-  /** ⭐ 发音难度（中文母语者读出来有多难念） */
+  /** ⭐ 难度档位（初级 / 中级 / 高级 / 专家）—— 由词汇/发音/长度三个判据分合成 */
   difficulty: ArticleLevel | null
-  /** ⭐ 词汇难度（小学 / 高中 / 六级 / GRE 那套口径，含句式复杂度） */
   /**
-   * ⭐ **给用户看的一句话** —— 以「相当于<级别>水平」开头，说清这句难在哪
-   *    （完整格式与写法要求见 ArticleContent.reason）。
+   * ⭐ **给用户看的「朗读建议及收益」** —— 怎么读 + 读完得着什么
+   *    （完整定义与写法要求见 ArticleContent.advice）。
    */
-  reason: string | null
+  advice: string | null
   tags: string[]
   audio: AudioRef | null
   theme: ArticleTheme | null

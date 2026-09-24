@@ -37,7 +37,7 @@ export function listSteps(): Step[] {
     stub('02', '切分竞技场', 'LLM 提案句群切分 → 人工确认（语义完整 / 10–20 秒 / 自然停顿）'),
     // ⚠️ 难度**全由 LLM 判**：不算脚本特征、不带锚点样本（2026-09 决定，见 spec.md 第九节）。
     //    实现见 lib/article-meta.ts —— 原句直接交给模型，判据是「读起来难不难」。
-    stub('03', '朗读难度定级', 'LLM 直接判四档 difficulty（0/1/2/3）+ tags + reason'),
+    stub('03', '朗读难度定级', 'LLM 直接判四档 difficulty（0/1/2/3）+ tags + advice'),
     step04,
     stub('05', '整篇翻译', 'LLM 翻译'),
     stub('06', '音标 / 词性 / 义项', 'ECDICT 查表（⚠️ 音标绝不能让 LLM 生成）'),

@@ -630,8 +630,8 @@ function renderDetailValues(d) {
   state.detailWords = Array.isArray(words) ? words : []
   renderWordInfo($("#dt-words"), $("#dt-wordcount"), state.detailWords, d.links)
 
-  /** ⭐ 给用户看的那句话 —— 运营就是照它审的（"读者能不能看懂这句难在哪"） */
-  $("#dt-reason").textContent = pick("reason", d.reason) || "—"
+  /** ⭐ 给用户看的「朗读建议及收益」—— 运营就是照它审的（"读者读了会不会想张嘴"） */
+  $("#dt-advice").textContent = pick("advice", d.advice) || "—"
   $("#dt-published").textContent = fmtTime(pick("publishedAt", d.publishedAt))
 
   /**
@@ -795,13 +795,13 @@ function openInlineEditor(field) {
     return
   }
 
-  if (field === "reason") {
-    // ⚠️ 给用户看的一句话是**产品文案**，运营可以直接改（它要过人的眼）
+  if (field === "advice") {
+    // ⚠️ 给用户看的「朗读建议及收益」是**产品文案**，运营可以直接改（它要过人的眼）
     startInlineEdit(
-      $("#dt-reason"),
-      textInput(pick("reason", d.reason) || ""),
+      $("#dt-advice"),
+      textInput(pick("advice", d.advice) || ""),
       function (el) { return el.value.trim() },
-      function (v) { setPending("reason", v) },
+      function (v) { setPending("advice", v) },
     )
     return
   }
@@ -854,7 +854,7 @@ async function updateArticle() {
   const body = {}
   if (has("translation")) body.translation = p.translation
   if (has("scores")) body.scores = p.scores
-  if (has("reason")) body.reason = p.reason
+  if (has("advice")) body.advice = p.advice
   if (has("tags")) body.tags = p.tags
   if (has("isActive")) body.publish = p.isActive
   if (has("words")) body.words = p.words
@@ -1319,12 +1319,20 @@ function candidateRow(it) {
   row.appendChild(mk("标签", tags))
   li.appendChild(row)
 
-  const reason = document.createElement("input")
-  reason.type = "text"
-  reason.className = "cand-reason"
-  reason.value = it.reason || ""
-  reason.placeholder = "相当于…水平，…；…"
-  li.appendChild(reason)
+  const advice = document.createElement("input")
+  advice.type = "text"
+  advice.className = "cand-advice"
+  advice.value = it.advice || ""
+  advice.placeholder = "怎么读 + 读完得着什么（口语收益）"
+  li.appendChild(advice)
+
+  /**
+   * ⚠️⚠️ 候选整条挂回 DOM 节点上 —— 因为 **meanings 是模型给的、界面上不可编辑**，
+   *    collectCandidates 读不回来（它只读 input 的 value）。
+   *    以前那里写的是自由变量 `it`：**ReferenceError**，一点「生成」就炸
+   *    （隐藏得深，因为不勾任何候选时根本走不到那行）。
+   */
+  li.candidate = it
 
   return li
 }
@@ -1353,12 +1361,12 @@ function collectCandidates() {
       // ⚠️ 三个下拉都没有空选项 ⇒ 这里恒是 1–5 的三个整数
       scores: [1, 2, 3].map(function (_, i) { return Number(li.querySelector(".cand-s" + (i + 1)).value) }),
       tags: parseTags(li.querySelector(".cand-tags").value),
-      reason: li.querySelector(".cand-reason").value.trim(),
+      advice: li.querySelector(".cand-advice").value.trim(),
       /**
        * ⭐ 句中释义**原样带回**：词表（音节/音标/重音/连读）由服务端按**最终正文**重算，
        *    只有释义是模型给的、重算不出来。少带它不会报错，但新句子会没有释义。
        */
-      meanings: it.meanings || [],
+      meanings: (li.candidate && li.candidate.meanings) || [],
     })
   })
   return out.filter(function (it) { return it.text !== "" })

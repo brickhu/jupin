@@ -120,8 +120,8 @@ articlesRoutes.get('/:id', async (c) => {
     links: Array.isArray(content.links) ? content.links : [],
     // ⭐ 正文里没写难度（老 JSON）就是 null，不补默认值
     difficulty: normalizeLevel(content.difficulty),
-    // ⭐ 给用户看的一句话（也是正文属性，与难度同源）
-    reason: typeof content.reason === 'string' && content.reason.trim() !== '' ? content.reason.trim() : null,
+    // ⭐ 给用户看的「朗读建议及收益」（也是正文属性，与难度同源）
+    advice: typeof content.advice === 'string' && content.advice.trim() !== '' ? content.advice.trim() : null,
     tags: normalizeTags(content.tags),
     audio,
     theme: article.theme,

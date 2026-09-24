@@ -33,7 +33,7 @@ describe('content/articles/*.json', () => {
   it('难度档位必须在场，且是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
     for (const [file, raw] of await loadAll()) {
       expect(normalizeLevel(raw.difficulty), file + ' 的 difficulty').not.toBeNull()
-      // ⚠️ 旧的「两条轴各一个字段」不许回来（B20 废弃）：对外只有 difficulty + reason
+      // ⚠️ 旧的「两条轴各一个字段」不许回来（B20 废弃）：对外只有 difficulty + advice
       expect(raw.vocabLevel, file + ' 还留着 vocabLevel（已废弃，见 B20）').toBeUndefined()
       expect(raw.pronLevel, file + ' 还留着 pronLevel（已废弃，见 B20）').toBeUndefined()
     }
@@ -56,7 +56,8 @@ describe('content/articles/*.json', () => {
   })
 
   /**
-   * ⭐ 一句话（reason）的职责是**挑动用户想试一把** —— 三拍：①定位 ②难点 ③收益，收益落在「口语」上。
+   * ⭐ 「朗读建议及收益」（advice）的职责是**让人想张嘴念一遍** ——
+   *    三拍：①预期差（why）②动作（how）③收益，③落在「口语」上。
    *
    * ⚠️⚠️ 下面几条钉的是**挑战心态**（用户 2026-09 直接指出的）：
    *    旧格式是「相当于<级别>水平，<发音难点>；<词汇与句式点评>」—— 那是个**评测报告**：
@@ -73,30 +74,58 @@ describe('content/articles/*.json', () => {
    *    承诺越大，被当场打脸的概率越高。收益要**就近可验证**（"说出来不打结"）。
    *
    * ⚠️ **故意不设正向断言**（比如"必须含'口语'二字"）：
-   *    reason 是自然语言，正则会误杀好文案（"一开口就是那个味儿"里就没有"口语"）。
+   *    advice 是自然语言，正则会误杀好文案（"一开口就是那个味儿"里就没有"口语"）。
    *    ③收益围绕口语这条只由提示词 + 人工评审兜住。
    */
-  it('⭐ 一句话：不给水平标签、不泄气、不许诺做不到的事 —— 它是挑动，不是评测报告', async () => {
+  it('⭐ 朗读建议及收益：不给水平标签、不泄气、不许诺做不到的事 —— 它是邀约，不是评测报告', async () => {
     for (const [file, raw] of await loadAll()) {
-      const reason = raw.reason
-      expect(typeof reason, file + ' 的 reason 应当是字符串').toBe('string')
-      expect(String(reason).trim(), file + ' 的 reason 为空').not.toBe('')
-      expect(String(reason), file + ' 的 reason 不该出现水平标签（级别由徽章给）').not.toMatch(
+      const advice = raw.advice
+      expect(typeof advice, file + ' 的 advice 应当是字符串').toBe('string')
+      expect(String(advice).trim(), file + ' 的 advice 为空').not.toBe('')
+      expect(String(advice), file + ' 的 advice 不该出现水平标签（级别由徽章给）').not.toMatch(
         /小学|初中|高中|大学四级|六级|考研|GRE|级水平/,
       )
-      expect(String(reason), file + ' 的 reason 不该用「词都很常见」这类话替用户泄气').not.toMatch(
+      expect(String(advice), file + ' 的 advice 不该用「词都很常见」这类话替用户泄气').not.toMatch(
         /词都很常见|词都很简单|词都常见|词都简单|句子很短|字都不难/,
       )
-      expect(String(reason), file + ' 的 reason 不该许诺不可验证的结果（读完就能看到分数，会被打脸）').not.toMatch(
+      expect(String(advice), file + ' 的 advice 不该许诺不可验证的结果（读完就能看到分数，会被打脸）').not.toMatch(
         /直逼母语|母语者水平|母语水平|口语暴涨|秒变地道|彻底掌握/,
       )
       /**
-       * ⚠️ 提示词要求 ≤90 字（理想 75–90，够装下三拍），这里就是同一根线 —— **不设更松的网**。
-       *    90 字在卡片上约三行；再多就不是「一行小字」了。
+       * ⚠️ 提示词要求 ≤100 字（理想 85–100，够装下三拍），这里就是同一根线 —— **不设更松的网**。
+       *    100 字在卡片上约三行；再多就不是「一行小字」了。
        *    （这条线曾经是 80 而提示词写 45，后来又收紧到 60 而三拍根本装不下 ——
        *      规格与网不一致时，模型永远按宽的来。）
        */
-      expect(String(reason).length, file + ' 的 reason 太长（提示词要求 ≤90 字）').toBeLessThanOrEqual(90)
+      expect(String(advice).length, file + ' 的 advice 太长（提示词要求 ≤100 字）').toBeLessThanOrEqual(100)
+    }
+  })
+
+  /**
+   * ⭐ **反模板**（用户 2026-09 提的）：收益的**落点**可以都是口语，但**说法必须各是各的**。
+   *
+   * ⚠️ 实测教训：三拍提示词第一版发出去，9 条里 8 条是「这两处顺了，一开口就…」同一个句尾 ——
+   *    字面要求满足了、冲动没了，用户读到第三条就腻。
+   *    **硬规则不给反面约束，模型就用模板去满足它。**
+   *
+   * ⚠️ 口径：**同一个末拍起手式（前 4 字）最多覆盖 1/3 的文案**。
+   *    放到 1/3 是因为起手式本来就有自然重合（"真正的…"），真要拦的是「8/9 一模一样」。
+   */
+  it('⭐ 反模板：末拍的起手式不许撞车（同一句式最多覆盖 1/3）', async () => {
+    const all = await loadAll()
+    const counts = new Map<string, string[]>()
+    for (const [file, raw] of all) {
+      const parts = String(raw.advice ?? '').split(/[；;。]/).map(s => s.trim()).filter(Boolean)
+      const starter = (parts[parts.length - 1] ?? '').slice(0, 4)
+      if (starter.length < 4) continue
+      counts.set(starter, [...(counts.get(starter) ?? []), file])
+    }
+    const limit = Math.floor(all.length / 3)
+    for (const [starter, files] of counts) {
+      expect(
+        files.length,
+        '末拍起手式「' + starter + '…」有 ' + files.length + ' 条（上限 ' + limit + '）：\n' + files.join('\n'),
+      ).toBeLessThanOrEqual(limit)
     }
   })
 
