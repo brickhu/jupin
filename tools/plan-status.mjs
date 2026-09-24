@@ -34,11 +34,25 @@ const plan = readFileSync(join(ROOT, 'plan.md'), 'utf8')
  */
 const tasks = new Map()
 let section = '(未知)'
+let archived = false
 for (const line of plan.split('\n')) {
   const h = /^##+\s+(.+?)\s*$/.exec(line)
-  if (h) section = h[1].trim()
+  if (h) {
+    section = h[1].trim()
+    archived = /已完成|归档/.test(section)
+  }
   const m = /^\|\s*\*{0,2}([A-C]\d)\*{0,2}\s*\|/.exec(line)
-  if (m) tasks.set(m[1], section)
+  if (m) {
+    tasks.set(m[1], section)
+    continue
+  }
+  /**
+   * ⭐ 已完成任务的 **ID 归档**（只列 ID，不写状态与日期 —— 那些从 git 派生）。
+   * 为什么必须有：任务做完就从「待办」里删掉，它的 ID 也就消失了 ——
+   * 那样提交信息里的 ID 会被本脚本当成「打错字」，`--strict` 会在**每次正常收尾时误报**。
+   * 归档只承担两件事：① 校验 ID 拼写；② 保证 ID 不复用。
+   */
+  if (archived) for (const t of line.matchAll(/([A-C]\d)\b/g)) tasks.set(t[1], section)
 }
 
 const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
@@ -106,7 +120,7 @@ for (const [id, sec] of tasks) {
   else if (!aheadKnown) state = '✓ ' + hits.length + ' 个 commit'
   else if (local === 0) state = '✓ 已推送 ' + pushed
   else state = '◐ 推送 ' + pushed + ' / 本地 ' + local
-  console.log('  ' + pad(id, 6) + pad(state, 16) + pad(sec, 30) + (last ? last.date + '  ' + last.sha.slice(0, 8) : '—'))
+  console.log('  ' + pad(id, 6) + pad(state, 22) + pad(sec, 28) + (last ? last.date + '  ' + last.sha.slice(0, 8) : '—'))
 }
 
 const done = [...tasks.keys()].filter((id) => (byTask.get(id) ?? []).length > 0)
