@@ -176,7 +176,7 @@ range 请求时才把媒体标成 seekable，否则 `audio.seekable` 是 `[0,0]`
 
 1. 贴一句英文 → 点「跑生成流水线」（异步任务，进度实时打在页面上）
 2. LLM 出 **译文 / 三个判据分（词汇·发音·长度，各 1–5）/ 标签**（带理由），
-   难度由代码按 `(5×词汇 + 4×发音 + 1×长度) / 10` 算出来（见 `packages/shared/src/level.ts`）；
+   难度由代码按 `(5×词汇 + 3×发音 + 2×长度) / 10` 算出来（见 `packages/shared/src/level.ts`）；
    判据分拿不全就**直接失败**，不猜（宁可不发，也不发一条档位错的内容）
 3. fish 合成整句标准音 + 词级对齐 → 按 `wordRangesOf` 算出每个词的**播放区间**，
    写进 `content/articles/<id>.json` 的 `words[]`

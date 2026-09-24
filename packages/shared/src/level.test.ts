@@ -44,24 +44,24 @@ describe('档位（四档：0 初级 / 1 中级 / 2 高级 / 3 专家）', () =>
  *    （提示词是「让模型给对分」，公式是「分对了就一定对档」）。
  * ⚠️ 边界一律**左闭右开**：2.0 → 中级、3.0 → 高级、4.0 → 专家。
  */
-describe('判据分 → 档位（词汇×5 + 发音×4 + 长度×1，除 10）', () => {
-  it('权重是 [词汇, 发音, 长度] = [5, 4, 1]（改动它 = 全库档位都要重跑）', () => {
-    expect(DIFFICULTY_WEIGHTS).toEqual([5, 4, 1])
+describe('判据分 → 档位（词汇×5 + 发音×3 + 长度×2，除 10）', () => {
+  it('权重是 [词汇, 发音, 长度] = [5, 3, 2]（改动它 = 全库档位都要重跑）', () => {
+    expect(DIFFICULTY_WEIGHTS).toEqual([5, 3, 2])
   })
 
   it('加权分与档位对得上', () => {
     const cases: Array<[number[], number, number]> = [
       // [词汇, 发音, 长度]          加权分  档位
       [[1, 1, 1], 1.0, 0],   // 全最低 → 初级
-      [[1, 2, 1], 1.4, 0],   // 「Don't count the days, make the days count.」
-      [[2, 1, 2], 1.6, 0],   // 「The best way to predict the future is to invent it.」
-      [[3, 2, 3], 2.6, 1],   // 「Although the internet has made it easier…」
-      [[2, 4, 2], 2.8, 1],   // FDR 那句 —— **必须是中级**（用户明确不接受专家）
+      [[1, 2, 1], 1.3, 0],   // 「Don't count the days, make the days count.」
+      [[2, 1, 2], 1.7, 0],   // 「The best way to predict the future is to invent it.」
+      [[3, 2, 3], 2.7, 1],   // 「Although the internet has made it easier…」
+      [[2, 4, 2], 2.6, 1],   // FDR 那句 —— **必须是中级**（用户明确不接受专家）
       [[4, 3, 3], 3.5, 2],   // 「Companies that fail to adapt…」
       [[5, 4, 4], 4.5, 3],   // 「The assumption that human behavior is governed…」
-      // ⚠️ 绕口令：词汇 2（高中）+ 发音 5 ⇒ 3.2 —— **必须还是中级**
+      // ⚠️ 绕口令：词汇 2（高中）+ 发音 5 ⇒ 2.9 —— **必须还是中级**
       //    （用户 2026-09：我定的五档里，高中词汇也到不了高级）
-      [[2, 5, 2], 3.2, 1],
+      [[2, 5, 2], 2.9, 1],
       [[5, 5, 5], 5.0, 3],   // 全满仍是专家的上限
     ]
     for (const [scores, score, level] of cases) {
