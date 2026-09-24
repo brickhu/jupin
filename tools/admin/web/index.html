@@ -88,12 +88,12 @@
           <dl class="meta-list">
             <dt>状态</dt><dd><span id="dt-status" class="badge"></span><button type="button" class="edit-icon" data-field="isActive" title="改发布状态">✎</button></dd>
             <dt>译文</dt><dd><span id="dt-translation"></span><button type="button" class="edit-icon" data-field="translation" title="改译文">✎</button></dd>
-            <dt>难度<br /><span class="muted tiny">初级 / 中级 / 高级 / 专家</span></dt><dd><span id="dt-diff"></span></dd>
-            <dt>总分<br /><span class="muted tiny">(词汇×5 + 发音×3 + 长度×2) / 10</span></dt><dd><span id="dt-score"></span></dd>
-            <dt>词汇及句式<br /><span class="muted tiny">1–5 分 · 权重 5</span></dt><dd><span id="dt-s1"></span><button type="button" class="edit-icon" data-field="s1" title="改词汇分">✎</button></dd>
-            <dt>发音<br /><span class="muted tiny">1–5 分 · 权重 3</span></dt><dd><span id="dt-s2"></span><button type="button" class="edit-icon" data-field="s2" title="改发音分">✎</button></dd>
-            <dt>句子长度<br /><span class="muted tiny">1–5 分 · 权重 2</span></dt><dd><span id="dt-s3"></span><button type="button" class="edit-icon" data-field="s3" title="改长度分">✎</button></dd>
-            <dt>一句话<br /><span class="muted tiny">难在哪（给用户看）</span></dt><dd><span id="dt-reason"></span><button type="button" class="edit-icon" data-field="reason" title="改这句话">✎</button></dd>
+            <dt>难度 <span class="hint" title="由三个判据分加权合成：初级 / 中级 / 高级 / 专家">?</span></dt><dd><span id="dt-diff"></span></dd>
+            <dt>总分 <span class="hint" id="dt-score-hint">?</span></dt><dd><span id="dt-score"></span></dd>
+            <dt>词汇及句式 <span class="hint" data-w="0" data-base="1–5 分：小学 / 初高中 / 大学四级 / 六级·考研·雅思6.5 / GRE·学术">?</span></dt><dd><span id="dt-s1"></span><button type="button" class="edit-icon" data-field="s1" title="改词汇分">✎</button></dd>
+            <dt>发音 <span class="hint" data-w="1" data-base="1–5 分：中文母语者念出来有多难念对（难音 / 词尾辅音丛 / 连读）">?</span></dt><dd><span id="dt-s2"></span><button type="button" class="edit-icon" data-field="s2" title="改发音分">✎</button></dd>
+            <dt>句子长度 <span class="hint" data-w="2" data-base="1–5 分：<10 / 10–20 / 20–30 / 30–40 / >40 词">?</span></dt><dd><span id="dt-s3"></span><button type="button" class="edit-icon" data-field="s3" title="改长度分">✎</button></dd>
+            <dt>一句话 <span class="hint" title="给用户看的那句话：「相当于<级别>水平，<发音难在哪>；<词汇与句式点评>」，≤45 字">?</span></dt><dd><span id="dt-reason"></span><button type="button" class="edit-icon" data-field="reason" title="改这句话">✎</button></dd>
             <dt>发布时间</dt><dd><span id="dt-published"></span></dd>
             <dt>标签</dt><dd><span id="dt-tags" class="tags"></span><button type="button" class="edit-icon" data-field="tags" title="改标签">✎</button></dd>
             <dt>句子 id</dt><dd id="dt-id" class="mono tiny"></dd>

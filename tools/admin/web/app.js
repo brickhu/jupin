@@ -488,6 +488,35 @@ function applyServerConsts(data) {
   if (data.levelLabels) state.levelLabels = data.levelLabels
   if (data.difficultyWeights) state.difficultyWeights = data.difficultyWeights
   if (data.difficultyBands) state.difficultyBands = data.difficultyBands
+  renderScoreHint()
+}
+
+/**
+ * ⭐ 「总分」那个 ? 的说明**从服务端下发的权重算出来**，不在 HTML 里写死。
+ *
+ * ⚠️ 为什么要这么绕：权重是 shared/level.ts 的常量（现在是 5 / 3 / 2）——
+ *    HTML 里写死一句「(词汇×5 + 发音×3 + 长度×2) / 10」的话，
+ *    哪天调了权重，这个提示就开始**说谎**，而页面上看起来完全正常。
+ */
+function renderScoreHint() {
+  const el = $("#dt-score-hint")
+  if (!el) return
+  const w = state.difficultyWeights
+  const bands = state.difficultyBands
+  if (!Array.isArray(w) || w.length < 3 || !Array.isArray(bands) || bands.length < 3) {
+    el.title = "三个判据分加权合成的总分"
+    return
+  }
+  const sum = w.reduce(function (a, b) { return a + b }, 0)
+  el.title =
+    "总分 = (词汇×" + w[0] + " + 发音×" + w[1] + " + 长度×" + w[2] + ") / " + sum +
+    "；≥ " + bands[0] + " 中级、≥ " + bands[1] + " 高级、≥ " + bands[2] + " 专家"
+  // ⚠️ 三个维度各自的权重同样从服务端读（别再在 HTML 里写死「权重 5 / 3 / 2」）
+  Array.prototype.forEach.call(document.querySelectorAll('.meta-list .hint[data-w]'), function (h) {
+    const base = h.dataset.base || ""
+    const wi = Number(h.dataset.w)
+    h.title = Number.isFinite(wi) && w[wi] !== undefined ? base + "（权重 " + w[wi] + "）" : base
+  })
 }
 
 async function loadDetail(id) {
