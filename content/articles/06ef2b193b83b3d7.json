@@ -5,15 +5,14 @@
   "difficulty": 0,
   "scores": [
     2,
-    2,
+    3,
     2
   ],
-  "challenge": "一句大白话，念快容易打结",
-  "advice": "真难的只有两处：as simple as possible 连成一串别断开，simpler 的 -mpl 收住、重音在 SIMP。攻下这两点，整句就能稳稳一口气念完。",
+  "challenge": "这句话像大白话，读顺并不容易",
+  "advice": "别轻敌，真难的只有三处：simple 和 simpler 的尾音要分清、as simple as 连成一串、should be 轻读带过；这三处顺了，一开口就能把整句甩出去。",
   "tags": [
-    "哲理",
     "名言",
-    "极简"
+    "哲理"
   ],
   "words": [
     {
@@ -54,7 +53,7 @@
         "made"
       ],
       "ipa": "/ˈmeɪd/",
-      "meaning": "被做得、被弄成（make 的被动）",
+      "meaning": "被弄得、被做到（make 的被动）",
       "tip": ""
     },
     {
@@ -75,7 +74,7 @@
         "ple"
       ],
       "ipa": "/ˈsɪmpəl/",
-      "meaning": "简单的、不复杂的",
+      "meaning": "简单、不复杂",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -97,7 +96,7 @@
         "ble,"
       ],
       "ipa": "/ˈpɑsəbəl/",
-      "meaning": "可能的；as...as possible 指尽可能",
+      "meaning": "尽可能（as…as possible 结构）",
       "tip": "主重音在第 1 拍"
     },
     {

@@ -115,10 +115,11 @@ describe('content/articles/*.json', () => {
       }
 
       /**
-       * ⚠️ advice 的 90 字与提示词、regrade 的 ADVICE_MAX_CHARS 是**同一根线**。
-       *    它现在只承担"把挑战框小"这一件事，所以比三拍时代（100）收紧了。
+       * ⚠️ advice 的 100 字与提示词、regrade 的 ADVICE_MAX_CHARS 是**同一根线**。
+       *    这个数是**量出来的**：按"别轻敌 + 三处坑 + 口语收尾"写，9 条落在 87–99；
+       *    收到 90 只会逼着砍掉第三处坑（试过，5 条要手改）。
        */
-      expect(String(advice).length, file + ' 的 advice 太长（提示词要求 ≤90 字）').toBeLessThanOrEqual(90)
+      expect(String(advice).length, file + ' 的 advice 太长（提示词要求 ≤100 字）').toBeLessThanOrEqual(100)
     }
   })
 
@@ -136,22 +137,36 @@ describe('content/articles/*.json', () => {
    * ⚠️ 口径只拦**情绪词**（别怕 / 别慌 / 别轻敌 / 别大意），不拦"别一个词一顿"
    *    这类**动作提醒** —— 后者两档都要说。
    */
-  it('⭐ 档位姿态：初级/中级不说「别怕」，高级/专家不说「别轻敌」', async () => {
+  it('⭐ 档位姿态：初级/中级必须「提醒别轻敌」，高级/专家才安抚', async () => {
+    /**
+     * ⚠️ 这张表与提示词里那张是**同一根线**（改一处就要改另一处）。
+     *
+     * ⚠️ 这是本文件里**唯一一条"正向"断言**，理由：它管的是**开场姿态**，
+     *    不是文案内容 —— 允许集故意放宽（七种提醒说法 + "坑/陷阱"），
+     *    真正要拦的只有两种：**安抚**（别怕）和**中性开场**（"真难的就三处…"）。
+     *    ⚠️ 用户 2026-09 把口径从"不许说别怕"收紧成"**必须**提醒别轻敌"。
+     *
+     * ⚠️ 只看**第一小句**（到第一个标点为止）—— 管的是开场；
+     *    也不拦"别一个词一顿"这类**动作提醒**，那是两档都要说的。
+     */
+    const MUST_WARN = /别轻敌|别大意|别小看|别轻视|别忽略|别一带而过|别被[^，。；,;]{0,8}骗|坑|陷阱/
     for (const [file, raw] of await loadAll()) {
       const level = normalizeLevel(raw.difficulty)
       if (level === null) continue
       const advice = String(raw.advice ?? '')
+      const opening = advice.split(/[，。；：,;:]/)[0] ?? ''
       if (level <= 1) {
         expect(
-          advice,
-          file + ' 是初级/中级，advice 不该说「别怕」（上一句刚说它像儿歌）',
-        ).not.toMatch(/别怕|不用怕|别慌/)
-      }
-      if (level >= 2) {
-        expect(
-          advice,
-          file + ' 是高级/专家，advice 不该说「别轻敌 / 别大意」（上一句刚认账它硬）',
-        ).not.toMatch(/别轻敌|别大意/)
+          opening,
+          file + ' 是初级/中级，advice 开场必须提醒「别轻敌」这一类（实测开场：' + opening + '）',
+        ).toMatch(MUST_WARN)
+        expect(advice, file + ' 是初级/中级，advice 不该说「别怕」（上一句刚说它像儿歌）').not.toMatch(
+          /别怕|不用怕|别慌/,
+        )
+      } else {
+        expect(advice, file + ' 是高级/专家，advice 不该说「别轻敌 / 别大意」（上一句刚认账它硬）').not.toMatch(
+          /别轻敌|别大意/,
+        )
       }
     }
   })

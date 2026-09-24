@@ -8,12 +8,12 @@
     3,
     1
   ],
-  "challenge": "短得像句口号，念顺要过两个长词",
-  "advice": "难的就两处重音：simplicity 压在 -pli-，sophistication 压在 -keɪ-；the ultimate 连成一口气。这三下顺了，五个词像格言一样甩出去。",
+  "challenge": "短得像句口号，念顺没那么容易",
+  "advice": "别轻敌，坑就三处：simplicity 重音在第二音节，ultimate 的 -ate 一带而过，sophistication 又长又绕、重音落在 -ca- 上；顺了，五个词一口气就甩出去。",
   "tags": [
     "哲理",
     "名言",
-    "简洁"
+    "简约"
   ],
   "words": [
     {
@@ -26,7 +26,7 @@
         "ty"
       ],
       "ipa": "/sɪmˈplɪsəti/",
-      "meaning": "简单、简约，不加修饰",
+      "meaning": "简单、朴素；此句指简约",
       "tip": "主重音在第 2 拍"
     },
     {
@@ -58,7 +58,7 @@
         "mate"
       ],
       "ipa": "/ˈʌltəmət/",
-      "meaning": "终极的、最高程度的",
+      "meaning": "终极的、最高级的",
       "tip": "主重音在第 1 拍"
     },
     {
@@ -72,7 +72,7 @@
         "tion."
       ],
       "ipa": "/səˌfɪstəˈkeɪʃən/",
-      "meaning": "精致考究，品味老到",
+      "meaning": "精致考究、格调高明",
       "tip": "主重音在第 4 拍"
     }
   ],

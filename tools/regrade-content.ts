@@ -38,8 +38,13 @@ loadEnv('local')
  *    「朗读挑战:」+ challenge，卡片标题两行约 25 字 —— 18 是给前缀留的余量。
  */
 const CHALLENGE_MAX_CHARS = 18
-/** advice：把挑战框小（边界 + 2–3 个坑 + 口语落点）；收紧到 90 是因为它只承担"建议"这一件事 */
-const ADVICE_MAX_CHARS = 90
+/**
+ * advice：把挑战框小（边界 + 2–3 个坑 + 口语落点）。
+ * ⚠️ 这个 100 是**量出来的**：按"别轻敌 + 三处坑 + 口语收尾"这套形状写，
+ *    9 条的自然长度是 87–99（试过收到 90，结果 5 条要手改、还得砍掉第三处坑）——
+ *    **别让一个拍脑袋的字数额度反过来规定内容**。
+ */
+const ADVICE_MAX_CHARS = 100
 
 const apply = process.argv.includes('--apply')
 const onlyIdx = process.argv.indexOf('--only')
