@@ -5,6 +5,9 @@ node_modules/
 .pnpm-store/
 .pnpm-home/
 
+# ---- 并行任务的工作区（pnpm task:start；见 AGENT.md「多任务并行」）----
+.worktrees/
+
 # ---- 构建产物 ----
 dist/
 build/
