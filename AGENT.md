@@ -245,10 +245,16 @@ apps/miniprogram/
 | 真机引擎不保证支持新语法 | 产物必须降到 ES2017，见下 |
 | 有状态模块必须**外置** | 内联会被每个页面各求值一次 →「全局 store 不全局」 |
 
-**⚠️⚠️ `build.mjs` 的 `target` 绝不能高于 `es2017`**：`project.config.json` 里 `es6` / `enhance` 都是 `false`，
-放弃开发者工具的降级兜底；`??` / `?.` 一旦漏进产物，**真机解析直接抛 `SyntaxError: Unexpected token ?`，而模拟器完全正常**。
+**⚠️⚠️ `build.mjs` 的 `target` 绝不能高于 `es2017`**：`project.config.json` 里 `es6` / `enhance` 虽然开着，
+但那只是**开发者工具的降级**，不能当真机的保证；`??` / `?.` 一旦漏进产物，**真机解析直接抛 `SyntaxError: Unexpected token ?`，而模拟器完全正常**。
 不更低是因为 esbuild 无法把 `async/await` 降到 ES5。`assertNoModernSyntax()` 构建后复查，残留即**退出码 1**，别绕过。
 （不用 Taro/uni-app：核心是音频处理与高频上色动画，跨端框架恰在这里最易出坑，且不做多端。）
+
+**⚠️ 平台侧的**一次性**配置（不在代码里）**：点词发音走**微信同声传译插件**（`WechatSI`，免费，
+实现见 `src/lib/audio/tts.ts`）。要它能用，必须先在
+**微信公众平台 → 设置 → 第三方设置 → 插件管理 → 添加插件** 里搜「微信同声传译」并添加；
+`app.json` 的 `plugins` 只是**声明**，不等于已授权。没添加时 `requirePlugin` 会抛错 ——
+界面会把这句话直接显示出来（"插件没生效：请…"），而不是静默无声。
 
 **样式方案 UnoCSS（已接入）**：WXML 不能调用 JS，所以「在 JS 里算类名」的方案（StyleX / CSS-in-JS）都要多搭一层 `data` 桥接；
 UnoCSS 走「构建期扫源码 → 静态 WXSS」，运行时零开销。`uno.config.mjs` 配 `downgradeColorSyntax` + `assertWxssSafe`；

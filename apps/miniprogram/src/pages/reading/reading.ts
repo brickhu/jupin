@@ -24,6 +24,7 @@ import {
 import { uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
+import { speak } from '../../lib/audio/tts'
 import { Recorder, type RecordResult } from '../../lib/audio/recorder'
 import { fetchArticleContent } from '../../lib/content'
 import { CHALLENGE_PAGE } from '../../lib/challenges'
@@ -167,60 +168,13 @@ const MPW_MIN = 250
 const MPW_MAX = 1600
 
 /**
- * ⭐ 词音缓存：**词 → 插件给出的本地临时文件路径**。
+ * ⭐ 点词播放的音频来源 = **微信同声传译插件的 TTS**。
  *
- * ⚠️⚠️ 必须缓存：同声传译插件的 textToSpeech 是**异步回调 + 有配额**的，
- *    每点一次都重新合成会又慢又费配额；而这句子里同一个词常常被点好几次。
- * ⚠️ 放模块级而不是 data：data 必须可序列化（Map 不适合）。
- * ⚠️ 缓存的是插件的**临时文件路径**，小程序重启就失效 —— 那是插件的行为，
- *    我们不能把它复制到自己的目录（临时文件的生命周期由插件管）。
+ * ⚠️ 实现放在 lib/audio/tts.ts（**共用一份**，理由同 play.ts 的播放器）：
+ *    以后别的页面（结果页的逐词诊断、词表）也要点词听发音，抄一份出去的话两处迟早各自演化 ——
+ *    一处的「剥标点 / 缓存 / 失败话术」被改掉，症状就是某条路径上「点了没声音，也不报错」。
+ *    ⚠️ 那个文件里写了**平台侧的前置条件**（插件要在公众平台添加过），失败话术也带上它。
  */
-const wordVoiceCache = new Map<string, string>()
-
-interface TtsPlugin {
-  textToSpeech: (o: {
-    lang: string
-    tts: boolean
-    content: string
-    success: (res: { filename?: string }) => void
-    fail: (err: unknown) => void
-  }) => void
-}
-
-/** 拿插件；没在 app.json 里声明 / 版本不对时返回 null（调用方给明确提示，不静默失败） */
-function ttsPlugin(): TtsPlugin | null {
-  try {
-    return requirePlugin('WechatSI') as TtsPlugin
-  } catch {
-    return null
-  }
-}
-
-/**
- * ⭐ 合成一个词的读音（带缓存）—— 点词播放的唯一音频来源。
- *
- * ⚠️ 传英文文本、`lang: 'en_US'`：插件默认是中文，不指定语言会把单词按中文念。
- * @returns 本地可播路径；插件不可用或合成失败时 null
- */
-function wordVoiceOf(text: string): Promise<string | null> {
-  const hit = wordVoiceCache.get(text)
-  if (hit !== undefined) return Promise.resolve(hit)
-  const plugin = ttsPlugin()
-  if (!plugin) return Promise.resolve(null)
-  return new Promise(function (resolve) {
-    plugin.textToSpeech({
-      lang: 'en_US',
-      tts: true,
-      content: text,
-      success: function (res) {
-        const file = res && res.filename
-        if (file) wordVoiceCache.set(text, file)
-        resolve(file || null)
-      },
-      fail: function () { resolve(null) },
-    })
-  })
-}
 
 interface WordView {
   /** 稳定的 key（同一个词可能出现多次，不能用 text 当 key） */
@@ -1040,17 +994,29 @@ Page({
   async onPlayWord(e: WechatMiniprogram.BaseEvent) {
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     if (!Number.isInteger(i) || i < 0) return
-    // ⚠️ 合成前去掉标点：插件读 "count." 会把句号读出来
-    const text = (this.plainWords[i] ?? '').replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '')
-    if (text === '') return
 
-    this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay' })
-    const url = await wordVoiceOf(text)
-    if (!url) {
-      this.setData({ error: '单词发音暂时取不到（同声传译插件未就绪）' })
+    // ⚠️ 先把高亮打上：合成要等 ~1s，没有即时反馈会让人以为"点了没反应"
+    this.setData({ playingWord: i, sentenceState: 'unplay', replayState: 'unplay', error: '' })
+
+    let src: string
+    try {
+      src = await speak(this.plainWords[i] ?? '')
+    } catch (err) {
+      /**
+       * ⚠️⚠️ 失败时必须**把高亮清掉**。漏掉这一步的症状：那一个词永远亮着，
+       *    看起来像页面卡住了 —— 而真正的原因（插件没在公众平台添加）被埋在高亮下面。
+       * ⚠️ message 由 lib/audio/tts.ts 写好（含"去哪添加插件"），这里直接展示。
+       */
+      this.setData({ playingWord: -1, error: (err as Error).message })
       return
     }
-    this.playUrl(url, '单词发音').catch((err: Error) => this.setData({ error: err.message }))
+
+    try {
+      await this.playUrl(src, '单词发音')
+    } catch (err) {
+      // ⚠️ 播失败也一样要清（playAudioUrl 的 onEnded 不会在 error 路径上被调用）
+      this.setData({ playingWord: -1, error: (err as Error).message })
+    }
   },
 
   stopTimer() {

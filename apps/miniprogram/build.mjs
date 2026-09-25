@@ -202,8 +202,8 @@ const common = {
   /**
    * ⚠️⚠️ 绝不能调到 es2020 及以上。
    *
-   * 小程序真机引擎对 ES2020 语法的支持**不保证**（我们 project.config.json 里
-   * es6/enhance 都是 false，等于放弃了开发者工具的降级兜底）。
+   * 小程序真机引擎对 ES2020 语法的支持**不保证**（project.config.json 里 es6/enhance
+   * 虽然开着，但那是**开发者工具的降级**，上传与真机路径不保证一致 —— 不能当保证）。
    * `??`（空值合并）与 `?.`（可选链）一旦漏进产物，
    * 真机解析时直接抛 `SyntaxError: Unexpected token ?`，而模拟器不报 —— 已经真实踩过。
    *
