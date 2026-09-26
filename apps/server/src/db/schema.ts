@@ -276,12 +276,15 @@ export const articles = mysqlTable('articles', {
  *      公开库里 publish_date 上加 UNIQUE 就是这个矛盾的直接证据：
  *      同一句排第二次就会撞唯一键。
  *
- *   ② **统计和排行是按天算的**（参与人数、最高分、我的名次）。
- *      没有这张表，「某一天的挑战」在数据上根本不成为一个实体，
- *      只能靠「拿天号对池子取模」在每次查询时现算 ——
- *      而池子一旦增删句子，**历史那几天的题目会一起变**，
- *      昨天读过的句子今天就变成另一句了。
+ *   ② **历史那几天的题目必须钉死**。没有这张表，「今天用哪一句」只能靠
+ *      「拿天号对池子取模」在每次查询时现算 —— 而池子一旦增删句子，
+ *      **历史那几天的题目会一起变**，昨天读过的句子今天就变成另一句了。
  *      落成行之后，历史是钉死的。
+ *
+ *      ⚠️ 这里的措辞**曾经写成「统计和排行是按天算的」** —— 那是旧址：
+ *      竞技口径后来整体改成了**按句子**（排名 / 参与人数 / 最高分 / 我的名次
+ *      一律 article_id，见 services/leaderboard.ts），
+ *      这张表只负责「那天首页展示哪一句」。
  *
  *   ③ 将来要给挑战加东西（运营标题、是否开放、结束时间），
  *      有地方可加，不用往句子上堆。
@@ -549,11 +552,23 @@ export const submissions = mysqlTable('submissions', {
   uniqueIndex('submissions_user_audio_idx').on(t.userId, t.audioKey),
   index('submissions_user_time_idx').on(t.userId, t.createdAt),
   /**
-   * ⭐ 每日挑战的统计与排行全部走这条索引。
-   *    ⚠️ 顺序是 (schedule_date, score)：先按天圈定一批，再在批内按分排序 ——
-   *       正好是「今天谁最高分」这一个查询。
+   * ⭐⭐ **竞技数据的热路径** —— 排名 / 参与人数 / 最高分 / 我的最好成绩 /
+   *    成长值快照 / 「我参与过哪些句子」，全部是
+   *    WHERE article_id IN (…) AND status = 'scored' 再按人聚合
+   *    （见 services/leaderboard.ts 的 bestPerUser、growth.ts 的 arenaSnapshot）。
+   *
+   * ⚠️⚠️ 这里原来挂的是 (schedule_date, score)，注释写着
+   *    「每日挑战的统计与排行全部走这条索引」—— 那是**按天口径**时代留下的，
+   *    现在是**死索引**：全仓库没有任何查询按 schedule_date 过滤或排序
+   *    （那一列只用于显示「这次是从哪天的排期进来的」，见上面的注释）。
+   *    ⇒ 换成按句子的索引，它的注释也就是这次一起改的。
+   *
+   * ⚠️ 列序 (article_id, status, user_id, score)：前两列圈定这一句的已出分提交，
+   *    后两列让 COUNT(DISTINCT user_id) / MAX(score) 能**只走索引**。
+   *    ⚠️ createdAt 故意不放进索引（reachedAt 只对「等于最高分」的那些行取值），
+   *       塞进来会让索引变宽而收益很小。
    */
-  index('submissions_schedule_idx').on(t.scheduleDate, t.score),
+  index('submissions_article_idx').on(t.articleId, t.status, t.userId, t.score),
 ])
 
 /** 订阅记录 */
