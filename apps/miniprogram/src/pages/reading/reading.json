@@ -2,6 +2,6 @@
   "navigationBarTitleText": "参与挑战",
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "audio-button": "/components/audio-button/audio-button"
+    "ui-button": "/components/ui-button/ui-button"
   }
 }

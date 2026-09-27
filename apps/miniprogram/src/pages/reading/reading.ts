@@ -1,26 +1,19 @@
 import {
-  MS_PER_WORD,
+  ENERGY_PER_CHALLENGE,
   PREFLIGHT,
   RECORD_SPEC,
-  WORD_GREEN_LINE,
+  formatDuration,
   formatScore,
-  WORD_RED_LINE,
   peakBars,
   samplesFromPcm16,
   sniffAudioContainer,
   today,
 } from '@jushuo/shared'
 import { plainWordsOf } from '@jushuo/shared'
-import type { SubmitResponse } from '@jushuo/shared'
+import type { GrowthView, SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
-import {
-  ApiError,
-  fetchSubmissionStatus,
-  getUserId,
-  setSubmissionVisibility,
-  submitReading,
-} from '../../lib/api/client'
+import { ApiError, fetchSubmissionStatus, getUserId, submitReading } from '../../lib/api/client'
 import { uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -40,6 +33,148 @@ import {
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
+ * ⭐⭐ 朗读页 —— **六个状态的显式状态机**（规格：docs/design/reading/SPEC.md）。
+ *
+ *   s1 未录音 ──点麦克风──▶ s2 录音中 ──停止──▶ s3 录音预览
+ *    ▲                                             │ ✓（确认 = 提交评测）
+ *    │                                             ▼
+ *    │                                        s4 AI 评测中
+ *    │                                          │        │
+ *    │                                   评分成功│        │引擎失败 / 评测超时
+ *    │                                          ▼        ▼
+ *    └────────「重新挑战」（清缓存）──────── s5 成功    s6 失败
+ *    └────────「重录」  （清缓存）─────────────────────┘
+ *
+ * ⚠️⚠️ 为什么把它写成**显式**六态，而不是原来那串 ready/recording/recorded/done：
+ *    设计稿是逐态画的（顶行、主体、底部三块各自不同），而原来那套名字和设计稿
+ *    对不上号 —— 对着稿子改代码时要在脑子里先做一次翻译，翻错一次就是
+ *    「改了 s4、结果是 s5 变了」。现在 WXML 里写的就是设计稿上的 sN。
+ *
+ * ⚠️ 另有两个**不属于六态**的东西，别混进来：
+ *    · loading —— 句子还没拉到（拉失败也停在这里，给「重试」）；
+ *    · error   —— 一句人话，横跨所有状态（麦克风没授权 / 能量不够 / 上传失败…），
+ *                它**不改变状态**，只是多一条红条（见 WXML 末尾）。
+ *
+ * ⚠️⚠️ 提交被拒**不都是错误**：能量不够是业务规则、不是故障，必须和真错误分开说，
+ *    否则用户以为小程序坏了，然后反复重试（而那正是要拦的行为）。
+ *
+ * ══════════════════════════════════════════════════════════════════
+ * ⚠️⚠️ **这里曾经有一整套「实时逐词跟随」，已经作为产品决策整体摘掉。**
+ *
+ *    摘掉的原因不是它坏了，是**这条路本身有天花板**：
+ *    用 DTW 把用户音频对齐到参考音，本质是**间接代理** ——
+ *    它只会回答「你的音频最像参考音的哪一段」，
+ *    而**说不出「你读的是另一个词」**。你读成 an，它也必须给你找个对应的参考片段，
+ *    于是"经过就算匹配"、读得越多绿得越多、最后全绿。
+ *
+ *    业界做实时逐词标注的（Google Read Along 等）用的都是 **ASR**；
+ *    而多邻国**刻意不做**实时跟随 —— 说完给判定。
+ *    小程序主包 2MB 装不下端侧 ASR 模型，云端流式 ASR 每用户每次都在烧钱。
+ *
+ *    ⇒ 实时跟随不做。力气花在「说完之后的权威反馈」（讯飞 ISE）上，
+ *      也就是 s5/s6 与 pages/challenge 那一段。
+ * ══════════════════════════════════════════════════════════════════
+ */
+
+type Phase = 'loading' | 's1' | 's2' | 's3' | 's4' | 's5' | 's6'
+
+/**
+ * ⭐ s4 的**超时** —— 到点即进 s6（用户 2026-09 定：等待期不做手工取消，只做超时兜底）。
+ *
+ * ⚠️⚠️ 这个数**不是**「打分最多能跑多久」的估计，而是「人盯着转圈能忍多久」。
+ *    服务端那条链路**刻意没有时长上限**（靠心跳判活，见 apps/server 的 services/scoring.ts：
+ *    心跳 5 秒一次、30 秒没动静才算进程死了）——
+ *    所以客户端在这里掐时间，**一定**存在「分其实马上就要算出来了，只是我们不等了」的可能。
+ *    ⇒ 取值必须**宽**：正常一次 10–20 秒、长句更久，冷启动还要再加十几秒。2 分钟足够。
+ *    ⚠️ 真撞上它时，s6 的副标题会明说「分数可能还在云端算」，
+ *       而不是把锅扣在「录音不符合规范」上（那句是引擎判失败的文案）。
+ */
+const SCORING_TIMEOUT_MS = 120_000
+
+/**
+ * ⚠️ 超时进 s6 时**要换一句副标题**（见 SCORING_TIMEOUT_MS 的说明）。
+ */
+const TIMEOUT_HINT = '评测等太久了，这次先按失败处理 —— 分数可能还在云端计算，回首页就能看到'
+
+/**
+ * ⭐ 秒表 / 时长 → `00:23` —— **恒有值**。
+ *
+ * ⚠️⚠️ 不能直接用 shared 的 formatDuration：它对 0 与不足半秒返回**空串**
+ *    （那是给「算不出来的音频时长」用的，界面上宁可空着也不显示 00:00）。
+ *    而 s2 的计时器必须**一进来就有值** —— 否则录音的头半秒里那一格是空的，
+ *    看起来像计时器坏了。
+ */
+function mmss(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s
+}
+
+/**
+ * ⭐ 三张成长值卡 —— **命名以代码为准**：自我超越 / 坚持不懈 / 人中翘楚。
+ *
+ * ⚠️⚠️ 设计稿上写的是「自我挑战」「鹤立鸡群」，**不采纳**（用户 2026-09：以代码为主）。
+ *    全站（首页三块成长榜、个人主页、接口类型 GrowthView）都是这一套名字，
+ *    照稿子改文案会让同一个人在两屏里有两个名字。
+ *
+ * ⚠️ 颜色跟着**指标**走而不是跟着位置走：自我超越橙 / 坚持不懈绿 / 人中翘楚紫 ——
+ *    设计稿把绿的那张放在最后，但绿的是「坚持不懈」，位置换了颜色不换。
+ */
+const GROWTH_META = [
+  { key: 'self', label: '自我超越', textCls: 'text-orange-500', borderCls: 'border-orange-400' },
+  { key: 'diligence', label: '坚持不懈', textCls: 'text-ok', borderCls: 'border-ok' },
+  { key: 'standout', label: '人中翘楚', textCls: 'text-purple-500', borderCls: 'border-purple-400' },
+] as const
+
+interface GrowthCard {
+  key: string
+  label: string
+  /** 展示文本（带 + 号） */
+  value: string
+  textCls: string
+  borderCls: string
+}
+
+/**
+ * ⭐ 拿「这一把加了多少」的三张卡。
+ *
+ * ⚠️⚠️ 本轮**服务端还没有**下发这一把的成长值快照（SPEC 把它排在下一轮：
+ *    submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
+ *    所以这里按**可选字段**读：字段在就出三张卡，不在就**整块不渲染**。
+ *    写成可选之后，下一轮服务端把 SubmitResponse.growth 补上，端侧一行都不用改。
+ *
+ * ⚠️ 不要拿 /me 里那个**累计值**顶上去：卡片上的 +5 是「这一把加了多少」，
+ *    累计值放上去会是 +128 这种数 —— 差得不是一点，用户会以为刚才这一把加了 128。
+ */
+function growthCardsOf(delta: Partial<GrowthView> | null): GrowthCard[] {
+  if (!delta) return []
+  return GROWTH_META.map((m) => ({
+    key: m.key,
+    label: m.label,
+    value: '+' + Math.max(0, Number(delta[m.key] ?? 0)),
+    textCls: m.textCls,
+    borderCls: m.borderCls,
+  }))
+}
+
+/**
+ * ⭐ 失败态的三张卡 —— **恒为 +0（灰）**。
+ *
+ * ⚠️ 与 s5 的「拿不到就不渲染」不同：这里的值不需要服务端给，它**就是 0**
+ *    （评测失败不扣能量、也不加成长值，服务端会把受理时锁的 2 点释放掉）。
+ */
+function zeroGrowthCards(): GrowthCard[] {
+  return GROWTH_META.map((m) => ({
+    key: m.key,
+    label: m.label,
+    value: '+0',
+    textCls: 'text-faint',
+    borderCls: 'border-gray-300',
+  }))
+}
+
+/**
  * ⭐ 声波监测：**以中线对称的实心柱条**，画在 canvas 上。
  *
  * ⚠️ 为什么是 canvas 而不是一排 <view>：
@@ -50,7 +185,7 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  *    参见 docs/research/platform-decision.md），所以波形只能从录音帧自己算 ——
  *    数据源是 Recorder 交上来的 PCM 帧（已归一化到 16kHz 小端）。
  */
-/** canvas 的 id —— 只在「录音中」那一块里存在（wx:if） */
+/** canvas 的 id —— 只在 s2 那一块里存在（wx:if） */
 const WAVE_CANVAS_ID = '#wave'
 /**
  * 一屏最多画多少根柱条。
@@ -94,52 +229,6 @@ function framesAreSamples(pcm: ArrayBuffer): boolean {
   return sniffAudioContainer(new Uint8Array(pcm)) === 'raw-pcm'
 }
 
-/**
- * 朗读页 —— 产品的**唯一动作入口**。
- *
- * 用户在这里只有两件事可做：录音（重录）、提交检测。没有别的。
- *
- * 状态机：
- *   loading → ready → recording → recorded → submitting → done
- *                 ↑                              │
- *                 └────────── 重录 ──────────────┘
- *
- * ⚠️ 提交被拒**不都是错误**：额度用完（QUOTA_EXHAUSTED）是业务规则，不是故障
- *    是完全正常的业务分支，必须和真错误区分开 ——
- *    否则用户看到「请求失败」会以为小程序坏了，然后反复重试（而那正是要拦的行为）。
- *
- * ══════════════════════════════════════════════════════════════════
- * ⚠️⚠️ **这里曾经有一整套「实时逐词跟随」，已经作为产品决策整体摘掉。**
- *
- *    摘掉的原因不是它坏了，是**这条路本身有天花板**：
- *    用 DTW 把用户音频对齐到参考音，本质是**间接代理** ——
- *    它只会回答「你的音频最像参考音的哪一段」，
- *    而**说不出「你读的是另一个词」**。你读成 an，它也必须给你找个对应的参考片段，
- *    于是"经过就算匹配"、读得越多绿得越多、最后全绿。
- *
- *    业界做实时逐词标注的（Google Read Along 等）用的都是 **ASR**；
- *    而多邻国**刻意不做**实时跟随 —— 说完给判定。
- *    小程序主包 2MB 装不下端侧 ASR 模型，云端流式 ASR 每用户每次都在烧钱。
- *
- *    ⇒ 实时跟随不做。力气花在「说完之后的权威反馈」（讯飞 ISE）上，
- *      也就是本页 done 状态那一段。
- * ══════════════════════════════════════════════════════════════════
- */
-
-type Phase = 'loading' | 'ready' | 'recording' | 'recorded' | 'submitting' | 'done'
-
-/** 分项 / 逐词的着色阈值 —— 只影响展示，不影响分数 */
-/**
- * ⭐ 两条线都取自共享常量：**算分用的「绿词」就是用户看到的绿字**。
- * ⚠️ 两处各写一个 85 的话，一旦哪天只改了一边，
- *    用户就会看到「这几个词明明是绿的，为什么没上 90」—— 解释链当场断掉。
- * ⚠️ 逐词那一档的**判断本身**（绿 / 红 / 墨）在 shared 的 wordLevel() 里，
- *    因为「我的挑战」列表也要把同一句重新上色（见那里的说明）。
- */
-const WORD_GOOD = WORD_GREEN_LINE
-/** < 标红：明显有问题 */
-const WORD_BAD = WORD_RED_LINE
-
 /** 只在开发者工具里为真 */
 const IS_DEVTOOLS = PLATFORM === 'devtools'
 
@@ -155,83 +244,17 @@ const IS_DEVTOOLS = PLATFORM === 'devtools'
  */
 const WAVE_ON = RECORD_SPEC.frames
 
-/**
- * 实时进度用的「每词多少毫秒」—— **可自适应**。
- *
- * ⚠️ 实时跟随摘掉之后，它只用来在录完之后做一次语速诊断（可选），
- *    不再驱动任何界面。
- */
-const DEFAULT_MS_PER_WORD = 550
-const MS_PER_WORD_KEY = 'reading_ms_per_word'
-/** 合理区间 —— 防止一次没读完的录音把基准带跑偏 */
-const MPW_MIN = 250
-const MPW_MAX = 1600
-
-/**
- * ⭐ 点词播放的音频来源 = **微信同声传译插件的 TTS**。
- *
- * ⚠️ 实现放在 lib/audio/tts.ts（**共用一份**，理由同 play.ts 的播放器）：
- *    以后别的页面（结果页的逐词诊断、词表）也要点词听发音，抄一份出去的话两处迟早各自演化 ——
- *    一处的「剥标点 / 缓存 / 失败话术」被改掉，症状就是某条路径上「点了没声音，也不报错」。
- *    ⚠️ 那个文件里写了**平台侧的前置条件**（插件要在公众平台添加过），失败话术也带上它。
- */
-
+/** 逐词视图 —— 词 + 它自己的音标（音标开关打开时挂在词下面） */
 interface WordView {
   /** 稳定的 key（同一个词可能出现多次，不能用 text 当 key） */
   i: number
   text: string
-  cls: string
+  /**
+   * ⭐ 这个词的国际音标（来自正文 JSON 的 words[i].ipa，形如 /ˈɛvɹiˌθɪŋ/）。
+   * ⚠️ 查不到时是空串（老正文 / 生僻词）—— 那时**不渲染**这一行，不占位。
+   */
+  ipa: string
 }
-
-interface SubmitWord {
-  word: string
-  score: number
-  dp: string
-}
-
-/** 四维得分的展示视图 */
-interface DimensionView {
-  key: string
-  label: string
-  /** 展示用文本（整数不带小数点，看着更干净） */
-  value: string
-  /** 进度条宽度百分比 */
-  pct: number
-  textCls: string
-  barCls: string
-}
-
-/**
- * ⭐ 四个句级维度，顺序**对应总分公式里的权重**（由大到小）：
- *
- *     total = (0.6×准确度 + 0.3×流利度 + 0.1×标准度) × 完整度
- *
- * ⚠️ 权重是实测反推出来的 0.6/0.3/0.1，不是文档里的 0.5/0.3/0.2 ——
- *    详见 packages/shared/src/types/api.ts 的 ScoreDimensions 注释。
- *
- * ⚠️ 前三项是「加权的分项」，第四项是**乘性的闸门** —— 顺序不能随便打乱，
- *    否则用户没法把四个数字和总分对上。
- */
-/**
- * ⭐ 「评分详情」显示的是**我们自己那套打分的分项**，不是引擎返回的四维。
- *
- * ⚠️⚠️ 为什么不能直接摆引擎那四维：总分已经不按它们等权算了 ——
- *    摆在一起用户对不上（「我准确度 91，为什么总分 85」），
- *    而且完整度对能读完的人恒为 100，摆在四位里纯属占位置。
- *    这里五项**加起来就是那个总分**（权重见 @jushuo/shared 的 SCORE_WEIGHTS）。
- *
- * ⚠️ 标签用大白话：standard 在引擎文档里叫「标准度」，但那是引擎的内部叫法，
- *    它量的其实是语调/韵律；给用户看就叫「语调」。
- */
-type PartKey = 'prosody' | 'weakness' | 'accuracy' | 'fluency' | 'completeness'
-
-const PART_META: { key: PartKey; label: string }[] = [
-  { key: 'prosody', label: '语调' },
-  { key: 'weakness', label: '咬字' },
-  { key: 'accuracy', label: '发音' },
-  { key: 'fluency', label: '流利' },
-  { key: 'completeness', label: '完整' },
-]
 
 Page({
   data: {
@@ -239,33 +262,33 @@ Page({
     navTop: 0,
 
     articleId: '',
+    /** 六态 + 一个「句子还没拉到」的前置态，见文件头的状态机说明 */
     phase: 'loading' as Phase,
+    /** 横跨所有状态的一句人话（不改变状态） */
     error: '',
-
 
     translation: '',
 
-    /** 逐词渲染（提交后由云端结果着色） */
+    /** 逐词渲染（点词听发音 + 音标挂载都靠它） */
     words: [] as WordView[],
+    /**
+     * ⭐ IPA 胶囊 = 在**单词下方显示音标**（用户 2026-09 确认的语义）。
+     * ⚠️ 数据本来就有（正文 JSON 的 words[] 每项带 ipa），不需要新接口。
+     * ⚠️ s2 录音中即使开着也不显示（设计稿口径：录音时少一层干扰，见 WXML）。
+     */
+    ipaOn: false,
 
     /**
-     * ⭐ **是否公开这次录音**。
-     *
-     * ⚠️ 它是「提交上榜」的一个选项，不是权限：无论公开与否，
-     *    音频都存在对象存储里、榜单上都有这一条成绩；
-     *    区别只是**别人能不能听到这段录音**。
-     *
-     * ⚠️⚠️ 默认 **false**，提交时**不问**用户；结果页（pages/challenge）那个
-     *    「允许公众收听」开关再打开。听完自己的分数再决定要不要让人听，
-     *    依据比提交前横一个开关足得多。
-     * ⚠️ 从挑战详情分享卡片进来的本来就能听，不受这一位影响。
-     */
-    isPublic: false,
-    /**
-     * ⚡ 能量点数 —— 提交按钮下面那行要用它。
-     * ⚠️ 只从服务端给的 profile 里读（每次 /me 顺手补足到 3 点），端侧不自己算。
+     * ⚡ 能量点数 —— s3/s4/s5/s6 底部那行小字要用它。
+     * ⚠️ 只从服务端给的 profile 里读（每次 /me 顺手补足到 3 点），端侧不自己算余额。
      */
     energy: 0,
+    /**
+     * ⭐ 底部那行小字的**成品文本**（在 TS 里拼，不在 WXML 里拼）。
+     * ⚠️ 为什么不给 WXML 拼：它要判断「这一态算不算已消耗」，
+     *    而且那个数字必须来自 ENERGY_PER_CHALLENGE（端侧不写死 2）。
+     */
+    energyNote: '',
 
     /**
      * ⭐ 能不能播标准音。
@@ -276,29 +299,46 @@ Page({
 
     /** 整句标准音（fileID 或服务端路径，由 audioKind 决定怎么解释） */
     fullAudio: '',
-    /** 'cloud' | 'http' —— 见 shared 的 AudioRef / ArticleDetailAudio */
+    /** 'cloud' | 'http' —— 见 shared 的 AudioRef */
     audioKind: 'http' as 'cloud' | 'http',
+    /** 标准音时长（毫秒）—— 拿不到就是 0，见 stdDurationText 的说明 */
+    stdDurationMs: 0,
+    /**
+     * ⭐ 顶行标准音那颗圆钮右边的 `00:23`。
+     *
+     * ⚠️⚠️ 本轮**拿不到这个数**：朗读页拉的是 /api/articles/:id，那份响应里的 audio
+     *    只有 { full, kind }，**没有 durationMs**（列表接口的 ScheduleAudio 才有）。
+     *    而本轮明确不动服务端 ⇒ 这里按**可选字段**读（见 readStdDurationMs），
+     *    读不到就是空串，WXML 里据此**不渲染那几个字**
+     *    （不是显示 00:00 —— 那看着像音频坏了）。
+     *    下一轮让详情接口把 durationMs 带上（服务端已有现成的 standardAudioMs），
+     *    这里自动就显示了，端侧不用改。
+     */
+    stdDurationText: '',
 
     /** 正在播的单词下标；-1 表示没在播单词 */
     playingWord: -1,
-    /** ⭐ 右上角那个喇叭的状态（见 audio-button）—— 整句标准音只有这一个播放钮 */
+    /** ⭐ 顶行那颗标准音播放钮的状态（播 / 停 / 取音中都在这一个字段上） */
     sentenceState: 'unplay' as 'unplay' | 'loading' | 'playing',
-    /** ⭐ 试听（我自己这段录音）的状态 —— 同一颗播放钮 */
+    /** ⭐ 试听（我自己这段录音）的状态 —— 同一套手感 */
     replayState: 'unplay' as 'unplay' | 'loading' | 'playing',
 
     /**
      * ⭐ 这段录音是从**上次的缓存**恢复来的（不是刚录的）。
-     * ⚠️ 必须让用户看见：他会以为是自己刚录的，然后直接提交 ——
+     * ⚠️ 必须让用户看见（s3 里一行小字）：他会以为是自己刚录的，然后直接提交 ——
      *    而他并不记得那段音频里读的是什么。
      */
     restored: false,
 
-    /** 录音落地的原始文件（裸 PCM）—— **上传用** */
+    /** 录音落地的原始文件 —— **上传用**（试听也用它） */
     audioPath: '',
-    /** 加了 WAV 头的副本 —— **试听用**（裸 PCM 播不了，见 writePlayableWav） */
+    /** 老版本留下的「帧拼 WAV」副本 —— **试听兜底用**（新录音恒为空串） */
     playPath: '',
     durationMs: 0,
-    elapsed: '0.0',
+    /** 我的录音时长 `00:23` —— s3/s4 那颗 outline 胶囊上显示的就是它 */
+    recordDurationText: '',
+    /** s2 顶行那个红色计时器 `00:23`（在 TS 里按毫秒格式化，见 mmss） */
+    elapsedText: '00:00',
     /**
      * ⚠️ **只在开发者工具里显示**的一行诊断（真机上恒为空）。
      *    波形不出来的原因有好几种，它们屏幕上长得一模一样，只能靠这行字区分。
@@ -308,24 +348,28 @@ Page({
      * ⭐ 这一轮要不要画实时波形 —— 由录音格式决定（见 WAVE_ON）。
      * ⚠️ 它必须是 data：WXML 里读不到模块常量，而画布在 wx:if 里。
      */
-    // ⚠️ 显式标成 boolean：RECORD_SPEC.frames 是 `as const` 的 true，
+    // ⚠️ 显式标成 boolean：RECORD_SPEC.frames 是 as const 的 true，
     //    不标的话这个字段会被推断成字面量类型 true，而运行时还要能置成 false（见 handleFrame）。
     waveOn: WAVE_ON as boolean,
+    /** 上传进度（0–100）—— s4 里给一句真实进度，别让「AI评测中」盖住还在上传的那几秒 */
     uploadPercent: 0,
-    /** 已经在打分上等了多久（秒）—— 轮询期间显示，让等待可见 */
-    scoringSeconds: 0,
 
-    /**
-     * ⭐ 简版结果反馈（打完分停留的那一屏）—— 只有三样东西：
-     *    大号总分、AI 的一句话点评、AI 的提升建议。
-     *
-     * ⚠️⚠️ 详细结果（五个分项、逐词上色、榜单、分享）在 pages/challenge。
-     *    这一屏刻意只做刚读完那一下的反馈：分数够大、点评够短、下一步够清楚
-     *    （再次挑战 / 查看详情）。把详情塞回这一屏，读完看一眼就会变成读完读一屏。
-     */
+    /** ⭐ s5 的成品：大号总分（formatScore，一位小数） */
     scoreText: '',
-    aiComment: '',
-    aiAdvice: '',
+    /** ⭐ s5 的副标题：首次挑战，打败 N 人，位列第 M / 第 K 次挑战，…… */
+    scoreSubtitle: '',
+    /**
+     * ⭐ 成长值三卡。
+     *   · s5：拿不到这一把的增量时是**空数组** ⇒ 整块不渲染；
+     *   · s6：恒为三张 +0（灰）。
+     */
+    growthCards: [] as GrowthCard[],
+    /**
+     * ⭐ s6 的副标题。
+     *   默认是设计稿那句「录音不符合规范，无法检测发音」；
+     *   但**超时**进 s6 时会换成一句真话（分数可能还在云端算）—— 见 SCORING_TIMEOUT_MS。
+     */
+    failDetail: '',
   },
 
   recorder: null as Recorder | null,
@@ -335,8 +379,8 @@ Page({
 
   /**
    * ⭐ 这一轮的帧**走哪条路**：
-   *   'decoding' …… 还没定，正在试解码；
-   *   'decoded'  …… 平台解码器能用（真机 mp3 的正常路径）；
+   *   'deciding' …… 还没定，正在试解码；
+   *   'decoded'  …… 平台解码器能用（真机上的正常路径）；
    *   'pcm'      …… 这一片本来就是裸 PCM，按 16bit 读；
    *   'off'      …… 解不开又不是 PCM → 不画了。
    * ⚠️ 定下来之后不再反复改判：每帧都重新试一遍会让波形忽有忽无。
@@ -358,8 +402,6 @@ Page({
   waveFrames: 0,
   /** 「一帧都没收到」只提示一次，别每 100ms 刷一遍 */
   waveWarned: false,
-  // ⚠️ 这里原来有一个 waveContainer（标记「帧是压缩块」）—— 已经不需要了：
-  //    帧走哪条路由 frameMode 记着，诊断行也是从它推出来的。
 
   /**
    * ⭐ 拿画布节点。
@@ -388,7 +430,7 @@ Page({
          *    一次失败就放弃的话，表现是"波形整轮都不出来"，而**不报任何错**。
          */
         if (!node || !info?.width || !info?.height) {
-          if (attempt < 3 && this.data.phase === 'recording') {
+          if (attempt < 3 && this.data.phase === 's2') {
             setTimeout(() => this.prepareWaveCanvas(attempt + 1), 120)
             return
           }
@@ -431,7 +473,7 @@ Page({
   handleFrame(frame: ArrayBuffer) {
     // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
     //    页面销毁之后一帧都不该画（见 onUnload）
-    if (this.gone || this.data.phase !== 'recording') return
+    if (this.gone || this.data.phase !== 's2') return
     if (this.frameMode === 'off') return
 
     // 已经确认是裸 PCM：直接读，不再走解码（省一次异步往返）
@@ -479,6 +521,7 @@ Page({
     )
     // ⭐ 这件事必须**同时写在屏幕上**：一块不动的空画布比没有更糟 ——
     //    用户会以为是自己手机 / 麦克风的问题。
+    //    ⚠️ s2 那一格这时只留一条中线（见 WXML），**不摆假波形**。
     this.setData({
       waveOn: false,
       waveDebug: IS_DEVTOOLS ? '模拟器不提供音频解码通路 —— 波形只在真机上有意义' : '',
@@ -552,13 +595,14 @@ Page({
 
   // ⚠️ 这里原来有一个页面私有的 InnerAudioContext —— 已搬到 lib/audio/play.ts，
   //    因为「我的挑战」列表也要播录音，两个实例会互相抢（见那个文件的说明）。
+  /** s2 的计时器（每 100ms 刷一次） */
   timer: null as ReturnType<typeof setInterval> | null,
-  /** 原始词表（不带样式），渲染时再套 cls */
+  /** 原始词表（不带样式）—— 点词 TTS 用它 */
   plainWords: [] as string[],
   /**
-   * 本次提交的 id —— 「公开我的录音」开关要靠它改。
+   * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
-   *    id 是协议层的，由受理/轮询那一步记下来更直接）。
+   *    id 是协议层的，由受理那一步记下来更直接）。
    */
   submissionId: '',
 
@@ -583,14 +627,13 @@ Page({
   startedAt: 0,
   /**
    * 停止看门狗。
-   * ⚠️ `manager.onStop` 万一不回调（设备异常、录音被系统抢走），
-   *    界面会**永远停在「录音中」**，用户唯一能做的是杀掉小程序。
+   * ⚠️ manager.onStop 万一不回调（设备异常、录音被系统抢走），
+   *    界面会**永远停在 s2**，用户唯一能做的是杀掉小程序。
    *    宁可 3 秒后给一句明确的错误，也不能挂死。
    */
   stopWatchdog: null as ReturnType<typeof setTimeout> | null,
 
   onLoad(query: Record<string, string | undefined>) {
-    this.msPerWord = loadMsPerWord()
     this.setData({
       // ⭐ articleId 是内容 hash（字符串）—— 原样取；缺省退回 '1'（老行为：开发时直接进页也能开）
       articleId: query.id || '1',
@@ -603,7 +646,6 @@ Page({
     void this.loadContent()
   },
 
-
   /**
    * 页面滚动 → 导航栏（白底什么时候出现，见 lib/nav.ts 的 navSolidFrom）。
    *
@@ -614,21 +656,20 @@ Page({
     notifyNavScroll(this, e.scrollTop)
   },
 
-  /** 本次进度采用的「每词毫秒数」—— 只用于提交后的语速诊断 */
-  msPerWord: DEFAULT_MS_PER_WORD,
-
   onUnload() {
     /**
-     * ⭐ 打完分、又离开了结果页 → 本地这段录音才算**真正消费掉**。
+     * ⭐ 打完分（s5）、又离开了这一页 → 本地这段录音才算**真正消费掉**。
      *
-     * ⚠️⚠️ 为什么挪到这里、而不是提交成功那一刻：
-     *    清掉会把槽位目录整个删除（录音原件 + 试听 WAV），
-     *    而结果页上那个「试听」按钮播的正是它。删早了 = 按钮点了没反应。
+     * ⚠️⚠️ 为什么是 s5 而不是「提交成功那一刻」：
+     *    清掉会把槽位目录整个删除（录音原件 + 试听副本），
+     *    而 s5 上那个「试听」按钮播的正是它。删早了 = 按钮点了没反应。
      *    放在这一页的生命周期末尾，两条目的同时满足：
-     *      · 用户在结果页上还能回听自己刚读的；
+     *      · 用户在结果屏上还能回听自己刚读的；
      *      · 下次进这一句不会再恢复出旧录音（防「隔天点一下提交」白拿 streak）。
+     *    ⚠️ s6（失败）**不清**：那段录音没被消费掉，下次进来还能接着用
+     *       （设计稿口径：失败后点「重新挑战」才清缓存回 s1）。
      */
-    if (this.data.phase === 'done' && this.recordingKey) {
+    if (this.data.phase === 's5' && this.recordingKey) {
       clearLastRecording(this.recordingKey)
     }
 
@@ -666,41 +707,53 @@ Page({
       const content = await fetchArticleContent(this.data.articleId)
       // ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
       //    否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
-      // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音频 / 第 i 个时间区间」
+      // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音标 / 第 i 个逐词分数」
       this.plainWords = plainWordsOf(content.text)
       // ⭐ 缓存键由**句子原文 + uid** 决定（不是 articleId）—— 见字段上的说明
       this.recordingKey = recordingKeyOf(content.text, getUserId())
-      // ⚠️ 逐词播放不再需要正文里的词级时间戳（点词走微信 TTS，见 onPlayWord）——
-      //    正文的 words[] 现在只用于**逐词显示**（音标 / 句中义 / 技巧）。
+      /**
+       * ⭐ 音标跟着词走：words[i].ipa 与 plainWords[i] 是**同一个下标**
+       *    （正文生成时就按这条切词规则对齐了）。
+       * ⚠️ 老正文可能没有 ipa（空串）→ WXML 里那一行不渲染。
+       */
+      const words: WordView[] = this.plainWords.map((text, i) => ({
+        i,
+        text,
+        ipa: content.words[i]?.ipa ?? '',
+      }))
+      const stdMs = readStdDurationMs(content.audio)
       this.setData({
         translation: content.translation,
-        words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
+        words,
         // ⚠️ audio 为 null = 这篇还没灌标准音（服务端就是这样表达的，不是 full=null）
-      canPlayAudio: !!content.audio,
+        canPlayAudio: !!content.audio,
         fullAudio: content.audio?.full ?? '',
         audioKind: content.audio?.kind ?? 'http',
-        phase: 'ready',
+        // ⚠️ 详情接口**没有**时长（见 stdDurationText 的说明）—— 有就显示，没有就空着
+        stdDurationMs: stdMs,
+        stdDurationText: formatDuration(stdMs),
+        phase: 's1',
       })
 
-      // ⭐ 内容一到就**后台**把标准音拉到本地 —— 用户点喇叭时就不用等网络了
+      // ⭐ 内容一到就**后台**把标准音拉到本地 —— 用户点那颗圆钮时就不用等网络了
       this.prefetchStandardAudio()
 
-
-      // ⭐ 这句子上次录的那段还在吗？在就**直接进入「已录好」**——
+      // ⭐ 这句子上次录的那段还在吗？在就**直接进入 s3（录音预览）**——
       //    用户不必为了接个电话就重读一遍。
       //    ⚠️ 按**句子**匹配：同一句换个日期再轮到，参考文本一字不差，
       //       那段录音照样是有效的（见 last-recording 的边界 ①）。
       const last = this.recordingKey ? loadLastRecording(this.recordingKey) : null
       if (last) {
         this.setData({
-          phase: 'recorded',
+          phase: 's3',
           restored: true,
           audioPath: last.audioPath,
           playPath: last.playPath,
           durationMs: last.durationMs,
-          elapsed: (last.durationMs / 1000).toFixed(1),
+          recordDurationText: mmss(last.durationMs),
         })
       }
+      this.syncEnergyNote()
     } catch (err) {
       this.setData({ phase: 'loading', error: (err as Error).message })
     }
@@ -710,11 +763,58 @@ Page({
     void this.loadContent()
   },
 
-
+  // ----------------------------------------------------------------
+  // 派生展示文本
+  // ----------------------------------------------------------------
+  /**
+   * ⭐ 底部那行能量小字 —— **在 TS 里算好**，WXML 只负责摆。
+   *
+   *   已消耗（s3 预览要提交 / s4 评测中 / s5 成功）：评测消耗能量2，剩余3
+   *   未消耗（s6 失败）：                              本次评测消耗能量0，剩余5
+   *
+   * ⚠️⚠️ 端侧**不做结算**（受理时锁 2 点、失败释放都在服务端）：这里显示的「剩余」
+   *    是拿手上这份余额减去本次会消耗的点数**预估**出来的，用来让用户提交前心里有数。
+   *    真正的余额仍以服务端为准（下次 /me 会覆盖它）。
+   * ⚠️ 那个 2 取自 shared 的 ENERGY_PER_CHALLENGE，端侧**不写死**。
+   */
+  syncEnergyNote() {
+    const phase = this.data.phase
+    const energy = this.data.energy || 0
+    const left = Math.max(0, energy - ENERGY_PER_CHALLENGE)
+    /**
+     * ⚠️ 措辞按设计稿分两种（不是随手加的「本次」）：
+     *    预览 / 评测中说的是**还没落定**的一次消耗 ——「评测消耗能量2，剩余3」；
+     *    出了结果（s5 / s6）才谈得上「**本次**评测消耗能量…」。
+     */
+    const head = phase === 's5' || phase === 's6' ? '本次评测消耗能量' : '评测消耗能量'
+    /**
+     * ⚠️ 余额不够时**必须自己说出来**（上一版就有这句提示，别丢）：
+     *    否则 s3 上那句「评测消耗能量2，剩余0」看着只是陈述，
+     *    用户点了 ✓ 才被服务端拒 —— 而「明天会补到 3 点」才是他真正需要知道的事。
+     */
+    const short =
+      energy < ENERGY_PER_CHALLENGE && (phase === 's3' || phase === 's4')
+        ? '（不够了，明天会补到 3 点）'
+        : ''
+    this.setData({
+      energyNote:
+        phase === 's6'
+          ? head + '0，剩余' + energy
+          : head + ENERGY_PER_CHALLENGE + '，剩余' + left + short,
+    })
+  },
 
   // ----------------------------------------------------------------
-  // 录音
+  // s1 交互：IPA 开关 / 开始录音
   // ----------------------------------------------------------------
+  /**
+   * ⭐ IPA 胶囊 = 切换「单词下方显示音标」。
+   * ⚠️ 只是一个显示开关：不动数据、不发请求（音标本来就在正文里）。
+   */
+  onToggleIpa() {
+    this.setData({ ipaOn: !this.data.ipaOn })
+  },
+
   async onStartRecord() {
     const ok = await this.ensureRecordAuth()
     if (!ok) {
@@ -729,7 +829,7 @@ Page({
         onStop: (r) => this.handleRecorded(r),
         onError: (e) => {
           this.stopTimer()
-          this.setData({ phase: 'ready', error: e.message })
+          this.setData({ phase: 's1', error: e.message })
         },
       })
     }
@@ -741,16 +841,21 @@ Page({
 
     this.setData(
       {
-        phase: 'recording',
+        phase: 's2',
         error: '',
-        elapsed: '0.0',
+        elapsedText: '00:00',
         waveDebug: WAVE_ON && IS_DEVTOOLS ? '准备画布…' : '',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
         audioPath: '',
         playPath: '',
-        result: null,
-        words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
+        durationMs: 0,
+        recordDurationText: '',
+        uploadPercent: 0,
+        scoreText: '',
+        scoreSubtitle: '',
+        growthCards: [],
+        failDetail: '',
       },
       /**
        * ⭐ 画布是跟着 phase 一起被 wx:if 创建出来的，所以只能在 setData **回调**里拿 ——
@@ -766,7 +871,8 @@ Page({
     this.startedAt = startedAt
     this.timer = setInterval(() => {
       const sec = (Date.now() - startedAt) / 1000
-      this.setData({ elapsed: sec.toFixed(1) })
+      // ⚠️ 计时器这一格必须**每 100ms 都有值**（mmss 恒返回，不像 formatDuration 会给空串）
+      this.setData({ elapsedText: mmss(Date.now() - startedAt) })
 
       /**
        * ⚠️ 开发者工具里：录了两秒还一帧都没收到，就**主动说出来**。
@@ -792,12 +898,13 @@ Page({
     if (this.stopWatchdog !== null) clearTimeout(this.stopWatchdog)
     this.stopWatchdog = setTimeout(() => {
       this.stopWatchdog = null
-      if (this.data.phase !== 'recording') return
+      if (this.data.phase !== 's2') return
       this.stopTimer()
-      this.setData({ phase: 'ready', error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
+      this.setData({ phase: 's1', error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
     }, 3000)
   },
 
+  /** s2 → s3：录音落地，进预览 */
   handleRecorded(r: RecordResult) {
     /**
      * ⚠️ 页面已经销毁就什么都别做。
@@ -820,12 +927,12 @@ Page({
      *
      * ⚠️ 原来要拼 WAV 是因为：真机落盘的是**裸 PCM**（没有文件头），
      *    InnerAudioContext 播不了，只能拿帧自己造一个。
-     *    现在落盘的是 aac（微信接口的默认格式），**两个平台都能直接播** ——
+     *    现在落盘的是 mp3，**两个平台都能直接播** ——
      *    那一整套绕法连同它的坑一起没了。
      */
     const playPath = ''
 
-    // ⭐ 落盘 —— 万一片子丢了、页面退了，下次进同一天的挑战还能捡回来
+    // ⭐ 落盘 —— 万一片子丢了、页面退了，下次进同一句挑战还能捡回来
     if (this.recordingKey) {
       saveLastRecording({
         key: this.recordingKey,
@@ -836,7 +943,7 @@ Page({
     }
 
     this.setData({
-      phase: 'recorded',
+      phase: 's3',
       restored: false,
       // ⚠️ 两个路径是两个用途，别混：
       //    audioPath → 录音落地文件：**上传**给对象存储 + **试听**都是它
@@ -844,17 +951,18 @@ Page({
       audioPath: r.tempFilePath,
       playPath,
       durationMs: r.durationMs,
-      elapsed: (r.durationMs / 1000).toFixed(1),
+      recordDurationText: mmss(r.durationMs),
+      replayState: 'unplay',
       error: '',
     })
+    this.syncEnergyNote()
   },
 
-
   /**
-   * 试听。
+   * 试听**我的录音**（s3 / s4 那颗 outline 胶囊）。
    *
-   * ⭐ 录音格式改成微信接口的默认值（aac）之后，这一件事**变简单了**：
-   *    落盘的那个文件本身就是能播的容器，两个平台播的都是它。
+   * ⭐ 录音格式是 mp3 之后，这件事**变简单了**：落盘的那个文件本身就是能播的容器，
+   *    两个平台播的都是它。
    *
    * ⚠️ 但**老缓存**还得照顾：以前录的是裸 PCM，真机播不了，
    *    那份「帧拼 WAV」的副本还在槽位目录里（playPath）——
@@ -868,6 +976,9 @@ Page({
       this.setData({ replayState: 'unplay' })
       return
     }
+    // 取音途中再点 = 忽略（还没出声）
+    if (this.data.replayState === 'loading') return
+
     const primary = IS_DEVTOOLS ? this.data.audioPath : this.data.playPath
     const fallback = IS_DEVTOOLS ? this.data.playPath : this.data.audioPath
     const src = primary || fallback
@@ -879,9 +990,9 @@ Page({
       return
     }
 
-    // ⚠️ 整句 / 单词 / 试听**共用同一个播放器**，开播前先把别人的标记清掉，
-    //    否则会出现「试听在播」和「整句在播」两颗钮同时亮着
-    this.setData({ replayState: 'playing', sentenceState: 'unplay', playingWord: -1 })
+    // ⚠️ 标准音 / 单词 / 试听**共用同一个播放器**，开播前先把别人的标记清掉，
+    //    否则会出现「试听在播」和「标准音在播」两颗钮同时亮着
+    this.setData({ replayState: 'loading', sentenceState: 'unplay', playingWord: -1 })
 
     try {
       await this.playUrl(src, '试听')
@@ -924,10 +1035,10 @@ Page({
    */
   playUrl(src: string, what: string, segment?: { startMs: number; endMs: number }): Promise<void> {
     // ⚠️ 播成功就把上一次的错误提示清掉 —— 这是原来那个实现里的一句
-    //    `setData({ error: '' })`，搬走之后漏了它的话，
+    //    setData({ error: '' })，搬走之后漏了它的话，
     //    症状是「重试成功了，红框还挂在那儿」。
     return playAudioUrl(src, what, () =>
-      // ⚠️ 播完把三个播放标记都清掉：喇叭 / 逐词 / 试听共用播放器，谁先停都要回到「没在播」
+      // ⚠️ 播完把三个播放标记都清掉：标准音 / 逐词 / 试听共用播放器，谁先停都要回到「没在播」
       this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' }),
       // ⭐ segment：只播这个词那一段（见 onPlayWord）
       segment,
@@ -935,7 +1046,6 @@ Page({
       if (this.data.error) this.setData({ error: '' })
     })
   },
-
 
   /**
    * ⭐ 进页面就**后台预拉取**整句标准音。
@@ -951,7 +1061,7 @@ Page({
     prefetchAudio([{ src: this.data.fullAudio, kind }])
   },
 
-  /** ⭐ 卡片右上角那个喇叭：播整句标准音 */
+  /** ⭐ s1 / s3 顶行那颗圆钮：播整句标准音 */
   async onPlaySentence() {
     if (!this.data.fullAudio) return
     // ⚠️ 先读进局部量再判断：await 之后还要再看一次「用户有没有取消」，
@@ -1026,16 +1136,14 @@ Page({
     }
   },
 
-  // ⚠️ 「公开我的录音」开关已经搬到结果页（pages/challenge 的 onTogglePublic）——
-  //    提交之后才问，而提交之后用户已经在那一页上了。
-
   // ----------------------------------------------------------------
-  // 提交检测
+  // s3 → s4：提交评测
   // ----------------------------------------------------------------
   async onSubmit() {
-    const { audioPath, durationMs, articleId, phase, isPublic } = this.data
+    const { audioPath, durationMs, articleId, phase } = this.data
     if (!audioPath) return
-    if (phase === 'submitting') return // 连点会重复上传（服务端有幂等，但白烧一次上传流量）
+    // ⚠️ s4 里那颗 ✓ 已经不在界面上了；这里再挡一道是防连点（会白烧一次上传流量）
+    if (phase === 's4') return
 
     // ⚠️ 这里**不拦「加入过没有」**：身份（openid）是静默拿到的，而服务端在
     //    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）。
@@ -1044,14 +1152,27 @@ Page({
 
     // ⭐ 本地预检 —— 刻意极度宽松：放行垃圾的成本极低，误伤用户的成本是流失。
     //    这里只拦「明显没录上」，真正的语音检测在引擎侧。
+    //    ⚠️ 不合格时**留在 s3**（不是进 s6）：s6 是「引擎判失败」的结果屏，
+    //      而这一条在提交之前就能拦住，用户改一下再点就是了。
     if (durationMs < PREFLIGHT.minDurationMs) {
       this.setData({
-        error: `录音太短（${(durationMs / 1000).toFixed(1)} 秒），至少要说满 ${PREFLIGHT.minDurationMs / 1000} 秒`,
+        error:
+          '录音太短（' + (durationMs / 1000).toFixed(1) + ' 秒），至少要说满 ' +
+          PREFLIGHT.minDurationMs / 1000 + ' 秒',
       })
       return
     }
 
-    this.setData({ phase: 'submitting', error: '', uploadPercent: 0, scoringSeconds: 0, restored: false })
+    this.setData({
+      phase: 's4',
+      error: '',
+      uploadPercent: 0,
+      restored: false,
+      // ⚠️ 进 s4 前先把播放停掉：录音还在响的话，那颗「试听」钮的状态会留在 playing
+      replayState: 'unplay',
+    })
+    stopAudio()
+    this.syncEnergyNote()
 
     try {
       const { audioKey, audioUrl } = await uploadAudio(audioPath, {
@@ -1063,13 +1184,14 @@ Page({
       // ⚠️ 回传的是**当初点进来的那一天**，不是今天：
       //    历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变。
       // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值（false）落库，
-      //    结果页再给开关（见 pages/challenge 的 onTogglePublic）。
-      void isPublic
+      //    结果页（pages/challenge）再给那个开关。
       const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl)
-      // ⭐ 记住它：结果页那个「公开我的录音」开关要靠它去改
+      // ⭐ 记住它：s5 的「评测详情」要靠它去 pages/challenge
       this.submissionId = task.submissionId
+      // ⚠️ 受理阶段就被判失败（音频不合规 / 文章不存在）→ 直接进 s6
       if (task.status === 'failed') {
-        this.setData({ phase: 'recorded', error: task.error ?? '检测失败，请重录' })
+        this.toFail('')
+        this.setData({ error: task.error ?? '' })
         return
       }
       // 幂等命中：这段音频早就打过分，结果直接就在包里
@@ -1089,32 +1211,34 @@ Page({
        *    只说「能量不够」听着像封号，说「明天会补到 3 点」才是可预期的。
        * ⚠️ 服务端已经把余额放在 payload.energy 里，直接用它，不要在端侧自己减。
        */
+      // ⚠️ 一律退回 s3：那段录音还在手上，用户点一下 ✓ 就能重试（不用重读一遍）
       if (e.code === 'ENERGY_EXHAUSTED') {
         const p = e.payload as { energy?: number } | undefined
         this.setData({
-          phase: 'recorded',
-          error: '能量不够了（还差 ' + Math.max(0, 2 - (p?.energy ?? 0)) + ' 点）—— 明天会补到 3 点，也可以充值',
+          phase: 's3',
+          error:
+            '能量不够了（还差 ' + Math.max(0, ENERGY_PER_CHALLENGE - (p?.energy ?? 0)) +
+            ' 点）—— 明天会补到 3 点，也可以充值',
         })
       } else {
-        this.setData({ phase: 'recorded', error: e.message })
+        this.setData({ phase: 's3', error: e.message })
       }
+      this.syncEnergyNote()
     }
   },
 
   /**
-   * ⭐ 轮询打分结果 —— 直到服务端给出终态（scored / failed）。
+   * ⭐ 轮询打分结果 —— 直到服务端给出终态（scored / failed）或**超时**。
    *
-   * ⚠️⚠️ 这里**刻意没有「最多等 N 秒」的上限**。
-   *    上限等于给句子长度设限：句子更长、引擎更慢，终会撞上去，
-   *    而撞上去的表现是「用户永远拿不到分」—— 这是最糟的失败方式。
-   *    终止条件是**服务端的终态**，而服务端保证它会到达终态：
-   *      · 打完 → scored
-   *      · 引擎拒绝 → failed
-   *      · 进程死了 → 心跳停 → 下一轮轮询接管重跑，重跑次数用尽则 failed
-   *    所以这个 for(;;) 一定会结束，而不是靠客户端掐时间。
+   * ⚠️⚠️ 服务端那条链路**刻意没有时长上限**（靠心跳判活，见 services/scoring.ts）：
+   *    句子更长、引擎更慢，也不该撞上一个人为的上限 ——
+   *    撞上去的表现是「用户永远拿不到分」，那是最糟的失败方式。
+   *    ⚠️ 但产品上不能让用户对着转圈无限等（设计稿口径：等待期禁止点击，
+   *      所以**只做超时兜底**、不做手工取消）。⇒ 客户端这一侧有个宽上限
+   *      （SCORING_TIMEOUT_MS，2 分钟），到点进 s6，并且**明说**分数可能还在云端算。
    *
-   * ⚠️ 每轮都检查 phase：用户中途点了「重录」或退出页面就立刻停下，
-   *    不能在后台一直空转轮询。
+   * ⚠️ 每轮都检查 phase 与 gone：用户中途退出页面 / 状态已经变了就立刻停下，
+   *    不能在后台一直空转轮询，更不能往已经销毁的页面上 setData。
    */
   async pollResult(submissionId: string) {
     this.submissionId = submissionId
@@ -1130,7 +1254,15 @@ Page({
       // 之后放缓 —— 打分本身要十几秒，1 秒一次纯属白烧请求。
       const wait = round < 4 ? 1_000 : 2_500
       await new Promise((r) => setTimeout(r, wait))
-      if (this.data.phase !== 'submitting') return
+      // ⚠️ 这里原来只判 phase；页面被销毁时 phase 不会变，于是轮询会继续往
+      //    一个已经没了的页面上 setData（报错刷屏）。必须把 gone 也判上。
+      if (this.gone || this.data.phase !== 's4') return
+
+      // ⭐ 超时兜底（见本函数的说明）：到点就按失败处理，但**换一句副标题**
+      if (Date.now() - startedAt > SCORING_TIMEOUT_MS) {
+        this.toFail(TIMEOUT_HINT)
+        return
+      }
 
       let st
       try {
@@ -1140,34 +1272,58 @@ Page({
         failedPolls++
         console.warn('[reading] 轮询失败 ' + failedPolls + ' 次：' + (err as Error).message)
         if (failedPolls >= 5) {
+          // ⚠️ 退回 s3：录音还在手上，用户点一下 ✓ 就能重新提交（幂等，不会重复计费）
           this.setData({
-            phase: 'recorded',
+            phase: 's3',
             error: '网络不稳定，暂时取不到打分结果。分数仍在云端计算，回到首页就能看到。',
           })
+          this.syncEnergyNote()
           return
         }
         continue
       }
 
-      this.setData({ scoringSeconds: Math.round((Date.now() - startedAt) / 1000) })
       if (st.status === 'scored' && st.result) {
         this.applyResult(st.result)
         return
       }
       if (st.status === 'failed') {
-        this.setData({ phase: 'recorded', error: st.error ?? '检测失败，请重录' })
+        this.toFail('')
+        this.setData({ error: st.error ?? '' })
         return
       }
     }
   },
 
   /**
-   * ⭐ 云端权威结果到手的这一刻：写 store、刷新上一页、**切到简版结果反馈**。
+   * ⭐ s4 → s6：评测失败（引擎判失败 / 受理就失败 / 客户端超时）。
    *
-   * ⚠️ 不再自动跳走：刚读完那一下用户只想看到多少分、一句点评、接下来干嘛，
-   *    所以这一屏停在原地，详情由他自己点「查看详情」进 pages/challenge。
-   * ⚠️ 顺序不能换：store 与刷新必须在这里做完 —— 用户可能直接点「再次挑战」离开，
+   * @param detail 副标题。空串 = 用设计稿那句「录音不符合规范，无法检测发音」；
+   *               **超时**时传一句真话进来（分数可能还在云端算）——
+   *               那句设计稿文案只适用于「引擎说这段音频不行」，超时不是那个原因。
+   */
+  toFail(detail: string) {
+    stopAudio()
+    this.setData({
+      phase: 's6',
+      failDetail: detail || '录音不符合规范，无法检测发音',
+      scoreText: '',
+      scoreSubtitle: '',
+      // ⚠️ 失败态的三张卡是恒定的 +0（灰）—— 不需要服务端给（见 zeroGrowthCards）
+      growthCards: zeroGrowthCards(),
+      playingWord: -1,
+      sentenceState: 'unplay',
+      replayState: 'unplay',
+    })
+    this.syncEnergyNote()
+  },
+
+  /**
+   * ⭐ s4 → s5：云端权威结果到手的这一刻。
+   *
+   * ⚠️ 顺序不能换：store 与刷新必须**先**做完 —— 用户可能立刻点「重新挑战」或退出，
    *    那时再想补写就没有机会了（首页会一直停在旧数据上）。
+   *    而且 scoreSubtitle 里的「第 K 次」正是从刚写进 store 的 attempts 算的。
    */
   applyResult(result: SubmitResponse) {
     // ⭐⭐ 把结果写进全局 store —— **这一步就是「提交完返回首页会更新」的保证**。
@@ -1186,37 +1342,50 @@ Page({
     // ⭐ 第三道保障：直接让上一页重新拉一次 —— 不看订阅、不看生命周期、不看时序
     refreshPreviousPage()
 
-    // ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**，本地这份必须清。
-    //
-    //    ⚠️ 结果屏上有「试听」，但它播的是**服务端那份录音**（见 pages/challenge）；
-    //       而本机这段录音是**反滥用**要防的东西（隔天点一下提交就能白拿 streak），
-    //       所以离开这一页时就清掉 —— 见 onUnload 的说明。
-
+    stopAudio()
     /**
-     * ⭐ 切到**简版结果反馈** —— 这一屏只有：大号总分 + AI 一句话点评 + AI 建议，
-     *    外加「再次挑战 / 查看详情」两个按钮。
-     *
-     * ⚠️ 为什么不再自动跳走：刚读完那一下用户要的是「多少分、哪儿不行、接下来干嘛」，
-     *    而详情（五个分项、逐词上色、榜单）属于「我想再研究一下」—— 由他自己点进去。
-     * ⚠️ 状态先落好再让用户操作：onUnload 靠 phase === 'done' 判断
-     *    这次录音已经被消费掉了（见那一段说明）。
+     * ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**。
+     *    ⚠️ 但**不在这里清缓存**：s5 上那颗「试听」播的就是本地这份文件，
+     *       清早了按钮就点了没反应。真正的清理在 onUnload（见那里的说明）。
      */
     this.setData({
-      phase: 'done',
+      phase: 's5',
       error: '',
       scoreText: formatScore(result.score),
-      // ⚠️ 拿不到就是空串（没配大模型 / 那次调用失败）—— 界面上整块不渲染，
-      //    而不是显示一个空标签（那看起来像坏了）。
-      aiComment: result.aiComment ?? '',
-      aiAdvice: result.aiAdvice ?? '',
+      scoreSubtitle: this.subtitleOf(result),
+      growthCards: growthCardsOf(growthDeltaOf(result)),
+      failDetail: '',
+      playingWord: -1,
+      sentenceState: 'unplay',
+      replayState: 'unplay',
     })
+    this.syncEnergyNote()
   },
 
   /**
-   * 「查看详情」—— 详细结果在 pages/challenge（分项 / 逐词 / 榜单 / 分享）。
+   * ⭐ 成功态副标题：首次挑战，打败5人，位列第5 / 第3次挑战，打败5人，位列第5。
+   *
+   * ⚠️ 首次的判据是 **previousBest === null**（服务端给的上一次成绩）——
+   *    它比「端侧算第几次」可靠得多，SPEC 里也是这么定的。
+   * ⚠️ 第 K 次的 K 取自 store 里刚累加过的那一份（applyResult 里先写了 store 才调这里）。
+   *    但它是**缓存**：这个用户如果没从首页进来，store 里可能根本没有这一句的旧战绩，
+   *    那时 K 会是 1 —— 与「不是首次」自相矛盾。所以夹一个下限 2：
+   *    previousBest 非空 ⇒ 至少读过一次，那就是第 2 次起步。
+   */
+  subtitleOf(result: SubmitResponse): string {
+    const head =
+      result.previousBest === null
+        ? '首次挑战'
+        : '第' + Math.max(2, me.arenaOf(result.articleId).myAttempts) + '次挑战'
+    return head + '，打败' + result.beatenCount + '人，位列第' + result.rank
+  },
+
+  /**
+   * 「评测详情」—— 详细结果在 pages/challenge（五个分项 / 逐词上色 / 榜单 / 分享）。
    *
    * ⚠️ 用 redirectTo 而不是 navigateTo：从详情页返回应该回到**进入朗读页之前**那一页
    *    （首页 / 竞技场 / 我的挑战），而不是退回来对着一个已经交掉的录音界面。
+   * ⚠️ 这一页**保留**（SPEC 已定口径）：s5/s6 只放摘要。
    */
   onOpenDetail() {
     const url = CHALLENGE_PAGE + '?sid=' + encodeURIComponent(this.submissionId)
@@ -1224,39 +1393,37 @@ Page({
   },
 
   /**
-   * 「再次挑战」—— 另开一次干净的朗读（同一句、算今天）。
-   * ⚠️ 也用 redirectTo：这一页手上那段录音已经交掉了，留着它没有任何意义。
-   */
-  onChallengeAgain() {
-    const url = '/pages/reading/reading?id=' + this.data.articleId + '&date=' + today()
-    wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
-  },
-
-
-  /**
-   * 重录（录完之后那个「重录」按钮）。
+   * ⭐ 「重录」（s3 的 ↺）/「重新挑战」（s5、s6）—— **清缓存回 s1**。
    *
-   * ⚠️ 必须**一起清掉缓存**：用户的意图就是「不要这一段了」。
-   *    不清的话，下次再进这一页又会被恢复回来 —— 点重录等于没点。
+   * ⚠️ 三个入口共用这一个动作，因为它们的意图完全一样：这一段不要了，从头来。
+   *    （措辞不同只是因为所处状态不同：预览时叫重录，出分后叫重新挑战。）
+   * ⚠️ 必须**一起清掉缓存**：不清的话，下次再进这一页又会被恢复成 s3 ——
+   *    点「重录」等于没点（这是踩过的坑）。
+   * ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐。
    */
-  onAgain() {
-    // ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐
+  onRestart() {
     if (this.recordingKey) clearLastRecording(this.recordingKey)
     this.setData({
-      phase: 'ready',
+      phase: 's1',
       error: '',
       restored: false,
       audioPath: '',
       playPath: '',
       durationMs: 0,
-      words: this.plainWords.map((text, i) => ({ i, text, cls: 'text-ink' })),
+      recordDurationText: '',
+      elapsedText: '00:00',
+      uploadPercent: 0,
+      scoreText: '',
+      scoreSubtitle: '',
+      growthCards: [],
+      failDetail: '',
+      playingWord: -1,
+      sentenceState: 'unplay',
+      replayState: 'unplay',
     })
+    stopAudio()
+    this.syncEnergyNote()
   },
-
-  // ⚠️ 这里原来有个 onBack()（结果屏的「返回」按钮用的）——
-  //    结果屏搬去 pages/challenge 之后，返回按钮也跟着走了：
-  //    那一页要应付「从分享链接直接打开」的情况（栈里只有它自己），
-  //    所以回退逻辑应当跟结果屏在一起。
 
   // ----------------------------------------------------------------
   // 工具
@@ -1279,18 +1446,33 @@ Page({
   },
 })
 
-/** 读取本地缓存的语速基准（没有或异常时回落到默认值） */
-function loadMsPerWord(): number {
-  try {
-    const v = Number(wx.getStorageSync(MS_PER_WORD_KEY))
-    if (Number.isFinite(v) && v >= MPW_MIN && v <= MPW_MAX) return v
-  } catch {
-    /* 读不到就用默认值 */
-  }
-  return DEFAULT_MS_PER_WORD
+/**
+ * ⭐ 从内容接口的 audio 上读**标准音时长**（毫秒）。
+ *
+ * ⚠️⚠️ 现在这个字段**根本不在响应里**：朗读页拉的 /api/articles/:id 给的 audio
+ *    只有 { full, kind }（ArticleDetail.audio: AudioRef）—— 带 durationMs 的是列表接口的
+ *    ScheduleAudio。而本轮明确不改服务端。
+ *    ⇒ 按**可选字段**读：服务端哪天把它带上（它已有现成的 standardAudioMs），
+ *      这里不用改一行，顶行的 00:23 自己就出来了。
+ * ⚠️ 不要用别的办法估：InnerAudioContext 的时长要等音频真的加载完才知道，
+ *    为了几个字去建一个播放器实例，代价比收益大得多（还可能被音频池限制）。
+ */
+function readStdDurationMs(audio: { full: string; kind: 'cloud' | 'http' } | null): number {
+  if (!audio) return 0
+  const ms = (audio as { durationMs?: number }).durationMs
+  return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? ms : 0
 }
 
-// ⚠️ 这里原来有个 formatUntil()（把 ISO 时间转成「还有 6 小时 12 分」），
-//    是给「24 小时滚动冷却」写提示语用的。
-//    冷却下线之后，服务端直接给**还有多少秒**（retryAfterSec），
-//    端侧不再需要把时间戳换算成人话 —— 少一处会算错的日期逻辑。
+/**
+ * ⭐ 从提交结果里读「这一把的成长值快照」。
+ *
+ * ⚠️⚠️ 本轮**服务端还没往下发**这个字段（SPEC 把 SubmitResponse 加 growth 排在下一轮：
+ *    submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
+ *    所以这里按可选字段读：有就出三张卡，没有就整块不渲染。
+ *    ⚠️ 形状按 shared 的 GrowthView（self / diligence / standout）——
+ *      下一轮服务端照这个形状补上，端侧不用改。
+ */
+function growthDeltaOf(result: SubmitResponse): Partial<GrowthView> | null {
+  const g = (result as SubmitResponse & { growth?: Partial<GrowthView> }).growth
+  return g && typeof g === 'object' ? g : null
+}

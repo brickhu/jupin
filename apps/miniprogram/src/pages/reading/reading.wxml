@@ -2,146 +2,245 @@
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
   <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
-  <!-- ⚠️ 回看模式（URL 带 sid）下这一页不是"来挑战"的，标题要跟着变 ——
-       否则用户从「我的挑战」点进来，看到标题写着「参与挑战」会以为自己又开了一局。 -->
-  <nav-bar id="nav" title="{{review ? '挑战详情' : '参与挑战'}}" />
+  <nav-bar id="nav" title="参与挑战" />
 
-  <!-- ── 加载中 ────────────────────────────────────────────── -->
+  <!-- ── 句子加载中 ────────────────────────────────────────── -->
   <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && !error}}">
     <text class="text-28rpx text-muted">正在加载句子…</text>
   </view>
 
-  <!-- ── 加载失败 ──────────────────────────────────────────── -->
+  <!-- ── 句子加载失败 ──────────────────────────────────────── -->
   <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && error}}">
     <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
-    <view class="mt-2.5 text-center py-[18rpx] border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onReload">重试</view>
-  </view>
-
-  <!-- ── 句子 ──────────────────────────────────────────────── -->
-  <!-- ⚠️ relative 是为了让右上角的喇叭能绝对定位到卡片角上 -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3 relative" wx:if="{{phase !== 'loading'}}">
-
-    <!-- ⭐ 整句标准音 —— 右上角。
-         ⚠️ 只在能播时才渲染（canPlayAudio）：点了没反应的图标比没有这个按钮更难排查。
-         ⚠️ catchtap 而不是 bindtap：这张卡片整体不可点，但喇叭在词的上方，
-            冒泡会让「点喇叭」顺带触发下面某个词的发音。 -->
-    <audio-button wx:if="{{canPlayAudio}}" class="absolute top-3 right-3" size="md"
-                  state="{{sentenceState}}" bind:play="onPlaySentence" />
-
-    <!-- ⚠️ px-1 mr-1 必须写在静态类上：色块只在命中的词上，
-         内边距若跟着 cls 走，着色时整行会抖 -->
-    <!-- ⚠️ pr-[76rpx] 给右上角的喇叭让出位置，否则长句会从图标底下穿过去 -->
-    <view class="flex flex-wrap {{canPlayAudio ? 'pr-[76rpx]' : ''}}">
-      <!-- ⭐ 点词听发音。data-i 带的是**下标**而不是词本身 ——
-           同一句里 "the" 会出现两次，按文本找必然指错那一个。 -->
-      <text class="text-44rpx leading-[1.5] px-1 mr-1 {{item.cls}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}"
-            wx:for="{{words}}" wx:key="i"
-            data-i="{{item.i}}" bindtap="onPlayWord">{{item.text}}</text>
-    </view>
-
-    <!-- ⚠️ 这里原来夹着一块「提示 + 分隔线」，正好卡在英文和中文中间 ——
-         它把一句话读成两截：先读英文，眼睛被一行灰字打断，再读中文。
-         而那些提示说的都是**下一屏那个按钮的名字**（试听 / 提交），
-         不写用户也不会按错。删掉之后整句和译文是连着的。 -->
-    <text class="text-26rpx text-faint mt-2 leading-[1.6] block">{{translation}}</text>
-  </view>
-
-  <!-- ── 录音 ──────────────────────────────────────────────── -->
-  <!-- ⚠️ 条件不能只写 phase !== 'loading'：那样出结果后这张卡片仍会渲染，
-       但内部所有 wx:if 都不成立 → 一个莫名其妙的空盒子 -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'ready' || phase === 'recording' || phase === 'recorded' || phase === 'submitting'}}">
-
-    <!-- 待录音 -->
-    <block wx:if="{{phase === 'ready'}}">
-      <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium" bindtap="onStartRecord">开始朗读</view>
-    </block>
-
-    <!-- 录音中 -->
-    <block wx:if="{{phase === 'recording'}}">
-      <view class="flex items-baseline justify-center gap-2 pt-2.5">
-        <text class="text-36rpx text-bad">●</text>
-        <text class="text-36rpx font-semibold text-ink">{{elapsed}}s</text>
-      </view>
-
-      <!-- ⭐ 声波监测：以中线对称的实心柱条，一帧画一次（见 reading.ts 的 drawWave）。
-           ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
-              没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
-           ⚠️ 用 canvas 而不是一排 <view>：一帧 1024 个采样点，节点方案既扛不住也会糊成一块。
-           ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。
-
-           ⚠️⚠️ 画不画由 waveOn 决定，而它取决于**这一轮真的收到了 PCM 帧没有**：
-              录音格式选 mp3 就是因为「压缩」和「帧回调」只能在这个格式上兼得
-              （aac 拿不到帧，pcm 体积翻五倍）。
-              真机上万一帧里装的是**压缩块**而不是 PCM，drawWave 会当场把
-              waveOn 置 false —— 那时这里不渲染画布，只留「录音中」和时间：
-              一块不动的空画布比没有更糟，它会让人以为是自己手机的问题。 -->
-      <canvas type="2d" id="wave" class="w-full h-[88rpx] my-1" wx:if="{{waveOn}}"></canvas>
-
-      <!-- ⚠️ 只在开发者工具里显示：波形不出来的原因有好几种（帧没来 / 画布没就绪 /
-           数据是压缩字节），它们在屏幕上长得一模一样。真机上恒为空。 -->
-      <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveOn && waveDebug}}">{{waveDebug}}</text>
-
-      <view class="mb-2.5"></view>
-      <view class="text-center py-[28rpx] rounded-full bg-ink text-white text-32rpx font-medium" bindtap="onStopRecord">停止</view>
-    </block>
-
-    <!-- 录完 / 提交中 -->
-    <block wx:if="{{phase === 'recorded' || phase === 'submitting'}}">
-      <text class="text-26rpx text-faint block mb-2.5">已录 {{elapsed}} 秒</text>
-
-      <!-- 试听 = audio-button（同一颗播放钮）；「重录」是带字的动作按钮，仍走原来那套 -->
-      <view class="flex items-center mb-2.5">
-        <audio-button size="md" state="{{replayState}}" bind:play="onReplay" />
-        <view class="flex-1 text-center py-[18rpx] ml-2.5 border border-solid border-gray-200 rounded-1.5 text-27rpx text-gray-700" bindtap="onAgain">重录</view>
-      </view>
-
-      <view class="text-center py-[28rpx] rounded-full bg-brand text-white text-32rpx font-medium {{phase === 'submitting' ? 'opacity-50' : ''}}" bindtap="onSubmit">
-        {{phase === 'submitting' ? (uploadPercent > 0 && uploadPercent < 100 ? '上传中 ' + uploadPercent + '%' : (scoringSeconds > 0 ? '打分中… ' + scoringSeconds + 's' : '打分中…')) : '提交检测'}}
-      </view>
-      <!-- ⭐ 等待必须可见：打分要十几秒，一句「打分中…」不动的按钮会被当成卡死 -->
-      <text class="text-22rpx text-faint block text-center mt-2" wx:if="{{phase === 'submitting' && uploadPercent >= 100}}">云端正在逐词评测，通常 10–20 秒，长句更久 —— 期间可以停留在此页</text>
-
-      <!-- ⭐ 能量：挑战要花点数，所以必须**提交前**就让用户看见还剩多少。
-           ⚠️ 余额来自服务端（每次 /me 都会顺手补足到 3 点），端侧不自己算。
-           ⚠️ 检测失败服务端会把这点数退回，所以文案说「消耗」而不是「扣除」。 -->
-      <text class="text-22rpx text-faint block text-center mt-2" wx:if="{{phase !== 'submitting'}}">⚡ 能量 {{energy}} 点 · 这次挑战消耗 2 点{{energy < 2 ? '（不够了，明天会补到 3 点）' : ''}}</text>
-    </block>
-
-    <!-- 失败提示（冷却也走这里 —— 它不是错误，只是需要说清楚） -->
-    <view class="mt-2.5 bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5" wx:if="{{error}}">
-      <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    <view class="mt-3">
+      <ui-button variant="outline" color="default" width="full" bind:press="onReload">重试</ui-button>
     </view>
   </view>
 
-  <!-- ── 简版结果反馈 ─────────────────────────────────────────
-       ⭐ 打完分停在这一屏：大号总分 + AI 一句话点评 + AI 建议 + 两个按钮。
-       ⚠️ 详细结果（五个分项 / 逐词上色 / 榜单 / 分享）在 pages/challenge ——
-          这一屏刻意只做「刚读完那一下」的反馈，点「查看详情」才进那一页。
-       ⚠️ AI 点评/建议拿不到时（没配大模型、那次调用失败）整块不渲染，
-          而不是显示一个空标签（那看起来像坏了）。 -->
-  <block wx:if="{{phase === 'done'}}">
-    <view class="bg-white rounded-2.5 px-6 py-10 mb-3 text-center">
-      <view class="flex items-baseline justify-center">
-        <text class="text-140rpx font-bold text-ink leading-[1]">{{scoreText}}</text>
-        <text class="text-30rpx text-faint ml-2">分</text>
+  <!-- ══ 当前挑战卡：s1–s6 共用同一张卡，只是内容不同 ══════════
+       （状态机与每一态的来龙去脉见 reading.ts 的文件头注释）
+       ⚠️ 非 s4 也挂着 2px 的**透明**描边：s4 换成绿描边时才不会把整张卡撑大 2px
+          （否则进 s4 那一下整页会跳一下）。 -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3 border-2 border-solid {{phase === 's4' ? 'border-ok' : 'border-transparent'}}"
+        wx:if="{{phase === 's1' || phase === 's2' || phase === 's3' || phase === 's4' || phase === 's5' || phase === 's6'}}">
+
+    <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
+    <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's1' || phase === 's3'}}">
+      <view class="flex items-center">
+        <!-- ⚠️ 只在这一句真的灌了标准音时才渲染这颗钮（canPlayAudio）：
+             点了没反应的图标比没有这个按钮更难排查。
+             ⚠️ 用 ui-button 的 ghost/default（浅灰实心圆 + 深色字形）而不是 audio-button：
+                设计稿上这颗是「实心浅灰圆」，而 audio-button 的未播放态是**描边**。 -->
+        <ui-button wx:if="{{canPlayAudio}}" onlyIcon="{{true}}" size="md" variant="ghost" color="default"
+                   loading="{{sentenceState === 'loading'}}"
+                   icon="{{sentenceState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
+                   bind:press="onPlaySentence" />
+        <!-- ⚠️ 时长拿不到就**不渲染**这几个字（不是显示 00:00 —— 那看着像音频坏了）。
+             详情接口目前没有这个数，见 reading.ts 的 stdDurationText -->
+        <text class="text-28rpx text-body ml-2" wx:if="{{stdDurationText}}">{{stdDurationText}}</text>
       </view>
-      <text class="text-28rpx text-muted block mt-4 leading-[1.6]" wx:if="{{aiComment}}">{{aiComment}}</text>
+      <!-- ⭐ IPA 胶囊 = 切换「单词下方显示音标」；开着时变实心，状态一眼可见 -->
+      <ui-button size="sm" variant="{{ipaOn ? 'fill' : 'ghost'}}" color="{{ipaOn ? 'brand' : 'default'}}"
+                 bind:press="onToggleIpa">IPA</ui-button>
     </view>
 
-    <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{aiAdvice}}">
-      <text class="text-26rpx font-semibold text-ink block">AI 建议</text>
-      <text class="text-27rpx text-body block mt-2 leading-[1.7]">{{aiAdvice}}</text>
+    <!-- ── s2 顶行：红点 + 录音中…｜右侧红色计时器 ───────────── -->
+    <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's2'}}">
+      <view class="flex items-center">
+        <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0"></view>
+        <text class="text-28rpx text-body ml-2">录音中...</text>
+      </view>
+      <!-- ⚠️ 时间在 TS 里格式化（见 mmss）：WXML 不做任何计算 -->
+      <text class="text-28rpx text-bad">{{elapsedText}}</text>
     </view>
 
-    <view class="flex gap-2">
-      <view class="flex-1 text-center py-[26rpx] rounded-full bg-white text-body text-30rpx" bindtap="onChallengeAgain">再次挑战</view>
-      <view class="flex-1 text-center py-[26rpx] rounded-full bg-brand text-white text-30rpx font-medium" bindtap="onOpenDetail">查看详情</view>
+    <!-- ── s5 / s6 顶行：结果图标 + AI口语测评｜评测详情 ──────── -->
+    <view class="flex items-center justify-between mb-4" wx:if="{{phase === 's5' || phase === 's6'}}">
+      <view class="flex items-center">
+        <view class="w-[64rpx] h-[64rpx] rounded-full flex items-center justify-center shrink-0 {{phase === 's5' ? 'bg-ok' : 'bg-bad'}}">
+          <!-- ⚠️ s6 是**红底 X**：设计稿画的是红底对勾，失败态用 ✓ 会被读成成功
+               （用户 2026-09 已确认换成 X） -->
+          <text class="text-32rpx text-white">{{phase === 's5' ? '✓' : '✕'}}</text>
+        </view>
+        <text class="text-30rpx font-medium text-ink ml-2">AI口语测评</text>
+      </view>
+      <!-- ⭐ 只放摘要，「评测详情」去 pages/challenge（那一页保留） -->
+      <ui-button size="sm" variant="outline" color="default" bind:press="onOpenDetail">评测详情</ui-button>
     </view>
-  </block>
-  <!-- ⚠️ 这里原来是**整个结果屏**（分数卡 / 五个分项 / AI 点评与建议 / 逐词上色 /
-       榜单 / 试听 / 可见性开关 / 再读一次）—— 已整体搬去 pages/challenge。
 
-       为什么搬：那一屏要能被**分享、被陌生人打开**，而这一页是录音状态机
-       （麦克风、波形、上传进度、轮询）。打完分这一页 redirectTo 过去，
-       从结果页返回会回到**进入朗读页之前**那一页。 -->
+    <!-- ── s1 / s2 / s3 主体：句子（逐词渲染）────────────────────
+         ⚠️ 逐词是为了「点词听发音」和「词下挂音标」两件事，下标与正文 words[] 一一对应。
+         ⚠️ s2 录音中不显示音标（设计稿口径）：录音时少一层干扰。 -->
+    <view class="flex flex-wrap" wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
+      <!-- ⚠️ data-i 带的是**下标**而不是词本身：同一句里 "the" 会出现两次，
+           按文本找必然指错那一个（见 reading.ts 的 onPlayWord）。 -->
+      <view class="flex flex-col items-center mr-2 mb-1" wx:for="{{words}}" wx:key="i"
+            data-i="{{item.i}}" bindtap="onPlayWord">
+        <!-- ⚠️ px-1 mr-1 的写法与迁移前一致：高亮底色的内边距不跟着 cls 走，着色时整行不抖 -->
+        <text class="text-44rpx leading-[1.35] text-ink px-1 {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
+        <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 -->
+        <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && phase !== 's2' && item.ipa}}">{{item.ipa}}</text>
+      </view>
+    </view>
+
+    <!-- ⚠️ 译文：**设计稿里没有这一行**，本轮按既有能力保留（朗读练习要能看中文）。
+         若设计上确实要删，删掉这一段即可。 -->
+    <text class="text-26rpx text-faint mt-2 leading-[1.6] block"
+          wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">{{translation}}</text>
+
+    <!-- ── s1 底部：红色描边胶囊「点击录音并朗读」───────────────
+         ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）。
+         ⚠️ 设计稿这颗按钮左侧还有一个麦克风图标 —— iconfont 子集里没有它
+            （只有 12 个字形，见 components/ui-button 的说明），本轮不加字形，只留文字。 -->
+    <view class="mt-5" wx:if="{{phase === 's1'}}">
+      <ui-button variant="outline" color="error" size="xl" width="full" bind:press="onStartRecord">点击录音并朗读</ui-button>
+    </view>
+
+    <!-- ── s2 底部：↺（禁用占位）｜实时波形｜结束录音 ───────────── -->
+    <view class="mt-5 flex items-center" wx:if="{{phase === 's2'}}">
+      <!-- ⚠️ 录音中这颗 ↺ 是**禁用的**（用户已确认：录音中不给重录，只作占位）。
+           ⚠️ ↺ 用的是 unicode 字符：iconfont 子集里没有重录字形（见 ui-button 的说明） -->
+      <ui-button onlyIcon="{{true}}" size="lg" variant="ghost" color="default" disabled="{{true}}">
+        <text class="text-36rpx text-ink">↺</text>
+      </ui-button>
+
+      <view class="flex-1 min-w-0 mx-3">
+        <!-- ⭐ 声波监测：以中线对称的实心柱条，一帧画一次（见 reading.ts 的 drawSamples）。
+             ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
+                没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
+             ⚠️ 用 canvas 而不是一排 <view>：一帧 1024 个采样点，节点方案既扛不住也会糊成一块。
+             ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。 -->
+        <canvas type="2d" id="wave" class="w-full h-[64rpx]" wx:if="{{waveOn}}"></canvas>
+        <!-- ⚠️⚠️ 画不画由 waveOn 决定，而它取决于**这一轮真的收到了能解码的帧没有**
+             （开发者工具的 WebAudio 解不开 mp3 码流，那里恒为 false）。
+             这时只留一条中线 —— 绝不摆一条不动的假波形：那比没有更糟，
+             会让人以为是自己手机 / 麦克风的问题（这是踩过的坑）。 -->
+        <view class="h-[64rpx] flex items-center" wx:else>
+          <view class="w-full h-[4rpx] rounded-full bg-line"></view>
+        </view>
+        <!-- ⚠️ 只在开发者工具里显示：波形不出来的原因有好几种（帧没来 / 画布没就绪 /
+             数据是压缩字节），它们在屏幕上长得一模一样。真机上恒为空。 -->
+        <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveOn && waveDebug}}">{{waveDebug}}</text>
+      </view>
+
+      <!-- ⚠️ 红色实心圆里的方块：设计稿是**黑方块**，不是白色 stop 字形 -->
+      <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="error" bind:press="onStopRecord">
+        <view class="w-[28rpx] h-[28rpx] rounded-[4rpx] bg-ink"></view>
+      </ui-button>
+    </view>
+
+    <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
+    <view class="mt-5" wx:if="{{phase === 's3'}}">
+      <!-- ⚠️ 从缓存恢复的那段录音必须**说出来**：用户会以为是自己刚录的，
+           然后直接提交 —— 而他并不记得那段音频里读的是什么 -->
+      <text class="text-22rpx text-faint block mb-2" wx:if="{{restored}}">这是上次录的，还没提交</text>
+
+      <view class="flex items-center">
+        <ui-button onlyIcon="{{true}}" size="lg" variant="ghost" color="default" bind:press="onRestart">
+          <text class="text-36rpx text-ink">↺</text>
+        </ui-button>
+
+        <!-- ⚠️ 这颗是 outline 胶囊（设计稿口径），所以用 ui-button 而不是 audio-button：
+             audio-button 只有圆钮。图标走 iconify 名（mdi:play / mdi:stop） -->
+        <view class="flex-1 min-w-0 mx-3">
+          <ui-button variant="outline" color="default" size="md" width="full"
+                     loading="{{replayState === 'loading'}}"
+                     icon="{{replayState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
+                     bind:press="onReplay">{{recordDurationText}}</ui-button>
+        </view>
+
+        <ui-button onlyIcon="{{true}}" size="lg" variant="fill" color="success" bind:press="onSubmit">
+          <text class="text-36rpx text-ink">✓</text>
+        </ui-button>
+      </view>
+
+      <text class="text-22rpx text-faint block text-center mt-2">{{energyNote}}</text>
+    </view>
+
+    <!-- ── s4 AI 评测中：整块换成绿色描边卡片 ─────────────────────
+         ⚠️⚠️ 这一态**只保留可点的「试听录音」胶囊**（设计稿明确画了它）。
+            「禁止页面点击」由结构保证：别的按钮压根不存在 ——
+            而不是盖一层全屏遮罩，那会把允许的试听也一起挡住。 -->
+    <view class="py-8 flex flex-col items-center" wx:if="{{phase === 's4'}}">
+      <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 -->
+      <text class="text-56rpx text-ok iconfont icon-loading animate-spin"></text>
+      <text class="text-48rpx font-bold text-ok mt-3">AI评测中</text>
+
+      <view class="mt-4 w-[60%]">
+        <ui-button variant="outline" color="default" size="md" width="full"
+                   loading="{{replayState === 'loading'}}"
+                   icon="{{replayState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
+                   bind:press="onReplay">{{recordDurationText}}</ui-button>
+      </view>
+
+      <!-- ⚠️ 上传阶段给**真实进度**：录音几百 KB，上传那几秒也会停在这一态，
+           不显示百分比的话，「AI评测中」会盖住一段其实还在传的时间（看着像卡死） -->
+      <text class="text-22rpx text-faint mt-3" wx:if="{{uploadPercent < 100}}">正在上传录音 {{uploadPercent}}%</text>
+      <text class="text-22rpx text-faint mt-3" wx:else>{{energyNote}}</text>
+    </view>
+
+    <!-- ── s5 评测成功 ──────────────────────────────────────────── -->
+    <view class="flex flex-col items-center" wx:if="{{phase === 's5'}}">
+      <text class="text-140rpx font-bold text-ok leading-[1]">{{scoreText}}</text>
+      <text class="text-26rpx text-ok mt-2 text-center leading-[1.6]">{{scoreSubtitle}}</text>
+
+      <!-- ⭐ 三张成长值卡：**服务端还没下发这一把的成长值快照**（SPEC 排在下一轮），
+           拿不到时 growthCards 是空数组 ⇒ 整块不渲染 ——
+           而不是拿 /me 的累计值凑一个数（那会是 +128 这种，见 reading.ts）。 -->
+      <view class="flex items-stretch gap-2 mt-5 w-full" wx:if="{{growthCards.length > 0}}">
+        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
+              wx:for="{{growthCards}}" wx:key="key">
+          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
+          <text class="text-40rpx font-bold text-ink leading-[1.2]">{{item.value}}</text>
+        </view>
+      </view>
+
+      <view class="w-full mt-6">
+        <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onRestart">
+          <text class="text-34rpx">↺ 重新挑战</text>
+        </ui-button>
+      </view>
+
+      <text class="text-22rpx text-faint mt-3">{{energyNote}}</text>
+    </view>
+
+    <!-- ── s6 评测失败 ──────────────────────────────────────────── -->
+    <view class="flex flex-col items-center" wx:if="{{phase === 's6'}}">
+      <text class="text-72rpx font-bold text-bad">检测失败</text>
+      <!-- ⚠️ 副标题默认是设计稿那句「录音不符合规范，无法检测发音」；
+           但**超时**进 s6 时会换成一句真话（分数可能还在云端算，见 reading.ts）——
+           超时不是「录音不符合规范」，照抄那句就是把锅扣错地方。 -->
+      <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
+
+      <!-- ⚠️ 失败三张卡恒为 +0（灰）：这里的值不需要服务端给 ——
+           失败不扣能量、也不加成长值（见 reading.ts 的 zeroGrowthCards） -->
+      <view class="flex items-stretch gap-2 mt-5 w-full">
+        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
+              wx:for="{{growthCards}}" wx:key="key">
+          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
+          <text class="text-40rpx font-bold leading-[1.2] {{item.textCls}}">{{item.value}}</text>
+        </view>
+      </view>
+
+      <view class="w-full mt-6">
+        <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onRestart">
+          <text class="text-34rpx">↺ 重新挑战</text>
+        </ui-button>
+      </view>
+
+      <text class="text-22rpx text-faint mt-3">{{energyNote}}</text>
+    </view>
+  </view>
+
+  <!-- ── 通用错误条（横跨六态，不改变状态）─────────────────────
+       ⚠️ 麦克风没授权、能量不够、上传失败、轮询断网……都在这里说一句人话。
+          s6 那句「录音不符合规范」不走这里 —— 它是 s6 的正文。
+       ⚠️ 句子还没拉到时的错误已经在上面那张卡里了，别重复显示。 -->
+  <view class="mb-3 bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5"
+        wx:if="{{error && phase !== 'loading'}}">
+    <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+  </view>
+
+  <!-- ⚠️ 下方「历史挑战」列表是**下一轮**的事（SPEC 第 4 步）：
+       接口 fetchArticleRecords 已经有了，本轮不接。 -->
 </view>
