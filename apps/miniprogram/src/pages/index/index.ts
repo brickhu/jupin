@@ -9,6 +9,7 @@ import type {
   StreakView,
 } from '@jushuo/shared'
 import { fetchArenaRecords, fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
+import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
@@ -274,6 +275,8 @@ Page({
     activeRows: [] as GrowthRankRow[],
     /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
     boardsLoaded: false,
+    /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
+    avatarPlaceholder: '/assets/avatar-placeholder.png',
     /**
      * ⭐ 正在播的是哪一句（articleId）。空串 = 没在播。
      *
@@ -518,8 +521,20 @@ Page({
        * ⚠️ 失败只警告：榜拉不到，首页照常能用（顶多那三块不出现）。
        */
       void fetchGrowthBoards()
-        .then((b) => {
-          const list = boardListOf(b)
+        .then(async (b) => {
+          /**
+           * ⚠️ 头像要先换址（云存储 fileID → 临时地址）才能进 <image src>，
+           *    见 lib/cloud-file.ts。三块榜最多 30 行，同一个人的头像会重复出现 ——
+           *    换址那边有会话缓存与并发去重，不会真的请求 30 次。
+           * ⚠️ 换址失败只是没有头像（界面退回本地占位图），不该让这三块榜整体不出现，
+           *    所以这里的 await 不会抛。
+           */
+          const list = await Promise.all(
+            boardListOf(b).map(async (board) => ({
+              ...board,
+              rows: await attachAvatarSrc(board.rows),
+            })),
+          )
           this.setData({ boardList: list, activeRows: list[0]?.rows ?? [], boardsLoaded: true })
         })
         .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))

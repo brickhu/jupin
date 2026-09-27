@@ -176,6 +176,8 @@
           <view class="flex items-center py-2" wx:for="{{activeRows}}" wx:for-item="row" wx:key="rank">
             <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐，一眼就能看出来 -->
             <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
+            <!-- ⭐ 头像 + 昵称（fileID 已在 index.ts 里换过址；失败退回本地占位图） -->
+            <image class="w-[44rpx] h-[44rpx] rounded-full shrink-0 mr-2" src="{{row.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
             <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
             <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
           </view>

@@ -355,6 +355,11 @@ export interface ShopOrderResponse {
 export interface GrowthRankRow {
   rank: number
   nickname: string
+  /**
+   * 头像 —— 与 LeaderboardRow 同一条口径：**云存储 fileID**（cloud://…），
+   * 客户端要先换址（lib/cloud-file.ts）才能进 <image src>；没设头像时为 null。
+   */
+  avatarUrl: string | null
   /** 成长值（整数，累加值） */
   value: number
   isMe: boolean

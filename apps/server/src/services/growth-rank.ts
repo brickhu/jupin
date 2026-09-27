@@ -30,7 +30,8 @@ type GrowthColumn =
 
 async function topOf(column: GrowthColumn, userId: number): Promise<GrowthRankRow[]> {
   const rows = await db
-    .select({ userId: users.id, value: column, nickname: users.nickname })
+    // ⚠️ 头像与昵称一起取（本来就是同一张 users 表，多挑一列不算成本）
+    .select({ userId: users.id, value: column, nickname: users.nickname, avatarUrl: users.avatarUrl })
     .from(users)
     .where(gt(column, 0))
     .orderBy(desc(column), asc(users.id))
@@ -39,6 +40,8 @@ async function topOf(column: GrowthColumn, userId: number): Promise<GrowthRankRo
   return rows.map((row, i) => ({
     rank: i + 1,
     nickname: row.userId === userId ? '你' : (row.nickname ?? '挑战者'),
+    // ⚠️ 自己那一行也带头像（名字换成"你"，头像还是我的）
+    avatarUrl: row.avatarUrl ?? null,
     value: Number(row.value),
     isMe: row.userId === userId,
   }))
