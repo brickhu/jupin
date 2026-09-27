@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
+import { and, eq, isNull } from 'drizzle-orm'
 import { themeFromHash } from '@jushuo/shared'
 import { resolveStaticRoot } from '../services/content'
 
@@ -90,6 +92,39 @@ export async function seedArticles(): Promise<number> {
         isActive: true,
         publishedAt: new Date(),
       })
+  }
+
+  /**
+   * ⭐ **本机模式下**顺手把 `standard_audio` 这一列写上。
+   *
+   * ⚠️⚠️ 为什么必须有这一步（踩过）：`audioRefOf` 是**以这一列为准**的 ——
+   *    它是空，接口就**不给 audio**，客户端连播放钮都不渲染
+   *    （见 services/standard-audio.ts 的说明）。
+   *    而往 content/articles/ 丢文件 + 灌库，并不会写这一列 ⇒ 新内容的卡片
+   *    「正文在、播放钮没有」，看起来就像"音频被搞掉了"。
+   *
+   * ⚠️⚠️ 只在 **STORAGE=local** 时写：
+   *    这一列的含义是「音频**分发得出去**」，不是「盘上有文件」。
+   *    云端由 seedStandardAudio 把它**上传到对象存储成功之后**才写
+   *    （见 standard-audio.ts:203）—— 提前写，客户端会拿到一个指向空桶的 fileID
+   *    ⇒ 「按钮在、点了没声音」，比没有按钮更难查。
+   *
+   * ⚠️ 两个动作都要：
+   *    ① 新行 —— 上面 insert 时就带上（ignore() 不会碰已有的行）；
+   *    ② 老行 —— 上一轮灌过、当时这一列还是 NULL 的（比如这次新增的 7 篇），
+   *       只在它还是 NULL 时才补，绝不覆盖运营/部署写过的值。
+   */
+  const root = resolveStaticRoot()
+  if (process.env.STORAGE === 'local' && root) {
+    const { audioKeyOf } = await import('../services/standard-audio')
+    for (const a of list) {
+      const key = audioKeyOf(a.id)
+      if (!existsSync(resolve(root, key))) continue
+      await db
+        .update(articles)
+        .set({ standardAudio: key })
+        .where(and(eq(articles.id, a.id), isNull(articles.standardAudio)))
+    }
   }
 
   // ⭐ 灌完正文顺手把难度 / 标签**物化**进索引（articles.difficulty + article_tags）。
