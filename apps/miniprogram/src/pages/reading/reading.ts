@@ -367,7 +367,7 @@ Page({
 
     /** ⭐ s5 的成品：大号总分（formatScore，一位小数） */
     scoreText: '',
-    /** ⭐ s5 的副标题：首次挑战，打败 N 人，位列第 M / 第 K 次挑战，…… */
+    /** ⭐ s5 的副标题（三档：首次 / 突破最高分 / 未突破，见 subtitleOf） */
     scoreSubtitle: '',
     /**
      * ⭐ s5 左上角那行标题：**第 N 次朗读**（用户 2026-09 要求，替换原来的「AI口语测评」）。
@@ -1552,9 +1552,45 @@ Page({
    *    ⚠️ attempts 含失败的那几次（受理时就分配了 seq），与「我在这句打过几次分」
    *      不是同一个数；这里要的正是「第几次挑战」。
    */
+  beatClauseOf(result: SubmitResponse): string {
+    /**
+     * ⚠️⚠️ 分母是**除我之外**的参赛者（participantCount - 1）：
+     *    「对手」不该包含我自己 —— 拿 participantCount 当分母，
+     *    一个人参赛时会显示「击败 0% 的对手」，而场上其实一个对手都没有。
+     * ⚠️ 只有我一个（participantCount <= 1）⇒ 这一小段**整个不出现**
+     *    （而不是显示 100% 或 0%：那两种都是在编一个不存在的对手）。
+     * ⚠️ 取整用 Math.round：「击败 79%」比「78.94736842%」可读。
+     */
+    const opponents = result.participantCount - 1
+    if (opponents <= 0) return ''
+    return '击败' + Math.round((result.beatenCount * 100) / opponents) + '%的对手，'
+  },
+
   subtitleOf(result: SubmitResponse): string {
-    const head = result.previousBest === null ? '首次挑战' : '第' + result.attempts + '次挑战'
-    return head + '，打败' + result.beatenCount + '人，位列第' + result.rank
+    /**
+     * ⭐ s5 的副标题（用户 2026-09 定的三档口径）：
+     *   ① 首次出分      ：首次挑战，击败N%的对手，位列第N
+     *   ② 非首次且破纪录：突破最高分N，击败N%的对手，位列第N
+     *   ③ 非首次未破纪录：未突破最高分N，目前位列第N
+     *
+     * ⚠️ 两处口子的 N 都是**你此前的最高分**（previousBest = 排除这一把的最好成绩，
+     *    见 services/submission-view.ts 的 getBestExcluding）：
+     *      · 破了 → 那是**被破掉的那个旧纪录**（「突破最高分88.5」）
+     *      · 没破 → 那是**你还没够到的那个分**（「未突破最高分91.0」）
+     *    新分数不在这里说 —— 它就在上面那个大号数字上，重复一遍是噪声。
+     * ⚠️ 「首次」的判据仍是 previousBest === null（SPEC 定的）：
+     *    它说的是"这句上第一次出分"，比"第几次提交"更贴近用户的理解。
+     * ⚠️ ③ 里**没有**击败百分比那一段（用户口径如此）：既然没破纪录，
+     *    再说击败了多少人只是安慰，不如直说现在第几。
+     */
+    const beat = this.beatClauseOf(result)
+    if (result.previousBest === null) {
+      return '首次挑战，' + beat + '位列第' + result.rank
+    }
+    if (result.isPersonalBest) {
+      return '突破最高分' + formatScore(result.previousBest) + '，' + beat + '位列第' + result.rank
+    }
+    return '未突破最高分' + formatScore(result.previousBest) + '，目前位列第' + result.rank
   },
 
   /**
