@@ -30,6 +30,7 @@ import {
   recordingKeyOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
+import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
@@ -742,6 +743,28 @@ Page({
       //    用户不必为了接个电话就重读一遍。
       //    ⚠️ 按**句子**匹配：同一句换个日期再轮到，参考文本一字不差，
       //       那段录音照样是有效的（见 last-recording 的边界 ①）。
+      /**
+       * ⭐⭐ 上一把已经出分、但用户**没点「重新挑战」就离开了** —— 再进来还停在 s5。
+       *
+       * ⚠️ 为什么必须这么做：出分那一刻用户可能被叫走 / 顺手退出。
+       *    下次进来如果回到 s1，他会以为「白读了、分也没了」（用户 2026-09 的要求）。
+       * ⚠️ 判据只用**本地记的 submissionId**，拿它问一次服务端状态：
+       *      - scored ⇒ 照旧停在 s5（顺带把 store 刷新一遍）
+       *      - 失败 / 查不到 ⇒ 把这条清掉（别每次进来都白问一次），继续走正常流程
+       * ⚠️ 顺序在「恢复录音成 s3」**之前**：s5 比 s3 更靠后，也更该被恢复。
+       */
+      const pending = this.recordingKey ? loadLastResult(this.recordingKey) : null
+      if (pending && pending.articleId === this.data.articleId) {
+        const st = await fetchSubmissionStatus(pending.submissionId)
+        if (st.status === 'scored' && st.result) {
+          // ⚠️ 先记住 id：s5 的「评测详情」靠它去 pages/challenge（applyResult 里也要用它存缓存）
+          this.submissionId = pending.submissionId
+          this.applyResult(st.result)
+          return
+        }
+        if (this.recordingKey) clearLastResult(this.recordingKey)
+      }
+
       const last = this.recordingKey ? loadLastRecording(this.recordingKey) : null
       if (last) {
         this.setData({
@@ -1363,6 +1386,19 @@ Page({
     // ⭐ 第三道保障：直接让上一页重新拉一次 —— 不看订阅、不看生命周期、不看时序
     refreshPreviousPage()
 
+    /**
+     * ⭐⭐ 把「这一把的结果」记到本地 —— 再进这一页时要能**恢复成 s5**。
+     *    ⚠️ 只在成功态写（s6 不写：那段录音已经废了，恢复了也没意义）。
+     *    ⚠️ 键用 recordingKey（句子 + 用户），一句话最多一条。
+     */
+    if (this.recordingKey && this.submissionId) {
+      saveLastResult(this.recordingKey, {
+        submissionId: this.submissionId,
+        articleId: result.articleId,
+        at: Date.now(),
+      })
+    }
+
     stopAudio()
     /**
      * ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**。
@@ -1424,6 +1460,11 @@ Page({
    */
   onRestart() {
     if (this.recordingKey) clearLastRecording(this.recordingKey)
+    /**
+     * ⚠️⚠️ 结果的缓存也要一起清 —— 不清的话下次进来又被恢复成 s5，
+     *    「重新挑战」等于没点（和上面录音那条是同一个坑）。
+     */
+    if (this.recordingKey) clearLastResult(this.recordingKey)
     this.setData({
       phase: 's1',
       error: '',
