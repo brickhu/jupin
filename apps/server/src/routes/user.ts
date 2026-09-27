@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import { and, count, desc, eq, inArray, lt, max, min } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt } from 'drizzle-orm'
 import { db } from '../db'
-import { articles, energyLedger, submissions, users } from '../db/schema'
+import { articles, energyLedger, participations, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { loadArticleRefText } from '../services/content'
 import { getTotalConquered } from '../services/conquest'
@@ -124,43 +124,31 @@ function parseWordScores(raw: string | null, wordCount: number): ChallengeWordSc
 userRoutes.get('/participations', async (c) => {
   const userId = c.get('userId')
 
+  /**
+   * ⭐ 直接读**参与记录**（一人一行）—— 不再对 submissions 做 GROUP BY：
+   *    attempts / best / worst / last_at 全都是写入时算好的，
+   *    而且它们与榜单**同源**（见 services/participations.ts）。
+   * ⚠️ 排序键 last_at 与索引 participations_user_time_idx 同序。
+   */
   const rows = await db
     .select({
-      articleId: submissions.articleId,
-      attempts: count(),
-      best: max(submissions.score),
-      worst: min(submissions.score),
-      lastAt: max(submissions.createdAt),
+      articleId: participations.articleId,
+      attempts: participations.attempts,
+      best: participations.bestScore,
+      worst: participations.worstScore,
+      lastAt: participations.lastAt,
+      lastScheduleDate: participations.lastScheduleDate,
       theme: articles.theme,
     })
-    .from(submissions)
-    .innerJoin(articles, eq(articles.id, submissions.articleId))
-    .where(and(eq(submissions.userId, userId), eq(submissions.status, 'scored')))
-    .groupBy(submissions.articleId, articles.theme)
-    // ⚠️ 按「最近一次挑战」倒序 —— 注意排的是 max(created_at)，不是某一行的值
-    .orderBy(desc(max(submissions.createdAt)))
+    .from(participations)
+    .innerJoin(articles, eq(articles.id, participations.articleId))
+    .where(eq(participations.userId, userId))
+    .orderBy(desc(participations.lastAt))
 
   const items = await Promise.all(
     rows.map(async (r) => {
       const text = await loadArticleRefText(r.articleId)
       const rankInfo = await getRank(r.articleId, userId)
-      /**
-       * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
-       * ⚠️ 竞技场是按日期取场次的，所以这里取「最近那次提交的 schedule_date」，
-       *    而不是端侧算今天：用户参与的可能是几天前那一场。
-       */
-      const [latest] = await db
-        .select({ scheduleDate: submissions.scheduleDate })
-        .from(submissions)
-        .where(
-          and(
-            eq(submissions.userId, userId),
-            eq(submissions.articleId, r.articleId),
-            eq(submissions.status, 'scored'),
-          ),
-        )
-        .orderBy(desc(submissions.createdAt))
-        .limit(1)
       return {
         articleId: r.articleId,
         text,
@@ -171,7 +159,13 @@ userRoutes.get('/participations', async (c) => {
         rank: rankInfo.rank,
         participantCount: rankInfo.participantCount,
         lastAt: new Date(r.lastAt as unknown as string).toISOString(),
-        lastScheduleDate: latest?.scheduleDate ?? '',
+        /**
+         * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
+         * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
+         *    而不是端侧算今天：用户参与的可能是几天前那一场。
+         * ⚠️ 它随参与记录一起物化（写入时算好），不再逐行回查 submissions。
+         */
+        lastScheduleDate: r.lastScheduleDate ?? '',
         theme: r.theme,
       }
     }),
@@ -206,22 +200,21 @@ userRoutes.get('/arena-records', async (c) => {
   if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
   const wantRanks = c.req.query('ranks') === '1'
 
+  /**
+   * ⚠️ 读**参与记录**而不是聚合 submissions：一人一句一行，
+   *    「已参与 N 次 · 最高 X 分」两个数直接取，不再 GROUP BY
+   *    （口径见 services/participations.ts：只算打分成功的那几次）。
+   */
   const rows = await db
     .select({
-      articleId: submissions.articleId,
-      attempts: count(),
-      best: max(submissions.score),
+      articleId: participations.articleId,
+      attempts: participations.attempts,
+      best: participations.bestScore,
     })
-    .from(submissions)
+    .from(participations)
     .where(
-      and(
-        eq(submissions.userId, userId),
-        // ⚠️ 只数打分成功的：与「参与人数」同一口径（读失败那几次不算）
-        eq(submissions.status, 'scored'),
-        inArray(submissions.articleId, ids),
-      ),
+      and(eq(participations.userId, userId), inArray(participations.articleId, ids)),
     )
-    .groupBy(submissions.articleId)
 
   const items = await Promise.all(
     rows.map(async (r) => {
@@ -230,7 +223,8 @@ userRoutes.get('/arena-records', async (c) => {
       const ranked = rankInfo && rankInfo.rank > 0 ? rankInfo : null
       return {
         articleId: r.articleId,
-        bestScore: r.best === null ? null : Number(r.best),
+        // ⚠️ best_score 是 NOT NULL（参与记录只在出分时才写），不是"没参与"那种 null
+        bestScore: Number(r.best),
         attempts: Number(r.attempts ?? 0),
         rank: ranked ? ranked.rank : null,
         beatenCount: ranked ? ranked.beatenCount : null,

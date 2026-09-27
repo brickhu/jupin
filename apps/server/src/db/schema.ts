@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
-  mysqlTable, int, varchar, boolean, datetime, decimal, text, json, index, uniqueIndex,
+  mysqlTable, int, varchar, boolean, datetime, decimal, text, json, index, uniqueIndex, primaryKey,
 } from 'drizzle-orm/mysql-core'
 import { ARTICLE_ID_LENGTH, SUBMISSION_ID_LENGTH, type ArticleTheme } from '@jushuo/shared'
 
@@ -219,8 +219,8 @@ export const articles = mysqlTable('articles', {
    * ⚠️⚠️ 这里**曾经有两列** `participant_count` / `conquered_count`
    *    （「参与人数」「攻克人数」的冗余计数），已删除（迁移 0034）。
    *
-   *    它们**没有任何代码在读**：竞技口径一律从 submissions 表**现算**
-   *    （services/leaderboard.ts 的 `COUNT(DISTINCT user_id)`，
+   *    它们**没有任何代码在读**：竞技口径一律**从 submissions 派生**
+   *    （当时是 services/leaderboard.ts 的 `COUNT(DISTINCT user_id)`，
    *      routes 里所有 participantCount 都走它）。
    *    写入方却有两个：scoring 打分成功时自增、dev 种子脚本按 submissions 重算
    *    （那个脚本的注释自己就写着「这两列没有任何代码在读」）。
@@ -228,7 +228,11 @@ export const articles = mysqlTable('articles', {
    *    于是它们是一份**只写不读**的副本，唯一的下场是在库里慢慢和真相分叉 ——
    *    而且 scoring 里那次自增读的还是 submissions.is_conquered
    *    （一个全仓库别处都因为「老数据按已废除的 85 线写」而拒绝读的列）。
-   *    ⇒ 「几个人参与 / 几个人攻克」只有一个来源：**submissions 表**。
+   *    ⇒ 「几个人参与 / 几个人攻克」只有一个**真相**：**submissions 表**。
+   *
+   *    ⚠️ 2026-09 这里又多了一张 **participations**（一人一行，见下面那张表）：
+   *       它不是这两列的翻版 —— 那两列是**只写不读**的计数副本、有两个写入方；
+   *       participations 有明确的读者、**唯一写入方**、而且能整表重建（迁移 0038）。
    */
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   /**
@@ -552,23 +556,87 @@ export const submissions = mysqlTable('submissions', {
   uniqueIndex('submissions_user_audio_idx').on(t.userId, t.audioKey),
   index('submissions_user_time_idx').on(t.userId, t.createdAt),
   /**
-   * ⭐⭐ **竞技数据的热路径** —— 排名 / 参与人数 / 最高分 / 我的最好成绩 /
-   *    成长值快照 / 「我参与过哪些句子」，全部是
-   *    WHERE article_id IN (…) AND status = 'scored' 再按人聚合
-   *    （见 services/leaderboard.ts 的 bestPerUser、growth.ts 的 arenaSnapshot）。
+   * ⭐ **按句子的聚合仍然要它** —— 读者是「参与记录的生产者」和「成长值快照」，
+   *    不再是榜单（榜单 2026-09 起读 participations，见下面那张表）：
+   *      · services/participations.ts：算某个 (user, article) 的最高分/最低分/首末时间；
+   *      · growth.ts 的 arenaSnapshot：算这一句所有参与者的最高分（取中位数用）——
+   *        它 WHERE article_id = ? AND status = scored 再 GROUP BY user_id。
    *
    * ⚠️⚠️ 这里原来挂的是 (schedule_date, score)，注释写着
    *    「每日挑战的统计与排行全部走这条索引」—— 那是**按天口径**时代留下的，
    *    现在是**死索引**：全仓库没有任何查询按 schedule_date 过滤或排序
    *    （那一列只用于显示「这次是从哪天的排期进来的」，见上面的注释）。
-   *    ⇒ 换成按句子的索引，它的注释也就是这次一起改的。
+   *    ⇒ 换成按句子的索引（迁移 0037）。
    *
    * ⚠️ 列序 (article_id, status, user_id, score)：前两列圈定这一句的已出分提交，
-   *    后两列让 COUNT(DISTINCT user_id) / MAX(score) 能**只走索引**。
-   *    ⚠️ createdAt 故意不放进索引（reachedAt 只对「等于最高分」的那些行取值），
+   *    后两列让「按人取 MAX(score)」能**只走索引**。
+   *    ⚠️ createdAt 故意不放进索引（只有「等于最高分」的那些行要看它），
    *       塞进来会让索引变宽而收益很小。
    */
   index('submissions_article_idx').on(t.articleId, t.status, t.userId, t.score),
+])
+
+
+/**
+ * ⭐⭐ **参与记录** —— 一个人在**一个竞技场（句子）**里的那一次参与。
+ *
+ *    层级关系（用户 2026-09 定的，别混）：
+ *      · 竞技场（一篇正文）  ⊃  参与记录（一人一行）  ⊃  挑战记录（= submissions，一次录音一行）
+ *      · 「我的参与」= 我在这一句上的那个**身份**；每次挑战都更新它，但它只有一条。
+ *      · **对比标准 = 我的最高分挑战**（bestSubmissionId）—— 榜单比的是参与，
+ *        而参与拿什么去比，由它指向的那条挑战决定（并列时取先达到该分的那条，
+ *        与 services/leaderboard.ts 的三键全序完全同源）。
+ *
+ * ⚠️⚠️ **它是派生索引，不是第二份真相** —— 与 articles.difficulty / article_tags 同一类：
+ *    · 真相永远在 submissions；这里的每一列都是 submissions 的函数；
+ *    · **唯一写入方**是 services/participations.ts 的 syncParticipation（重算式，幂等）；
+ *    · 随时可以整表重建（rebuildParticipations），重建前后必须一模一样 ——
+ *      这是验收判据，也是它和 0034 删掉的那两列（participant_count / conquered_count）的区别：
+ *      那两列是只写不读的计数副本，而且有两个写入方；这一张有明确的读者（榜单 / 参与场次 / 攻克数）。
+ *
+ * ⚠️ 口径与 conquest 一致：**只算 status = scored 的挑战** ——
+ *    「音频读不出来 / 引擎判无效」那几次不算参与（否则会出现「你已挑战 3 次」却只有一条成绩）。
+ */
+export const participations = mysqlTable('participations', {
+  userId: int('user_id').notNull().references(() => users.id),
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
+
+  /** 已出分的挑战次数（与参与人数同一口径） */
+  attempts: int('attempts').notNull(),
+  /** 我在这一句上的最高分 —— **进榜的那个数** */
+  bestScore: decimal('best_score', { precision: 5, scale: 1 }).notNull(),
+  /** 最低分（参与场次列表展示用） */
+  worstScore: decimal('worst_score', { precision: 5, scale: 1 }).notNull(),
+  /** 第一次 / 最近一次已出分挑战的时刻（列表按 last_at 倒序） */
+  firstAt: datetime('first_at', { mode: 'date', fsp: 3 }).notNull(),
+  lastAt: datetime('last_at', { mode: 'date', fsp: 3 }).notNull(),
+  /** 最近那次挑战是从哪一天的排期进来的（显示用；竞技术语里没有它） */
+  lastScheduleDate: varchar('last_schedule_date', { length: 10 }),
+
+  /**
+   * ⭐ **对比标准**：我的最高分挑战。
+   * ⚠️ 并列时取**先达到该分数**的那条 —— 榜单的同分先后就是按它排的。
+   */
+  bestSubmissionId: varchar('best_submission_id', { length: SUBMISSION_ID_LENGTH })
+    .notNull()
+    .references(() => submissions.id),
+  /**
+   * 首次达到 bestScore 的时刻（= bestSubmission 的 created_at）。
+   * ⚠️ 冗余这一列是为了让它**能直接排序** —— 榜单的主查询因此不再需要 GROUP BY / join。
+   *    不变量：reachedAt 必须等于 bestSubmissionId 那一条的 created_at（重建会保证）。
+   */
+  reachedAt: datetime('reached_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (t) => [
+  /** ⭐ 一人一场一行 —— 这条主键就是「参与记录」的定义 */
+  primaryKey({ columns: [t.userId, t.articleId] }),
+  /**
+   * ⭐⭐ 榜单的主查询：按句子取全部参与，按**对比标准**排序。
+   *    列序与 orderBy 一致（best_score desc, reached_at asc, user_id asc）——
+   *    连「同分同刻再比 id」的兜底键都在里面，所以它同时是排序索引。
+   */
+  index('participations_arena_idx').on(t.articleId, t.bestScore, t.reachedAt, t.userId),
+  /** 「我参与过哪些句子」——按最近参与倒序 */
+  index('participations_user_time_idx').on(t.userId, t.lastAt),
 ])
 
 /** 订阅记录 */

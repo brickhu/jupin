@@ -1,27 +1,23 @@
-import { and, countDistinct, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { submissions } from '../db/schema'
+import { participations } from '../db/schema'
 
 /**
  * 攻克 —— **只要在这条句子上参与过、并且拿到了分数**，就算攻克，**只增不减**。
  *
- * ⚠️⚠️ 判定用 status = 'scored'，**不是**以前的 85 分线（已废除），
- *    也不用 submissions.is_conquered 那一列：
- *      · 口径的真相就是「这一句我拿到分了没有」，而 status 正是它；
- *      · is_conquered 是历史写入的标记 —— 老数据里按 85 线写成了 false，
- *        拿它统计会把老记录全漏掉（症状是「明明读过、却显示 0」）。
+ * ⚠️⚠️ 它现在就是「我的参与记录条数」：participations 是**一人一场一行**，
+ *    而它的写入口径就是 status = 'scored'（见 services/participations.ts）。
+ *    所以这里不再需要 count(distinct article_id) —— 行数天然就是去重后的句子数。
  *
- * ⚠️ 攻克按「去重的句子」计 —— submissions 里同一句可能有多条 scored，
- *    必须 count(distinct article_id)，否则重录会虚增攻克数。
+ * ⚠️ 曾经用过 submissions.is_conquered 那一列，已删：老数据按已废除的 85 分线
+ *    写成了 false，拿它统计会把老记录全漏掉（症状是「明明读过、却显示 0」）。
  *
- * ⚠️ 这里**只剩总数**了：「按难度分的征服数」随难度一起下线（做减法后的产品
- *    只有三条核心：得分 / 排名 / Streak，难度不在其中）。
+ * ⚠️ 「按难度分的征服数」随难度一起下线（做减法后的产品只有三条核心：得分 / 排名 / Streak）。
  */
-
 export async function getTotalConquered(userId: number): Promise<number> {
   const [row] = await db
-    .select({ n: countDistinct(submissions.articleId) })
-    .from(submissions)
-    .where(and(eq(submissions.userId, userId), eq(submissions.status, 'scored')))
+    .select({ n: count() })
+    .from(participations)
+    .where(eq(participations.userId, userId))
   return Number(row?.n ?? 0)
 }

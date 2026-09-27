@@ -267,6 +267,13 @@
       "when": 1790441844864,
       "tag": "0037_needy_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "5",
+      "when": 1790470522589,
+      "tag": "0038_aspiring_alex_power",
+      "breakpoints": true
     }
   ]
 }

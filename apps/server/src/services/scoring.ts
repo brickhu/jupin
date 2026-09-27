@@ -12,6 +12,7 @@ import { settle } from './settle'
 import { generateCoachFeedback } from './coach'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
+import { syncParticipation } from './participations'
 import { normalizeAudio, PCM_BYTES_PER_SEC } from './audio'
 import { archiveRecording } from './recording'
 
@@ -241,12 +242,14 @@ export async function runScoring(submissionId: string): Promise<void> {
      *      · is_conquered 与 status='scored' **同义**，而老数据那一列是按已废除的
      *        85 分线写的（false）—— 任何读它的统计都会漏掉真实的攻克。
      *        全仓库别处早改成读 status 了（见 services/conquest.ts），只剩这里还在读它。
-     *      · 两个冗余计数**没有任何代码在读**：竞技口径一律从 submissions 现算
-     *        （services/leaderboard.ts 的 COUNT(DISTINCT user_id)）。
+     *      · 两个冗余计数**没有任何代码在读**：竞技口径一律**从 submissions 派生**
+     *        （当时是 services/leaderboard.ts 的 COUNT(DISTINCT user_id)；
+     *         2026-09 起改由参与记录 participations 承担 —— 同样是「从 submissions 派生」，
+     *         只是把派生结果物化成一人一行，见 services/participations.ts）。
      *        留着不但会漂移，而且这段「对齐」逻辑本身就在用那个不可靠的列。
      *
-     *    ⇒ 「几个人参与 / 几个人攻克」现在只有一个来源：**submissions 表**。
-     *      攻克的口径也只有一条：status = 'scored'。
+     *    ⇒ 「几个人参与 / 几个人攻克」只有一个**真相**：**submissions 表**；
+     *      participations 只是它的派生索引。攻克的口径只有一条：status = 'scored'。
      */
 
     // ⚠️ 这里只是**打日志**用的。结果页要的 previousBest / isPersonalBest
@@ -282,6 +285,22 @@ void previousBest
     if ((header as unknown as { affectedRows?: number })?.affectedRows !== 1) {
       console.warn(`[scoring] 结果未写入（状态已变）id=${submissionId}`)
       return
+    }
+
+    /**
+     * ⭐⭐ **参与记录跟着结算一起更新**（唯一写入方见 services/participations.ts）。
+     *
+     * ⚠️ 位置：分数已经落库**之后**。它是派生索引 —— 这一步失败不该让一条已经成立的
+     *    成绩变成 failed（所以整块 try 住、只 warn），对账/重建能把它补回来。
+     * ⚠️ 传的是 (userId, articleId)：参与的单位是**句子**（一句 = 一个竞技场），
+     *    不是"这次提交"—— 一次挑战只更新那一行参与。
+     */
+    try {
+      await syncParticipation(userId, articleId)
+    } catch (err) {
+      console.warn(
+        '[scoring] 参与记录没跟上（可重建）id=' + submissionId + '：' + (err as Error).message,
+      )
     }
 
     /**

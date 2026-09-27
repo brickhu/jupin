@@ -3,6 +3,7 @@ import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
 
 import { unfreezeCards, users } from './schema'
 import { RULE_CODE } from '../services/rewards'
+import { rebuildParticipations } from '../services/participations'
 
 /**
  * 开发用的**竞技数据**种子 —— 让本地库看起来像真的有人在读。
@@ -252,9 +253,14 @@ async function main(): Promise<void> {
   }
 
   // ⚠️ 这里原来还有一步「把 articles 上那两个冗余计数对齐」。
-  //    那两个列已经删了（迁移 0034）—— 竞技口径**只有一个来源**：
-  //    submissions 表现算（见 services/leaderboard.ts 的 COUNT(DISTINCT user_id)）。
-  //    脚本自己早就写着「这两列没有任何代码在读」，那就是删除它的理由。
+  //    那两个列已经删了（迁移 0034）—— 竞技口径**只有一个来源**：submissions 表。
+  //
+  // ⚠️⚠️ 但榜单现在读的是**派生索引** participations（一人一行，迁移 0038），
+  //    而这个脚本是**直插 submissions**、绕过了打分流程（也就绕过了唯一的写入方）
+  //    ⇒ 不重建的话，dev 环境一堆成绩、榜上却一个参与者都没有。
+  //    所以灌完必须自己补一刀。
+  await rebuildParticipations()
+  console.log('✅ 参与记录已重建（榜单读的就是它）')
 
   const [mock] = await db
     .select({ n: count() })

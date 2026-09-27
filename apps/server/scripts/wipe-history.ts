@@ -17,9 +17,13 @@ import mysql from 'mysql2/promise'
  *    只删 submissions 的话，它们会变成孤儿 ——
  *    「连战 12 天」而一条提交都查不到，正是「两个数对不上」那一类最难查的问题。
  *
+ * ⚠️⚠️ **participations 必须跟着 submissions 一起删**（它在列表里排在最后、实际最先删）：
+ *    它的 best_submission_id 有指向 submissions 的外键，而且它是从 submissions
+ *    派生的 —— 成绩清空而参与记录留着，就是"幽灵参与者"（榜单上有人、点进去没成绩）。
  * ⚠️ articles 的 participant_count / conquered_count 曾经也在这里被归零，
- *    但两列已删（迁移 0034）—— 参与人数现在**只从 submissions 现算**，
- *    成绩删干净了它自然就是 0，不需要、也不可能再去"对齐"一份副本。
+ *    但两列已删（迁移 0034）—— 参与人数**从 submissions 派生**（现在是物化在 participations 里的派生索引，
+ *    成绩删干净了它自然就是 0，不需要、也不可能再去"对齐"一份副本 ——
+ *    这也正是上面那条"participations 必须一起删"的理由。
  */
 
 const url = process.env.DATABASE_URL
@@ -47,6 +51,7 @@ async function count(table: string, where = ''): Promise<{ n: number; missing: b
 
 const targets: { label: string; table: string; where?: string; note: string }[] = [
   { label: '成绩历史', table: 'submissions', note: '全表删（含逐词、分项、AI 点评、录音引用）' },
+  { label: '· 参与记录', table: 'participations', note: '外键指向 submissions 且由它派生，必须先删' },
   { label: '· 点赞', table: 'likes', note: '外键指向 submissions，必须先删' },
   { label: '· AI 点评', table: 'reviews', note: '外键指向 submissions，必须先删' },
   { label: '解冻卡', table: 'unfreeze_cards', note: '卡表本来就是新的，这里是兜底' },
@@ -96,7 +101,8 @@ if (total === 0 && probes.n === 0) {
 console.log('开始清理…')
 await conn.beginTransaction()
 try {
-  // ⚠️ 顺序不能反：likes / reviews 有指向 submissions 的外键
+  // ⚠️ 顺序不能反：participations / likes / reviews 都有指向 submissions 的外键
+  await conn.query('DELETE FROM participations')
   await conn.query('DELETE FROM likes')
   await conn.query('DELETE FROM reviews')
   await conn.query('DELETE FROM submissions')

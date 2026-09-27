@@ -483,7 +483,8 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | submissions 全表 | 成绩历史，全部是测试数据 |
 | users 的 streak_days / streak_best / last_read_date、以及解冻卡表 | 它们是从 submissions 推出来的。清了成绩再留着这些数就是孤儿 —— 「连战 12 天」而一条提交都查不到 |
 | users 的 invalid_count / invalid_date / growth_* / energy / energy_date | 同上（新列本来也是 0，这里是显式兜底） |
-| ~~articles 的 participant_count / conquered_count~~ | ⚠️ **这两列已删除**（迁移 0034）：它们只写不读，参与/攻克人数一律从 submissions 现算 —— 于是不再有「成绩清了、计数还在」这种不一致可言 |
+| ~~articles 的 participant_count / conquered_count~~ | ⚠️ **这两列已删除**（迁移 0034）：它们只写不读，参与/攻克人数一律从 submissions 派生 —— 于是不再有「成绩清了、计数还在」这种不一致可言 |
+| participations（迁移 0038） | 它是 submissions 的**派生索引**（一人一行 = 一次参与），所以清成绩时必须**一起删**：不删就是"幽灵参与者"（榜上有人、点进去没成绩） |
 | 探针 / 测试账号（dev 的 probe_login_e2e 之类） | 手工造的账号 |
 | energy_ledger | 新表，本来就是空的 |
 

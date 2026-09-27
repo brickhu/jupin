@@ -37,6 +37,7 @@
     "dev:unlock": "node tools/dev-unlock.mjs",
     "dev:unlock:status": "node tools/dev-unlock.mjs --status",
     "db:info": "node tools/cloud-db-info.mjs",
+    "db:participations": "tsx apps/server/scripts/rebuild-participations.ts",
     "admin": "pnpm --filter @jushuo/admin start",
     "seed:cloud": "node tools/seed-cloud.mjs",
     "seed:cloud:prod": "node tools/seed-cloud.mjs prod",

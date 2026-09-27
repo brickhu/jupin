@@ -1,9 +1,9 @@
-import { and, asc, count, desc, eq, gt, lt, ne, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, lt, max, ne, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db'
-import { submissions, users } from '../db/schema'
+import { participations, submissions, users } from '../db/schema'
 
 /**
- * 竞技数据查询 —— **从 submissions 派生**（没有物化的榜单表）。
+ * 竞技数据查询 —— **从参与记录（participations）派生**，没有物化的榜单表。
  *
  * ⚠️⚠️ 竞技的单位是**句子**，不是日期。
  *
@@ -21,22 +21,33 @@ import { submissions, users } from '../db/schema'
  * ⚠️ 唯一的例外是**连续天数（streak）**：它是「每天来读」这件事的度量，
  *    本来就按自然日算，存在 users 表上，与这里无关。
  *
- * ⭐⭐ 排序是一个**三键全序**（少一个键就会出现"列表顺序和名次对不上"）：
+ * ⚠️⚠️ **这一层现在读的是 participations（参与记录），不再自己聚合 submissions。**
+ *    一个人在一句上可能有 100 次挑战，但**榜上只有一行** —— 那一行由
+ *    services/participations.ts 维护（唯一写入方，重算式，可整表重建）。
+ *    榜比的是「参与」，而参与拿什么去比由它指向的**最高分挑战**决定。
+ *    ⇒ 所以这里所有查询都不再需要 GROUP BY / COUNT(DISTINCT)：一人一行，
+ *      参与人数就是这个句子下的行数。
  *
- *    ① 分数降序
- *    ② **首次达到该分数**的时刻升序（先到者优先）
+ * ⭐ 排序是一个**三键全序**（少一个键就会出现「列表顺序和名次对不上」）：
+ *
+ *    ① 分数降序（best_score）
+ *    ② **首次达到该分数**的时刻升序（reached_at；先到者优先）
  *    ③ userId 升序（兜底，保证同分同刻也有确定顺序）
  *
  * ⚠️⚠️ 第②键这里**曾经是错的**：它取的是「该用户在该句的**最早提交**时间」，
- *    而"先到"应该指**先达到这个分数**。反例（真实会发生的）：
+ *    而「先到」应该指**先达到这个分数**。反例（真实会发生的）：
  *      A  9:00 读 60 分，20:00 才到 80
  *      B 10:00 第一次就读 80
- *    按"最早提交"排，**A 排在 B 前面** —— 可 B 明明先拿到 80。
- *    修法见 bestPerUser()：先分组求最高分，再回到"等于最高分"的那些行上取最早时刻。
+ *    按「最早提交」排，**A 排在 B 前面** —— 可 B 明明先拿到 80。
+ *    ⇒ 现在 reached_at 由 participations 在写入时就算对（取"等于最高分"的那些行
+ *      里最早的 created_at），榜单这边只管按它排。
  *
  * ⚠️ 第③键是**抄成长榜的做法**（services/growth-rank.ts 的 asc(users.id)）：
- *    MySQL 对"前两个键都相等"的行**不保证顺序**，两次请求可能换位置，
- *    而且列表名次（按 index 数）会和 getRank 算出来的名次不一致。竞技场这边原来漏了。
+ *    MySQL 对「前两个键都相等」的行**不保证顺序**，两次请求可能换位置，
+ *    而且列表名次（按 index 数）会和 getRank 算出来的名次不一致。
+ *
+ * ⭐ 排序键与索引 participations_arena_idx (article_id, best_score, reached_at, user_id)
+ *    **逐列同序**，所以「取前 20」和「数我前面有几个」都能走索引。
  */
 
 export interface RankInfo {
@@ -46,103 +57,14 @@ export interface RankInfo {
   gapToPrev: number | null
 }
 
-/**
- * 每个用户在这个竞技场（句子）里的**最高分** + **首次达到该分数的时刻**（派生表）。
- *
- * ⚠️⚠️ 这里是两跳，不是一次 GROUP BY 就能算出来的：
- *    要的是「MAX(score)」和「**在 score = MAX(score) 的那些行里** MIN(created_at)」——
- *    同一个 SELECT 里没法引用刚算出来的聚合值。所以：
- *      ① top：每人 MAX(score)
- *      ② 再 join 回原表，只留 score = 该人最高分的行，取 MIN(created_at)
- *    ⚠️ 别退回「整个用户 MIN(created_at)」——那正是之前那个错的近似
- *      （先来读、后来才刷到分的，会排在先到的人前面，见文件头 ②）。
- */
-function bestPerUser(articleId: string) {
-  const top = db
-    .select({
-      userId: submissions.userId,
-      best: sql<number>`MAX(${submissions.score})`.as('best'),
-    })
-    .from(submissions)
-    .where(and(eq(submissions.articleId, articleId), eq(submissions.status, 'scored')))
-    .groupBy(submissions.userId)
-    .as('top')
-
-  return db
-    .select({
-      userId: top.userId,
-      best: top.best,
-      reachedAt: sql<Date | null>`MIN(${submissions.createdAt})`.as('reached_at'),
-    })
-    .from(top)
-    .innerJoin(
-      submissions,
-      and(
-        eq(submissions.userId, top.userId),
-        eq(submissions.articleId, articleId),
-        eq(submissions.status, 'scored'),
-        sql`${submissions.score} = ${top.best}`,
-      ),
-    )
-    .groupBy(top.userId, top.best)
-    .as('bests')
-}
-
-/** 派生表的类型 —— 下面几个"排在我前面 / 后面"的条件都拿它当入参 */
-type BestsTable = ReturnType<typeof bestPerUser>
-
-/**
- * ⭐ 我在这场里**首次达到最高分**的时刻（与 bestPerUser 的 reachedAt 同一口径）。
- * ⚠️ 必须和它一致 —— 两边一个用"最早提交"、一个用"最早达标"，
- *    名次就会算出一个谁也解释不了的数。
- */
-async function reachedAtOf(articleId: string, userId: number, myBest: number): Promise<Date | null> {
-  const [row] = await db
-    .select({ reachedAt: sql<Date | null>`MIN(${submissions.createdAt})` })
-    .from(submissions)
-    .where(
-      and(
-        eq(submissions.articleId, articleId),
-        eq(submissions.userId, userId),
-        eq(submissions.status, 'scored'),
-        sql`${submissions.score} = ${myBest}`,
-      ),
-    )
-  return row?.reachedAt ?? null
-}
-
-/** 三键全序里"排在我前面"的那些人（分数更高，或同分但我到达得更晚、或同分同刻但 id 更大） */
-function aheadOfMe(bests: BestsTable, myBest: number, myReached: Date, userId: number): SQL {
-  // ⚠️ or() 的类型是 SQL | undefined（它允许传空条件）；这里三个条件都不是空的，加 ! 收口
-  return or(
-    gt(bests.best, myBest),
-    and(eq(bests.best, myBest), lt(bests.reachedAt, myReached)),
-    and(eq(bests.best, myBest), eq(bests.reachedAt, myReached), lt(bests.userId, userId)),
-  )!
-}
-
-/** 三键全序里"排在我后面"的那些人（与 aheadOfMe 严格互补，所以同分的人不会被跳过） */
-function behindMe(bests: BestsTable, myBest: number, myReached: Date, userId: number): SQL {
-  return or(
-    lt(bests.best, myBest),
-    and(eq(bests.best, myBest), gt(bests.reachedAt, myReached)),
-    and(eq(bests.best, myBest), eq(bests.reachedAt, myReached), gt(bests.userId, userId)),
-  )!
-}
-
-/** 我在这个竞技场里的最高分 */
+/** 我在这一句上的最好成绩；没参与过为 null */
 export async function getMyBest(articleId: string, userId: number): Promise<number | null> {
   const [row] = await db
-    .select({ best: sql<number | null>`MAX(${submissions.score})` })
-    .from(submissions)
-    .where(
-      and(
-        eq(submissions.articleId, articleId),
-        eq(submissions.userId, userId),
-        eq(submissions.status, 'scored'),
-      ),
-    )
-  return row?.best === null || row?.best === undefined ? null : Number(row.best)
+    .select({ best: participations.bestScore })
+    .from(participations)
+    .where(and(eq(participations.articleId, articleId), eq(participations.userId, userId)))
+    .limit(1)
+  return row?.best === undefined || row?.best === null ? null : Number(row.best)
 }
 
 /**
@@ -155,6 +77,10 @@ export async function getMyBest(articleId: string, userId: number): Promise<numb
  *    结果页的「刷新最好成绩」会忽有忽无。
  *    排除自己之后它是**幂等**的：同样的数据永远给同样的答案。
  *
+ * ⚠️⚠️ 这一条**必须读 submissions，不能读参与记录**：它问的是
+ *    「除了**这一次提交**，我别的挑战里最高多少」，而参与记录里只留了最高那一条 ——
+ *    最高分恰好是本次时就答不出来。所以它留在这里，与参与记录分工不同。
+ *
  * @returns null 表示这是我在该竞技场的第一条记录
  */
 export async function getBestExcluding(
@@ -163,7 +89,7 @@ export async function getBestExcluding(
   excludeSubmissionId: string,
 ): Promise<number | null> {
   const [row] = await db
-    .select({ best: sql<number | null>`MAX(${submissions.score})` })
+    .select({ best: max(submissions.score) })
     .from(submissions)
     .where(
       and(
@@ -176,48 +102,76 @@ export async function getBestExcluding(
   return row?.best === null || row?.best === undefined ? null : Number(row.best)
 }
 
+/** 三键全序里「排在我前面」的那些参与（分数更高，或同分但我到得更晚，或同分同刻但 id 更大） */
+function aheadOfMe(myBest: string, myReached: Date, userId: number): SQL {
+  // ⚠️ or() 的类型是 SQL | undefined（它允许传空条件）；这里三个条件都不是空的，加 ! 收口
+  return or(
+    gt(participations.bestScore, myBest),
+    and(eq(participations.bestScore, myBest), lt(participations.reachedAt, myReached)),
+    and(
+      eq(participations.bestScore, myBest),
+      eq(participations.reachedAt, myReached),
+      lt(participations.userId, userId),
+    ),
+  )!
+}
+
+/** 三键全序里「排在我后面」的那些（与 aheadOfMe 严格互补，所以同分的人不会被跳过） */
+function behindMe(myBest: string, myReached: Date, userId: number): SQL {
+  return or(
+    lt(participations.bestScore, myBest),
+    and(eq(participations.bestScore, myBest), gt(participations.reachedAt, myReached)),
+    and(
+      eq(participations.bestScore, myBest),
+      eq(participations.reachedAt, myReached),
+      gt(participations.userId, userId),
+    ),
+  )!
+}
+
 export async function getRank(articleId: string, userId: number): Promise<RankInfo> {
-  const myBest = await getMyBest(articleId, userId)
-  if (myBest === null) return { rank: 0, participantCount: 0, beatenCount: 0, gapToPrev: null }
+  // 一行就够 —— 参与记录里已经写着我的分数和"达到它的时刻"
+  const [mine] = await db
+    .select({ best: participations.bestScore, reachedAt: participations.reachedAt })
+    .from(participations)
+    .where(and(eq(participations.articleId, articleId), eq(participations.userId, userId)))
+    .limit(1)
+  if (!mine) return { rank: 0, participantCount: 0, beatenCount: 0, gapToPrev: null }
 
-  /**
-   * ⚠️ 取不到我的"到达时刻"理论上不可能（myBest 非空 = 至少有一条 score = myBest 的 scored 行）。
-   *    兜底给"现在"会让名次偏后，所以真出现只说明数据坏了 —— 但绝不能因此抛错，
-   *    那会让一个坏行把整个榜单打不开。
-   */
-  const myReached = (await reachedAtOf(articleId, userId, myBest)) ?? new Date()
+  // ⚠️ DECIMAL 读回来是字符串；比较时用 toFixed(1) 归一成 decimal(5,1) 的写法，
+  //    免得 '78.5' 与 78.5 在 SQL 里出现意料之外的形态
+  const myBest = Number(mine.best).toFixed(1)
+  const myReached = mine.reachedAt
 
-  const bests = bestPerUser(articleId)
   const [row] = await db
     .select({
       // ⭐ 与我用的**同一个全序**：分数更高算前，同分则先到者算前（同刻再比 id）
-      better: count(sql`CASE WHEN ${aheadOfMe(bests, myBest, myReached, userId)} THEN 1 END`),
+      better: count(sql`CASE WHEN ${aheadOfMe(myBest, myReached, userId)} THEN 1 END`),
       total: count(),
     })
-    .from(bests)
+    .from(participations)
+    .where(eq(participations.articleId, articleId))
 
   const better = Number(row?.better ?? 0)
   const total = Number(row?.total ?? 0)
   const rank = better + 1
 
   /**
-   * ⭐ "上一名" = 排在我前面的那一批里**最后一个** —— 用全序**反过来**排取第一条：
+   * ⭐「上一名」= 排在我前面的那一批里**最后一个** —— 用全序**反过来**排取第一条：
    *    (分数升序, 到达时刻降序, id 降序)。
-   * ⚠️ 以前写的是 gt(best, myBest) + asc(best)：分数不同时结论一样，
-   *    但同分的人会被**跳过**，于是"上一名"其实是隔了几个同分的人的。
    */
   const [prev] = await db
-    .select({ score: bests.best })
-    .from(bests)
-    .where(aheadOfMe(bests, myBest, myReached, userId))
-    .orderBy(asc(bests.best), desc(bests.reachedAt), desc(bests.userId))
+    .select({ score: participations.bestScore })
+    .from(participations)
+    .where(and(eq(participations.articleId, articleId), aheadOfMe(myBest, myReached, userId)))
+    .orderBy(asc(participations.bestScore), desc(participations.reachedAt), desc(participations.userId))
     .limit(1)
 
   return {
     rank,
     participantCount: total,
     beatenCount: Math.max(0, total - rank),
-    gapToPrev: prev ? Number(prev.score) - myBest : null,
+    gapToPrev: prev ? Number(prev.score) - Number(myBest) : null,
   }
 }
 
@@ -238,14 +192,18 @@ export async function getTopLeaderboard(
   userId: number,
   limit = 20,
 ): Promise<LeaderboardRow[]> {
-  const bests = bestPerUser(articleId)
   const rows = await db
-    .select({ userId: bests.userId, score: bests.best, nickname: users.nickname })
-    .from(bests)
-    .leftJoin(users, eq(users.id, bests.userId))
+    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .from(participations)
+    .leftJoin(users, eq(users.id, participations.userId))
+    .where(eq(participations.articleId, articleId))
     // ⚠️ 三个键都要给：只给前两个的话，同分同刻的行顺序由 MySQL 决定，
-    //    列表里显示的名次（按 index 数）会和 getRank 算出来的对不上（见文件头 ③）
-    .orderBy(desc(bests.best), asc(bests.reachedAt), asc(bests.userId))
+    //    列表里显示的名次（按 index 数）会和 getRank 算出来的对不上
+    .orderBy(
+      desc(participations.bestScore),
+      asc(participations.reachedAt),
+      asc(participations.userId),
+    )
     .limit(limit)
 
   return rows.map((row, i) => ({
@@ -262,37 +220,44 @@ export async function getLeaderboardAround(
   userId: number,
   limit = 5,
 ): Promise<LeaderboardRow[]> {
-  const myBest = await getMyBest(articleId, userId)
-  if (myBest === null) return []
+  const [mine] = await db
+    .select({ best: participations.bestScore, reachedAt: participations.reachedAt })
+    .from(participations)
+    .where(and(eq(participations.articleId, articleId), eq(participations.userId, userId)))
+    .limit(1)
+  if (!mine) return []
 
-  const myReached = (await reachedAtOf(articleId, userId, myBest)) ?? new Date()
-  const bests = bestPerUser(articleId)
+  const myBest = Number(mine.best).toFixed(1)
+  const myReached = mine.reachedAt
 
   /**
-   * ⚠️⚠️ 上下两侧必须用**与 getRank 完全相同的全序**（不是 gt/lt 分数就完事）。
+   * ⚠️⚠️ 上下两侧必须用**与 getRank 完全相同的全序**（不是只比分数）。
    *    以前只按分数严格大于 / 小于取，于是**和我同分的人一个都不出现**：
    *    榜上明明有 5 个人都是 78，我的"上下各两条"里却一个 78 都没有，
    *    而下面那条被标成"第 10 名"—— 实际我是第 12。
-   *    ⇒ 现在"前面"= 全序里在我之前的（含同分但先到的），"后面"= 严格互补的那一半。
    */
   const above = await db
-    .select({ userId: bests.userId, score: bests.best, nickname: users.nickname })
-    .from(bests)
-    .leftJoin(users, eq(users.id, bests.userId))
-    .where(aheadOfMe(bests, myBest, myReached, userId))
+    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .from(participations)
+    .leftJoin(users, eq(users.id, participations.userId))
+    .where(and(eq(participations.articleId, articleId), aheadOfMe(myBest, myReached, userId)))
     // 离我最近的两条 = 全序**反过来**取前两条
-    .orderBy(asc(bests.best), desc(bests.reachedAt), desc(bests.userId))
+    .orderBy(asc(participations.bestScore), desc(participations.reachedAt), desc(participations.userId))
     .limit(2)
 
   const below = await db
-    .select({ userId: bests.userId, score: bests.best, nickname: users.nickname })
-    .from(bests)
-    .leftJoin(users, eq(users.id, bests.userId))
-    .where(behindMe(bests, myBest, myReached, userId))
-    .orderBy(desc(bests.best), asc(bests.reachedAt), asc(bests.userId))
+    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .from(participations)
+    .leftJoin(users, eq(users.id, participations.userId))
+    .where(and(eq(participations.articleId, articleId), behindMe(myBest, myReached, userId)))
+    .orderBy(desc(participations.bestScore), asc(participations.reachedAt), asc(participations.userId))
     .limit(2)
 
-  const ordered = [...above.reverse(), { userId, score: myBest, nickname: null }, ...below]
+  const ordered = [
+    ...above.reverse(),
+    { userId, score: mine.best, nickname: null as string | null },
+    ...below,
+  ]
   const { rank } = await getRank(articleId, userId)
   const startRank = Math.max(1, rank - above.length)
 
@@ -331,33 +296,33 @@ export async function getArenaStatsBatch(
   if (articleIds.length === 0) return out
   for (const id of articleIds) out.set(id, { participantCount: 0, topScore: null, myBest: null, myAttempts: 0 })
 
-  const inIds = sql`${submissions.articleId} IN (${sql.join(articleIds.map((i) => sql`${i}`), sql`, `)})`
+  const inIds = sql`${participations.articleId} IN (${sql.join(articleIds.map((i) => sql`${i}`), sql`, `)})`
 
   const [totals, mine] = await Promise.all([
     db
       .select({
-        articleId: submissions.articleId,
-        participants: sql<number>`COUNT(DISTINCT ${submissions.userId})`,
-        top: sql<number | null>`MAX(${submissions.score})`,
+        articleId: participations.articleId,
+        // 一人一行 ⇒ 参与人数就是行数，不再需要 COUNT(DISTINCT user_id)
+        participants: count(),
+        top: max(participations.bestScore),
       })
-      .from(submissions)
-      .where(and(inIds, eq(submissions.status, 'scored')))
-      .groupBy(submissions.articleId),
+      .from(participations)
+      .where(inIds)
+      .groupBy(participations.articleId),
     db
       .select({
-        articleId: submissions.articleId,
-        best: sql<number | null>`MAX(${submissions.score})`,
-        attempts: count(),
+        articleId: participations.articleId,
+        best: participations.bestScore,
+        attempts: participations.attempts,
       })
-      .from(submissions)
-      .where(and(inIds, eq(submissions.status, 'scored'), eq(submissions.userId, userId)))
-      .groupBy(submissions.articleId),
+      .from(participations)
+      .where(and(inIds, eq(participations.userId, userId))),
   ])
 
   for (const row of totals) {
     out.set(row.articleId, {
       participantCount: Number(row.participants ?? 0),
-      topScore: row.top === null ? null : Number(row.top),
+      topScore: row.top === null || row.top === undefined ? null : Number(row.top),
       myBest: null,
       myAttempts: 0,
     })
@@ -365,7 +330,7 @@ export async function getArenaStatsBatch(
   for (const row of mine) {
     const cur = out.get(row.articleId)
     if (!cur) continue
-    cur.myBest = row.best === null ? null : Number(row.best)
+    cur.myBest = Number(row.best)
     cur.myAttempts = Number(row.attempts ?? 0)
   }
   return out
