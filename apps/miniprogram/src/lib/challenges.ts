@@ -74,6 +74,18 @@ export function openParticipationsPage(): void {
   if (current?.route === PARTICIPATIONS_ROUTE) return
   wx.navigateTo({ url: PARTICIPATIONS_PAGE, fail: () => wx.reLaunch({ url: PARTICIPATIONS_PAGE }) })
 }
+/** 「我的收藏」列表页 */
+const COLLECTION_PAGE = '/pages/me/collection/collection'
+const COLLECTION_ROUTE = 'pages/me/collection/collection'
+
+/** 打开「我的收藏」—— 与上面同一套去重逻辑（别压两层同样的页） */
+export function openCollectionPage(): void {
+  const stack = getCurrentPages()
+  const current = stack[stack.length - 1] as { route?: string } | undefined
+  if (current?.route === COLLECTION_ROUTE) return
+  wx.navigateTo({ url: COLLECTION_PAGE, fail: () => wx.reLaunch({ url: COLLECTION_PAGE }) })
+}
+
 /** 页面栈里那一页的 route 写法（无斜杠）—— 判断「是不是已经在这一页了」 */
 const CHALLENGES_ROUTE = 'pages/me/challenges/challenges'
 

@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "我的收藏",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/nav-bar",
+    "ui-button": "/components/ui-button/ui-button"
+  }
+}

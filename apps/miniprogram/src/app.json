@@ -7,6 +7,7 @@
     "pages/me/edit-user/edit-user",
     "pages/me/challenges/challenges",
     "pages/me/participations/participations",
+    "pages/me/collection/collection",
     "pages/me/streak/streak",
     "pages/me/energy/energy",
     "pages/profile/profile",

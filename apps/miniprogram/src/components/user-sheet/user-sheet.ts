@@ -5,6 +5,7 @@ import { openJoinPage, openProfilePage } from '../../lib/join'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import {
   openChallengesPage,
+  openCollectionPage,
   openEnergyPage,
   openParticipationsPage,
   openProfileHomePage,
@@ -107,6 +108,8 @@ Component({
      */
     menu: [
       { key: 'participations', icon: 'icon-target', label: '参与场次' },
+      // ⭐ 收藏排在「参与场次」后面：都是「我收藏/我参与过的东西」这一类的入口
+      { key: 'collection', icon: 'icon-heart-outline', label: '我的收藏' },
       { key: 'challenges', icon: 'icon-clipboard', label: '我的挑战' },
       // ⭐ 连战记录排在这三个战绩入口的最后：它和它们是同一类 ——
       //    「我走到哪了」。⚠️ 别把它塞进「我的主页」里面当二级入口：
@@ -243,6 +246,10 @@ Component({
       }
       if (key === 'participations') {
         openParticipationsPage()
+        return
+      }
+      if (key === 'collection') {
+        openCollectionPage()
         return
       }
       if (key === 'streak') {
