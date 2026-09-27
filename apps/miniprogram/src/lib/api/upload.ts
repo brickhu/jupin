@@ -91,11 +91,13 @@ function uploadToLocalServer(
   return new Promise((resolve, reject) => {
     const task = wx.uploadFile({
       /**
-       * ⚠️⚠️ 是 **/api/user/uploads**，不是 /api/uploads —— 这个前缀写错过一次，
-       *    症状是提交时报「上传响应不是合法 JSON」：那个路径不存在，
-       *    Hono 的 404 回的是 **text/plain 的 "404 Not Found"**，
-       *    于是 JSON.parse 抛错（而不是给一句人话）。见 middleware/auth.test.ts 那条铁律：
-       *    需要鉴权的接口全部在 /api/user/* 下，上传也是。
+       * ⚠️⚠️ 路径是「/api/user/uploads」，**不是**「/api/uploads」—— 这个前缀写错过一次。
+       *    症状：提交时报「上传响应不是合法 JSON」。因为那条路径不存在，
+       *    Hono 的 404 回的是 text/plain 的「404 Not Found」，客户端 JSON.parse 就抛了
+       *    —— 报的是"不是合法 JSON"，而不是一句能看出「路径写错了」的话。
+       *    见 middleware/auth.test.ts 那条铁律：需要鉴权的接口全在 /api/user/* 下。
+       * ⚠️ 写注释时别用两个星号去夹路径：星号紧挨斜杠会**提前关掉块注释**，
+       *    整个文件当场语法错误（我自己踩的，一次 typecheck 才发现）。
        */
       url: BASE_URL + '/api/user/uploads',
       filePath,
