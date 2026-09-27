@@ -787,13 +787,27 @@ Page({
        */
       const pending = this.recordingKey ? loadLastResult(this.recordingKey) : null
       if (pending && pending.articleId === this.data.articleId) {
-        const st = await fetchSubmissionStatus(pending.submissionId)
-        if (st.status === 'scored' && st.result) {
-          // ⚠️ 先记住 id：s5 的「评测详情」靠它去 pages/challenge（applyResult 里也要用它存缓存）
-          this.submissionId = pending.submissionId
-          // ⚠️ roll=false：这是**二次进入**恢复出来的 s5，不播数字滚动
-          this.applyResult(st.result, false)
-          return
+        /**
+         * ⚠️⚠️ 这里**必须**接住异常（用户 2026-09 报的「提交记录不存在」就是这个）。
+         *
+         *    本地记的 submissionId 可能已经不在库里了（清过历史 / 换过环境 /
+         *    后台删过那条提交）—— 服务端回 404「提交记录不存在」。
+         *    不接住的话它会一路抛到 loadContent 的 catch，整页停在
+         *    「提交记录不存在」，连重录都做不了。
+         *    **一条本地缓存过期，不该让整个页面打不开。**
+         */
+        try {
+          const st = await fetchSubmissionStatus(pending.submissionId)
+          if (st.status === 'scored' && st.result) {
+            // ⚠️ 先记住 id：s5 的「评测详情」靠它去 pages/challenge（applyResult 里也要用它存缓存）
+            this.submissionId = pending.submissionId
+            // ⚠️ roll=false：这是**二次进入**恢复出来的 s5，不播数字滚动
+            this.applyResult(st.result, false)
+            return
+          }
+        } catch (err) {
+          // ⚠️ 只警告、不抛：这是一条**过期缓存**，下面清掉它，流程照常往下走
+          console.warn('[reading] 恢复上次结果失败（按过期缓存清掉）：' + (err as Error).message)
         }
         if (this.recordingKey) clearLastResult(this.recordingKey)
       }
