@@ -14,7 +14,13 @@ import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
-import type { ArenaRecord, ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
+import type {
+  ArenaRecord,
+  ArticleRecordItem,
+  ArticleRecordsResponse,
+  ChallengeWordScore,
+  EnergyLedgerItem,
+} from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
@@ -110,6 +116,62 @@ function parseWordScores(raw: string | null, wordCount: number): ChallengeWordSc
     return null
   }
 }
+/**
+ * ⭐ 我在**某一句**上的历史挑战（逐次）—— 朗读页「历史挑战」那一段用它。
+ *
+ * ⚠️ 粒度是**一次提交**（与「参与场次」不同：那边一人一句一行）：
+ *    这一页要回答的是"我在这一句上读过几次、每次多少分"。
+ * ⚠️ 只给 status = 'scored'：失败 / 进行中那次没有分数，
+ *    混进来列表里就会出现一条"没有分数的历史"。
+ * ⚠️ 顺序按**提交时间倒序**（最近一次在最上面）。
+ * ⚠️ score 是 DECIMAL，读回来是字符串 —— 出去一律 Number（见 schema 的说明）。
+ */
+userRoutes.get('/article-records', async (c) => {
+  const userId = c.get('userId')
+  const articleId = (c.req.query('article') ?? '').trim()
+  if (!articleId) return c.json({ ok: false, error: '缺 article 参数' }, 400)
+
+  const rows = await db
+    .select({
+      submissionId: submissions.id,
+      score: submissions.score,
+      seq: submissions.seq,
+      createdAt: submissions.createdAt,
+      scheduleDate: submissions.scheduleDate,
+      isPublic: submissions.isPublic,
+    })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        eq(submissions.articleId, articleId),
+        eq(submissions.status, 'scored'),
+      ),
+    )
+    .orderBy(desc(submissions.createdAt))
+
+  const items: ArticleRecordItem[] = rows.map((r) => ({
+    submissionId: r.submissionId,
+    score: Number(r.score),
+    seq: Number(r.seq),
+    createdAt: r.createdAt.toISOString(),
+    scheduleDate: r.scheduleDate ?? null,
+    isPublic: r.isPublic === true,
+  }))
+
+  /**
+   * ⚠️ 最好成绩 / 次数**现算**，而不是读 participations：
+   *    那个派生索引是"一人一句一行"的榜单口径，这里要的是同一份真相的
+   *    另一种投影 —— 两者都由 submissions 推出，不会互相矛盾。
+   */
+  const data: ArticleRecordsResponse = {
+    items,
+    bestScore: items.length === 0 ? null : Math.max(...items.map((i) => i.score)),
+    attempts: items.length,
+  }
+  return c.json({ ok: true, data })
+})
+
 /**
  * ⭐ 「参与场次」—— 我在哪些句子上参与过（**一句 = 一场**），最近参与的排前面。
  *

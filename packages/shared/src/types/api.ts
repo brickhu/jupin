@@ -530,6 +530,37 @@ export interface FavoritesResponse {
   items: FavoriteItem[]
 }
 
+/**
+ * ⭐ 我在**某一句**上的历史挑战（逐次）—— GET /api/user/article-records?article=（鉴权）。
+ *
+ * ⚠️ 粒度是**一次提交**，与「参与场次」不同：那边一句一行（一人一句一行的派生索引），
+ *    这边要的是"我在这一句上读过几次、每次多少分" —— 朗读页下方那一段历史用它。
+ * ⚠️ 只给**有得分的**（status = scored）：失败/进行中的那次没有分数，
+ *    混进来会让列表出现一条"没有分数的历史"。
+ */
+export interface ArticleRecordItem {
+  submissionId: string
+  /** 云端权威分 0–100 */
+  score: number
+  /** 这一把是**第几次**读这句（从 1 开始）—— 列表里显示"第 3 次" */
+  seq: number
+  /** 提交时间（ISO） */
+  createdAt: string
+  /** 这次挑战属于哪一天（点进竞技场要用；老记录可能没有） */
+  scheduleDate: string | null
+  /** 别人能不能听到这段录音 */
+  isPublic: boolean
+}
+
+/** GET /api/user/article-records 的响应 */
+export interface ArticleRecordsResponse {
+  items: ArticleRecordItem[]
+  /** 我在这句上的最好成绩；一次都没读过为 null */
+  bestScore: number | null
+  /** 我在这句上出过分几次 */
+  attempts: number
+}
+
 /** GET /api/user/arena-records 的响应 */
 export interface ArenaRecordsResponse {
   items: ArenaRecord[]

@@ -15,6 +15,7 @@ import type {
   SchedulesResponse,
   TodayResponse,
   FavoritesResponse,
+  ArticleRecordsResponse,
   ShopGoodsResponse,
   ShopOrderResponse,
   StreakRecordResponse,
@@ -750,6 +751,17 @@ export function fetchArenaRecords(ids: string[], ranks = false): Promise<ArenaRe
   if (ids.length === 0) return Promise.resolve({ items: [] })
   const q = '/api/user/arena-records?ids=' + ids.join(',') + (ranks ? '&ranks=1' : '')
   return request<ArenaRecordsResponse>(q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 我在**某一句**上的历史挑战（逐次，最近在前）—— 朗读页下方那一段历史。
+ * ⚠️ 只回有得分的那几次（见 shared 的 ArticleRecordItem）。
+ */
+export function fetchArticleRecords(articleId: string): Promise<ArticleRecordsResponse> {
+  return request<ArticleRecordsResponse>(
+    '/api/user/article-records?article=' + encodeURIComponent(articleId),
+    { budgetMs: LAUNCH_BUDGET_MS },
+  )
 }
 
 /**
