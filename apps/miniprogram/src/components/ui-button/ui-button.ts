@@ -16,6 +16,11 @@ import type { ArticleTheme } from '@jushuo/shared'
  *    WXML 里写 `class="ub-{{variant}}"` 会让构建期「类名必须能解析」那条检查
  *    看到半截 token（`ub-`）而报错。
  *
+ * ⚠️⚠️ `ui-button.json` 里的 **`"styleIsolation": "apply-shared"` 不能删** ——
+ *    实测（2026-09）：不写它，按钮里的图标画出来是**空的**（文字正常）。
+ *    仓库里另外两个用到 app.wxss 里图标的组件（arena-card / audio-button）也都写着它。
+ *    别只按"看起来无关"就删掉，那是踩过一次的坑。
+ *
  * ⚠️ 图标用的是项目自带的 **iconfont**（Iconify/MDI 子集，见 app.wxss 与
  *    tools/iconfont/build.mjs）—— 所以 icon 传的是 **iconify 名**（mdi:play / mdi:star），
  *    组件取冒号后面的部分拼成 `icon-<name>` 类。
