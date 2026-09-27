@@ -85,6 +85,23 @@ export async function describe(
     //    85 分线写的，直接读会把历史成绩显示成「没攻克」。
     isConquered: row.status === 'scored',
     previousBest: previous,
+    // ⭐ 这一把是这句的第几次（从 1 开始）—— s5 副标题的「第 K 次」，
+    //    不再让端侧从 store 缓存里猜（见 shared 的 SubmitResponse.attempts）。
+    attempts: row.seq,
+    // ⭐ 这一把的成长值快照 —— s5 三张卡的 +N。字段名就照端侧读的 growth 给
+    //    （reading.ts 的 growthDeltaOf），不自创第二套。
+    //    ⚠️ 结算与「status 置为 scored」不是同一个事务，轮询可能卡在中间
+    //    （growth_self 还是 null）⇒ 那时**不给**这个字段，端侧整块不渲染
+    //    （不是摆三个 +0，那会被读成「这一把没涨」）。
+    ...(row.growthSelf !== null
+      ? {
+          growth: {
+            self: row.growthSelf,
+            diligence: row.growthDiligence ?? 0,
+            standout: row.growthStandout ?? 0,
+          },
+        }
+      : {}),
     leaderboard,
     text: article[0] ? await loadArticleRefText(article[0].id) : '',
     // ⭐ 录音时长 —— 结果页在播放按钮旁边显示它（读完之后最直观的参照）

@@ -171,6 +171,27 @@ export interface SubmitResponse {
   theme: ArticleTheme | null
   /** 上一次成绩，用于「🎉 62 → 87」 */
   previousBest: number | null
+  /**
+   * ⭐ 这一把是**这句**的第几次提交（从 1 开始）—— s5 副标题「第 K 次挑战」用的就是它。
+   *
+   * ⚠️ 取自 `submissions.seq`（受理那一刻分配），**包含失败 / 进行中的那几次**，
+   *    与「我在这句打过几次分」（ArenaRecord.attempts）不是同一个数 —— 后者只数 scored。
+   *    端侧原来拿 store 的缓存猜、还夹了下限 2：缓存里没有这句的旧战绩时会猜成
+   *    「第 2 次」，而 previousBest 又是 null（首次）—— 两个字段自相矛盾。
+   * ⚠️ 「是不是首次」仍由 previousBest === null 判，不用它：首次失败过的用户
+   *    第二次出分时 previousBest 还是 null，那时该显示「首次挑战」。
+   */
+  attempts: number
+  /**
+   * ⭐ 这一把的**成长值快照**（三个指标各加了多少）—— s5 三张卡上的 +N 就是它。
+   *
+   * ⚠️ 不是 /me 里的**累计值**：累计值回答「我一共多少」，卡片问「这一把加了多少」，
+   *    把累计值摆上去会是 +128 这种数，用户会以为这一把加了 128。
+   * ⚠️ 为什么可选：结算（services/settle.ts）与「status 置为 scored」不在同一个事务里，
+   *    轮询恰好卡在两者之间时会读到 null；老数据也可能没结算过。
+   *    端侧拿不到就**整块不渲染**（不是摆三个 +0 —— 那会被读成「这一把没涨」）。
+   */
+  growth?: GrowthView
   /** 榜单中心 5 条 */
   leaderboard: LeaderboardRow[]
   /** 词级结果（可选增强；缺失时端侧兜底） */

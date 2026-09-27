@@ -186,10 +186,15 @@
       <text class="text-140rpx font-bold text-ok leading-[1]">{{scoreText}}</text>
       <text class="text-26rpx text-ok mt-2 text-center leading-[1.6]">{{scoreSubtitle}}</text>
 
-      <!-- ⭐ 三张成长值卡：**服务端还没下发这一把的成长值快照**（SPEC 排在下一轮），
+      <!-- ⭐ 三张成长值卡：数据来自服务端给的本把快照（SubmitResponse.growth）。
            拿不到时 growthCards 是空数组 ⇒ 整块不渲染 ——
-           而不是拿 /me 的累计值凑一个数（那会是 +128 这种，见 reading.ts）。 -->
-      <view class="flex items-stretch gap-2 mt-5 w-full" wx:if="{{growthCards.length > 0}}">
+           而不是拿 /me 的累计值凑一个数（那会是 +128 这种，见 reading.ts）。
+           ⚠️ 入场过渡（淡入 + 上浮）：cardsIn 由 reading.ts 控制 ——
+              刚出分时先 false 再 true 才有过渡；恢复出来的 s5 直接 true，不再演一遍。
+           ⚠️ 只用 transition / opacity / translate，没有 :hover、属性选择器、通配符
+              （Skyline 约束，见 uno.config.mjs）。 -->
+      <view class="flex items-stretch gap-2 mt-5 w-full transition-all duration-500 ease-out {{cardsIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}}"
+            wx:if="{{growthCards.length > 0}}">
         <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
               wx:for="{{growthCards}}" wx:key="key">
           <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
@@ -215,7 +220,9 @@
       <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
 
       <!-- ⚠️ 失败三张卡恒为 +0（灰）：这里的值不需要服务端给 ——
-           失败不扣能量、也不加成长值（见 reading.ts 的 zeroGrowthCards） -->
+           失败不扣能量、也不加成长值（见 reading.ts 的 zeroGrowthCards）。
+           ⚠️ **刻意不做数字滚动 / 入场过渡**：+0 没有"涨"这回事，
+              在这里演一遍动画只会让人以为涨了又归零。 -->
       <view class="flex items-stretch gap-2 mt-5 w-full">
         <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
               wx:for="{{growthCards}}" wx:key="key">

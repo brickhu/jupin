@@ -140,10 +140,10 @@ interface GrowthCard {
 /**
  * ⭐ 拿「这一把加了多少」的三张卡。
  *
- * ⚠️⚠️ 本轮**服务端还没有**下发这一把的成长值快照（SPEC 把它排在下一轮：
- *    submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
- *    所以这里按**可选字段**读：字段在就出三张卡，不在就**整块不渲染**。
- *    写成可选之后，下一轮服务端把 SubmitResponse.growth 补上，端侧一行都不用改。
+ * ⚠️ 数据来自服务端刚下发的 SubmitResponse.growth（submissions.growth_* 的快照）。
+ *    拿不到时（结算与「status 置为 scored」之间的窗口 / 老数据）返回空数组 ⇒
+ *    **整块不渲染**，而不是摆三个 +0 —— +0 会被读成「这一把没涨」，
+ *    而真相是「还没结算」。
  *
  * ⚠️ 不要拿 /me 里那个**累计值**顶上去：卡片上的 +5 是「这一把加了多少」，
  *    累计值放上去会是 +128 这种数 —— 差得不是一点，用户会以为刚才这一把加了 128。
@@ -174,6 +174,16 @@ function zeroGrowthCards(): GrowthCard[] {
     borderCls: 'border-gray-300',
   }))
 }
+
+/**
+ * ⭐ s5 数字滚动（大分数 + 三张卡的 +N）的时长与帧间隔。
+ *
+ * ⚠️ 600ms：短了看不清"在涨"，长了就变成拖时间（产品给的是 500–700ms）。
+ * ⚠️ 16ms ≈ 60fps。用 setData + 定时器逐帧推进、**不引任何动画库** ——
+ *    小程序端没有可靠的 requestAnimationFrame 等价物，而这点计算量足够小。
+ */
+const ROLL_MS = 600
+const ROLL_FRAME_MS = 16
 
 /**
  * ⭐ 声波监测：**以中线对称的实心柱条**，画在 canvas 上。
@@ -361,10 +371,19 @@ Page({
     scoreSubtitle: '',
     /**
      * ⭐ 成长值三卡。
-     *   · s5：拿不到这一把的增量时是**空数组** ⇒ 整块不渲染；
-     *   · s6：恒为三张 +0（灰）。
+     *   · s5：服务端下发了这一把的增量（SubmitResponse.growth）就是三张 +N；
+     *         拿不到（还没结算 / 老数据）时是**空数组** ⇒ 整块不渲染；
+     *   · s6：恒为三张 +0（灰）—— 且**不做数字滚动**（没有"涨"这回事，
+     *         见 zeroGrowthCards 与 WXML 里 s6 那一块）。
      */
     growthCards: [] as GrowthCard[],
+    /**
+     * ⭐ 三张卡的**入场过渡**开关（WXML 上用 transition + opacity/translate 表达）。
+     *    false = 透明 + 下移（初始态）；true = 淡入 + 上浮到位。
+     * ⚠️ 只在**刚出分**（s4→s5）时先 false 再 true，给 CSS 过渡留"从哪来"的那一帧；
+     *    二次进入恢复出来的 s5 直接置 true —— 用户已经看过一次，再淡入只是拖慢他。
+     */
+    cardsIn: false,
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -598,6 +617,8 @@ Page({
   //    因为「我的挑战」列表也要播录音，两个实例会互相抢（见那个文件的说明）。
   /** s2 的计时器（每 100ms 刷一次） */
   timer: null as ReturnType<typeof setInterval> | null,
+  /** ⭐ s5 数字滚动的定时器（见 rollNumbers）—— 页面销毁 / 换态时必须清掉 */
+  rollTimer: null as ReturnType<typeof setInterval> | null,
   /** 原始词表（不带样式）—— 点词 TTS 用它 */
   plainWords: [] as string[],
   /**
@@ -691,6 +712,9 @@ Page({
     this.recorder?.dispose()
     this.waveCtx = null
     this.stopTimer()
+    // ⚠️ 数字滚动的定时器也要停：它每 16ms setData 一次，
+    //    页面销毁后不停会一直往已销毁的页面上写（rollNumbers 里还有一道 gone 判活）
+    this.stopRoll()
     if (this.stopWatchdog !== null) {
       clearTimeout(this.stopWatchdog)
       this.stopWatchdog = null
@@ -759,7 +783,8 @@ Page({
         if (st.status === 'scored' && st.result) {
           // ⚠️ 先记住 id：s5 的「评测详情」靠它去 pages/challenge（applyResult 里也要用它存缓存）
           this.submissionId = pending.submissionId
-          this.applyResult(st.result)
+          // ⚠️ roll=false：这是**二次进入**恢复出来的 s5，不播数字滚动
+          this.applyResult(st.result, false)
           return
         }
         if (this.recordingKey) clearLastResult(this.recordingKey)
@@ -878,6 +903,8 @@ Page({
         scoreText: '',
         scoreSubtitle: '',
         growthCards: [],
+        // ⚠️ 同 onRestart：入场开关要复位
+        cardsIn: false,
         failDetail: '',
       },
       /**
@@ -1239,8 +1266,9 @@ Page({
         return
       }
       // 幂等命中：这段音频早就打过分，结果直接就在包里
+      // ⚠️ roll=true：用户刚点完提交、正盯着 s4 → 这就是「刚出分」那一刻
       if (task.status === 'scored' && task.result) {
-        this.applyResult(task.result)
+        this.applyResult(task.result, true)
         return
       }
       await this.pollResult(task.submissionId)
@@ -1328,7 +1356,8 @@ Page({
       }
 
       if (st.status === 'scored' && st.result) {
-        this.applyResult(st.result)
+        // ⚠️ roll=true：轮询拿到分 = 刚出分（s4→s5），要播数字滚动
+        this.applyResult(st.result, true)
         return
       }
       if (st.status === 'failed') {
@@ -1347,6 +1376,9 @@ Page({
    *               那句设计稿文案只适用于「引擎说这段音频不行」，超时不是那个原因。
    */
   toFail(detail: string) {
+    // ⚠️ 失败三张卡恒为 +0 且**不做数字滚动**（没有"涨"这回事）；
+    //    万一上一轮的滚动还在跑（重新挑战后立刻又失败），必须停掉
+    this.stopRoll()
     stopAudio()
     this.setData({
       phase: 's6',
@@ -1367,9 +1399,13 @@ Page({
    *
    * ⚠️ 顺序不能换：store 与刷新必须**先**做完 —— 用户可能立刻点「重新挑战」或退出，
    *    那时再想补写就没有机会了（首页会一直停在旧数据上）。
-   *    而且 scoreSubtitle 里的「第 K 次」正是从刚写进 store 的 attempts 算的。
+   *
+   * @param roll 要不要播「数字滚动」。**只有刚出分（s4→s5）才传 true**：
+   *   两个调用点是「提交受理时幂等命中」与「轮询拿到 scored」。
+   *   二次进入从本地缓存恢复出来的 s5 传 false —— 用户已经看过一次，
+   *   再滚一遍只是拖慢他（见 onLoad 的恢复分支）。
    */
-  applyResult(result: SubmitResponse) {
+  applyResult(result: SubmitResponse, roll: boolean) {
     // ⭐⭐ 把结果写进全局 store —— **这一步就是「提交完返回首页会更新」的保证**。
     //     首页订阅着它，此刻数据已经是新的了，不用等 onShow、不用再刷新一次网络。
     //     ⚠️ 分数与 streak 全部用服务端给的，端侧一个数都不算。
@@ -1400,23 +1436,100 @@ Page({
     }
 
     stopAudio()
+    // ⚠️ 上一次的滚动可能还在跑（重新挑战后立刻又出分）—— 先停掉
+    this.stopRoll()
     /**
      * ⭐⭐ 拿到分数 = 这段录音**已经被消费掉了**。
      *    ⚠️ 但**不在这里清缓存**：s5 上那颗「试听」播的就是本地这份文件，
      *       清早了按钮就点了没反应。真正的清理在 onUnload（见那里的说明）。
      */
-    this.setData({
-      phase: 's5',
-      error: '',
-      scoreText: formatScore(result.score),
-      scoreSubtitle: this.subtitleOf(result),
-      growthCards: growthCardsOf(growthDeltaOf(result)),
-      failDetail: '',
-      playingWord: -1,
-      sentenceState: 'unplay',
-      replayState: 'unplay',
-    })
+    const growth = growthDeltaOf(result)
+    this.setData(
+      {
+        phase: 's5',
+        error: '',
+        // ⚠️ 先落**最终值**：数字滚动只是"盖在上面"的临时显示，
+        //    任何一帧被打断（定时器被清）都不能让界面停在半路。
+        scoreText: formatScore(result.score),
+        scoreSubtitle: this.subtitleOf(result),
+        growthCards: growthCardsOf(growth),
+        // ⚠️ 恢复出来的 s5（roll=false）直接置 true：卡片不再淡入
+        cardsIn: !roll,
+        failDetail: '',
+        playingWord: -1,
+        sentenceState: 'unplay',
+        replayState: 'unplay',
+      },
+      () => {
+        /**
+         * ⚠️ 等**首帧渲染完**（setData 回调）再动：
+         *    卡片要先以「透明 + 下移」出现，下一帧再置 cardsIn=true，
+         *    CSS 过渡才有"从哪来"的那一帧。
+         */
+        if (!roll) return
+        this.rollNumbers(result.score, growth)
+        this.setData({ cardsIn: true })
+      },
+    )
     this.syncEnergyNote()
+  },
+
+  /**
+   * ⭐ s5 的数字滚动：大分数从 0 滚到最终分，三张卡的 +N 从 0 滚到最终值。
+   *
+   * ⚠️ 缓出（ease-out cubic）：开头快、结尾慢 —— 用户对"最后停在哪个数"最敏感，
+   *    匀速滚到底会显得很赶。
+   * ⚠️⚠️ 末帧**无条件写精确值**，不能用缓动函数算出来的近似值：
+   *    四舍五入会让 89.46 停在 89.4，而服务端给的是 89.5 ——
+   *    "动画结束时差 0.1"是最不该有的错。
+   * ⚠️ 分数一位小数（走 formatScore 的统一口径）、成长值取整（Math.round）。
+   *
+   * @param score  最终分（0–100，一位小数）
+   * @param growth 这一把的成长值增量；null = 服务端还没给，那就只滚分数
+   */
+  rollNumbers(score: number, growth: Partial<GrowthView> | null) {
+    this.stopRoll()
+    const startedAt = Date.now()
+    this.rollTimer = setInterval(() => {
+      // ⚠️ gone 判活：页面销毁后一帧都不能再写（见 onUnload）——
+      //    定时器与 onUnload 之间总有几十毫秒的窗口
+      if (this.gone) {
+        this.stopRoll()
+        return
+      }
+      const t = Math.min(1, (Date.now() - startedAt) / ROLL_MS)
+      const k = 1 - Math.pow(1 - t, 3)
+      const done = t >= 1
+      this.setData({
+        scoreText: done ? formatScore(score) : formatScore(score * k),
+        ...(growth
+          ? {
+              growthCards: growthCardsOf(
+                done
+                  ? growth
+                  : {
+                      self: Math.round((growth.self ?? 0) * k),
+                      diligence: Math.round((growth.diligence ?? 0) * k),
+                      standout: Math.round((growth.standout ?? 0) * k),
+                    },
+              ),
+            }
+          : {}),
+      })
+      if (done) this.stopRoll()
+    }, ROLL_FRAME_MS)
+  },
+
+  /**
+   * 停掉数字滚动的定时器。
+   * ⚠️ 三个入口都要停：页面销毁（onUnload）/ 重新挑战（onRestart）/ 失败（toFail）——
+   *    否则它会在已经换了状态的界面上继续写 scoreText。
+   */
+  stopRoll() {
+    if (this.rollTimer !== null) {
+      clearInterval(this.rollTimer)
+      this.rollTimer = null
+    }
   },
 
   /**
@@ -1424,16 +1537,14 @@ Page({
    *
    * ⚠️ 首次的判据是 **previousBest === null**（服务端给的上一次成绩）——
    *    它比「端侧算第几次」可靠得多，SPEC 里也是这么定的。
-   * ⚠️ 第 K 次的 K 取自 store 里刚累加过的那一份（applyResult 里先写了 store 才调这里）。
-   *    但它是**缓存**：这个用户如果没从首页进来，store 里可能根本没有这一句的旧战绩，
-   *    那时 K 会是 1 —— 与「不是首次」自相矛盾。所以夹一个下限 2：
-   *    previousBest 非空 ⇒ 至少读过一次，那就是第 2 次起步。
+   * ⚠️ 第 K 次的 K **直接读服务端给的 attempts（= submissions.seq）**，
+   *    不再从 store 的缓存里猜：那个缓存里没有这句的旧战绩时会猜成第 1 次，
+   *    与「不是首次」自相矛盾，于是上一版只能夹一个下限 2 —— 拿一个谎补另一个谎。
+   *    ⚠️ attempts 含失败的那几次（受理时就分配了 seq），与「我在这句打过几次分」
+   *      不是同一个数；这里要的正是「第几次挑战」。
    */
   subtitleOf(result: SubmitResponse): string {
-    const head =
-      result.previousBest === null
-        ? '首次挑战'
-        : '第' + Math.max(2, me.arenaOf(result.articleId).myAttempts) + '次挑战'
+    const head = result.previousBest === null ? '首次挑战' : '第' + result.attempts + '次挑战'
     return head + '，打败' + result.beatenCount + '人，位列第' + result.rank
   },
 
@@ -1459,6 +1570,8 @@ Page({
    * ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐。
    */
   onRestart() {
+    // ⚠️ 先停数字滚动：不停的话它会继续往 s1 的界面上写 scoreText（见 rollNumbers）
+    this.stopRoll()
     if (this.recordingKey) clearLastRecording(this.recordingKey)
     /**
      * ⚠️⚠️ 结果的缓存也要一起清 —— 不清的话下次进来又被恢复成 s5，
@@ -1478,6 +1591,8 @@ Page({
       scoreText: '',
       scoreSubtitle: '',
       growthCards: [],
+      // ⚠️ 卡片入场开关也要复位，否则下一次 s5 一进来就是"已现身"（没有过渡）
+      cardsIn: false,
       failDetail: '',
       playingWord: -1,
       sentenceState: 'unplay',
@@ -1528,13 +1643,12 @@ function readStdDurationMs(audio: { full: string; kind: 'cloud' | 'http' } | nul
 /**
  * ⭐ 从提交结果里读「这一把的成长值快照」。
  *
- * ⚠️⚠️ 本轮**服务端还没往下发**这个字段（SPEC 把 SubmitResponse 加 growth 排在下一轮：
- *    submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
- *    所以这里按可选字段读：有就出三张卡，没有就整块不渲染。
- *    ⚠️ 形状按 shared 的 GrowthView（self / diligence / standout）——
- *      下一轮服务端照这个形状补上，端侧不用改。
+ * ⚠️ 字段就是 shared 的 SubmitResponse.growth（形状 GrowthView：self / diligence / standout），
+ *    由服务端 services/submission-view.ts 从 submissions.growth_* 读出来 ——
+ *    端侧读的字段名与服务端给的是同一个，不再有第二套。
+ * ⚠️ 它是**可选**的：结算与「status 置为 scored」不在同一个事务里，轮询可能卡在中间；
+ *    老数据也可能没结算过 ⇒ null，端侧整块不渲染（见 growthCardsOf）。
  */
 function growthDeltaOf(result: SubmitResponse): Partial<GrowthView> | null {
-  const g = (result as SubmitResponse & { growth?: Partial<GrowthView> }).growth
-  return g && typeof g === 'object' ? g : null
+  return result.growth ?? null
 }
