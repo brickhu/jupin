@@ -557,6 +557,31 @@ export interface ScheduleEntry {
 }
 
 /**
+ * ⭐⭐ **今日推荐** —— 「你今天适合读哪一句」（GET /api/user/today）。
+ *
+ * ⚠️ 与 `/api/schedules` 的 `today` **不是一回事**，别再混：
+ *   · `/api/schedules` 的 today 走**排期**（运营排的 / 按天轮转）—— 对所有人一样，
+ *     它现在只负责「历史挑战」和「这次提交记到哪一天」。
+ *   · 这个走**我的参与记录**：同一档位的用户拿到同一句（保住竞技场），
+ *     不同档位的人拿到不同的句子。
+ */
+export interface TodayResponse {
+  /** 卡片要的那一份（形状与排期卡片一致 ⇒ 端侧不用为它写第二套渲染） */
+  entry: ScheduleEntry
+  /** 我原本的档位（0–3） */
+  myLevel: ArticleLevel
+  /** 实际用了哪一档 —— 与 myLevel 不同说明这一档还没有句子，就近换了（见 reason） */
+  level: ArticleLevel
+  /** 档位是怎么来的（人话） */
+  levelBasis: string
+  /** 为什么是这一句（人话，卡片上直接显示 —— 推荐必须能解释自己） */
+  reason: string
+  /** 我在这句上的最好成绩 / 挑战次数（与竞技场同一口径） */
+  myBest: number | null
+  myAttempts: number
+}
+
+/**
  * 单个挑战的详情 —— 从首页卡片点进来。
  *
  * ⚠️ 与 ScheduleEntry 的分工：卡片是「一眼扫过去」，详情是「看进去」。

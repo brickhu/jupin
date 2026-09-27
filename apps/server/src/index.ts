@@ -17,6 +17,7 @@ import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
 import { schedulesRoutes } from './routes/schedules'
+import { todayRoutes } from './routes/today'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
 import { leaderboardsRoutes } from './routes/leaderboards'
@@ -144,7 +145,7 @@ app.route('/media', mediaRoutes)
  *    所有「我的」数据自然查不到。所以这里**绝不能**换成 authMiddleware：
  *    那会让没登录的人打不开首页。
  */
-// ⭐ 首页那一次请求：今日挑战 + 历史挑战（**纯公开**）
+// ⭐ 首页那一次请求：历史挑战（**纯公开**）—— 今日那张卡已经不走它了
 app.route('/api/schedules', schedulesRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
 app.route('/api/arenas', arenasRoutes)
@@ -170,6 +171,13 @@ app.route('/api/pay', payRoutes)
 app.use('/api/user/*', authMiddleware)
 
 app.route('/api/articles', articlesRoutes)
+/**
+ * ⭐⭐ 今日推荐 —— 首页那张"今日挑战"卡。
+ * ⚠️ 它挂 /api/user/ 下（而不是另开一个公开前缀）：要 userId 才画得出像，
+ *    而"需要鉴权的接口全部在 /api/user/* 下"是这个仓库的一条铁律
+ *    （见上面那段说明，也是 middleware/auth.test.ts 在钉的规则）。
+ */
+app.route('/api/user/today', todayRoutes)
 app.route('/api/user', userRoutes)
 app.route('/api/user/submissions', submissionsRoutes)
 app.route('/api/user/uploads', uploadsRoutes)

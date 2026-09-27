@@ -13,6 +13,7 @@ import type {
   ScheduleDetail,
   ChallengeShareResponse,
   SchedulesResponse,
+  TodayResponse,
   ShopGoodsResponse,
   ShopOrderResponse,
   StreakRecordResponse,
@@ -594,6 +595,17 @@ async function doLogin(): Promise<void> {
 export function fetchSchedules(): Promise<SchedulesResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
   return request<SchedulesResponse>('/api/schedules', { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐⭐ **今日推荐** —— 首页那张"今日挑战"卡的数据源（鉴权）。
+ *
+ * ⚠️ 与 fetchSchedules 的分工：那个给「历史挑战」（公开、对所有人一样），
+ *    这个给「你今天适合读哪一句」（按我的参与记录分场，见 services/recommend.ts）。
+ * ⚠️ 首页不 await 它（拿不到就退回排期里今天那一条，卡片不能空着）。
+ */
+export function fetchToday(): Promise<TodayResponse> {
+  return request<TodayResponse>('/api/user/today', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**

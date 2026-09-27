@@ -26,6 +26,12 @@ interface Entry {
   /** 标准音时长（毫秒）—— 交给 audio-button 统一格式化成 00:05 */
   durationMs?: number
   stat?: string
+  /**
+   * ⭐ 今日推荐的理由（"为什么给你推这一句"）—— 只有 featured 卡有。
+   * ⚠️ 它是推荐能"解释自己"的唯一出口：说不出理由的个性化等于随机。
+   * ⚠️ list（历史小卡）不放：历史卡是"一眼扫过去"，不需要解释。
+   */
+  note?: string
   action?: string
   hint?: string
   theme?: ArticleTheme | null

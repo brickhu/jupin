@@ -8,7 +8,7 @@ import type {
   SchedulesResponse,
   StreakView,
 } from '@jushuo/shared'
-import { fetchArenaRecords, fetchGrowthBoards, fetchSchedules } from '../../lib/api/client'
+import { fetchArenaRecords, fetchGrowthBoards, fetchSchedules, fetchToday } from '../../lib/api/client'
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -59,6 +59,12 @@ function boardListOf(b: GrowthRankResponse): BoardView[] {
 interface CardView {
   /** 只有今日那一张有（见 toView 的说明） */
   date: string
+  /**
+   * ⭐ 今日卡上那行小字：**为什么给你推这一句**（来自 /api/user/today 的 reason）。
+   * ⚠️ 推荐必须能解释自己 —— 说不出理由的个性化等于随机（见 services/recommend.ts）。
+   * ⚠️ 只有今日那张有；历史卡片是空串 ⇒ WXML 里不渲染。
+   */
+  note: string
   articleId: string
   /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
@@ -273,6 +279,8 @@ Page({
      *    动态下标 + 点号连写在小程序模板里支持得很勉强，换个写法就白屏。
      */
     activeRows: [] as GrowthRankRow[],
+    /** 今日推荐的理由（/api/user/today 的 reason）—— 只有那张卡显示 */
+    todayReason: '',
     /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
     boardsLoaded: false,
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
@@ -293,6 +301,12 @@ Page({
 
   /** 请求是否在途 —— 只用来挡并发，不参与任何业务判断 */
   requesting: false,
+
+  /**
+   * 今日推荐的理由（/api/user/today 的 reason）—— 卡片上那行小字。
+   * ⚠️ 放实例上而不是 data：它不是可直接渲染的结构，render() 会把它拼进 today.note。
+   */
+  todayReason: '',
 
   /**
    * 服务端给的**卡片原始数据**（句子、人数…）。
@@ -538,9 +552,32 @@ Page({
           this.setData({ boardList: list, activeRows: list[0]?.rows ?? [], boardsLoaded: true })
         })
         .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))
+      /**
+       * ⚠️ 先按**排期**把首页画出来（history 那一段只有它有），
+       *    今日那张卡再被下面的推荐替换掉 —— 推荐接口慢/失败都不能让首屏空着。
+       */
       this.cards = { today: d.today, history: d.history }
       this.setData({ loading: false })
       this.render()
+
+      /**
+       * ⭐⭐ 今日那一张走**推荐**（按我的参与记录分场），不再用排期里今天那一条。
+       *    用户 2026-09：按天轮转对所有人推同一句"很鸡肋"。
+       */
+      void fetchToday()
+        .then((t) => {
+          this.todayReason = t.reason
+          if (this.cards) this.cards = { today: t.entry, history: this.cards.history }
+          this.render()
+          /**
+           * ⚠️「我的」那一份必须跟着**换过的**今日句再取一次：
+           *    否则那张卡的「已参与 / 最高分 / 按钮文案」还是按排期那句算的
+           *    （明明读过却写着"立即朗读，参与挑战"）。
+           * ⚠️ 不 await：卡片先出来，回来走 store 广播重画。
+           */
+          void fetchArenaRecords([t.entry.articleId]).then((r) => me.applyArenaRecords(r.items))
+        })
+        .catch((err: Error) => console.warn('[index] 今日推荐失败（退回排期那句）：' + err.message))
     } catch (err) {
       this.setData({ loading: false, error: this.explain((err as Error).message || String(err)) })
     } finally {
@@ -559,10 +596,18 @@ Page({
     const c = this.cards
     if (!c) return
     const st = me.getState()
+    /**
+     * ⚠️ 历史里要剔掉**今日推荐命中**的那一句：推荐是从同一句库里选的，
+     *    很可能正好是一句以前排过的 —— 不剔首页就会出现两张一模一样的卡。
+     *    （服务端那边剔的是"排期里今天那一句"，与这里的判据不是同一个，
+     *      所以这一步必须留在端侧。）
+     */
+    const today = this.toView(c.today)
+    today.note = this.todayReason
     this.setData({
       stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
-      today: this.toView(c.today),
-      history: c.history.map((x) => this.toView(x)),
+      today,
+      history: c.history.filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
     })
   },
 
@@ -577,6 +622,8 @@ Page({
        *    点进去走的是按句子寻址的 arena（data-article）。
        */
       date: card.date ?? '',
+      /** ⚠️ 理由由 render() 单独注入（只有今日那张有，见 CardView.note） */
+      note: '',
       articleId: card.articleId,
       theme: card.theme,
       header: true,
