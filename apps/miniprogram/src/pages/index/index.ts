@@ -579,7 +579,18 @@ Page({
         })
         .catch((err: Error) => console.warn('[index] 今日推荐失败（退回排期那句）：' + err.message))
     } catch (err) {
-      this.setData({ loading: false, error: this.explain((err as Error).message || String(err)) })
+      /**
+       * ⚠️⚠️ 冷启动（云托管缩容到 0）**不是网络故障**，不能说成「连不上服务器」——
+       *    那会让人去查手机网络，而真正要做的是等平台把实例拉起来（或再点一次重试）。
+       *    client 已经把这种情况标成 ApiError.code = 'COLD_START'；而 explain() 只看
+       *    message 认不出 code，所以这里先按 code 分流。
+       */
+      const e = err as Error & { code?: string }
+      const message =
+        e.code === 'COLD_START'
+          ? '服务正在唤醒（云托管缩容后首次打开约需 30 秒），请再点一次「重试」'
+          : this.explain(e.message || String(e))
+      this.setData({ loading: false, error: message })
     } finally {
       this.requesting = false
     }
