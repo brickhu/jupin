@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
-import { dayNumber, normalizeLevel } from '@jushuo/shared'
+import { and, asc, eq, inArray, lt } from 'drizzle-orm'
+import { dayNumber, dayStartUtc, normalizeLevel } from '@jushuo/shared'
 import type { ArticleLevel } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, participations } from '../db/schema'
@@ -19,7 +19,8 @@ import { articles, participations } from '../db/schema'
  *      长期在专家场的人不会被推回初级 —— 这正是旧轮转最鸡肋的地方。
  *   ② **同档同句**：同一档位的用户当天拿到**同一句**。不能完全千人千面 ——
  *      每个人的句子都不一样的话，就没有"竞技场"了（榜单会散成一人一张）。
- *   ③ **未读优先**：如果这一档今天那句我已经参与过，就换成"我还没参与过的"。
+ *   ③ **未读优先**（只算**今天之前**读过的）：如果这一档今天那句我**以前**参与过，
+ *      就换成"我还没参与过的"。
  *      池子越小这条越关键（句子量少时，同一句几天就轮回来一次）。
  *   ④ **兜底**：该档一句都没有（内容还没铺到那一档）→ 就近换档，
  *      并在 reason 里**说清楚换了**（别让用户以为系统瞎推）。
@@ -207,10 +208,27 @@ export async function recommendToday(
    * ⚠️ 只在"今天那句我已经参与过"时才换 —— 这样**没读过的人都还在同一句上**
    *    （新用户全都拿到同一句 = 竞技场是满的），只有读过的人被挪开。
    */
+  /**
+   * ⚠️⚠️ 只把**今天之前**的参与算作"读过"（用户 2026-09 报的 bug）。
+   *
+   *    原来的写法把"今天刚读完这一句"也当成读过 ⇒ 用户读完返回首页时，
+   *    首页会 refresh 一次（applyResult → refreshPreviousPage → load()
+   *    又去问一次 /api/user/today），规则③立刻判定"今天那句我已参与" ⇒ 换一句。
+   *    症状：**卡片当着用户的面变成了另一句**，而他刚读完那句的
+   *    「已参与 / 最高分」也跟着没了（那是他这一天的成果）。
+   *
+   *    一天的推荐必须是**当天固定**的：你今天读了它，说明你正在完成今天这件事。
+   */
   const mine = await database
     .select({ articleId: participations.articleId, lastAt: participations.lastAt })
     .from(participations)
-    .where(and(eq(participations.userId, userId), inArray(participations.articleId, pool)))
+    .where(
+      and(
+        eq(participations.userId, userId),
+        inArray(participations.articleId, pool),
+        lt(participations.lastAt, dayStartUtc(date)),
+      ),
+    )
   const read = new Map(mine.map((r) => [r.articleId, r.lastAt]))
 
   if (read.has(pickId)) {
