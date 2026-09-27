@@ -26,6 +26,7 @@ import {
 import { refreshMe } from '../../lib/join'
 import * as me from '../../lib/store'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
+import { attachAvatarSrc, resolveCloudFileUrl } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
 import { agoText } from '../../lib/time'
@@ -101,7 +102,14 @@ Page({
     error: '',
 
     /** 这次挑战是谁读的、什么时候 —— 分享出去时这两条很重要 */
-    owner: { nickname: '', avatarSrc: '' },
+    /**
+     * 这条挑战是谁读的。
+     * ⚠️ avatarUrl 是服务端给的**云存储 fileID**，必须先换址才能进 <image src>
+     *    （以前直接把 fileID 塞给 avatarSrc ⇒ 头像一直是空的，然后被下面的占位兜住）。
+     */
+    owner: { nickname: '', avatarUrl: '', avatarSrc: '' },
+    /** 榜上没有头像时用它 */
+    avatarPlaceholder: '/assets/avatar-placeholder.png',
     ago: '',
     /** 看的人就是这条记录的拥有者吗（决定显示哪些操作） */
     isOwner: true,
@@ -150,6 +158,11 @@ Page({
   scheduleDate: '',
   /** ⭐ 这一页是不是从「挑战详情分享卡片」进来的（入口 scene / shareTicket） */
   fromShareCard: false,
+  /**
+   * 头像换址的"代次" —— 异步回来时用它判断「这份结果还是当前那份吗」（见 fillAvatars）。
+   * ⚠️ 放页面实例上而不是 data：它不参与渲染。
+   */
+  avatarToken: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.sid = query.sid ?? ''
@@ -241,7 +254,7 @@ Page({
     this.audioRef = share.audio
     this.setData({
       isOwner,
-      owner: { nickname: share.owner.nickname, avatarSrc: share.owner.avatarUrl ?? '' },
+      owner: { nickname: share.owner.nickname, avatarUrl: share.owner.avatarUrl ?? '', avatarSrc: '' },
       ago: agoText(share.at),
       isPublic: result.isPublic,
       canPlay: this.computeCanPlay(isOwner, result.isPublic, !!share.audio),
@@ -294,6 +307,32 @@ Page({
       isOwner: opts.isOwner,
       shareTitle: this.buildShareTitle(result),
     })
+    // ⚠️ 头像地址是异步换来的，不能挡在上面 —— 先把文字画出来，回来再补一次
+    this.fillAvatars()
+  },
+
+  /**
+   * ⭐ 把 owner 与榜单的头像 fileID 换成可渲染的临时地址（见 lib/cloud-file.ts）。
+   *
+   * ⚠️ 为什么不在 renderResult 里 await：那边是同步的、且有两条调用路径
+   *    （开放接口 / 状态接口兜底），改成异步会一路传染；而头像只是锦上添花，
+   *    先画文字、地址回来再补更稳也更快。
+   * ⚠️ 回来时页面可能已经换成另一份结果（重进 / 换一条成绩）⇒ 用自增 token 挡掉旧结果，
+   *    否则会出现「新榜配旧头像」。
+   */
+  fillAvatars() {
+    const token = ++this.avatarToken
+    const ownerFile = this.data.owner.avatarUrl
+    const board = this.data.leaderboard
+    void Promise.all([resolveCloudFileUrl(ownerFile), attachAvatarSrc(board)]).then(
+      ([ownerSrc, boardWithSrc]) => {
+        if (this.avatarToken !== token) return
+        this.setData({
+          owner: { ...this.data.owner, avatarSrc: ownerSrc },
+          leaderboard: boardWithSrc,
+        })
+      },
+    )
   },
 
   /**

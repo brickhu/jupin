@@ -3,6 +3,7 @@ import type { ArenaDetail, ArticleTheme, ScheduleDetail } from '@jushuo/shared'
 import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
+import { attachAvatarSrc } from '../../lib/cloud-file'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -61,6 +62,8 @@ Page({
     action: '',
 
     leaderboard: [] as ScheduleDetail['leaderboard'],
+    /** 榜上没有头像时用它（与 nav-bar / user-sheet 同一张本地占位图） */
+    avatarPlaceholder: '/assets/avatar-placeholder.png',
   },
 
   /** 服务端给的详情；「我」的部分渲染时从 store 取 */
@@ -151,8 +154,14 @@ Page({
         // ⚠️ 名次/击败来自**个人接口**（见上面），不是公开详情
         myRank: mine?.rank ?? null,
         myBeatenCount: mine?.beatenCount ?? null,
-        // ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径
-        leaderboard: d.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
+        /**
+         * ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径。
+         * ⚠️ 头像：服务端给的是**云存储 fileID**，这里先换成可渲染的临时地址再画
+         *    （榜单只有前 20，换址并发去重后最多 20 个；见 lib/cloud-file.ts）。
+         */
+        leaderboard: await attachAvatarSrc(
+          d.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
+        ),
       })
       this.render()
     } catch (err) {

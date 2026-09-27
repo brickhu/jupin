@@ -51,3 +51,19 @@ export function resolveCloudFileUrl(fileID: string | null | undefined): Promise<
   inflight.set(fileID, task)
   return task
 }
+
+/**
+ * ⭐ 给一批行补上 avatarSrc —— 可直接塞进 <image src> 的地址。
+ *
+ * ⚠️ 服务端给的是**云存储 fileID**，必须先换址；换址是异步的，所以这里返回**新数组**
+ *    （不改原对象），调用方拿到之后再 setData。
+ * ⚠️ 单个失败不影响别的行（内部已经挡成空串）—— 界面退回本地占位图。
+ * ⚠️ 并发去重与缓存都在 resolveCloudFileUrl 里：同一批里重复的头像只请求一次。
+ */
+export async function attachAvatarSrc<T extends { avatarUrl?: string | null }>(
+  rows: T[],
+): Promise<Array<T & { avatarSrc: string }>> {
+  return Promise.all(
+    rows.map(async (row) => ({ ...row, avatarSrc: await resolveCloudFileUrl(row.avatarUrl) })),
+  )
+}

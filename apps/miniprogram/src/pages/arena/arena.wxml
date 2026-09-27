@@ -51,6 +51,9 @@
       <view class="flex items-center py-[18rpx] border-t-[1rpx] border-t-solid border-t-line"
             wx:for="{{leaderboard}}" wx:key="rank">
         <text class="text-26rpx w-[64rpx] text-faint">{{item.rank}}</text>
+        <!-- ⭐ 头像 + 昵称：fileID 已在 arena.ts 里换过址，这里只管画。
+             ⚠️ 没头像/换址失败时退回本地占位图（不留空圈，也不塌行高） -->
+        <image class="w-[48rpx] h-[48rpx] rounded-full shrink-0 mr-2" src="{{item.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
         <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
         <text class="text-28rpx font-semibold text-ink">{{item.scoreText}}</text>
       </view>

@@ -31,6 +31,7 @@
       <!-- ① 头像 + 总分 + 分享 -->
       <view class="flex items-center">
         <image class="w-[88rpx] h-[88rpx] rounded-full shrink-0" src="{{owner.avatarSrc}}" mode="aspectFill" wx:if="{{owner.avatarSrc}}"></image>
+        <!-- ⚠️ 没有头像（或换址失败）时显示昵称首字，不是空圈 —— 这个兜底一直有，别删 -->
         <view class="w-[88rpx] h-[88rpx] rounded-full shrink-0 flex items-center justify-center cc-track" wx:else>
           <text class="text-34rpx font-semibold">{{owner.nickname}}</text>
         </view>
@@ -140,6 +141,8 @@
             <view class="cc-sep"></view>
             <view class="flex items-center py-1" wx:for="{{leaderboard}}" wx:key="rank">
               <text class="text-26rpx w-[60rpx] cc-faint">{{item.rank}}</text>
+              <!-- ⭐ 头像 + 昵称（fileID 已在 fillAvatars 里换过址；失败退回本地占位图） -->
+              <image class="w-[44rpx] h-[44rpx] rounded-full shrink-0 mr-2" src="{{item.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
               <text class="text-26rpx flex-1 {{item.isMe ? 'font-semibold' : 'cc-body'}}">{{item.nickname}}</text>
               <text class="text-26rpx font-semibold">{{item.scoreText}}</text>
             </view>

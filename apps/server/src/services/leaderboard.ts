@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, gt, lt, max, ne, or, sql, type SQL } from 'drizzle-orm'
+import type { LeaderboardRow } from '@jushuo/shared'
 import { db } from '../db'
 import { participations, submissions, users } from '../db/schema'
 
@@ -175,13 +176,12 @@ export async function getRank(articleId: string, userId: number): Promise<RankIn
   }
 }
 
-export interface LeaderboardRow {
-  rank: number
-  nickname: string
-  score: number
-  isMe: boolean
-}
-
+/**
+ * ⭐ 榜单行的形状**只定义在 shared/types/api.ts 一处**（它是接口契约，客户端也用它）。
+ * ⚠️ 这里原来另抄了一份 interface —— 加一个字段就得改两处，而漏掉的那份
+ *    会让 TS 在路由赋值时报错（这次加头像就是这么发现的）。改成复用。
+ */
+export type { LeaderboardRow }
 /**
  * 完整榜单前 N 名 —— 详情页用。
  * ⚠️ 与 getLeaderboardAround 的区别：那个是「我上下各两条」，结果页用；
@@ -193,7 +193,17 @@ export async function getTopLeaderboard(
   limit = 20,
 ): Promise<LeaderboardRow[]> {
   const rows = await db
-    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .select({
+      userId: participations.userId,
+      score: participations.bestScore,
+      nickname: users.nickname,
+      /**
+       * ⭐ 头像跟昵称一起取（同一个 join 里多挑一列，不是多一次连接）。
+       * ⚠️ 存的是**云存储 fileID**，换址是客户端的事（见 shared 的 LeaderboardRow）。
+       * ⚠️ 它是**当前档案**：用户改了头像，榜单下次打开就是新的 —— 所以不做快照。
+       */
+      avatarUrl: users.avatarUrl,
+    })
     .from(participations)
     .leftJoin(users, eq(users.id, participations.userId))
     .where(eq(participations.articleId, articleId))
@@ -209,6 +219,8 @@ export async function getTopLeaderboard(
   return rows.map((row, i) => ({
     rank: i + 1,
     nickname: row.userId === userId ? '你' : (row.nickname ?? '挑战者'),
+    // ⚠️ 自己那一行也把头像带上（列表里"你"也有头像，只是名字换成"你"）
+    avatarUrl: row.avatarUrl ?? null,
     score: Number(row.score),
     isMe: row.userId === userId,
   }))
@@ -237,7 +249,12 @@ export async function getLeaderboardAround(
    *    而下面那条被标成"第 10 名"—— 实际我是第 12。
    */
   const above = await db
-    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .select({
+      userId: participations.userId,
+      score: participations.bestScore,
+      nickname: users.nickname,
+      avatarUrl: users.avatarUrl,
+    })
     .from(participations)
     .leftJoin(users, eq(users.id, participations.userId))
     .where(and(eq(participations.articleId, articleId), aheadOfMe(myBest, myReached, userId)))
@@ -246,16 +263,31 @@ export async function getLeaderboardAround(
     .limit(2)
 
   const below = await db
-    .select({ userId: participations.userId, score: participations.bestScore, nickname: users.nickname })
+    .select({
+      userId: participations.userId,
+      score: participations.bestScore,
+      nickname: users.nickname,
+      avatarUrl: users.avatarUrl,
+    })
     .from(participations)
     .leftJoin(users, eq(users.id, participations.userId))
     .where(and(eq(participations.articleId, articleId), behindMe(myBest, myReached, userId)))
     .orderBy(desc(participations.bestScore), asc(participations.reachedAt), asc(participations.userId))
     .limit(2)
 
+  /**
+   * ⚠️ 我那一行的头像从**自己那一条参与记录**对应的 users 行取 ——
+   *    这里没有 join 自己，所以先单独查一次（一次主键查找，榜心本来就是小查询）。
+   */
+  const [me] = await db
+    .select({ avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
   const ordered = [
     ...above.reverse(),
-    { userId, score: mine.best, nickname: null as string | null },
+    { userId, score: mine.best, nickname: null as string | null, avatarUrl: me?.avatarUrl ?? null },
     ...below,
   ]
   const { rank } = await getRank(articleId, userId)
@@ -264,6 +296,7 @@ export async function getLeaderboardAround(
   return ordered.slice(0, limit).map((row, i) => ({
     rank: startRank + i,
     nickname: row.userId === userId ? '你' : (row.nickname ?? '挑战者'),
+    avatarUrl: row.avatarUrl ?? null,
     score: Number(row.score),
     isMe: row.userId === userId,
   }))

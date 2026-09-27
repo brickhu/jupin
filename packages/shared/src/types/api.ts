@@ -191,6 +191,12 @@ export interface SubmitResponse {
 export interface LeaderboardRow {
   rank: number
   nickname: string
+  /**
+   * 头像 —— ⚠️ 是**云存储 fileID**（cloud://…），不是 http 地址：
+   *    客户端必须用 lib/cloud-file.ts 的 resolveCloudFileUrl 换成临时地址才能进 <image src>。
+   * 没设头像 / 用户行不存在时为 null（界面退回本地占位图）。
+   */
+  avatarUrl: string | null
   score: number
   isMe: boolean
 }
