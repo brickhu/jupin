@@ -370,6 +370,14 @@ Page({
     /** ⭐ s5 的副标题：首次挑战，打败 N 人，位列第 M / 第 K 次挑战，…… */
     scoreSubtitle: '',
     /**
+     * ⭐ s5 左上角那行标题：**第 N 次朗读**（用户 2026-09 要求，替换原来的「AI口语测评」）。
+     *    ⚠️ N 用服务端给的 attempts（= submissions.seq，这一把是这句的第几次）——
+     *       端侧一个数都不算，与副标题里那个「第 K 次挑战」同一个来源。
+     *    ⚠️ 只给 s5 用：s6（失败）仍显示「AI口语测评」（WXML 按态取值，
+     *       所以这里**不需要**在失败态重置它，天然不会串）。
+     */
+    attemptTitle: '',
+    /**
      * ⭐ 成长值三卡。
      *   · s5：服务端下发了这一把的增量（SubmitResponse.growth）就是三张 +N；
      *         拿不到（还没结算 / 老数据）时是**空数组** ⇒ 整块不渲染；
@@ -1452,6 +1460,7 @@ Page({
         //    任何一帧被打断（定时器被清）都不能让界面停在半路。
         scoreText: formatScore(result.score),
         scoreSubtitle: this.subtitleOf(result),
+        attemptTitle: result.attempts > 0 ? '第' + result.attempts + '次朗读' : 'AI口语测评',
         growthCards: growthCardsOf(growth),
         // ⚠️ 恢复出来的 s5（roll=false）直接置 true：卡片不再淡入
         cardsIn: !roll,

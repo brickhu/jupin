@@ -58,7 +58,9 @@
       <text class="text-28rpx text-bad">{{elapsedText}}</text>
     </view>
 
-    <!-- ── s5 / s6 顶行：结果图标 + AI口语测评｜评测详情 ──────── -->
+    <!-- ── s5 / s6 顶行：结果图标 + 标题｜评测详情 ────────────
+         ⚠️ 标题按态取：s5 是「第 N 次朗读」（用户 2026-09 要求，N = 服务端给的 attempts），
+            s6 仍是「AI口语测评」—— 那一把没出分，说「第几次朗读」没有意义。 -->
     <view class="flex items-center justify-between mb-4" wx:if="{{phase === 's5' || phase === 's6'}}">
       <view class="flex items-center">
         <view class="w-[64rpx] h-[64rpx] rounded-full flex items-center justify-center shrink-0 {{phase === 's5' ? 'bg-ok' : 'bg-bad'}}">
@@ -66,7 +68,7 @@
                （用户 2026-09 已确认换成 X） -->
           <text class="text-32rpx text-white">{{phase === 's5' ? '✓' : '✕'}}</text>
         </view>
-        <text class="text-30rpx font-medium text-ink ml-2">AI口语测评</text>
+        <text class="text-30rpx font-medium text-ink ml-2">{{phase === 's5' && attemptTitle ? attemptTitle : 'AI口语测评'}}</text>
       </view>
       <!-- ⭐ 只放摘要，「评测详情」去 pages/challenge（那一页保留） -->
       <ui-button size="sm" variant="outline" color="default" bind:press="onOpenDetail">评测详情</ui-button>
