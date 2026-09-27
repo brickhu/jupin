@@ -1,6 +1,6 @@
 import { startButtonLabel } from '@jushuo/shared'
 import type { ArenaDetail, ArticleTheme, ScheduleDetail } from '@jushuo/shared'
-import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail } from '../../lib/api/client'
+import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail, setFavorite } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
 import { attachAvatarSrc } from '../../lib/cloud-file'
@@ -58,6 +58,12 @@ Page({
     myBestText: '—',
     myRank: null as number | null,
     myBeatenCount: null as number | null,
+    /**
+     * ⭐ 我收藏了这一句吗 —— 竞技场页那个收藏按钮的状态。
+     * ⚠️ 它来自**鉴权接口** /api/user/arena-records（公开的竞技场详情不含"我的"字段），
+     *    而且**与"我参与过没有"无关**：没读过也能收藏。
+     */
+    isFavorite: false,
     /** '立即朗读，参与挑战' / '重新朗读，再次冲榜' —— 来自 startButtonLabel，与首页共用 */
     action: '',
 
@@ -154,6 +160,8 @@ Page({
         // ⚠️ 名次/击败来自**个人接口**（见上面），不是公开详情
         myRank: mine?.rank ?? null,
         myBeatenCount: mine?.beatenCount ?? null,
+        // ⚠️ 收藏与"参与过没有"无关，所以取的是 isFavorite 本身，不看 myBest
+        isFavorite: mine?.isFavorite ?? false,
         /**
          * ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径。
          * ⚠️ 头像：服务端给的是**云存储 fileID**，这里先换成可渲染的临时地址再画
@@ -166,6 +174,30 @@ Page({
       this.render()
     } catch (err) {
       this.setData({ loading: false, error: (err as Error).message || String(err) })
+    }
+  },
+
+  /**
+   * ⭐ 收藏 / 取消收藏**这一句**。
+   *
+   * ⚠️ **乐观更新**：先翻界面再发请求 —— 服务端两头都幂等（见 routes/favorites.ts），
+   *    所以最坏情况只是"翻错了再翻回来"，而用户不会看到按钮卡住。
+   * ⚠️ 失败必须**翻回来**并说出来：静默失败会让用户以为收藏成功了，
+   *    等他在收藏列表里找不到时，问题已经查不出来了。
+   */
+  async onToggleFavorite() {
+    const articleId = this.data.articleId
+    if (!articleId) return
+    const next = !this.data.isFavorite
+    this.setData({ isFavorite: next })
+    try {
+      const r = await setFavorite(articleId, next)
+      // ⚠️ 以**服务端回的**为准（可能和本地相反：比如另一台设备刚改过）
+      this.setData({ isFavorite: r.favorited })
+      wx.showToast({ title: r.favorited ? '已收藏' : '已取消收藏', icon: 'none', duration: 1200 })
+    } catch (err) {
+      this.setData({ isFavorite: !next })
+      wx.showToast({ title: (err as Error).message || '操作失败', icon: 'none', duration: 2000 })
     }
   },
 

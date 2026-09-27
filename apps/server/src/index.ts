@@ -18,6 +18,7 @@ import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
 import { schedulesRoutes } from './routes/schedules'
 import { todayRoutes } from './routes/today'
+import { favoritesRoutes } from './routes/favorites'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
 import { leaderboardsRoutes } from './routes/leaderboards'
@@ -178,6 +179,8 @@ app.route('/api/articles', articlesRoutes)
  *    （见上面那段说明，也是 middleware/auth.test.ts 在钉的规则）。
  */
 app.route('/api/user/today', todayRoutes)
+// ⭐ 我的收藏：收/取消一个句子 + 列表（挂在 /api/user/* 下 ⇒ 自动受鉴权保护）
+app.route('/api/user/favorites', favoritesRoutes)
 app.route('/api/user', userRoutes)
 app.route('/api/user/submissions', submissionsRoutes)
 app.route('/api/user/uploads', uploadsRoutes)

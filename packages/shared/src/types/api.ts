@@ -497,6 +497,37 @@ export interface ArenaRecord {
   rank: number | null
   /** 我击败了多少人；同上为 null */
   beatenCount: number | null
+  /**
+   * ⭐ 我收藏了这一句吗 —— 竞技场页那个收藏按钮的状态。
+   * ⚠️ 它跟"我参与过没有"**无关**：没读过也能收藏（"以后来读"），
+   *    所以有它的条目不一定有参与记录（bestScore 会是 null）。
+   */
+  isFavorite: boolean
+}
+
+/**
+ * ⭐ 收藏列表里的一条 —— GET /api/user/favorites（**鉴权**）。
+ * ⚠️ 与 ArenaRecord 分开：那个回答"我在这句上打得怎么样"，这个回答
+ *    "我收了哪几句话"（正文 + 难度/标签 + 收藏时间 + 顺带带上我的战绩）。
+ */
+export interface FavoriteItem {
+  articleId: string
+  text: string
+  translation: string
+  difficulty: ArticleLevel | null
+  tags: string[]
+  theme: ArticleTheme | null
+  /** 收藏时间（ISO）—— 列表按它倒序 */
+  favoritedAt: string
+  /** 我的最好成绩；没参与过为 null（收藏与参与是两件事） */
+  bestScore: number | null
+  /** 我在这句打过几次分 */
+  attempts: number
+}
+
+/** GET /api/user/favorites 的响应 */
+export interface FavoritesResponse {
+  items: FavoriteItem[]
 }
 
 /** GET /api/user/arena-records 的响应 */

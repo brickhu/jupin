@@ -755,6 +755,29 @@ export const payments = mysqlTable('payments', {
   index('payments_user_time_idx').on(t.userId, t.createdAt),
 ])
 
+/**
+ * ⭐⭐ **收藏 —— 用户收藏了一个句子**（不是某一次提交）。
+ *
+ * ⚠️ 与 likes 的区别别混：likes 赞的是**一次挑战**（submission），
+ *    收藏收的是**这个竞技场 / 这句话本身** —— 用户想「以后还能找到它」，
+ *    与谁读得好、读了几次无关。
+ *
+ * ⚠️ 主键就是 (user_id, article_id)：收一次就够了，重复点不会产生第二行
+ *    （收藏是**幂等**的开关，不是流水）。
+ * ⚠️ 句子下架（isActive=false）**不清收藏**：收藏是用户的东西，
+ *    句子还在（arena 路由也不校验 isActive），列表里照常看得到。
+ */
+export const favorites = mysqlTable('favorites', {
+  userId: int('user_id').notNull().references(() => users.id),
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+}, (t) => [
+  /** ⭐ 一人一句一行 —— 收藏是个开关 */
+  primaryKey({ columns: [t.userId, t.articleId] }),
+  /** 「我的收藏」列表：按收藏时间倒序（最近收的排前面） */
+  index('favorites_user_time_idx').on(t.userId, t.createdAt),
+])
+
 /** 点赞 —— 谁赞了哪条 submission */
 export const likes = mysqlTable('likes', {
   id: int('id').autoincrement().primaryKey(),

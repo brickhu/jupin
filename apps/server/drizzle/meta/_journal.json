@@ -274,6 +274,13 @@
       "when": 1790470522589,
       "tag": "0038_aspiring_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1790476622852,
+      "tag": "0039_military_big_bertha",
+      "breakpoints": true
     }
   ]
 }

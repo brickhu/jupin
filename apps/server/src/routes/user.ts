@@ -5,6 +5,7 @@ import { articles, energyLedger, participations, submissions, users } from '../d
 import { env } from '../env'
 import { loadArticleRefText } from '../services/content'
 import { getTotalConquered } from '../services/conquest'
+import { favoriteIdsOf } from '../services/favorites'
 import { getRank } from '../services/leaderboard'
 import { challengeStats } from '../services/submission'
 import { readEnergy } from '../services/energy'
@@ -13,7 +14,7 @@ import { readStreakRecord } from '../services/streak-record'
 import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
-import type { ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
+import type { ArenaRecord, ChallengeWordScore, EnergyLedgerItem } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
@@ -205,18 +206,23 @@ userRoutes.get('/arena-records', async (c) => {
    *    「已参与 N 次 · 最高 X 分」两个数直接取，不再 GROUP BY
    *    （口径见 services/participations.ts：只算打分成功的那几次）。
    */
-  const rows = await db
-    .select({
-      articleId: participations.articleId,
-      attempts: participations.attempts,
-      best: participations.bestScore,
-    })
-    .from(participations)
-    .where(
-      and(eq(participations.userId, userId), inArray(participations.articleId, ids)),
-    )
+  const [rows, favIds] = await Promise.all([
+    db
+      .select({
+        articleId: participations.articleId,
+        attempts: participations.attempts,
+        best: participations.bestScore,
+      })
+      .from(participations)
+      .where(
+        and(eq(participations.userId, userId), inArray(participations.articleId, ids)),
+      ),
+    favoriteIdsOf(userId, ids),
+  ])
 
-  const items = await Promise.all(
+  // ⚠️ 显式标类型：下面那条"只收藏、没参与"的补充项有 null 字段，
+  //    靠推断会把它推成 number（TS 报错，顺便也把契约写清楚了）
+  const items: ArenaRecord[] = await Promise.all(
     rows.map(async (r) => {
       const rankInfo = wantRanks ? await getRank(r.articleId, userId) : null
       // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
@@ -228,9 +234,30 @@ userRoutes.get('/arena-records', async (c) => {
         attempts: Number(r.attempts ?? 0),
         rank: ranked ? ranked.rank : null,
         beatenCount: ranked ? ranked.beatenCount : null,
+        isFavorite: favIds.has(r.articleId),
       }
     }),
   )
+
+  /**
+   * ⚠️⚠️ **只收藏、没参与过的句子也要返回一条**。
+   *    这一份的数据源是参与记录，而"收藏"与"参与"是两件事 ——
+   *    漏掉这条的话，用户在竞技场页把一句没读过的句子收藏了，
+   *    下次进来按钮又变回空心（他以为收藏丢了）。
+   */
+  const seen = new Set(rows.map((r) => r.articleId))
+  for (const id of favIds) {
+    if (seen.has(id)) continue
+    items.push({
+      articleId: id,
+      bestScore: null,
+      attempts: 0,
+      rank: null,
+      beatenCount: null,
+      isFavorite: true,
+    })
+  }
+
   return c.json({ ok: true, data: { items } })
 })
 

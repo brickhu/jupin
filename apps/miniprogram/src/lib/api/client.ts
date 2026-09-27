@@ -14,6 +14,7 @@ import type {
   ChallengeShareResponse,
   SchedulesResponse,
   TodayResponse,
+  FavoritesResponse,
   ShopGoodsResponse,
   ShopOrderResponse,
   StreakRecordResponse,
@@ -327,7 +328,12 @@ function containerRequest<T>(path: string, options: RequestOptions): Promise<T> 
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST'
+  /**
+   * ⚠️ PUT / DELETE 也在这里（收藏那个开关就用它们）。
+   *    wx.request 本身支持任意方法，这里放开类型就够了 ——
+   *    上面两处透传（method: options.method ?? 'GET'）不需要改。
+   */
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: unknown
   /**
    * 本次请求的超时上限（毫秒）。
@@ -744,6 +750,24 @@ export function fetchArenaRecords(ids: string[], ranks = false): Promise<ArenaRe
   if (ids.length === 0) return Promise.resolve({ items: [] })
   const q = '/api/user/arena-records?ids=' + ids.join(',') + (ranks ? '&ranks=1' : '')
   return request<ArenaRecordsResponse>(q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ 收藏 / 取消收藏**一个句子**（鉴权）。
+ *
+ * ⚠️ 服务端两头都**幂等**（重复收、取消没收藏过的都算成功）⇒ 端侧可以乐观更新：
+ *    先改界面，失败了再翻回来（见竞技场页的 onToggleFavorite）。
+ */
+export function setFavorite(articleId: string, on: boolean): Promise<{ articleId: string; favorited: boolean }> {
+  return request<{ articleId: string; favorited: boolean }>('/api/user/favorites/' + articleId, {
+    method: on ? 'PUT' : 'DELETE',
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
+/** ⭐ 我的收藏列表（按收藏时间倒序） */
+export function listFavorites(): Promise<FavoritesResponse> {
+  return request<FavoritesResponse>('/api/user/favorites', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function fetchArenaDetail(articleId: string): Promise<ArenaDetail> {
