@@ -90,7 +90,14 @@ function uploadToLocalServer(
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const task = wx.uploadFile({
-      url: BASE_URL + '/api/uploads',
+      /**
+       * ⚠️⚠️ 是 **/api/user/uploads**，不是 /api/uploads —— 这个前缀写错过一次，
+       *    症状是提交时报「上传响应不是合法 JSON」：那个路径不存在，
+       *    Hono 的 404 回的是 **text/plain 的 "404 Not Found"**，
+       *    于是 JSON.parse 抛错（而不是给一句人话）。见 middleware/auth.test.ts 那条铁律：
+       *    需要鉴权的接口全部在 /api/user/* 下，上传也是。
+       */
+      url: BASE_URL + '/api/user/uploads',
       filePath,
       name: 'file',
       formData: { articleId: String(opts.articleId), audioKey },
