@@ -1,0 +1,49 @@
+/*
+ * ⭐ 统一按钮的样式 —— 形态(variant) × 语义(color) × 尺寸(size)。
+ *
+ * ⚠️ 组合一律用 **CSS 变量**收口：variant 只管形状，color 只管给变量赋值，
+ *    所以 4 形态 × 5 语义 = 20 种组合不需要写 20 段样式。
+ * ⚠️ 变量都带 fallback（var(--ub-bg, #4f46e5)）：老 WebView 认不出变量时
+ *    至少还是品牌色，不会变成一个没有颜色的空块。
+ * ⚠️ 不用 :hover（Skyline 不支持，见 uno.config.mjs 的约束）—— 交互态走 hover-class。
+ */
+.ub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 2rpx solid transparent;
+  border-radius: 9999rpx;
+  line-height: 1;
+}
+.ub-hover { opacity: 0.85; }
+.ub-full { width: 100%; }
+.ub-disabled { opacity: 0.45; }
+.ub-icon { line-height: 1; }
+.ub-spin { animation: ub-spin 0.9s linear infinite; }
+@keyframes ub-spin { to { transform: rotate(360deg); } }
+
+/* ── 尺寸：高度 / 内边距 / 字号 ───────────────────────────── */
+.ub-s-sm { height: 56rpx; padding: 0 24rpx; font-size: 24rpx; }
+.ub-s-md { height: 76rpx; padding: 0 32rpx; font-size: 28rpx; }
+.ub-s-lg { height: 88rpx; padding: 0 40rpx; font-size: 30rpx; }
+.ub-s-xl { height: 100rpx; padding: 0 48rpx; font-size: 34rpx; }
+/* 只画图标时收成正方形（宽度=高度，否则是个椭圆） */
+.ub-only-icon.ub-s-sm { width: 56rpx; padding: 0; }
+.ub-only-icon.ub-s-md { width: 76rpx; padding: 0; }
+.ub-only-icon.ub-s-lg { width: 88rpx; padding: 0; }
+.ub-only-icon.ub-s-xl { width: 100rpx; padding: 0; }
+
+/* ── 语义色：只给变量赋值 ─────────────────────────────────── */
+.ub-c-brand { --ub-main: #4f46e5; --ub-bg: #4f46e5; --ub-fg: #ffffff; --ub-soft: rgba(79, 70, 229, 0.1); }
+.ub-c-default { --ub-main: #111111; --ub-bg: #111111; --ub-fg: #ffffff; --ub-soft: rgba(17, 17, 17, 0.06); }
+.ub-c-error { --ub-main: #dc2626; --ub-bg: #dc2626; --ub-fg: #ffffff; --ub-soft: rgba(220, 38, 38, 0.1); }
+.ub-c-warning { --ub-main: #f59e0b; --ub-bg: #f59e0b; --ub-fg: #ffffff; --ub-soft: rgba(245, 158, 11, 0.12); }
+.ub-c-success { --ub-main: #16a34a; --ub-bg: #16a34a; --ub-fg: #ffffff; --ub-soft: rgba(22, 163, 74, 0.1); }
+
+/* ── 四个形态 ─────────────────────────────────────────────── */
+.ub-fill { background: var(--ub-bg, #4f46e5); color: var(--ub-fg, #ffffff); }
+.ub-outline { background: transparent; border-color: var(--ub-main, #4f46e5); color: var(--ub-main, #4f46e5); }
+.ub-ghost { background: var(--ub-soft, rgba(79, 70, 229, 0.1)); color: var(--ub-main, #4f46e5); }
+/* link：没有底色也没有边框，左右内边距也去掉（它是个文字链） */
+.ub-link { background: transparent; color: var(--ub-main, #4f46e5); padding-left: 0; padding-right: 0; }

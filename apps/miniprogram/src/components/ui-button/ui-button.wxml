@@ -1,0 +1,12 @@
+<!-- ⭐ 统一按钮（见 ui-button.ts 的说明）：形态 × 语义 × 尺寸，调用方只说这两件事 -->
+<view
+  class="{{cls}}"
+  style="{{style}}"
+  hover-class="{{disabled || loading ? 'none' : 'ub-hover'}}"
+  hover-stay-time="80"
+  bindtap="onTap"
+>
+  <!-- ⚠️ 图标位始终存在（loading 时换成转圈）—— 否则加载态会让按钮文字横向跳一下 -->
+  <text wx:if="{{iconCls}}" class="iconfont {{iconCls}} ub-icon"></text>
+  <slot />
+</view>

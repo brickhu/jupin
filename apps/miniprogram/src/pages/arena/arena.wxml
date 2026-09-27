@@ -19,10 +19,18 @@
     <!-- ── 句子：arena-card 的 featured（不画卡片头、不带 CTA —— 本页 CTA 在底部）── -->
     <arena-card mode="featured" entry="{{sentence}}" />
 
-    <!-- ⭐ 收藏 —— 收的是**这句话**（不是某次成绩），与本页读没读过无关 -->
-    <view class="mt-3 flex items-center justify-center py-[20rpx] rounded-full bg-white border border-solid border-gray-200"
-          bindtap="onToggleFavorite" hover-class="opacity-60">
-      <text class="text-26rpx {{isFavorite ? 'text-brand font-medium' : 'text-muted'}}">{{isFavorite ? '★ 已收藏' : '☆ 收藏这句'}}</text>
+    <!-- ⭐ 收藏 —— 收的是**这句话**（不是某次成绩），与本页读没读过无关。
+         ⚠️ 用统一按钮 ui-button（第一次试点调用方，见 components/ui-button/ui-button.ts）：
+            outline + brand = 「可点的次要操作」；收藏后就换成实心爱心的 icon。 -->
+    <view class="mt-3">
+      <ui-button
+        variant="outline"
+        color="brand"
+        size="md"
+        width="full"
+        icon="{{isFavorite ? 'mdi:heart' : 'mdi:heart-outline'}}"
+        bind:tap="onToggleFavorite"
+      >{{isFavorite ? '已收藏' : '收藏这句'}}</ui-button>
     </view>
 
     <!-- ── 我的战绩 ──────────────────────────────────────── -->
