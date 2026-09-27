@@ -1,37 +1,64 @@
 /**
- * ⭐ 首页「历史挑战」那一段怎么挑 —— 纯函数，规则单独放这里（有单测）。
+ * ⭐ 首页「最新上线」那一段怎么挑 —— 纯函数，规则单独放这里（有单测）。
  *
  * ⚠️⚠️ 数据源是 **articles（句库）**，不是 schedules（排期）。
  *    db/schema.ts 里写得很清楚：排期「不是竞技单位，只是一个按日组织的展示层」，
  *    竞技数据的单位永远是**句子**（排名/人数/最高分全部按 article_id 查）。
- *    ⇒ 首页下半段要列的是「句库里还有哪些竞技场」，不是「过去哪几天排过」。
+ *    ⇒ 首页下半段要列的是「句库里**最新上线**的几句」，不是「过去哪几天排过」。
+ *
+ * ⚠️⚠️ 「上线时间」用 articles.published_at（由后台发布 / 部署灌库写入），
+ *    它是「最近一次从草稿变成已发布」的那一刻，正是「最新上线」要的语义。
+ *    **不用 createdAt**：草稿可以生成很久之后才发布，createdAt 答的是
+ *    「这一句是什么时候被生成的」，不是「什么时候上的线」。
+ *    **更不能用 id 倒序**：id 是内容 hash（sha256(text) 前 16 位），
+ *    它**不编码新旧** —— 倒序只是一个稳定的顺序，不是「最新」。
+ *
+ * ⚠️ **published_at 可能为 NULL（老数据）**：迁移 0029 已经把当时在线的行
+ *    用 created_at 补过，但「直接以在线状态插入、又没走发布流程」的行仍可能为空。
+ *    这类行的兜底是 **createdAt**（它在库里是 NOT NULL 默认值，一定有）——
+ *    兜底的理由是「库里的出现时间」是仅次于「上线时间」的、能表达新旧的字段；
+ *    直接丢掉这些行会让新上线的句子永远不出现，比用近似时间更糟。
  *
  * ⚠️ 两条规则，都能独立写错，而写错了只表现为「多了/少了一张卡」或「顺序怪」：
  *
  *  ① **剔除今日那一句**：今日那张卡就在它上面，再列一次等于同一个榜单看两遍。
- *     ⚠️ 池子小的时候必然发生（池子 5 句时，隔 5 天就轮回到同一句）。
- *  ② **按句子 id 倒序**（一个稳定顺序）。
+ *     ⚠️ 池子小的时候必然发生。
+ *  ② **按上线时间倒序**（同一时刻用 id 倒序兜底，保证顺序稳定）。
  *     ⚠️ 显式排序，不依赖调用方 SQL 的 order by：这个顺序是产品语义。
- *     ⚠️ id 已是**内容 hash**（sha256(text) 前 16 位，见 db/schema.ts）—— 它**不编码新旧**，
- *        所以这里的倒序只是一个确定的稳定顺序，不再意味着「id 越大 = 内容越新」。
  */
 
+/** 参与排序需要的三列 —— 调用方从 articles 取 */
+export interface LatestCandidate {
+  articleId: string
+  /** 最近一次上线时刻；可能为 null（老数据 / 未走发布流程的行） */
+  publishedAt: Date | null
+  /** 入库时刻，"上线时间"为 null 时的兜底 */
+  createdAt: Date
+}
+
+/** 一条候选的「上线时间」—— published_at 优先，为空退回 created_at */
+export function onlineAtOf(row: { publishedAt: Date | null; createdAt: Date }): number {
+  return (row.publishedAt ?? row.createdAt).getTime()
+}
+
 /**
- * 从**句库**里挑出历史挑战（调用方按 id 倒序取了一批候选）。
+ * 从**句库**里挑出最新上线的几句。
  *
- * @param rows           候选句子（顺序无所谓，内部会按 id 倒序排）
+ * @param rows           候选句子（顺序无所谓，内部会按上线时间倒序排）
  * @param todayArticleId 今日那一句的 id（null = 不剔除）
  * @param limit          最多几条
  */
-export function pickHistoryArticles<T extends { articleId: string }>(
+export function pickLatestArticles<T extends LatestCandidate>(
   rows: T[],
   todayArticleId: string | null,
   limit: number,
 ): T[] {
-  /** ② 按 id 倒序（字符串比较，稳定顺序） */
-  const sorted = [...rows].sort((a, b) =>
-    a.articleId < b.articleId ? 1 : a.articleId > b.articleId ? -1 : 0,
-  )
+  /** ② 按上线时间倒序；同一时刻用 id 倒序兜底（否则顺序会随查询计划漂移） */
+  const sorted = [...rows].sort((a, b) => {
+    const diff = onlineAtOf(b) - onlineAtOf(a)
+    if (diff !== 0) return diff
+    return a.articleId < b.articleId ? 1 : a.articleId > b.articleId ? -1 : 0
+  })
 
   const out: T[] = []
   for (const r of sorted) {

@@ -62,13 +62,13 @@ interface CardView {
   /**
    * ⭐ 今日卡上那行小字：**为什么给你推这一句**（来自 /api/user/today 的 reason）。
    * ⚠️ 推荐必须能解释自己 —— 说不出理由的个性化等于随机（见 services/recommend.ts）。
-   * ⚠️ 只有今日那张有；历史卡片是空串 ⇒ WXML 里不渲染。
+   * ⚠️ 只有今日那张有；最新上线卡片是空串 ⇒ WXML 里不渲染。
    */
   note: string
   articleId: string
   /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
-  /** 画不画卡片头（播放/人数/箭头）—— 今日与历史画，竞技场的句子卡不画 */
+  /** 画不画卡片头（播放/人数/箭头）—— 今日与最新上线画，竞技场的句子卡不画 */
   header: boolean
   text: string
   translation: string
@@ -84,7 +84,7 @@ interface CardView {
   /**
    * ⭐ 我参与过这一句（拿到过分）—— 卡片加一圈品牌色描边。
    *
-   * ⚠️ 历史卡片刻意**没有**「已参与」药丸（一串同构卡片每张挂个药丸会变成药丸墙），
+   * ⚠️ 最新上线卡片刻意**没有**「已参与」药丸（一串同构卡片每张挂个药丸会变成药丸墙），
    *    但「哪几句我读过」是这一页最有用的一条信息 ⇒ 用描边说：不占位、不跟句子抢眼。
    * ⚠️ 判据与 action 一致（myBest !== null）：参与过 = **拿到过分**，
    *    不用 myAttempts（打分失败那一次不算参与）。
@@ -101,7 +101,7 @@ interface CardView {
   /**
    * 按钮下方那行：'你已经参与 3 次挑战 · 最高得分 86' / '还未参与挑战'。
    *
-   * ⚠️ **只有今天那一张卡片有按钮，所以也只有它有这行** —— 往日卡片整张就是入口。
+   * ⚠️ **只有今天那一张卡片有按钮，所以也只有它有这行** —— 最新上线卡片整张就是入口。
    * ⚠️ 它和按钮文案不算重复：按钮说的是「点下去会发生什么」（重新朗读），
    *    这一行说的是「你已经来过几次、最好多少分」—— 这两件事按钮都表达不了。
    */
@@ -117,13 +117,14 @@ interface CardView {
 /**
  * 首页 = 每日挑战列表。
  *
- * ⭐ 整页只有一件事：把「今天读什么、以前读过什么」列清楚。
- *    今天那一张在最上面、字号最大，其余按天倒序排在下面。
+ * ⭐ 整页只有一件事：把「今天读什么、最近上线了什么」列清楚。
+ *    今天那一张在最上面、字号最大，下面那串是最近上线的句子。
  *
- * ⚠️ 分组标题只有「往日挑战」一个：今天那一张位置最上、字号最大、日期最新，
- *    本来就认不错；而往日是一串同构卡片，需要一个词说明它们是什么。
+ * ⚠️ 两段列表各自有标题（「今日挑战」「最新上线」）：
+ *    今天那一张虽然位置最上，用户仍需要一个词确认它是「今天」；
+ *    下面是一串同构卡片，更需要一个词说明它们是什么。
  *
- * ⚠️ 入口也只有今天那一张有按钮。往日卡片整张可点 → 详情页，
+ * ⚠️ 入口也只有今天那一张有按钮。最新上线卡片整张可点 → 详情页，
  *    榜单和重读都在那里 —— 每张都挂按钮会让整页变成一片按钮墙。
  *
  * ⚠️ 按钮文案随「参与过没有」变（立即朗读，参与挑战 / 重新朗读，再次冲榜），
@@ -261,7 +262,8 @@ Page({
      */
     stats: null as StatsView | null,
     today: null as CardView | null,
-    history: [] as CardView[],
+    /** ⭐ 最新上线：句库按上线时间倒序的最新几句（服务端给，端侧只剔掉今日重复的那句） */
+    latest: [] as CardView[],
     /**
      * ⭐ 三块成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10）。
      * ⚠️ 与卡片分开存：它失败**不该**影响首页上半段（顶多这三块不出现）。
@@ -315,7 +317,7 @@ Page({
    *    渲染 = 这两份拼起来（见 render()），所以**参与状态一变就能立刻重画**，
    *    不需要先把整张列表重新拉一遍。
    */
-  cards: null as { today: ScheduleEntry; history: ScheduleEntry[] } | null,
+  cards: null as { today: ScheduleEntry; latest: ScheduleEntry[] } | null,
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
@@ -347,7 +349,7 @@ Page({
      */
     const cached = me.cachedSchedules()
     if (cached) {
-      this.cards = { today: cached.today, history: cached.history }
+      this.cards = { today: cached.today, latest: cached.latest }
       this.setData({ loading: false })
       this.render()
     }
@@ -518,7 +520,7 @@ Page({
        * ⚠️ 只问**这一屏上的 id**（最多 6 个），不是把我的全量记录拉下来。
        * ⚠️ 不 await：列表先出来；个人那份到了会走 store 广播重画。
        */
-      void fetchArenaRecords([d.today.articleId, ...d.history.map((x) => x.articleId)]).then((r) =>
+      void fetchArenaRecords([d.today.articleId, ...d.latest.map((x) => x.articleId)]).then((r) =>
         me.applyArenaRecords(r.items),
       )
       /**
@@ -553,10 +555,10 @@ Page({
         })
         .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))
       /**
-       * ⚠️ 先按**排期**把首页画出来（history 那一段只有它有），
+       * ⚠️ 先按**公开列表**把首页画出来（latest 那一段只有它有），
        *    今日那张卡再被下面的推荐替换掉 —— 推荐接口慢/失败都不能让首屏空着。
        */
-      this.cards = { today: d.today, history: d.history }
+      this.cards = { today: d.today, latest: d.latest }
       this.setData({ loading: false })
       this.render()
 
@@ -567,7 +569,7 @@ Page({
       void fetchToday()
         .then((t) => {
           this.todayReason = t.reason
-          if (this.cards) this.cards = { today: t.entry, history: this.cards.history }
+          if (this.cards) this.cards = { today: t.entry, latest: this.cards.latest }
           this.render()
           /**
            * ⚠️「我的」那一份必须跟着**换过的**今日句再取一次：
@@ -608,8 +610,8 @@ Page({
     if (!c) return
     const st = me.getState()
     /**
-     * ⚠️ 历史里要剔掉**今日推荐命中**的那一句：推荐是从同一句库里选的，
-     *    很可能正好是一句以前排过的 —— 不剔首页就会出现两张一模一样的卡。
+     * ⚠️ 最新上线里要剔掉**今日推荐命中**的那一句：推荐是从同一句库里选的，
+     *    很可能正好是刚上线的最新那一句 —— 不剔首页就会出现两张一模一样的卡。
      *    （服务端那边剔的是"排期里今天那一句"，与这里的判据不是同一个，
      *      所以这一步必须留在端侧。）
      */
@@ -618,7 +620,7 @@ Page({
     this.setData({
       stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
       today,
-      history: c.history.filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
+      latest: c.latest.filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
     })
   },
 
@@ -629,7 +631,7 @@ Page({
     return {
       /**
        * ⚠️ 只有今日那一张有日期（它的按钮要把它带给朗读页）；
-       *    历史卡片来自句库、与日期无关，这里就是空串 —— 而它们也不需要它，
+       *    最新上线卡片来自句库、与日期无关，这里就是空串 —— 而它们也不需要它，
        *    点进去走的是按句子寻址的 arena（data-article）。
        */
       date: card.date ?? '',

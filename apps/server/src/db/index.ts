@@ -90,7 +90,7 @@ export const dbState = {
    */
   goodsCount: null as number | null,
   /**
-   * ⭐ 句库里**可读**（isActive）的句子数 —— 首页「历史挑战」就是它减去今日那一句。
+   * ⭐ 句库里**可读**（isActive）的句子数 —— 首页「最新上线」就是它减去今日那一句。
    *
    * ⚠️ 为什么值得暴露：首页那一段的数据**只能通过受鉴权的接口看到**
    *    （/api/schedules 要登录），从外面 curl 不到 ——
@@ -354,7 +354,7 @@ async function refreshArticleCount(): Promise<void> {
 }
 
 /**
- * 句库里可读（isActive）的句子数 —— 首页「历史挑战」就是它减去今日那一句。
+ * 句库里可读（isActive）的句子数 —— 首页「最新上线」就是它减去今日那一句。
  * ⚠️ 读库失败返回 null（/health 不该因为一次查询就 500）。
  */
 async function refreshActiveArticles(): Promise<void> {

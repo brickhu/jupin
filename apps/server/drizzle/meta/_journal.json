@@ -281,6 +281,13 @@
       "when": 1790476622852,
       "tag": "0039_military_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1790530674157,
+      "tag": "0040_quick_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

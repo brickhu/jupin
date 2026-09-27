@@ -50,8 +50,8 @@ function entry(date: string, articleId: string, myBest: number | null = null, my
   }
 }
 
-function listResponse(today = entry('2026-09-21', '3'), history: unknown[] = []) {
-  return { date: '2026-09-21', streak: STREAK, today, history } as never
+function listResponse(today = entry('2026-09-21', '3'), latest: unknown[] = []) {
+  return { date: '2026-09-21', streak: STREAK, today, latest } as never
 }
 
 beforeEach(() => {
@@ -203,13 +203,13 @@ describe('订阅', () => {
 
 describe('cachedSchedules —— 冷启动首屏的缓存（跨天必须丢掉）', () => {
   it('同一天能把上次那一屏取回来', () => {
-    const res = { date: today(), today: entry(today(), '3'), history: [] } as never
+    const res = { date: today(), today: entry(today(), '3'), latest: [] } as never
     store.applySchedules(res)
     expect(store.cachedSchedules()).toEqual(res)
   })
 
   it('⚠️ 跨天一律 null —— 拿昨天那句当「今日挑战」画出来，点进去还是昨天那句', () => {
-    store.applySchedules({ date: '2000-01-01', today: entry('2000-01-01', '3'), history: [] } as never)
+    store.applySchedules({ date: '2000-01-01', today: entry('2000-01-01', '3'), latest: [] } as never)
     expect(store.cachedSchedules()).toBeNull()
   })
 

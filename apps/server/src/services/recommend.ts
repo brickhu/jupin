@@ -2,14 +2,14 @@ import { and, asc, eq, inArray, lt } from 'drizzle-orm'
 import { dayNumber, dayStartUtc, normalizeLevel } from '@jushuo/shared'
 import type { ArticleLevel } from '@jushuo/shared'
 import { db } from '../db'
-import { articles, participations } from '../db/schema'
+import { articles, participations, users } from '../db/schema'
 
 /**
  * ⭐⭐ **今日推荐** —— 按参与记录**分场**，不再给所有人同一句。
  *
  * ⚠️⚠️ 与 services/schedules.ts 的分工（这是这次改动的核心）：
  *   · schedules = 「哪一天读哪一句」：运营排期 / 按天轮转，**对所有人一样**。
- *     它仍然负责「历史挑战」和「这次提交记到哪一天」。
+ *     它现在只负责「这次提交记到哪一天」；首页下半段是「最新上线」（句库按上线时间取）。
  *   · 这里 = 「**你今天适合读哪一句**」：按我的参与记录分场。
  *     ⇒ 首页那张"今日挑战"卡从这里来，不再用轮转那句。
  *
@@ -170,9 +170,34 @@ function neighborLevels(lv: ArticleLevel): ArticleLevel[] {
 }
 
 /**
- * ⭐ 选今天的这一句。
+ * ⭐⭐ 今日推荐窗口的长度 —— **以用户为单位，每 24 小时换一次**（用户 2026-09 定的口径）。
  *
- * @param date 'YYYY-MM-DD'（服务端的今天，见 shared/day.ts）—— 同一天任何人算出的取模都相同
+ * ⚠️⚠️ 它与 shared/day.ts 的「自然日」是**两套东西**，别再混：
+ *    · 自然日（北京时间 0 点切）—— streak、每日能量补足、提交归属用的还是它；
+ *    · 这个 24 小时窗口 —— **只用于「首页今日挑战这一句」**。
+ *    窗口的起点是**这个人第一次被分配的那一刻**（users.today_assigned_at），
+ *    不是全站统一的 0 点，所以同一个人永远是「从上一次分配算起的 24 小时」。
+ */
+const WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * ⭐ 选今天（这一个 24 小时窗口）的这一句。
+ *
+ * ⚠️⚠️ 语义（2026-09 改）：
+ *    · 已有分配且 now - assigned_at < 24h ⇒ **原样返回那一句**
+ *      （只要文章还在、isActive；下架/删了就重新分配）；
+ *    · 否则 ⇒ 按下面四条规则选一句，把 today_article_id / today_assigned_at 落库。
+ *
+ * ⚠️⚠️⚠️ **选句按「窗口起始日」的天号取模，不按当前时刻** —— 这是竞技场不散的根据：
+ *    如果按「当前时刻」取模，那么任意两个在不同分钟开始窗口的人都会落到不同的句子上，
+ *    竞技场就碎成一人一句、榜单失去可比性。
+ *    按**窗口起始日**取模之后：同一天开始窗口的人拿到**同一句**；
+ *    而窗口只有 24 小时，所以任意时刻每个档位**最多两句「在飞」**
+ *    （昨天开始、还没到 24 小时的那句 + 今天开始的这句）。
+ *    ⇒ 首页那一句只可能和另一批人在同一个竞技场里，榜单是满的。
+ *
+ * @param date 'YYYY-MM-DD'（服务端的今天，见 shared/day.ts）——
+ *   它是**新窗口的起始日**，不是「当前时刻」。同一天分配的人取模结果相同。
  * @returns 句库一句都没有时 null（调用方按"部署问题"报 503）
  */
 export async function recommendToday(
@@ -182,7 +207,47 @@ export async function recommendToday(
 ): Promise<TodayPick | null> {
   const me = await myLevelOf(userId, database)
 
-  // ① 该档的候选；空了就就近换档
+  /**
+   * ★ ① 先认这个用户**当前窗口里已经分到的那一句**。
+   *
+   * ⚠️⚠️ 这一步是这轮改动的核心，别再删：窗口内一律以**库里那一句**为准。
+   *    不能因为「他刚把这一句读了」就重选 —— 那正是上一个 bug 的形状
+   *    （读完返回首页，卡片当着他的面变成另一句，当天的成果也跟着没了）。
+   *    「今天读了它」= 正在完成这件事，不是「该换一句」的理由。
+   *
+   * ⚠️ 分配过的文章**下架或删了**（isActive=false / 查不到）就作废、往下重新分配 ——
+   *    否则用户会拿到一张点进去「正文加载失败」的卡。
+   * ⚠️ 只看 assigned_at 与 now 的差；**不按自然日**判断（那是上一版口径）。
+   */
+  const [assigned] = await database
+    .select({ articleId: users.todayArticleId, assignedAt: users.todayAssignedAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
+  if (assigned?.articleId && assigned.assignedAt) {
+    const ageMs = Date.now() - new Date(assigned.assignedAt).getTime()
+    // ⚠️ ageMs >= 0：时间戳在未来（时钟回拨等脏数据）不算「窗口内」，重新分配更安全
+    if (ageMs >= 0 && ageMs < WINDOW_MS) {
+      const [stillThere] = await database
+        .select({ id: articles.id, difficulty: articles.difficulty })
+        .from(articles)
+        .where(and(eq(articles.id, assigned.articleId), eq(articles.isActive, true)))
+        .limit(1)
+      if (stillThere) {
+        return {
+          articleId: stillThere.id,
+          // ⚠️ 实际档位以**这一句自己的难度**为准（分配时可能发生过兜底换档）
+          level: normalizeLevel(stillThere.difficulty) ?? me.level,
+          myLevel: me.level,
+          levelBasis: me.basis,
+          reason: '这一句在你当前的 24 小时窗口里是固定的 —— 窗口内不会换',
+        }
+      }
+    }
+  }
+
+  // ★ ② 该档的候选；空了就就近换档
   let level = me.level
   let pool = await bandOf(level, database)
   let degraded = false
@@ -199,25 +264,23 @@ export async function recommendToday(
   }
   if (pool.length === 0) return null
 
-  // ② 同档同句：天号取模 —— 同一档的用户当天一定是同一句
+  // ★ ③ 同档同句：**窗口起始日**的天号取模（不是当前时刻，见上面的说明）
   let pickId = pool[((dayNumber(date) % pool.length) + pool.length) % pool.length] as string
   let why = ''
 
   /**
-   * ③ 未读优先。
-   * ⚠️ 只在"今天那句我已经参与过"时才换 —— 这样**没读过的人都还在同一句上**
-   *    （新用户全都拿到同一句 = 竞技场是满的），只有读过的人被挪开。
-   */
-  /**
-   * ⚠️⚠️ 只把**今天之前**的参与算作"读过"（用户 2026-09 报的 bug）。
+   * ★ ④ 未读优先 —— 判据是「**这个窗口开始之前**读过的」，
+   *    不是「今天之前」也不是「曾经读过」。
    *
-   *    原来的写法把"今天刚读完这一句"也当成读过 ⇒ 用户读完返回首页时，
-   *    首页会 refresh 一次（applyResult → refreshPreviousPage → load()
-   *    又去问一次 /api/user/today），规则③立刻判定"今天那句我已参与" ⇒ 换一句。
-   *    症状：**卡片当着用户的面变成了另一句**，而他刚读完那句的
-   *    「已参与 / 最高分」也跟着没了（那是他这一天的成果）。
+   * ⚠️⚠️ 为什么必须是「窗口开始之前」，把上一版的口径讲清楚：
+   *    上一版按自然日判（lastAt < dayStartUtc(date)，date = 今天），
+   *    于是「今天刚读完这一句」会被判成读过 ⇒ 返回首页时规则④立刻换一句，
+   *    卡片当着他的面变（这个 bug 用户报过）。
+   *    现在把比较基准换成**窗口起始日的 UTC 起点**（dayStartUtc(窗口起始日)）：窗口内读的那次不算数，
+   *    只有「窗口开始前就参与过这一句」才会被挪开。
+   *    窗口内那一句是**固定**的，这条与上面的 ★① 一起构成那个保证。
    *
-   *    一天的推荐必须是**当天固定**的：你今天读了它，说明你正在完成今天这件事。
+   * ⚠️ 仍然只看**这个档位的池子**：换档才需要重新判未读，别的档读了不算。
    */
   const mine = await database
     .select({ articleId: participations.articleId, lastAt: participations.lastAt })
@@ -226,6 +289,7 @@ export async function recommendToday(
       and(
         eq(participations.userId, userId),
         inArray(participations.articleId, pool),
+        // ⚠️ date 是窗口起始日；它的 UTC 起点就是窗口开始的自然日边界
         lt(participations.lastAt, dayStartUtc(date)),
       ),
     )
@@ -237,7 +301,7 @@ export async function recommendToday(
       pickId = fresh[((dayNumber(date) % fresh.length) + fresh.length) % fresh.length] as string
       why = '这一档你还没读过这句'
     } else {
-      // ④ 整档都读过了 → 挑**放得最久**的那句（不是随机，也不是从头再来）
+      // ★ ⑤ 整档都读过了 → 挑**放得最久**的那句（不是随机，也不是从头再来）
       let oldest = pickId
       let oldestAt = Number.POSITIVE_INFINITY
       for (const [id, at] of read) {
@@ -255,6 +319,18 @@ export async function recommendToday(
   const reason =
     (why === '' ? '同一档的人今天读的是同一句' : why) +
     (degraded ? '（' + LABEL[me.level] + '场还没有句子，先给你' + LABEL[level] + '场）' : '')
+
+  /**
+   * ★ ⑥ 落库 —— 这是「同一个窗口内不再变」的唯一依据。
+   * ⚠️ assigned_at 记的是**现在**（窗口从此刻开始，24 小时后才允许换），
+   *    而取模用的是**窗口起始日**（上面的 date）。
+   * ⚠️ 必须 UPDATE 到 users 这一行：没有它，下一次请求又会从参与记录现算，
+   *    而参与记录会因为他刚读完而变 —— 那正是要消灭的行为。
+   */
+  await database
+    .update(users)
+    .set({ todayArticleId: pickId, todayAssignedAt: new Date() })
+    .where(eq(users.id, userId))
 
   return {
     articleId: pickId,

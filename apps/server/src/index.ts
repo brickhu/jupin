@@ -83,9 +83,9 @@ app.get('/health', async (c) => {
       /** ⭐ 商品目录行数 —— 它是 0 的话，购买页一张卡片都没有（静默故障） */
       goodsCount: dbState.goodsCount,
       /**
-       * ⭐ 句库里可读的句子数 = 首页「历史挑战」的卡片数 + 1（今日那一句）。
+       * ⭐ 句库里可读的句子数 = 首页「最新上线」的卡片数 + 1（今日那一句）。
        * ⚠️ 受鉴权保护的接口从外面看不到，所以这个数必须在 /health 里 ——
-       *    否则「历史那一栏是不是空的」只能靠真机点进去看。
+       *    否则「最新上线那一栏是不是空的」只能靠真机点进去看。
        */
       activeArticles: dbState.activeArticles,
       /**
@@ -146,7 +146,7 @@ app.route('/media', mediaRoutes)
  *    所有「我的」数据自然查不到。所以这里**绝不能**换成 authMiddleware：
  *    那会让没登录的人打不开首页。
  */
-// ⭐ 首页那一次请求：历史挑战（**纯公开**）—— 今日那张卡已经不走它了
+// ⭐ 首页那一次请求：最新上线（**纯公开**）—— 今日那张卡是端侧兜底，随后被推荐替换
 app.route('/api/schedules', schedulesRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
 app.route('/api/arenas', arenasRoutes)
