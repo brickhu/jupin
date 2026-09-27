@@ -31,9 +31,13 @@
              点了没反应的图标比没有这个按钮更难排查。
              ⚠️ 用 ui-button 的 ghost/default（浅灰实心圆 + 深色字形）而不是 audio-button：
                 设计稿上这颗是「实心浅灰圆」，而 audio-button 的未播放态是**描边**。 -->
+        <!-- ⚠️⚠️ 这里**故意不传 loading**，改用 icon 表达"在取音"：
+             ui-button 的 loading 会**吞掉点击**（防重复提交用的），而这颗是**开关** ——
+             一旦某次取音卡住，那颗钮就永远点不动了（界面上只看到转圈，
+             连"再点一次重试"都做不到）。用户 2026-09 报的"播放按钮不能播放"就是这个形状。
+             ⇒ 取音中显示 mdi:loading 字形，点击照常进来（再点 = 重试，见 onPlaySentence）。 -->
         <ui-button wx:if="{{canPlayAudio}}" onlyIcon="{{true}}" size="md" variant="ghost" color="default"
-                   loading="{{sentenceState === 'loading'}}"
-                   icon="{{sentenceState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
+                   icon="{{sentenceState === 'loading' ? 'mdi:loading' : sentenceState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
                    bind:press="onPlaySentence" />
         <!-- ⚠️ 时长拿不到就**不渲染**这几个字（不是显示 00:00 —— 那看着像音频坏了）。
              详情接口目前没有这个数，见 reading.ts 的 stdDurationText -->
@@ -83,10 +87,8 @@
       </view>
     </view>
 
-    <!-- ⚠️ 译文：**设计稿里没有这一行**，本轮按既有能力保留（朗读练习要能看中文）。
-         若设计上确实要删，删掉这一段即可。 -->
-    <text class="text-26rpx text-faint mt-2 leading-[1.6] block"
-          wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">{{translation}}</text>
+    <!-- ⚠️ 译文**不放**（用户 2026-09 明确：阅读卡片不用显示翻译）。
+         朗读练习看中文是上一版的旧口径，已作废 —— 别看着"空了一块"又加回来。 -->
 
     <!-- ── s1 底部：红色描边胶囊「点击录音并朗读」───────────────
          ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）。

@@ -1073,12 +1073,33 @@ Page({
       this.setData({ sentenceState: 'unplay' })
       return
     }
-    // 取音途中再点 = 忽略（还没出声）
-    if (st === 'loading') return
+    /**
+     * ⚠️⚠️ 取音途中再点 = **重试**，不是忽略。
+     *
+     * 这里原来是 return（忽略），配上 ui-button 的 loading 会一起吞掉点击 ——
+     * 一旦某次取音卡住（下载挂住 / 抛异常），这颗钮就**永远点不动了**，
+     * 而界面上只看到一个转圈（用户 2026-09 报的"播放按钮不能播放"）。
+     * 宁可重复发起：ensureLocalAudio 对同一个 src 有 in-flight 去重，
+     * 重复点不会真的多下一遍。
+     */
+    this.setData({ playingWord: -1, replayState: 'unplay', sentenceState: 'loading', error: '' })
 
-    this.setData({ playingWord: -1, replayState: 'unplay', sentenceState: 'loading' })
-    const url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
+    let url = ''
+    try {
+      url = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
+    } catch (err) {
+      // ⚠️ 它理论上不抛，但**绝不能让它把状态留在 loading**（那就是按钮死掉）
+      console.warn('[reading] 标准音取音抛错：' + (err as Error).message)
+    }
     if (!url) {
+      /**
+       * ⚠️ 把足够排查的上下文打到控制台（用户能直接把这一行发回来）：
+       *    · kind = cloud  ⇒ 服务端把它当云文件（本机拿不到，多半是 STORAGE 配错）
+       *    · kind = http 且 src 是相对路径 ⇒ 本机地址没拼上 / 没勾「不校验合法域名」
+       */
+      console.warn(
+        '[reading] 标准音取不到：kind=' + this.data.audioKind + ' src=' + this.data.fullAudio,
+      )
       this.setData({ sentenceState: 'unplay', error: '标准音取不到，请稍后再试' })
       return
     }
