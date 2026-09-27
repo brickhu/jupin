@@ -16,6 +16,9 @@ import type { ArticleTheme } from '@jushuo/shared'
  *    WXML 里写 `class="ub-{{variant}}"` 会让构建期「类名必须能解析」那条检查
  *    看到半截 token（`ub-`）而报错。
  *
+ * ⚠️ 用法：`<ui-button bind:press="onXxx">文字</ui-button>`
+ *    ⚠️ 事件名是 **press**（不是 tap），理由见 onTap 里那段注释。
+ *
  * ⚠️⚠️ `ui-button.json` 里的 **`"styleIsolation": "apply-shared"` 不能删** ——
  *    实测（2026-09）：不写它，按钮里的图标画出来是**空的**（文字正常）。
  *    仓库里另外两个用到 app.wxss 里图标的组件（arena-card / audio-button）也都写着它。
@@ -122,8 +125,15 @@ Component({
     onTap(e: WechatMiniprogram.TouchEvent) {
       // ⚠️ 禁用 / 加载中**吞掉**事件：界面看着不能点，就别让它真的能点
       if (this.data.disabled || this.data.loading) return
+      /**
+       * ⚠️⚠️ 事件名是 **press，不是 tap** —— 这是踩过的坑：
+       *    组件根节点一旦用 bindtap，原生 tap 会**继续冒泡**到调用方，
+       *    而这里又 triggerEvent 一次 ⇒ 一次点击**触发两次**。
+       *    收藏那种"切换"按钮上，两次 = 抵销（点了没反应、收藏后再点取消不掉）。
+       *    两道保险：根节点用 catchtap（截住原生冒泡）+ 事件名不叫 tap。
+       */
       // ⚠️ 把 dataset 一起透出去：调用方常用 data-xxx 认「是哪一个」（如列表里的第几项）
-      this.triggerEvent('tap', { dataset: (e.currentTarget as { dataset?: unknown })?.dataset ?? {} })
+      this.triggerEvent('press', { dataset: (e.currentTarget as { dataset?: unknown })?.dataset ?? {} })
     },
   },
 })

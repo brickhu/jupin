@@ -4,7 +4,7 @@
   style="{{style}}"
   hover-class="{{disabled || loading ? 'none' : 'ub-hover'}}"
   hover-stay-time="80"
-  bindtap="onTap"
+  catchtap="onTap"
 >
   <!-- ⚠️ 图标位始终存在（loading 时换成转圈）—— 否则加载态会让按钮文字横向跳一下 -->
   <text wx:if="{{iconCls}}" class="iconfont {{iconCls}} ub-icon"></text>

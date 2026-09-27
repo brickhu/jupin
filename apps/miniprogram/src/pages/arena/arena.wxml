@@ -29,7 +29,7 @@
         size="md"
         width="full"
         icon="{{isFavorite ? 'mdi:heart' : 'mdi:heart-outline'}}"
-        bind:tap="onToggleFavorite"
+        bind:press="onToggleFavorite"
       >{{isFavorite ? '已收藏' : '收藏这句'}}</ui-button>
     </view>
 
