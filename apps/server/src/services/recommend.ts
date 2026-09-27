@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { dayNumber, normalizeLevel } from '@jushuo/shared'
 import type { ArticleLevel } from '@jushuo/shared'
 import { db } from '../db'
@@ -32,63 +32,22 @@ import { articles, participations } from '../db/schema'
 type Database = typeof db
 
 /**
- * ⚠️⚠️ **这几个数是产品口径**，改这里就够了（改完不用动别处）：
- *   · RECENT_N   取最近几次参与来定档（太多会被很久以前的历史拖住）
- *   · MIN_SAMPLE 样本太少就不做"升/降档"（3 次以下不下结论）
- *   · PROMOTE_AT 这一档的中位数到了这条线 ⇒ 往上一档（i+1，别把人留在舒适区）
- *   · DEMOTE_AT  中位数低于这条线 ⇒ 往下一档（别让人一直撞墙）
+ * ⚠️⚠️ **这两个数是"英文水平"的定义**（用户 2026-09 亲自界定的），改这里就够了：
+ *
+ *   · MASTERY_SCORE 多少分算"这一档过了"
+ *   · MASTERY_COUNT 要几**句**（不是几次）达到这条线才算过
+ *
+ * ⚠️ 记的是"句"不是"次"：参与记录是**一人一句一行**，所以"两句 ≥85"
+ *    天然要求你在这一档的不同句子上都做到 —— 反复重读同一句凑不出来。
  */
-const RECENT_N = 8
-const MIN_SAMPLE = 3
-const PROMOTE_AT = 85
-const DEMOTE_AT = 60
+const MASTERY_SCORE = 85
+const MASTERY_COUNT = 2
 
 export interface MyLevel {
-  /** 我的档位（0 初级 / 1 中级 / 2 高级 / 3 专家） */
+  /** 我的水平档（0 初级 / 1 中级 / 2 高级 / 3 专家） */
   level: ArticleLevel
   /** 这个档位是怎么来的（人话，卡片可以直接显示，也便于排查） */
   basis: string
-}
-
-/** 参与过的句子的档位序列（按最近参与倒序） */
-async function recentLevels(
-  userId: number,
-  database: Database,
-): Promise<{ level: ArticleLevel; best: number }[]> {
-  const rows = await database
-    .select({
-      articleId: participations.articleId,
-      lastAt: participations.lastAt,
-      best: participations.bestScore,
-      // difficulty 在 articles 上（参与记录只存句子 id）—— 一次 join 拿回来
-      difficulty: articles.difficulty,
-    })
-    .from(participations)
-    .innerJoin(articles, eq(articles.id, participations.articleId))
-    .where(eq(participations.userId, userId))
-    /**
-     * ⚠️ **取最近的 N 次**：先按 lastAt 倒序，再按 id 倒序兜底
-     *    （同一天连读几句时 lastAt 可能一样，不兜底"最近"就会随查询计划漂）。
-     *    ⚠️ 这里曾经写成升序 + limit + reverse —— 那取到的是**最老的** 8 次，
-     *    正好把画像定在用户的远古水平上。
-     */
-    .orderBy(desc(participations.lastAt), desc(participations.articleId))
-    .limit(RECENT_N)
-
-  const out: { level: ArticleLevel; best: number }[] = []
-  for (const r of rows) {
-    const lv = normalizeLevel(r.difficulty)
-    if (lv === null) continue // 老内容没有难度 ⇒ 不进画像（不猜）
-    out.push({ level: lv, best: Number(r.best) })
-  }
-  return out
-}
-
-/** 中位数（偶数个取中间两个的平均） */
-function median(values: number[]): number {
-  const s = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(s.length / 2)
-  return s.length % 2 === 1 ? (s[mid] as number) : (((s[mid - 1] as number) + (s[mid] as number)) / 2)
 }
 
 const LABEL: Record<ArticleLevel, string> = { 0: '初级', 1: '中级', 2: '高级', 3: '专家' }
@@ -96,52 +55,78 @@ export function levelLabelOf(lv: ArticleLevel): string {
   return LABEL[lv]
 }
 
+/** 高 → 低，找"最高的那一档"时用 */
+const DESC_LEVELS: ArticleLevel[] = [3, 2, 1, 0]
+
 /**
- * ⭐ 定我的档位。
+ * ⭐⭐ 定我的**英文水平**。
  *
- * 做法刻意**简单、可解释**（别上模型：几十个用户、几句内容，模型只会过拟合）：
- *   ① 最近 RECENT_N 次参与的档位里取**众数**（并列时取最近的那个）
- *   ② 样本够（MIN_SAMPLE 次都在这一档）时再看**表现**微调 ±1：
- *      中位数 ≥ PROMOTE_AT → 上一档；≤ DEMOTE_AT → 下一档
+ * ⚠️⚠️ 用户 2026-09 纠正过一次概念，这里写的才是对的那个：
  *
- * ⚠️ 没有参与记录（新用户）→ 初级。这正是"优先推荐新上线用户还没参与过的"那条的前提。
+ *     ❌ 不是「你最近老在哪个场练，就推哪个场」—— 那只是"最近去过哪儿"。
+ *     ✅ 看的是**成绩单**：某一档拿到过 MASTERY_COUNT 句 MASTERY_SCORE 分以上，
+ *        那一档就是你的英文水平。
+ *        例：在高级场有过两次 >85 的成绩 ⇒ **高级用户**（与他在那儿读过几次无关）。
+ *
+ * 判定顺序：
+ *   ① 从高往低扫，**最高的那一档**里"过了的句子数"够 ⇒ 就是它
+ *   ② 一档都没过 ⇒ 退到**你练过的最高档**（你至少在那儿练，但还没证明）
+ *   ③ 什么都没练过 ⇒ 初级（新用户）
+ *
+ * ⚠️ 用参与记录（rather than 逐条 submissions）是有意的：一人一句一行，
+ *    "两句 ≥85"比"两条成绩 ≥85"更严 —— 重读同一句凑不出水平。
  */
 export async function myLevelOf(userId: number, database: Database = db): Promise<MyLevel> {
-  const recent = await recentLevels(userId, database)
-  if (recent.length === 0) {
-    return { level: 0, basis: '还没有参与记录 —— 从初级开始，读完会按你的表现调档' }
+  const rows = await database
+    .select({
+      // difficulty 在 articles 上（参与记录只存句子 id）—— 一次 join 拿回来
+      difficulty: articles.difficulty,
+      best: participations.bestScore,
+    })
+    .from(participations)
+    .innerJoin(articles, eq(articles.id, participations.articleId))
+    .where(eq(participations.userId, userId))
+
+  if (rows.length === 0) {
+    return { level: 0, basis: '还没有参与记录 —— 从初级开始' }
   }
 
-  // ① 众数（并按"最近"打破并列：recent 已经是最近在前）
-  const count = new Map<ArticleLevel, number>()
-  for (const r of recent) count.set(r.level, (count.get(r.level) ?? 0) + 1)
-  let level: ArticleLevel = recent[0]!.level
-  let bestCount = 0
-  for (const [lv, n] of count) {
-    if (n > bestCount) {
-      bestCount = n
-      level = lv
+  /** 每档：练过的句子数 / 过了线的句子数 */
+  const played = new Map<ArticleLevel, number>()
+  const proven = new Map<ArticleLevel, number>()
+  for (const r of rows) {
+    const lv = normalizeLevel(r.difficulty)
+    if (lv === null) continue // 老内容没有难度 ⇒ 不进画像（不猜）
+    played.set(lv, (played.get(lv) ?? 0) + 1)
+    if (Number(r.best) >= MASTERY_SCORE) proven.set(lv, (proven.get(lv) ?? 0) + 1)
+  }
+
+  // ① 最高的、过了线的那一档
+  for (const lv of DESC_LEVELS) {
+    const n = proven.get(lv) ?? 0
+    if (n >= MASTERY_COUNT) {
+      return {
+        level: lv,
+        basis: '在' + LABEL[lv] + '场有 ' + n + ' 句拿到 ' + MASTERY_SCORE + ' 分以上 —— 你的水平在这一档',
+      }
     }
   }
 
-  const sameLevel = recent.filter((r) => r.level === level)
-  const mid = median(sameLevel.map((r) => r.best))
-  let basis = '最近 ' + recent.length + ' 次里有 ' + bestCount + ' 次在' + LABEL[level] + '场'
-
-  // ② 表现微调（样本够才做）
-  if (sameLevel.length >= MIN_SAMPLE) {
-    if (mid >= PROMOTE_AT && level < 3) {
-      level = (level + 1) as ArticleLevel
-      basis += '，' + LABEL[(level - 1) as ArticleLevel] + '场中位数 ' + mid.toFixed(1) + ' 分 —— 上一档试试'
-    } else if (mid <= DEMOTE_AT && level > 0) {
-      level = (level - 1) as ArticleLevel
-      basis += '，' + LABEL[(level + 1) as ArticleLevel] + '场中位数只有 ' + mid.toFixed(1) + ' 分 —— 先回稳一档'
-    } else {
-      basis += '，中位数 ' + mid.toFixed(1) + ' 分'
+  // ② 没过线 ⇒ 练过的最高档
+  for (const lv of DESC_LEVELS) {
+    const n = played.get(lv) ?? 0
+    if (n > 0) {
+      return {
+        level: lv,
+        basis:
+          '还没有哪一档拿到 ' + MASTERY_COUNT + ' 句 ' + MASTERY_SCORE + ' 分以上 —— ' +
+          '先按你练过的最高档（' + LABEL[lv] + '，' + n + ' 句）',
+      }
     }
   }
 
-  return { level, basis }
+  // ③ 有参与记录但难度都认不出来（老内容）⇒ 兜底初级
+  return { level: 0, basis: '参与过的句子没有难度信息 —— 先按初级' }
 }
 
 export interface TodayPick {

@@ -1,0 +1,286 @@
+{
+  "id": "8d145c554cad49b0",
+  "text": "Whether a judiciary's interpretive latitude constitutes a legitimate exercise of discretion or a surreptitious usurpation of legislative authority remains theoretically contested.",
+  "translation": "法院在解释法律时的那点自由空间，到底算正当行使裁量权，还是偷偷把立法权夺了过来？这个问题在理论上一直没吵出结果。",
+  "difficulty": 2,
+  "scores": [
+    4,
+    5,
+    3
+  ],
+  "challenge": "这串抽象长词，念顺要过三道坎",
+  "advice": "别怕，坑就三处：surreptitious 重音在 -ti-，usurpation 重音在 PA，authority、theoretically 的 /θ/ 要咬舌尖；咬住这三处，一口气念完不打结。",
+  "tags": [
+    "法律",
+    "学术",
+    "思辨"
+  ],
+  "words": [
+    {
+      "text": "Whether",
+      "stress": 0,
+      "syllables": [
+        "Whether"
+      ],
+      "ipa": "/ˈwɛðɚ/",
+      "meaning": "",
+      "tip": "主重音在第 1 拍；th 要咬舌尖"
+    },
+    {
+      "text": "a",
+      "stress": -1,
+      "syllables": [
+        "a"
+      ],
+      "ipa": "/ə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "judiciary's",
+      "stress": 0,
+      "syllables": [
+        "ju",
+        "di",
+        "cia",
+        "ry's"
+      ],
+      "ipa": "",
+      "meaning": "司法机关的（这里指法院）",
+      "tip": ""
+    },
+    {
+      "text": "interpretive",
+      "stress": 0,
+      "syllables": [
+        "in",
+        "ter",
+        "pre",
+        "tive"
+      ],
+      "ipa": "/ˌɪnˈtɝpɹətɪv/",
+      "meaning": "解释性的（对法律条文）",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "latitude",
+      "stress": 0,
+      "syllables": [
+        "lat",
+        "i",
+        "tude"
+      ],
+      "ipa": "/ˈlætəˌtud/",
+      "meaning": "（解释上的）自由空间、余地",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "constitutes",
+      "stress": 0,
+      "syllables": [
+        "con",
+        "sti",
+        "tutes"
+      ],
+      "ipa": "/ˈkɑnstəˌtuts/",
+      "meaning": "构成、算得上是",
+      "tip": "主重音在第 1 拍；词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "a",
+      "stress": -1,
+      "syllables": [
+        "a"
+      ],
+      "ipa": "/ə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "legitimate",
+      "stress": 0,
+      "syllables": [
+        "le",
+        "git",
+        "i",
+        "mate"
+      ],
+      "ipa": "/ləˈdʒɪtəmət/",
+      "meaning": "正当合法的",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "exercise",
+      "stress": 0,
+      "syllables": [
+        "ex",
+        "er",
+        "cise"
+      ],
+      "ipa": "/ˈɛksɚˌsaɪz/",
+      "meaning": "行使（权力）",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "of",
+      "stress": -1,
+      "syllables": [
+        "of"
+      ],
+      "ipa": "/əv/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "discretion",
+      "stress": 0,
+      "syllables": [
+        "dis",
+        "cre",
+        "tion"
+      ],
+      "ipa": "/dɪˈskɹɛʃən/",
+      "meaning": "自由裁量权",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "or",
+      "stress": -1,
+      "syllables": [
+        "or"
+      ],
+      "ipa": "/ɚ/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "a",
+      "stress": -1,
+      "syllables": [
+        "a"
+      ],
+      "ipa": "/ə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "surreptitious",
+      "stress": 0,
+      "syllables": [
+        "sur",
+        "rep",
+        "ti",
+        "tious"
+      ],
+      "ipa": "/ˌsɝəpˈtɪʃəs/",
+      "meaning": "偷偷摸摸的、暗中的",
+      "tip": "主重音在第 3 拍"
+    },
+    {
+      "text": "usurpation",
+      "stress": 0,
+      "syllables": [
+        "usurpa",
+        "tion"
+      ],
+      "ipa": "/ˌjusɚˈpeɪʃən/",
+      "meaning": "篡夺、越权夺取",
+      "tip": ""
+    },
+    {
+      "text": "of",
+      "stress": -1,
+      "syllables": [
+        "of"
+      ],
+      "ipa": "/əv/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "legislative",
+      "stress": 0,
+      "syllables": [
+        "leg",
+        "isla",
+        "tive"
+      ],
+      "ipa": "/ˈlɛdʒəˌsleɪtɪv/",
+      "meaning": "立法的",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "authority",
+      "stress": 0,
+      "syllables": [
+        "au",
+        "thor",
+        "i",
+        "ty"
+      ],
+      "ipa": "/əˈθɔɹəti/",
+      "meaning": "权力、职权",
+      "tip": "主重音在第 2 拍；th 要咬舌尖"
+    },
+    {
+      "text": "remains",
+      "stress": 0,
+      "syllables": [
+        "re",
+        "mains"
+      ],
+      "ipa": "/ɹɪˈmeɪnz/",
+      "meaning": "仍然是、依旧是",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "theoretically",
+      "stress": 0,
+      "syllables": [
+        "the",
+        "o",
+        "ret",
+        "i",
+        "cal",
+        "ly"
+      ],
+      "ipa": "/ˌθiɚˈɛtɪkəli/",
+      "meaning": "在理论上",
+      "tip": "主重音在第 3 拍；th 要咬舌尖"
+    },
+    {
+      "text": "contested.",
+      "stress": 1,
+      "syllables": [
+        "con",
+        "test",
+        "ed."
+      ],
+      "ipa": "/kənˈtɛstəd/",
+      "meaning": "有争议的、存疑的",
+      "tip": "主重音在第 2 拍"
+    }
+  ],
+  "links": [
+    "两个元音相接，中间自然带一个很轻的滑音；a 弱读成 /ə/",
+    "",
+    "",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ]
+}

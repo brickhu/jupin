@@ -1,0 +1,250 @@
+{
+  "id": "96594db5f0c48c9e",
+  "text": "Notwithstanding its ostensibly egalitarian rhetoric, the institutional apparatus perpetuates a structural asymmetry that eludes conventional metrics of accountability.",
+  "translation": "嘴上说的是人人平等，可这套制度机器一直在复制一种结构性的失衡，而常规的问责指标根本量不到它。",
+  "difficulty": 2,
+  "scores": [
+    5,
+    5,
+    2
+  ],
+  "challenge": "这句全是长词，一口气念完不容易",
+  "advice": "别怕，真难的只有三处：ostensibly 重音在 sten、egalitarian 重音落在 tar、asymmetry 的 -sy- 别吞掉；按这三处摆好，一长串大词也能一口气推到底。",
+  "tags": [
+    "社会批判",
+    "社科",
+    "制度"
+  ],
+  "words": [
+    {
+      "text": "Notwithstanding",
+      "stress": 0,
+      "syllables": [
+        "Notwith",
+        "stand",
+        "ing"
+      ],
+      "ipa": "/ˌnɑtwɪθˈstændɪŋ/",
+      "meaning": "尽管、虽然（表让步）",
+      "tip": "主重音在第 3 拍；th 要咬舌尖"
+    },
+    {
+      "text": "its",
+      "stress": -1,
+      "syllables": [
+        "its"
+      ],
+      "ipa": "/ɪts/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "ostensibly",
+      "stress": 0,
+      "syllables": [
+        "os",
+        "ten",
+        "si",
+        "bly"
+      ],
+      "ipa": "/ɑˈstɛnsəbli/",
+      "meaning": "表面上看、据称如此",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "egalitarian",
+      "stress": 0,
+      "syllables": [
+        "egal",
+        "i",
+        "tar",
+        "i",
+        "an"
+      ],
+      "ipa": "/ɪˌɡæləˈtɛɹiən/",
+      "meaning": "主张人人平等的",
+      "tip": "主重音在第 4 拍"
+    },
+    {
+      "text": "rhetoric,",
+      "stress": 0,
+      "syllables": [
+        "rhetoric,"
+      ],
+      "ipa": "/ˈɹɛtɚɪk/",
+      "meaning": "说辞、口号式的话",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "the",
+      "stress": -1,
+      "syllables": [
+        "the"
+      ],
+      "ipa": "/ðə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "institutional",
+      "stress": 0,
+      "syllables": [
+        "in",
+        "sti",
+        "tu",
+        "tion",
+        "al"
+      ],
+      "ipa": "/ˌɪnstɪˈtuʃənəl/",
+      "meaning": "制度层面的、体制的",
+      "tip": "主重音在第 3 拍"
+    },
+    {
+      "text": "apparatus",
+      "stress": 0,
+      "syllables": [
+        "ap",
+        "pa",
+        "ra",
+        "tus"
+      ],
+      "ipa": "/ˌæpɚˈætəs/",
+      "meaning": "整套机构、体制机器",
+      "tip": "主重音在第 3 拍"
+    },
+    {
+      "text": "perpetuates",
+      "stress": 0,
+      "syllables": [
+        "per",
+        "pet",
+        "u",
+        "ates"
+      ],
+      "ipa": "/pɚˈpɛtʃəˌweɪts/",
+      "meaning": "让（某事）一直延续下去",
+      "tip": "主重音在第 2 拍；词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "a",
+      "stress": -1,
+      "syllables": [
+        "a"
+      ],
+      "ipa": "/ə/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "structural",
+      "stress": 0,
+      "syllables": [
+        "struc",
+        "tur",
+        "al"
+      ],
+      "ipa": "/ˈstɹʌtʃɚəl/",
+      "meaning": "结构性的、根子上的",
+      "tip": "主重音在第 1 拍"
+    },
+    {
+      "text": "asymmetry",
+      "stress": 0,
+      "syllables": [
+        "asym",
+        "me",
+        "try"
+      ],
+      "ipa": "/ˌeɪˈsɪmətɹi/",
+      "meaning": "不对称、一边倒的失衡",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "that",
+      "stress": -1,
+      "syllables": [
+        "that"
+      ],
+      "ipa": "/ðət/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "eludes",
+      "stress": 0,
+      "syllables": [
+        "eludes"
+      ],
+      "ipa": "/ɪˈludz/",
+      "meaning": "躲开、让人抓不到",
+      "tip": "词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "conventional",
+      "stress": 0,
+      "syllables": [
+        "con",
+        "ven",
+        "tion",
+        "al"
+      ],
+      "ipa": "/kənˈvɛnʃənəl/",
+      "meaning": "常规的、惯用的",
+      "tip": "主重音在第 2 拍"
+    },
+    {
+      "text": "metrics",
+      "stress": 0,
+      "syllables": [
+        "met",
+        "rics"
+      ],
+      "ipa": "/ˈmɛtɹɪks/",
+      "meaning": "衡量指标、尺度",
+      "tip": "主重音在第 1 拍；词尾辅音连着收，别加元音"
+    },
+    {
+      "text": "of",
+      "stress": -1,
+      "syllables": [
+        "of"
+      ],
+      "ipa": "/əv/",
+      "meaning": "",
+      "tip": "功能词：轻读、含糊带过"
+    },
+    {
+      "text": "accountability.",
+      "stress": 1,
+      "syllables": [
+        "ac",
+        "count",
+        "abil",
+        "i",
+        "ty."
+      ],
+      "ipa": "/əˈkaʊntəˌbɪlɪti/",
+      "meaning": "问责、责任追究",
+      "tip": "主重音在第 2 拍"
+    }
+  ],
+  "links": [
+    "",
+    "",
+    "两个元音相接，中间自然带一个很轻的滑音",
+    "",
+    "词尾爆破音只做口型不出声，停住再念下一个词；the 弱读成 /ðə/",
+    "两个元音相接，中间自然带一个很轻的滑音",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "美音里这里的 t 变成很轻的 /ɾ/（像汉语的 d）",
+    "",
+    "",
+    "",
+    ""
+  ]
+}
