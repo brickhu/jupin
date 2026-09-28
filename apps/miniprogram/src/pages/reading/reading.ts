@@ -1220,6 +1220,23 @@ Page({
     //    否则会出现「试听在播」和「标准音在播」两颗钮同时亮着
     this.setData({ replayState: 'loading', sentenceState: 'unplay', playingWord: -1 })
 
+    /**
+     * ⚠️⚠️ 这一步**不能省**：`replayState` 是三态 unplay → loading → playing，
+     *    而 UI 只认 'playing' 才画停止字形（见 WXML 的 icon 三元）。
+     *
+     *    之前这里漏了它 —— 点下去永远是转圈，因为 `loading` 一律被
+     *    `ui-button` 翻译成"转圈 + 吞掉点击"（用户 2026-09 报的
+     *    「点击播放后一直显示 spinner 而不是停止」）。
+     *
+     *    ⚠️ 为什么这里可以**立刻**置 'playing'，而标准音那条路要等取音完：
+     *       · 试听播的是**本机文件**（audioPath / playPath），没有取音过程 ——
+     *         真出错会走 onError，下面的 catch 会把状态收回 unplay；
+     *       · 标准音要先 ensureLocalAudio（可能要下载），那段时间是真"loading"。
+     *      ⇒ 状态的含义是「**用户看到的**该是什么」，不是"内部走到哪一步了"。
+     *    ⚠️ 与 onPlaySentence 的写法保持一致（那里也是先置 playing 再 playUrl）。
+     */
+    this.setData({ replayState: 'playing' })
+
     try {
       await this.playUrl(src, '试听')
       return
