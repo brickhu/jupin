@@ -25,7 +25,12 @@
       <text wx:if="{{showFavorite}}"
             class="shrink-0 leading-[1] iconfont icon-heart-outline ml-2 {{favorite ? '' : 'ac-faint'}} {{mode === 'list' ? 'text-32rpx' : 'text-40rpx'}}"
             catchtap="onFavorite"></text>
-      <text class="shrink-0 leading-[1] ac-faint ml-2 iconfont icon-chevron-right {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}"></text>
+      <!-- ⚠️ 那颗 › 在**朗读挑战页**（showFavorite）不画：用户 2026-09 要求"去掉收藏后面的 >"。
+           卡片整张仍然是「点进详情」的目标，箭头只是"这里可以点进去"的提示 ——
+           而这一页进来的人已经在一句的详情里了，没有"再进去"可去。
+           ⚠️ 首页那几张卡（showFavorite 为 false）照旧画，那里的箭头是真有去处（竞技场）。 -->
+      <text wx:if="{{!showFavorite}}"
+            class="shrink-0 leading-[1] ac-faint ml-2 iconfont icon-chevron-right {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}"></text>
     </view>
   </view>
 

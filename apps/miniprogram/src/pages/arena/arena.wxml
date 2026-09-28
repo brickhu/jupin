@@ -58,24 +58,11 @@
          ⚠️ 没参与过的人看到的是一句邀请（不是三个 0）：
             "挑战 0 回合、位列第 —" 对一个新人毫无意义。 -->
     <view class="bg-white rounded-2.5 p-4 mt-3">
-      <block wx:if="{{myBest !== null}}">
-        <text class="text-24rpx text-faint block mb-3">我的参与</text>
-        <view class="flex mb-4">
-          <view class="flex-1">
-            <text class="text-22rpx text-faint block">挑战回合</text>
-            <text class="text-40rpx font-bold text-ink">{{myAttempts}}</text>
-          </view>
-          <view class="flex-1">
-            <text class="text-22rpx text-faint block">我的最好成绩</text>
-            <text class="text-40rpx font-bold text-ink">{{myBestText}}</text>
-          </view>
-          <view class="flex-1">
-            <text class="text-22rpx text-faint block">位列第</text>
-            <text class="text-40rpx font-bold text-ink">{{myRank}}</text>
-          </view>
-        </view>
-      </block>
-      <text class="text-24rpx text-faint block mb-3" wx:else>你还没挑战过这一句 —— 读一遍就能上榜</text>
+      <!-- ⚠️ 一行话（用户 2026-09：三块数字太散，收成一句）。
+           ⚠️ 没挑战过的人**照样显示这句**（都是 0 / —）：不要换成另一句话 ——
+              "已挑战 0 回合"本身就是"你还没挑战过"的最短说法。
+           ⚠️ 数字在 TS 里拼好（WXML 不做计算），见 mySummary。 -->
+      <text class="text-28rpx text-body leading-[1.7] block mb-4">{{mySummary}}</text>
 
       <ui-button variant="fill" color="brand" size="xl" width="full" bind:press="onStart">
         <text class="text-32rpx">{{action}}</text>

@@ -81,6 +81,13 @@ Page({
     myRank: null as number | null,
     myBeatenCount: null as number | null,
     /**
+     * ⭐ 我的参与那一行（成品文本，WXML 不做计算）：
+     *    `已挑战 3 回合，最高得分 74.6，位列 2`
+     * ⚠️ 「最高得分」用的是**我的最好成绩**（不是全场最高分）——
+     *    全场那三个数在上面那张「参与概要」卡里，别混。
+     */
+    mySummary: '',
+    /**
      * ⭐ 我在这句上**出过分**几次（= participations.attempts，只数 status='scored'）。
      * ⚠️ 用它而不是 submissions.seq：seq 含失败/进行中，会出现「挑战 3 回合」却只有一条成绩。
      */
@@ -251,6 +258,15 @@ Page({
     this.setData({
       myBest: mine.myBest,
       myBestText: formatScore(mine.myBest),
+      /**
+       * ⚠️ 「最高得分」取的是 `mine.myBest`（**我**的最好成绩，来自 store）——
+       *    不是详情里那个全场最高分。两个数在这一页同时存在，别拿错。
+       * ⚠️ 名次用 this.data.myRank（来自个人接口那次响应，见 load）——
+       *    store 里没有名次（那是跨用户算的）。
+       */
+      mySummary:
+        '已挑战 ' + this.data.myAttempts + ' 回合，最高得分 ' + formatScore(mine.myBest) +
+        '，位列 ' + (this.data.myRank === null ? '—' : this.data.myRank),
       // ⚠️ myRank / myBeatenCount 不在这里：它们来自个人接口那次响应（见 load），
       //    这里只管「刚打完分」后跟着 store 变的那两个数（成绩与按钮文案）
       // ⚠️ 与首页共用同一份实现（@jushuo/shared 的 startButtonLabel）——
