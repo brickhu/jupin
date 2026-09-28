@@ -75,6 +75,8 @@ Component({
      * ⚠️ 「还没问到」和「问到了但没有账号」是两件事，见 store 的 SessionState。
      */
     sessionPending: true,
+    /** ⭐ 问不到（断网）—— 这一格画「重新连接」而不是「加入」（见 store 的 SessionState） */
+    sessionUnknown: false,
     /** 头像的**可显示地址**（库里存的是 cloud:// fileID，要先换一次） */
     avatarSrc: '',
     /**
@@ -156,8 +158,11 @@ Component({
       const joined = me.hasJoined()
       this.setData({
         joined,
-        // ⚠️ pending = 还没问到身份 ⇒ 画 spinner，别先画一个假的「加入」再闪掉
+        // ⚠️ pending = 还在问 ⇒ 画 spinner，别先画一个假的「加入」再闪掉
         sessionPending: st.session === 'pending',
+        // ⚠️ unknown = 问不到（断网）⇒ 画「重新连接」，**不画「加入」**：
+        //    库里有没有我这一行，这会儿谁都不知道（见 store 的 SessionState）
+        sessionUnknown: st.session === 'unknown',
       })
 
       const fileId = p?.avatarUrl ?? ''
@@ -179,10 +184,11 @@ Component({
          *
          * ⚠️⚠️ 「还没加入」= **服务端还不认识我**（大多是后端没起来），
          *    而不是「还没起昵称」—— 判据见 store 的 hasJoined。
-         * ⚠️ 这里用 `hasJoined()`（= userInfo !== null，"我拉过资料"）是**对的**：
-         *    这一格要画的是**头像**，没有资料就没有头像可画。
-         *    而"能不能动手（提交/花能量）"用的是 `lib/auth` 的 `isAuthed()`（判 uid）——
-         *    两处判据不同是刻意的，不是不一致。
+         * ⚠️ 判据是 `hasJoined()`（= `userInfo !== null`）= **服务端那一行有我的记录**，
+         *    与 `lib/auth` 的 `isAuthed()` 是**同一个判据**（两处必须一致，否则界面说"没记录"、
+         *    按钮却说"能动手"）。
+         * ⚠️ 而**问不到**（session === 'unknown'，断网）既不是"有记录"也不是"没记录"：
+         *    这时画的是「重新连接」（见上面渲染那一段），点一下重试。
          *
          * ⚠️ 点它**不跳加入页**：加入页是补头像和昵称的地方，
          *    而「补资料」要求先有账号 —— 没账号时跳过去也存不下来。
@@ -191,6 +197,11 @@ Component({
         if (!this.data.joined) {
           if (this.data.joinBusy) return
           this.setData({ joinBusy: true })
+          /**
+           * ⚠️ 「问不到」与「库里没我」都走这一下重试，但**后续处置不同**：
+           *    · 这次问到了、且库里没我 → 下面按 named 分流（去加入页/面板）；
+           *    · 这次仍问不到 → 只提示"连不上"，**不把人推去加入页**（见 lib/auth）。
+           */
           void refreshMe()
             .then((known) => {
               // null = 没问到。不说一声的话，用户只会以为这个按钮坏了

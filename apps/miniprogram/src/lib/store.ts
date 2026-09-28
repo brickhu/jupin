@@ -79,10 +79,15 @@ export interface ArenaRecord {
  *   · 'pending'：还没跟服务端确认过身份（启动登录中 / 冷启动首屏）。
  *     界面上该**等一下**（导航栏左侧画 spinner），而不是先画个「加入」——
  *     否则每个用户打开小程序都会先看到一个假的「加入」，再闪成自己的头像。
- *   · 'ready'  ：已经问过了（成功或失败都算）。
- *     这时再按 hasJoined() 决定画头像还是「加入」。
+ *   · 'ready'  ：问到了（服务端给了答复）。这时再按 hasJoined() 决定画头像还是「加入」。
+ *   · 'unknown'：**问不到**（超时 / 没网 / 后端没起来）。
+ *     ⚠️⚠️ 它与 'ready' + userInfo=null **不是一件事**：
+ *       · 'ready' + null  = "服务端说库里没我这一行" ⇒ 该画「加入」；
+ *       · 'unknown'       = "我根本不知道库里有没有我" ⇒ 画「重新连接」，
+ *         绝不能画「加入」—— 那等于告诉一个有记录的人"你还没加入"。
+ *     （这就是"用 wx.login / 本机缓存 当判据"会踩的坑：它答不了库里有没有我。）
  */
-export type SessionState = 'pending' | 'ready'
+export type SessionState = 'pending' | 'ready' | 'unknown'
 
 export interface MeState {
   /** 服务端的「今天」—— 只用于显示与判断缓存过期，不参与任何竞技口径 */
@@ -438,6 +443,18 @@ export function applyProfile(m: MeResponse): void {
 export function markSessionReady(): void {
   if (state.session === 'ready') return
   commit({ ...state, session: 'ready' })
+}
+
+/**
+ * ⭐ 问不到身份（超时 / 没网 / 后端没起来）—— 由 lib/auth 在"没问到"时调用。
+ *
+ * ⚠️⚠️ 为什么不复用 `markSessionReady()`：那个的意思是"服务端给了答复"
+ *    （答复可以是"没这一行"）。把"问不到"也说成 ready，界面就会画出一个
+ *    **假的「加入」按钮** —— 有记录的老用户会以为账号没了（见 SessionState 的说明）。
+ */
+export function markSessionUnknown(): void {
+  if (state.session === 'unknown') return
+  commit({ ...state, session: 'unknown' })
 }
 
 /**

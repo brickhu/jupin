@@ -90,10 +90,13 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    `lib/route.ts` —— 全站唯一的跳页入口（`go` / `replace` / `goPublic` / `goOnce` / `back`
    + `ROUTES` 路径表）；受保护页的守卫只在那一个地方，页面里不再出现裸的
    `wx.navigateTo`。公开页（首页 / 加入页 / 竞技场 / 挑战详情 / 成绩墙）在文件里逐条列明。
-   ⚠️ 判据是 **uid**（`getUserId() > 0`）—— **不取 `hasJoined()`**：
-      那个是 `userInfo !== null`（"我拉过资料"），登录成功但紧随那次 `/me` 断网时它是 false，
-      于是有账号的人会被判成没账号、被推去加入页。导航栏那一格用 hasJoined() 是对的
-      （它要画头像，没资料就没头像可画）—— 两处判据不同是刻意的。
+   ⚠️ 判据是「**服务端 `users` 表里有没有我这一行**」—— 权威那一问是 `GET /api/user/me`。
+      不是 `wx.login` 成功与否，也不是本机缓存（那两样都答不了这个问题）。
+   ⚠️⚠️ 于是有**三种**结局，不能压成两种：
+      `/me` 成功 → 有记录（放行）｜`/me` 401 → 服务端明确说认不出我 ⇒ 跳加入页｜
+      `/me` 超时/没网 → **问不到** ⇒ 不跳页，只提示重试。
+      store 的 `SessionState` 因此是 `pending | ready | unknown`；
+      `unknown` 时 header 画「重新连接」而**不是**「加入」（否则老用户会以为账号没了）。
    ⚠️ 与昵称/头像无关（那是"榜上显示成什么"，随时能补）。
 
 1. ✅ **服务端 GET /api/user/article-records?article=** —— 逐次历史（只回有得分的，最近在前），

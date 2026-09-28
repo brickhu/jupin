@@ -10,7 +10,9 @@ import { ensureAuthed } from './auth'
  *
  * 所以这里把两件事收成一处：
  *   ① **所有**带页面的跳转都写成 `go('/pages/…')` / `replace('/pages/…')`；
- *   ② 受保护页由 `ensureAuthed()` 统一拦（不认得 → 静默登录一次 → 仍不行跳加入页）。
+ *   ② 受保护页由 `ensureAuthed()` 统一拦，三种结局（见 lib/auth）：
+ *        已加入 → 放行；**未加入（服务端明确说认不出）→ 跳加入页**；
+ *        没问到（断网 / 后端没起来）→ 不放行、**也不跳加入页**（提示重试）。
  *
  * ⚠️ 不受保护的页（**故意**列在这里，别顺手加进去）：
  *   · `/pages/join/join`      —— 它就是"没账号"时的去处，拦它 = 死循环；
@@ -72,14 +74,22 @@ function isProtected(url: string): boolean {
  *    这时候再跳一次原页会把他从加入页弹走（那正是我们最不想要的）。
  */
 export async function go(url: string): Promise<boolean> {
-  if (isProtected(url) && !(await ensureAuthed())) return false
+  if (isProtected(url)) {
+    const auth = await ensureAuthed()
+    // ⚠️ 'not-joined'：auth 已经把人送到加入页了（别再跳原页，会把他从加入页弹走）； 
+    //    'unknown'：没问到 —— 也**不跳**（否则等于放一个没有归属的录音进去读）
+    if (auth !== 'joined') return false
+  }
   wx.navigateTo({ url, fail: () => wx.reLaunch({ url }) })
   return true
 }
 
 /** ⭐ 替换当前页（`wx.redirectTo` 的唯一替代）—— 守卫口径与 go() 完全一致 */
 export async function replace(url: string): Promise<boolean> {
-  if (isProtected(url) && !(await ensureAuthed())) return false
+  if (isProtected(url)) {
+    const auth = await ensureAuthed()
+    if (auth !== 'joined') return false
+  }
   wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
   return true
 }

@@ -22,11 +22,16 @@
            而一个字母方块看起来像坏掉的图，占位图至少明确表示"这里该有张脸"。
       -->
       <block wx:if="{{leftMode === 'avatar'}}">
-        <!-- ⭐ 身份还在解析（启动登录中）→ 画 spinner。
-             ⚠️ 不能先画「加入」：那会让每个人打开小程序都先看到一个假按钮，
-                再闪成自己的头像 —— 既像 bug，也会诱导用户去点它。 -->
+        <!-- ⭐ 三种状态，判据见 store 的 SessionState：
+               · checking（还在问）      → spinner
+               · unknown（问不到，断网）  → 「重新连接」，**不画「加入」**
+               · ready + userInfo=null   → 「加入」（服务端说库里没我这一行）
+               · 有记录                  → 头像
+             ⚠️⚠️ unknown 绝不能画成「加入」：那等于告诉一个有记录的人"你还没加入"
+                （他会以为账号没了）。点它是重试一次身份确认。 -->
         <view wx:if="{{sessionPending}}" class="nv-spinner"></view>
         <image wx:elif="{{joined}}" class="nv-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill"></image>
+        <view wx:elif="{{sessionUnknown}}" class="nv-login">{{joinBusy ? '连接中' : '重新连接'}}</view>
         <view wx:else class="nv-login">{{joinBusy ? '加入中' : '加入'}}</view>
       </block>
       <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph iconfont icon-home"></text>

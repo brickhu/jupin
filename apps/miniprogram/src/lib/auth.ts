@@ -1,139 +1,161 @@
-import { getUserId, fetchMe, login } from './api/client'
+import { ApiError, fetchMe, login } from './api/client'
 import { JOIN_URL, goPublic } from './route'
 import * as me from './store'
 
 /**
- * ⭐⭐⭐ **全站唯一的 auth**（用户 2026-09 定）。
+ * ⭐⭐⭐ **全站唯一的 auth** —— 判断的是「**这个人在 `users` 里有没有记录**」。
  *
- * 所有跟"这个人是谁、他在不在我们库里"有关的事，都只走这个文件 ——
- * 页面里不许再各写一段 `if (uid) …` / `if (hasJoined()) …`（那正是上一版的毛病：
- * 同一件事散在首页、朗读页、加入页三处，口径一定会漂）。
+ * 用户 2026-09 定的口径（三条，别再加概念）：
+ *   ① 启动静默登录（`wx.login` / 云托管网关注入）。它只解决"我是谁"，
+ *      **不代表我在我们库里有记录** —— 那是另一回事。
+ *   ② 需要"库里必须有我这一行"才能用的功能，动之前过 `ensureAuthed()`：
+ *      有记录 → 放行；**没记录 → 跳加入页**；问不到 → 不跳，提示重试。
+ *   ③ header 那一格：checking → spinner；没记录 → 「加入」；有记录 → 头像。
  *
- * ────────────────────────────────────────────────────────────────
- * ⭐⭐ 两件事必须分清（这是这个产品最容易搞混的地方）：
+ * ⚠️⚠️ **判据必须是"服务端那一行"，不是 `wx.login` 的结果，也不是本机缓存**：
+ *    `wx.login` 成功只说明拿到了 openid；本机 `userInfo` 只是上一次问到的快照。
+ *    真正权威的那一问是 `GET /api/user/me` —— 服务端在 `authMiddleware` 里按 openid
+ *    取用户（**没有就当场建一行**：middleware/auth.ts + services/user.ts 的
+ *    `getOrCreateUserByOpenid` 是全站唯一注册点），然后才回数据。
  *
- *   ① **微信登录** = 我是谁（openid）。打开小程序就静默完成，**没有 UI、没有失败弹窗**。
- *      它只是 openid 的来源（云托管那条路由微信网关注入，连 token 都不需要）。
+ * ⚠️⚠️ 于是「问不到」和「没记录」**必须分开**（这是本项目踩过的坑）：
+ *    · /me 成功            → **有记录**（放行）；
+ *    · /me 回 401「未登录」 → 服务端明确说"认不出你" ⇒ 才跳加入页；
+ *    · /me 超时 / 5xx / 没网 → **什么都不知道** ⇒ **绝不跳加入页**
+ *      （跳了等于把老用户推去加入页，他会以为账号没了；而且加入页保存也要连服务端）。
  *
- *   ② **在不在 users 里** = 服务端认不认识我。这是**另一回事**，而且它有真实后果：
- *      · 服务端那条 `users` 行只在**第一个成功的业务请求**上才建出来
- *        （middleware/auth.ts + services/user.ts 的 getOrCreateUserByOpenid —— 全站唯一注册点）；
- *      · 在那之前 **uid=0**：录音上传路径 `audio/{句子id}/{uid}/…` 没有合法 uid，
- *        分数 / 榜单 / 成长值**没有主人**。
- *      ⇒ 所以任何要花钱、要落库、要"我的"数据的动作，**先过这里**。
- *
- * ⭐⭐ 判据是 **uid**（`getUserId() > 0`），不是 `me.hasJoined()`：
- *    · uid 在**第一次成功登录的那一刻**就落到本机了（两条通道都会 setUserId）；
- *    · 而 `hasJoined()` 是 `userInfo !== null`，含义是"我**拉过资料**"——
- *      登录成功但紧接着那次 `/me` 断网时它是 false，于是"有账号的人"会被判成没账号、
- *      被推去加入页（他会以为账号没了）。这是最贵的一类错，所以判据不取它。
- *    ⚠️ **与有没有起昵称/头像无关**（那是"榜上显示成什么"，随时能补）。
- *    （导航栏那一格用的是 hasJoined() —— 它要的不是"有没有账号"，而是"能不能画出头像"，
- *      所以两处判据不同是**对的**，不是不一致。）
- *
- * ────────────────────────────────────────────────────────────────
- * 页面/库怎么用（只有这三种问法）：
- *
- *   · `isAuthed()`            纯查询、不发请求 —— 用来画界面（按钮画「加入」还是头像）
- *   · `ensureAuthed()`        要动手之前用：没身份就**静默登录一次**，仍不行跳加入页
- *   · `ensureAuthed({ needProfile: true })`  顺带把 `/me` 的资料拿回来（要权威余额时用）
+ * ⚠️ 还有一条连带后果：**"问不到"时不能把 session 标记成 ready**，而是标成 'unknown' ——
+ *    否则 header 会画出一个假的「加入」按钮（见 store 的 SessionState 与 nav-bar）。
  */
 
-/** 当前是不是"服务端认识我" —— 只读，不发任何请求（判据见文件头：uid） */
+/** 一次鉴权检查的三种结局 —— 调用方按它决定说什么话（跳页由本模块负责） */
+export type AuthResult =
+  /** 服务端确认：users 里有我这一行 ⇒ 放行 */
+  | 'joined'
+  /** 服务端明确说认不出我（401）⇒ **已跳加入页** */
+  | 'not-joined'
+  /** 没问到（超时 / 没网 / 后端没起来）⇒ 什么都没做，调用方提示重试 */
+  | 'unknown'
+
+/**
+ * ⭐ 「没问到」时给用户的那一句（全站同一句，别各写各的）。
+ * ⚠️ 它说的是**能做什么**（检查网络、再点一次），不是"失败"两个字。
+ */
+export const AUTH_RETRY_HINT = '没连上服务器，检查网络后再点一次'
+
+/**
+ * ⭐ 本机此刻"有没有记录" —— **只读、不发请求**，给界面用（header 那一格）。
+ * ⚠️ 它读的是最近一次问到的快照（`userInfo !== null` = 有记录），
+ *    权威判断永远在服务端（见文件头）。
+ */
 export function isAuthed(): boolean {
-  return getUserId() > 0
+  return me.hasJoined()
 }
 
 /**
- * 确保"服务端认识我"。
+ * ⭐⭐ **通用的 auth 中间函数** —— 需要"库里必须有我这一行"的功能，动之前调它。
  *
- * @param opts.needProfile 要不要顺带把 `/me` 的资料拿回来（提交前要权威余额时传 true）
- * @returns 认得我 → true；不认得 → **已经跳了加入页**，返回 false
+ * @param opts.needProfile 要不要顺带把 `/me` 的资料（含**权威余额**）拿回来
  *
- * ⚠️⚠️ 顺序是刻意的，别调换：
- *    1. 已经有身份 → **一次网络都不发**（老用户走这条路，零成本）；
- *    2. 还没有 → 一次 `login()` + 一次 `/me`。**这两步分别在做什么**：
- *         · `login()` —— 公网通道 = `wx.login` 换 code → `POST /api/auth/login`；
- *           云托管通道 = `GET /api/user/me`（身份由微信网关注入）。
- *           ⚠️ 两条路服务端都会走 `getOrCreateUserByOpenid`：**没有那一行就当场建**
- *           （middleware/auth.ts 是全站唯一注册点）⇒ **注册是它的副作用，不是另一步**。
- *           客户端在这一步拿到 uid（setUserId）。
- *         · 那次 `/me` —— 只是为了把资料与**权威余额**拿回来（画界面、确认能量用）。
- *           ⚠️ 它失败**不代表没账号**（uid 已经有了）：已经有 uid 的人走的是上面第 1 条，
- *              根本不会重来一遍，更不会被推去加入页。
- *    3. 还是不行（后端没起来 / 网关不通）→ 跳加入页**并返回 false**。
- *
- * ⚠️ 为什么失败跳加入页：加入页是"补资料"的地方，也是**唯一一个不带业务门禁的写入口** ——
- *    它的保存会再走一次本函数（见 profile-form），所以人在那一页还有一次机会；
- *    而停在朗读页只会让他白读一遍。（用户 2026-09 定的去处。）
+ * ⚠️ 已有记录时**一次网络都不发**（老用户零成本）；`needProfile` 时才补一次 `/me`。
+ * ⚠️ 本函数自己只做决定 + 跳页，**不弹提示**：提示归调用方的界面（toast / 页面红字），
+ *    因为只有调用方知道此刻用户在看哪里。
  */
-export async function ensureAuthed(opts: { needProfile?: boolean } = {}): Promise<boolean> {
-  // ① 已经有身份：直接过（needProfile 时补一次 /me，因为它要给权威余额）
+export async function ensureAuthed(opts: { needProfile?: boolean } = {}): Promise<AuthResult> {
+  // ① 最近一次已经问到"有记录"：直接放行
   if (isAuthed()) {
-    if (!opts.needProfile) return true
-    return refetchProfile()
+    if (!opts.needProfile) return 'joined'
+    return (await refetchProfile()) ? 'joined' : 'unknown'
   }
 
-  // ② 还没有：补一次微信登录 + 一次 /me（后者顺带完成注册）
+  /**
+   * ② 还不知道 ⇒ 去问服务端。顺序：先确保登录（拿到 openid 的身份），再问 /me。
+   *    ⚠️ 云托管通道下 `login()` 内部就是一次 `/me`（网关注入身份），
+   *      这一步顺带就把 users 那一行建出来了 —— 见 client.ts 的 doLogin。
+   */
   try {
     await login()
   } catch (err) {
-    // ⚠️ 登录失败**不抛错**：调用方要的是"能不能继续"，不是异常处理。
-    //    但不假装成功 —— 走下面统一跳加入页。
-    console.warn('[auth] 静默登录失败：' + (err as Error).message)
-    goJoin()
-    return false
+    // ⚠️ 登录失败 = **没问到**（不是"没记录"）⇒ 不跳页，也不标 ready（界面画「重新连接」）
+    console.warn('[auth] 静默登录失败（按"没问到"处理）：' + (err as Error).message)
+    me.markSessionUnknown()
+    return 'unknown'
   }
 
-  if (await refetchProfile()) return true
-
-  goJoin()
-  return false
+  // ③ 问权威的那一句：users 里到底有没有我
+  try {
+    me.applyProfile(await fetchMe())
+    return 'joined'
+  } catch (err) {
+    const e = err as ApiError
+    if (isAuthError(e)) {
+      // 服务端明确说"认不出你"（401）⇒ 这才是**库里没记录**，跳加入页
+      me.markSessionReady()
+      goJoin()
+      return 'not-joined'
+    }
+    // ⚠️ 超时 / 5xx / 没网：什么都不知道 ⇒ 什么都不做，只把状态标成"没问到"
+    console.warn('[auth] 问不到用户记录（不跳加入页）：' + (err as Error).message)
+    me.markSessionUnknown()
+    return 'unknown'
+  }
 }
 
 /**
- * 去加入页 —— **只有这一处**（auth 拦下之后的统一去处）。
- *
- * ⚠️⚠️ 必须走 `goPublic()` 而不是 `go()`：加入页是**公开页**（正是"没账号"时的去处）。
- *    走带守卫的 `go()` 会再触发一次 auth → 再跳一次加入页 → 死循环。
- * ⚠️ 已经在加入页上就不要再压一层（返回要按好几次）。
+ * ⭐ 用户**明确想加入**时用（header 那一格的「加入」、提示里的「重试」）：
+ *    问不到就**直接带他去加入页** —— 那时候跳是对的，因为他自己就是要去做这件事。
  */
+export async function retryAuth(): Promise<void> {
+  if (isAuthed()) return
+  const r = await ensureAuthed()
+  // ⚠️ 'joined' 说明刚问到了（可能只是启动那次没问到），什么都不用做
+  if (r === 'joined') return
+  goJoin()
+}
+
+/**
+ * ⭐ 表单保存这类"我已经确定要写数据"的入口：要一个身份，失败**抛一句人话**。
+ *
+ * ⚠️ 与 `ensureAuthed()` 的分工：那个负责"没记录就跳加入页"（导航决策），
+ *    这个负责"我要继续往下做" —— 而**加入页自己也会用它**，
+ *    所以它绝不能跳页（会死循环），只能把失败说出来。
+ */
+export async function requireIdentity(): Promise<void> {
+  if (isAuthed()) return
+  try {
+    await login()
+    me.applyProfile(await fetchMe())
+  } catch (err) {
+    throw new Error(AUTH_RETRY_HINT)
+  }
+}
+
+/**
+ * ⚠️ 怎么判"服务端明确说认不出我"：只有 401（`handleResponse` 会把它转成
+ *    `AuthExpiredError`，`code` 是 AUTH_EXPIRED —— 见 client.ts）。
+ *    其余一切（超时、5xx、信封坏了）都是"没问到"。
+ */
+function isAuthError(e: ApiError): boolean {
+  return e.code === 'AUTH_EXPIRED' || e.code === 'UNAUTHORIZED'
+}
+
+/** 去加入页 —— **只有这一处**（auth 判成"未加入"之后的统一去处） */
 function goJoin(): void {
-  // ⚠️ once=true：已经在加入页就不再压一层（见 goPublic 的说明）
+  // ⚠️ 加入页是**公开页**（正是"没记录"时的去处）：走 goPublic，不要再过 guard（会死循环）
+  // ⚠️ once=true：已经在加入页就不再压一层（auth 每次拦下都会跳这里）
   goPublic(JOIN_URL, true)
 }
 
 /**
- * 拉一次 `/me` 并写回 store —— 这一步**就是注册**（服务端没有那一行就当场建）。
- *
- * ⚠️ `markSessionReady()` 成功失败都要调（见 store 与 join.refreshMe 的说明）：
- *    不调的话导航栏会永远停在转圈 —— 那比画一个「加入」按钮更糟。
+ * 补一次 `/me` 并写回 store（已有记录、但要权威余额时）。
+ * ⚠️ 失败**不算没记录**：返回 false 让调用方提示重试，绝不动导航。
  */
 async function refetchProfile(): Promise<boolean> {
   try {
     me.applyProfile(await fetchMe())
     return true
   } catch (err) {
-    console.warn('[auth] 取用户资料失败（后端未连接？）：' + (err as Error).message)
-    me.markSessionReady()
+    console.warn('[auth] 取用户资料失败（按"没问到"处理）：' + (err as Error).message)
     return false
   }
-}
-
-/**
- * ⭐ 要一个身份，并把它当成"必须成功"来做 —— 失败时**抛一句人话**。
- *
- * 与 `ensureAuthed()` 的分工：那个负责"不认得就跳加入页"（导航决策），
- * 这个负责"我要继续往下做，没有身份就不行"（表单保存、提交评测）。
- * ⚠️ 两个都留着是有必要的：加入页在**没有身份时也可能被打开**（它正是目的地），
- *    那时不能把自己再跳一次（死循环），只能把失败说给用户。
- */
-export async function requireIdentity(): Promise<void> {
-  if (getUserId() > 0) return
-  try {
-    await login()
-  } catch (err) {
-    throw new Error('没连上服务器，暂时取不到你的身份。检查网络后再试一次。')
-  }
-  if (getUserId() <= 0) throw new Error('没能确认你的身份，稍后再试一次。')
 }

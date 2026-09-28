@@ -16,7 +16,7 @@ import { openChallengesPage, openParticipationsPage, openStreakPage } from '../.
 import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
-import { ensureAuthed, isAuthed } from '../../lib/auth'
+import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
@@ -404,8 +404,12 @@ Page({
    *    这一页只决定「榜上显示成什么」（同 lib/join.ts 的说明）。
    */
   onJoin() {
-    // ⚠️ 走统一的 auth：没身份时它自己会跳加入页（而这一页正是目的地，不会死循环）
-    void ensureAuthed()
+    /**
+     * ⚠️ 这一颗是**用户明确要加入** ⇒ 用 retryAuth()：先再确认一次身份
+     *    （可能只是启动那次没问到），确实还没加入就跳加入页 ——
+     *    那时候跳是对的，因为他自己就是要去做这件事（见 lib/auth 的说明）。
+     */
+    void retryAuth()
   },
 
   onOpenParticipations() {
@@ -779,17 +783,24 @@ Page({
     this.setData({ starting: true })
     this.render()
     /**
-     * ⭐ 走**统一的 auth**（`lib/auth.ts`）：不认得就静默登录一次，仍不行**它自己**
-     *    会把用户送去加入页 —— 这里不再自己写任何跳转（用户 2026-09 定）。
+     * ⭐ 走**通用的 auth 中间函数**（`lib/auth.ts`，用户 2026-09 定的用法）：
+     *    · 'joined'     —— users 里有我这一行，放行；
+     *    · 'not-joined' —— 服务端说认不出我，它**已经跳了加入页**；
+     *    · 'unknown'    —— 没问到（断网 / 后端没起来），**什么都没做**，给一句提示。
      */
-    const ok = await ensureAuthed()
+    const auth = await ensureAuthed()
     // ⚠️ 页面可能已经被跳走了 —— 那 setData 会打在隐藏页上，无害但不必要
     //    ⚠️ 也要把按钮文案还原：失败后用户还停在这一页，卡在「确认中…」会像坏了
     if (!this.gone) {
       this.setData({ starting: false })
       this.render()
     }
-    if (ok) this.goReading(ds.id, ds.date)
+    if (auth === 'joined') {
+      this.goReading(ds.id, ds.date)
+    } else if (auth === 'unknown') {
+      // ⚠️ 没问到 —— 说一句能做什么（'not-joined' 那条路 auth 已经把人带去加入页了）
+      wx.showToast({ title: AUTH_RETRY_HINT, icon: 'none', duration: 2500 })
+    }
   },
 
   /** 进朗读页（开始挑战的唯一出口）—— 必须把**这一天的日期**带过去 */

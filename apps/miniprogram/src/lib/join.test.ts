@@ -34,6 +34,17 @@ vi.mock('./api/client', () => ({
   login: () => login(),
   getUserId: () => Number(memory.get('uid') ?? 0),
   setUserId: (id: number) => memory.set('uid', id),
+  /** 真的 ApiError 只多一个 code —— auth 靠它区分"明确没记录"与"没问到" */
+  ApiError: class ApiError extends Error {
+    constructor(
+      message: string,
+      readonly code?: string,
+      readonly payload?: Record<string, unknown>,
+    ) {
+      super(message)
+      this.name = 'ApiError'
+    }
+  },
 }))
 
 let store: typeof import('./store')
@@ -120,11 +131,21 @@ describe('openJoinPage', () => {
     expect(nav).toEqual([])
   })
 
-  it('⭐ 没有身份时也会落到加入页（auth 拦下之后的统一去处）', async () => {
-    // 服务端不认识我（/me 拿不到）⇒ auth 自己会把用户送到加入页
-    fetchMe.mockRejectedValue(new Error('boom'))
-    await join.ensureAuthed()
+  it('⭐ 服务端明确说认不出我（401）→ auth 自己把人送到加入页', async () => {
+    // ⚠️ 只有 401 才算"库里没我这一行"；超时/没网是 unknown，**不跳页**（见 lib/auth）
+    login.mockImplementation(() => {})
+    const { ApiError } = (await import('./api/client')) as unknown as {
+      ApiError: new (m: string, c?: string) => Error
+    }
+    fetchMe.mockRejectedValue(new ApiError('未登录', 'AUTH_EXPIRED'))
+    await expect(join.ensureAuthed()).resolves.toBe('not-joined')
     expect(nav).toEqual(['to:' + join.JOIN_PAGE])
+  })
+
+  it('⭐⭐ 问不到（超时）→ **不跳加入页**（别把老用户推过去）', async () => {
+    fetchMe.mockRejectedValue(new Error('request:fail timeout'))
+    await expect(join.ensureAuthed()).resolves.toBe('unknown')
+    expect(nav).toEqual([])
   })
 
   it('在别的页面上 → navigateTo 压上去（这样「确认加入」能返回原页）', () => {

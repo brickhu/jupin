@@ -37,7 +37,7 @@ import {
   recordingKeyOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
-import { ensureAuthed } from '../../lib/auth'
+import { AUTH_RETRY_HINT, ensureAuthed, isAuthed } from '../../lib/auth'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -1439,14 +1439,22 @@ Page({
      *    · 都不行 → **把用户送去加入页**并返回 false。
      *    ⇒ 页面这里不再自己判断 uid、也不再自己跳页（用户 2026-09 定：只留一处实现）。
      */
-    const ok = await ensureAuthed({ needProfile: true })
+    const auth = await ensureAuthed({ needProfile: true })
     // ⚠️ 期间用户可能已经退出了这一页（或者重录了）—— 那就不再往下走
     if (this.gone || this.data.phase !== 'precheck') return
 
-    if (!ok) {
-      // ⚠️ 没认出身份、auth 已经把人送到加入页了 —— 关掉这一层回 s3：
-      //    他可能从加入页返回，那时看到的是录音预览（还能再点 ✓）
-      this.setData({ confirmOpen: false, phase: 's3', error: '' })
+    if (auth !== 'joined') {
+      /**
+       * ⚠️ 两种可能，都是"这一次先不提交"，但**界面要能说清是哪一种**：
+       *    · 'not-joined' —— 服务端说认不出我，auth 已经把人送到加入页：
+       *      关掉这一层、回 s3（他从加入页返回时看到的是录音预览，还能再点 ✓）；
+       *    · 'unknown'    —— 没问到（断网）：留在 s3，给一句"检查网络、再点一次"。
+       */
+      this.setData({
+        confirmOpen: false,
+        phase: 's3',
+        error: auth === 'unknown' ? AUTH_RETRY_HINT : '',
+      })
       this.syncEnergyNote()
       return
     }
