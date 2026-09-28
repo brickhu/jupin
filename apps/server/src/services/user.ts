@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { users } from '../db/schema'
 import { env } from '../env'
+import { ENERGY_REASON, grantEnergy } from './energy'
 
 export type User = typeof users.$inferSelect
 
@@ -15,43 +17,62 @@ export type User = typeof users.$inferSelect
 const DEV_ENERGY = 9999
 
 /**
- * 这是不是一个「本地联调环境」—— 是的话，账号一律给会员。
+ * 这是不是一个「本地联调环境」—— 是的话，账号补满能量。
+ *
+ * ⚠️⚠️ 判据是**显式开关** `DEV_ENERGY_TOPUP`，默认关。
+ *
+ *    旧判据「NODE_ENV !== 'production'」的失败模式极其危险：线上只要漏配 /
+ *    换镜像 / CI 覆盖了 NODE_ENV，**全站每个用户立刻白拿 9999 点**
+ *    （付费资源变免费，而且这个判据本身不可审计）。
+ *    新判据的失败模式是「没人写这一行 ⇒ 什么都不发生」—— 本地少个便利而已。
+ *    两者风险量级不对称，所以默认必须落在「什么都不发生」那一侧。
+ *
+ * ⚠️ 要开只能在 .env.local 里显式写 `DEV_ENERGY_TOPUP=true`，
+ *    它不会再因为 NODE_ENV / 镜像 / CI 的任何一次漏配而自动生效。
  *
  * ⚠️⚠️ 为什么这件事必须做进服务端，而不是靠 `tools/dev-unlock.mjs` 手动跑一次：
- *    手动脚本只能覆盖「它跑的那一刻已经存在」的账号，之后新建的照样没有会员，
- *    于是测试到一半突然被告知「今天的挑战次数用完了」。
- *    这件事**真实发生过**，而且极难排查 —— 报错看起来像额度逻辑被改坏了，
- *    实际上是账号刚出生。凡是「靠人工记得跑一次」的开关，迟早会忘。
- *
- * ⚠️ 判据只有**一条**：NODE_ENV 不是 production。
- *
- *    以前还要求"openid 以 dev_ 开头"，那是建立在"本地用合成 openid"之上的。
- *    现在本地走的是**真实登录**（模拟器里 wx.login 给的 code 也是真的，
- *    换回来就是开发者本人微信账号的真实 openid，见 routes/auth.ts），
- *    真实 openid 当然没有 dev_ 前缀 —— 按前缀判断会让本地账号
- *    全部掉回免费档（每天 1 次），本地根本没法测。
- *
- *    ⚠️ 生产环境这条永远不成立，所以它不可能泄漏到线上。
+ *    手动脚本只能覆盖「它跑的那一刻已经存在」的账号，之后新建的照样没有能量，
+ *    于是测试到一半突然被告知「能量不够」。这件事**真实发生过**，而且极难排查。
+ *    凡是「靠人工记得跑一次」的开关，迟早会忘。
  */
-function isLocalDevEnv(): boolean {
-  return env.NODE_ENV !== 'production'
+function devEnergyTopUpEnabled(): boolean {
+  return env.DEV_ENERGY_TOPUP
 }
 
 /**
- * 把本地联调账号补成会员。
+ * 把本地联调账号补满能量 —— **走账本，不直写余额**。
  *
  * ⚠️ 它挂在**每次取用户**的路径上，所以不只是新账号，
- *    历史上已经建好的旧账号也会在下次请求时被自动修好 —— 不需要再手动跑脚本。
+ *    历史上已经建好的旧账号也会在下次请求时被自动补上 —— 不需要再手动跑脚本。
  *
- * ⚠️ 有 already 短路，不会每个请求都写库。
+ * ⚠️⚠️ 旧实现 `UPDATE users SET energy=9999` 绕过 energy_ledger，余额与流水
+ *    结构上可永久漂移（本机实测：余额合计 10000、流水合计 -15）。现在一律走
+ *    `grantEnergy` → `addEnergy`（能量唯一写入方），缓存与流水在**同一个事务**里写，
+ *    从结构上杜绝漂移。
+ *
+ * ⚠️ 保留「余额已经够就不动」的短路：否则每个请求都会写一条流水。
+ *
+ * ⚠️ refId 每次补满都不同。幂等键 (reason, refType, refId, userId) 会拒绝重复的
+ *    refId；若把 refId 固定（或写成补满前的余额），用户花掉、再回到同一余额时
+ *    会被幂等键永久挡回，账号会一路花到 0 再也补不上。代价是并发请求可能重复补，
+ *    但缓存与流水同事务、同增量，「余额 == 流水合计」这条不变量不受影响。
  */
 async function withLocalDevPrivilege(user: User): Promise<User> {
-  if (!isLocalDevEnv()) return user
+  if (!devEnergyTopUpEnabled()) return user
 
   if (user.energy >= DEV_ENERGY) return user
 
-  await db.update(users).set({ energy: DEV_ENERGY }).where(eq(users.id, user.id))
-  return { ...user, energy: DEV_ENERGY }
+  const amount = DEV_ENERGY - user.energy
+  const granted = await grantEnergy({
+    userId: user.id,
+    amount,
+    reason: ENERGY_REASON.admin,
+    refType: 'dev',
+    refId: `dev:from:${user.energy}:${randomUUID()}`,
+  })
+  // 幂等命中（理论上只在并发下发生）就按原样返回，不谎报余额
+  if (!granted) return user
+  return { ...user, energy: user.energy + amount }
 }
 
 
@@ -69,11 +90,9 @@ export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
   const [existing] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
   if (existing) return withLocalDevPrivilege(existing)
 
-  await db.insert(users).ignore().values({
-    openid,
-    // ⭐ 建号时就把本地能量发好，省掉一次 UPDATE
-    ...(isLocalDevEnv() ? { energy: DEV_ENERGY } : {}),
-  })
+  // ⚠️ 建号时**不再直接写 energy**：先把账号建出来（energy 走默认 0），
+  //    再由 withLocalDevPrivilege 走账本补一条流水 —— 两处直写合成同一条路。
+  await db.insert(users).ignore().values({ openid })
 
   const [created] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
   if (!created) throw new Error(`创建用户失败: ${openid}`)

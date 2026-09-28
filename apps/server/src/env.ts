@@ -244,6 +244,18 @@ const schema = z.object({
    */
   DIAG_ENABLED: boolEnv(false),
   /**
+   * ⭐ 本地联调：把每个账号补满 `DEV_ENERGY` 能量（services/user.ts）。
+   *
+   * ⚠️⚠️ 默认**关**。这跟旧判据「NODE_ENV !== 'production'」是两码事，
+   *    失败模式的风险量级完全不同：
+   *      · 旧判据：线上漏配 / 换镜像 / CI 覆盖了 NODE_ENV ⇒ **全站每个用户立刻白拿 9999 点**
+   *        （付费资源变免费，真金白银的损失，而且这个判据本身不可审计）；
+   *      · 新开关：没人写这一行 ⇒ **什么都不发生**（本地少个便利，一眼能看出来）。
+   *    ⇒ 默认必须落在「什么都不发生」那一侧；要开只能在 .env.local 里显式写
+   *      `DEV_ENERGY_TOPUP=true`，它不会再因为 NODE_ENV / 镜像 / CI 的漏配而自动生效。
+   */
+  DEV_ENERGY_TOPUP: boolEnv(false),
+  /**
    * ⚠️ 启动时**删库重建**（DROP DATABASE + CREATE）。
    *    仅用于发布前无数据环境下的 schema 重构 —— 生产环境**绝对不要开**。
    *    由 deploy-cloud.mjs 的 --reset 一次性带上。
@@ -323,6 +335,7 @@ const FALLBACK: Env = {
   AUTO_MIGRATE: false,
   SEED_ON_START: false,
   DIAG_ENABLED: false,
+  DEV_ENERGY_TOPUP: false,
   SCHEMA_RESET: false,
   // ⚠️ 兜底值同样 fail closed：配置坏掉时宁可付不了款，也不能白送
   PAY: 'xpay',
