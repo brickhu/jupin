@@ -83,6 +83,15 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
 
 **顺序**（每步都是可独立验证的一小块，不留半成品）：
 
+0. ✅ **统一的 auth + 唯一的跳页通道**（用户 2026-09 定，是下面每一步的地基）：
+   `lib/auth.ts` —— `isAuthed()`（只读，画界面用）/ `ensureAuthed({ needProfile })`
+   （动手前用：没有账号就静默登录一次，仍不行统一跳加入页）/ `requireIdentity()`
+   （表单保存用：失败抛一句人话，**不跳页** —— 加入页正是目的地）。
+   `lib/route.ts` —— 全站唯一的跳页入口（`go` / `replace` / `goPublic` / `goOnce` / `back`
+   + `ROUTES` 路径表）；受保护页的守卫只在那一个地方，页面里不再出现裸的
+   `wx.navigateTo`。公开页（首页 / 加入页 / 竞技场 / 挑战详情 / 成绩墙）在文件里逐条列明。
+   ⚠️ 判据与导航栏那一格相同：**服务端应答过我吗** —— 与昵称/头像无关。
+
 1. ✅ **服务端 GET /api/user/article-records?article=** —— 逐次历史（只回有得分的，最近在前），
    加端侧 fetchArticleRecords()。已本地验证：failed 不算 / 最近在前 / best 现算 / 清理干净。
 2. ⬜ **reading 页状态机 s1–s6**（本次设计稿的核心）：s1 待录 → s2 录音中 → s3 预览 →
@@ -109,11 +118,10 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    → 能量（弹窗里问权威余额：够就列清「消耗/剩余」等确认，不够给【去补能量】）。
    落在 `lib/join.ts` 的 `ensureSessionForSubmit()` + 朗读页的 `onSubmit()` /
    `onConfirmStart()`；确认那一层与评测那一层共用 `components/eval-dialog`。
-7. ✅ **入口也要拦身份**（用户 2026-09 定）：首页「开始挑战」在跳朗读页之前先确认身份
-   （没有就先静默重登一次；仍失败 → 跳加入页）。理由同上：uid=0 时那条 `users` 行还没建，
+7. ✅ **入口也要拦身份**（见第 0 步的统一实现）：首页「开始挑战」在跳朗读页之前先确认身份
+   （没有就先静默重登一次；仍失败 → 加入页）。理由同上：uid=0 时那条 `users` 行还没建，
    **成绩没有归属** —— 让他先读 20 秒再在提交时被打回是错的。
-   落地：`lib/session.ts`（`hasIdentity()` / `ensureIdentity()`，全站唯一实现）+
-   首页 `onStart()`（按钮在那几秒显示「确认中…」）+ `profile-form` 保存前先要身份。
+   首页 `onStart()` 的那几秒按钮显示「确认中…」（不然用户以为点了没反应）；
 8. ✅ **s4 / s5 / s6 搬进弹窗**（用户 2026-09 的追加需求，覆盖上面 s4–s6 三节的排版）：
    落地在 `components/eval-dialog`（浮层）+ 朗读页的状态机改写。
    - 点下 s3 那颗绿 ✓ 的**同一帧**弹窗就出现（用户说的"在 s4 之前"）：

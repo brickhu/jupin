@@ -62,6 +62,8 @@
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 - [ ] **B24** **删掉全局排期**：`GET /api/schedules`（含 `/:date`）整条 + `services/schedules.ts` 的轮转 + `services/schedule-date.ts` + `schedules` 表 + `submissions.schedule_date`（连同死索引）+ `participations.last_schedule_date` + 内容管理台排期 + 金句页 `?date=` 入口（只留 `?article=`）—— **保留**每用户 24 小时窗口（`users.today_article_id` / `today_assigned_at`、`GET /api/user/today`、窗口内固定不换、按窗口起始日取模）—— 做完的标志：全仓库搜不到 `/api/schedules` / `schedule_date` / `?date=`，且首页与 24h 窗口行为不变
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
+- [ ] **B31** **统一 auth + 唯一的跳页通道**（用户 2026-09 定：「我其实更希望你通过一个通用的 auth 函数或中间件来处理，而不是叠加一段乱七八糟的函数」）：`lib/auth.ts`（`isAuthed` / `ensureAuthed({needProfile})` / `requireIdentity`）+ `lib/route.ts`（`go`/`replace`/`goPublic`/`goOnce`/`back` + `ROUTES` 路径表）。受保护页（朗读页 / pages/me/*）的守卫只在那一个地方；`lib/session.ts` 与 `ensureSessionForSubmit` 删掉，全仓库不再有裸的 `wx.navigateTo`/`redirectTo`（公开页在 route.ts 里逐条列明）。判据与导航栏那一格相同：**服务端应答过我吗**（与昵称无关）。附 11 条 auth 单测（已有身份零请求 / 没身份登录一次 / 登录失败跳加入页且返回 false / /me 失败跳加入页 / 已在加入页不叠层 / needProfile 补一次 / requireIdentity 不跳页）—— 做完的标志：`grep -rn "wx.navigateTo" apps/miniprogram/src` 只剩 `lib/route.ts` 一处，且全新安装清 storage 后点「开始挑战」在服务端不可达时统一落到加入页
+
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维

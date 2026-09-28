@@ -3,6 +3,7 @@ import type { FavoriteItem } from '@jushuo/shared'
 
 import { listFavorites, setFavorite } from '../../../lib/api/client'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
+import { ROUTES, goPublic } from '../../../lib/route'
 
 /**
  * ⭐ 「我的收藏」—— 我收过的句子，最近收的排前面。
@@ -108,8 +109,8 @@ Page({
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     const row = this.data.rows[i]
     if (!row) return
-    const url = '/pages/arena/arena?article=' + encodeURIComponent(row.articleId)
-    wx.navigateTo({ url, fail: () => wx.reLaunch({ url }) })
+    // ⚠️ 竞技场是**公开页**（陌生人也能看榜），所以走 goPublic 而不是带守卫的 go
+    goPublic(ROUTES.arena.url + '?article=' + encodeURIComponent(row.articleId))
   },
 
   /**

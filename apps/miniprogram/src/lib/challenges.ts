@@ -6,7 +6,13 @@
  * ⚠️ 路由分层：属于「我」的页面放在 pages/me/ 下（我的挑战 / 参与场次）；
  *    而**挑战结果页**（pages/challenge）刻意留在 me 之外 ——
  *    它要能被分享、被陌生人打开，不属于任何一个人的私有地盘。
+ *
+ * ⚠️⚠️ 这里每个函数都**不再自己写 `wx.navigateTo`**，一律走 `lib/route` 的 `go` / `goOnce` ——
+ *    受保护页（pages/me/*、朗读页）的身份守卫只在那一个地方（用户 2026-09 定）。
+ *    「挑战结果页」是**公开**页（分享链接进来的人也要看得到），故走 `goPublic`。
  */
+
+import { go, goOnce, goPublic } from './route'
 
 /** 「我的挑战」列表页 */
 const CHALLENGES_PAGE = '/pages/me/challenges/challenges'
@@ -27,10 +33,7 @@ const PROFILE_HOME_ROUTE = 'pages/profile/profile'
 
 /** 打开「用户主页」—— 同一套去重逻辑（别压两层同样的页） */
 export function openProfileHomePage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === PROFILE_HOME_ROUTE) return
-  wx.navigateTo({ url: PROFILE_HOME_PAGE, fail: () => wx.reLaunch({ url: PROFILE_HOME_PAGE }) })
+  void goOnce(PROFILE_HOME_PAGE, PROFILE_HOME_ROUTE)
 }
 
 /** 「连战记录」页（一个月一张日历） */
@@ -39,10 +42,7 @@ const STREAK_ROUTE = 'pages/me/streak/streak'
 
 /** 打开「连战记录」—— 同一套去重逻辑 */
 export function openStreakPage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === STREAK_ROUTE) return
-  wx.navigateTo({ url: STREAK_PAGE, fail: () => wx.reLaunch({ url: STREAK_PAGE }) })
+  void goOnce(STREAK_PAGE, STREAK_ROUTE)
 }
 
 /** 「能量」页（余额 + 充值 + 流水） */
@@ -56,10 +56,7 @@ const ENERGY_ROUTE = 'pages/me/energy/energy'
  *    朗读页能量不够时的引导、以及「我的主页」。
  */
 export function openEnergyPage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === ENERGY_ROUTE) return
-  wx.navigateTo({ url: ENERGY_PAGE, fail: () => wx.reLaunch({ url: ENERGY_PAGE }) })
+  void goOnce(ENERGY_PAGE, ENERGY_ROUTE)
 }
 
 /** 「参与场次」列表页 */
@@ -69,10 +66,7 @@ const PARTICIPATIONS_ROUTE = 'pages/me/participations/participations'
 
 /** 打开「参与场次」—— 与 openChallengesPage 同一套去重逻辑（别压两层同样的页） */
 export function openParticipationsPage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === PARTICIPATIONS_ROUTE) return
-  wx.navigateTo({ url: PARTICIPATIONS_PAGE, fail: () => wx.reLaunch({ url: PARTICIPATIONS_PAGE }) })
+  void goOnce(PARTICIPATIONS_PAGE, PARTICIPATIONS_ROUTE)
 }
 /** 「我的收藏」列表页 */
 const COLLECTION_PAGE = '/pages/me/collection/collection'
@@ -80,20 +74,14 @@ const COLLECTION_ROUTE = 'pages/me/collection/collection'
 
 /** 打开「我的收藏」—— 与上面同一套去重逻辑（别压两层同样的页） */
 export function openCollectionPage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === COLLECTION_ROUTE) return
-  wx.navigateTo({ url: COLLECTION_PAGE, fail: () => wx.reLaunch({ url: COLLECTION_PAGE }) })
+  void goOnce(COLLECTION_PAGE, COLLECTION_ROUTE)
 }
 
 /** 页面栈里那一页的 route 写法（无斜杠）—— 判断「是不是已经在这一页了」 */
 const CHALLENGES_ROUTE = 'pages/me/challenges/challenges'
 
 export function openChallengesPage(): void {
-  const stack = getCurrentPages()
-  const current = stack[stack.length - 1] as { route?: string } | undefined
-  if (current?.route === CHALLENGES_ROUTE) return
-  wx.navigateTo({ url: CHALLENGES_PAGE, fail: () => wx.reLaunch({ url: CHALLENGES_PAGE }) })
+  void goOnce(CHALLENGES_PAGE, CHALLENGES_ROUTE)
 }
 
 /**
@@ -105,5 +93,6 @@ export function openChallengesPage(): void {
  */
 export function openChallengePage(submissionId: string): void {
   const url = CHALLENGE_PAGE + '?sid=' + encodeURIComponent(submissionId)
-  wx.navigateTo({ url, fail: () => wx.reLaunch({ url }) })
+  // ⚠️ 公开页：从分享链接进来的人**没有账号也该看得到**（见文件头）
+  goPublic(url)
 }

@@ -5,6 +5,7 @@ import { formatScore } from '@jushuo/shared'
 
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
+import { ROUTES, go } from '../../lib/route'
 import * as me from '../../lib/store'
 
 /**
@@ -243,8 +244,11 @@ Page({
   onStart() {
     const { articleId, submissionDate } = this.data
     if (!articleId || !submissionDate) return
-    // ⚠️ 不拦「加入过没有」：能不能挑战由服务端说了算，
-    //    昵称/头像只是展示字段（见 pages/index/index.ts 的 onStart）。
-    wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + submissionDate })
+    /**
+     * ⚠️⚠️ 去**朗读页**= 去花能量做一件要归属的事 —— 必须过统一的 auth
+     *    （见 lib/route：受保护页的守卫只在那一个地方）。
+     *    不认得身份时 auth 会把用户送到加入页，这里**不再自己判断**。
+     */
+    void go(ROUTES.reading.url + '?id=' + articleId + '&date=' + submissionDate)
   },
 })

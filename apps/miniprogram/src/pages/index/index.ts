@@ -13,9 +13,10 @@ import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
-import { openJoinPage, refreshMe } from '../../lib/join'
+import { refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
-import { ensureIdentity, hasIdentity } from '../../lib/session'
+import { ROUTES, go, goPublic } from '../../lib/route'
+import { ensureAuthed, isAuthed } from '../../lib/auth'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
@@ -403,7 +404,8 @@ Page({
    *    这一页只决定「榜上显示成什么」（同 lib/join.ts 的说明）。
    */
   onJoin() {
-    openJoinPage()
+    // ⚠️ 走统一的 auth：没身份时它自己会跳加入页（而这一页正是目的地，不会死循环）
+    void ensureAuthed()
   },
 
   onOpenParticipations() {
@@ -737,7 +739,7 @@ Page({
     // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**
     const articleId = e.detail.articleId ?? ''
     if (!articleId) return
-    wx.navigateTo({ url: '/pages/arena/arena?article=' + articleId })
+    goPublic(ROUTES.arena.url + '?article=' + articleId)
   },
 
   /**
@@ -752,7 +754,7 @@ Page({
    *    ⇒ "让他先读、提交时再说"是错的：他会花 20 秒读一遍、再等上传，然后一无所获。
    *
    * ⚠️ 拦的**不是**"加入过没有"（昵称/头像）：那件事随时能补、也不影响成绩归属
-   *    （见 pages/join 与 lib/session.ts 的说明）。
+   *    （见 pages/join 与 lib/auth.ts 的说明）。
    *
    * 处置：本机没身份 → 先**静默重登一次**（这一步顺带完成注册）：
    *    · 成了 → 照常进朗读页；
@@ -766,7 +768,8 @@ Page({
     // ⚠️ 连点保护：确认身份的那几秒里按钮还在，重复点会打出好几次 login
     if (this.data.starting) return
 
-    if (hasIdentity()) {
+    // ⚠️ 已经有身份就不折腾界面：老用户点一下直接走（一次网络都不发）
+    if (isAuthed()) {
       this.goReading(ds.id, ds.date)
       return
     }
@@ -775,24 +778,22 @@ Page({
     //    toView 只在 render() 里跑，不重画的话这几秒界面上什么都没变
     this.setData({ starting: true })
     this.render()
-    try {
-      await ensureIdentity()
-      this.goReading(ds.id, ds.date)
-    } catch (err) {
-      wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2500 })
-      openJoinPage()
-    } finally {
-      // ⚠️ 页面可能已经被 navigateTo 走了 —— 那 setData 会打在隐藏页上，无害但不必要
-      //    ⚠️ 也要把按钮文案还原：失败后用户还停在这一页，卡在「确认中…」会像坏了
-      if (!this.gone) {
-        this.setData({ starting: false })
-        this.render()
-      }
+    /**
+     * ⭐ 走**统一的 auth**（`lib/auth.ts`）：不认得就静默登录一次，仍不行**它自己**
+     *    会把用户送去加入页 —— 这里不再自己写任何跳转（用户 2026-09 定）。
+     */
+    const ok = await ensureAuthed()
+    // ⚠️ 页面可能已经被跳走了 —— 那 setData 会打在隐藏页上，无害但不必要
+    //    ⚠️ 也要把按钮文案还原：失败后用户还停在这一页，卡在「确认中…」会像坏了
+    if (!this.gone) {
+      this.setData({ starting: false })
+      this.render()
     }
+    if (ok) this.goReading(ds.id, ds.date)
   },
 
   /** 进朗读页（开始挑战的唯一出口）—— 必须把**这一天的日期**带过去 */
   goReading(articleId: string, date: string) {
-    wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
+    void go(ROUTES.reading.url + '?id=' + articleId + '&date=' + date)
   },
 })

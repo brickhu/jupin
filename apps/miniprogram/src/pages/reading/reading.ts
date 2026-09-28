@@ -37,7 +37,7 @@ import {
   recordingKeyOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
-import { ensureSessionForSubmit } from '../../lib/join'
+import { ensureAuthed } from '../../lib/auth'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -1432,31 +1432,49 @@ Page({
       confirmEnergy: this.data.energy,
     })
 
-    let check
-    try {
-      check = await ensureSessionForSubmit()
-    } catch (err) {
-      // ⚠️ 检查没做完 —— 关掉这一层、回 s3 并**在页面上**说一句人话。
-      //    不留在弹窗里：他此刻要做的是"检查网络、再点一次"，而不是在这儿等。
+    /**
+     * ⚠️⚠️ 这里调的是**统一的 auth**（`lib/auth.ts`），它自己会：
+     *    · 已经有身份 → 顺带把 `/me` 拿回来（提交前那次确认要的是里面的权威余额）；
+     *    · 还没有 → 静默登录 + 注册，再取资料；
+     *    · 都不行 → **把用户送去加入页**并返回 false。
+     *    ⇒ 页面这里不再自己判断 uid、也不再自己跳页（用户 2026-09 定：只留一处实现）。
+     */
+    const ok = await ensureAuthed({ needProfile: true })
+    // ⚠️ 期间用户可能已经退出了这一页（或者重录了）—— 那就不再往下走
+    if (this.gone || this.data.phase !== 'precheck') return
+
+    if (!ok) {
+      // ⚠️ 没认出身份、auth 已经把人送到加入页了 —— 关掉这一层回 s3：
+      //    他可能从加入页返回，那时看到的是录音预览（还能再点 ✓）
+      this.setData({ confirmOpen: false, phase: 's3', error: '' })
+      this.syncEnergyNote()
+      return
+    }
+
+    /**
+     * ⭐ 权威余额从**刚写回 store 的那份 /me** 里读（auth 顺带做的事）——
+     *    这里不再单独发一次请求：权威值的来源只有一个（服务端），拉法也只有一处（auth）。
+     * ⚠️ 读不到就**当故障收手**，不能 `?? 0`：那会把"拿不到余额"显示成"余额 0"，
+     *    于是用户看到一个假的「能量不够」并被引去买能量 —— 比报错更坏。
+     */
+    const balance = me.getState().userInfo?.energy
+    if (typeof balance !== 'number') {
       this.setData({
         confirmOpen: false,
         phase: 's3',
-        error: (err as Error).message,
+        error: '暂时取不到能量余额，检查网络后再点一次',
       })
       this.syncEnergyNote()
       return
     }
 
-    // ⚠️ 期间用户可能已经退出了这一页（或者重录了）—— 那就不再往下走
-    if (this.gone || this.data.phase !== 'precheck') return
-
     // ⚠️ 够不够**不在这里判**：给 WXML 的是余额本身，比大小是模板里的事（两个数都来自服务端）
     this.setData({
       // 停在 s3 等用户决定：够 → 「确认提交」；不够 → 「去补能量」
       phase: 's3',
-      confirmEnergy: check,
+      confirmEnergy: balance,
       // ⚠️ 顺手把权威余额写进页面那一格（底部那行小字当场跟着变，见 syncEnergyNote）
-      energy: check,
+      energy: balance,
     })
     this.syncEnergyNote()
   },

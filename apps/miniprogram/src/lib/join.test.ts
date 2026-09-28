@@ -28,8 +28,12 @@ vi.stubGlobal('wx', {
 })
 
 const fetchMe = vi.fn()
+const login = vi.fn()
 vi.mock('./api/client', () => ({
   fetchMe: () => fetchMe(),
+  login: () => login(),
+  getUserId: () => Number(memory.get('uid') ?? 0),
+  setUserId: (id: number) => memory.set('uid', id),
 }))
 
 let store: typeof import('./store')
@@ -116,6 +120,13 @@ describe('openJoinPage', () => {
     expect(nav).toEqual([])
   })
 
+  it('⭐ 没有身份时也会落到加入页（auth 拦下之后的统一去处）', async () => {
+    // 服务端不认识我（/me 拿不到）⇒ auth 自己会把用户送到加入页
+    fetchMe.mockRejectedValue(new Error('boom'))
+    await join.ensureAuthed()
+    expect(nav).toEqual(['to:' + join.JOIN_PAGE])
+  })
+
   it('在别的页面上 → navigateTo 压上去（这样「确认加入」能返回原页）', () => {
     join.openJoinPage()
     expect(nav).toEqual(['to:' + join.JOIN_PAGE])
@@ -123,8 +134,14 @@ describe('openJoinPage', () => {
 })
 
 describe('openProfilePage —— 用户面板里的「修改」', () => {
-  it('⭐ 去的是修改资料页，不是加入页', () => {
+  it('⭐ 去的是修改资料页，不是加入页', async () => {
+    // ⚠️ 修改资料是**受保护页**：先让服务端认识我（否则 auth 会先把人送去加入页）
+    fetchMe.mockResolvedValue(meResponse('张三'))
+    await join.ensureAuthed()
+    nav.length = 0
     join.openProfilePage()
+    // ⚠️ goOnce 是 async 的，等一个微任务队列让跳转落下来
+    await Promise.resolve()
     expect(nav).toEqual(['to:' + join.PROFILE_PAGE])
     expect(join.PROFILE_PAGE).not.toBe(join.JOIN_PAGE)
   })

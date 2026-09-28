@@ -3,6 +3,7 @@ import type { ParticipationRecord } from '@jushuo/shared'
 
 import { fetchParticipations } from '../../../lib/api/client'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
+import { ROUTES, goPublic } from '../../../lib/route'
 
 /**
  * ⭐ 「参与场次」—— 我在哪些句子上参与过，最近参与的排前面。
@@ -100,7 +101,7 @@ Page({
       wx.showToast({ title: '这一场太久远了，看不到榜单', icon: 'none', duration: 2000 })
       return
     }
-    const url = '/pages/arena/arena?date=' + encodeURIComponent(row.scheduleDate)
-    wx.navigateTo({ url, fail: () => wx.reLaunch({ url }) })
+    // ⚠️ 竞技场是公开页（见 lib/route 里那段说明）
+    goPublic(ROUTES.arena.url + '?date=' + encodeURIComponent(row.scheduleDate))
   },
 })

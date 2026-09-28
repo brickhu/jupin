@@ -29,6 +29,7 @@ import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { attachAvatarSrc, resolveCloudFileUrl } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
+import { ROUTES, goPublic, replace } from '../../lib/route'
 import { agoText } from '../../lib/time'
 
 /**
@@ -485,8 +486,8 @@ Page({
    *    只有服务端知道（scheduleDate）—— 客户端不拿本地时钟凑，拿不到就退回今天。
    */
   onOpenArena() {
-    const url = '/pages/arena/arena?date=' + encodeURIComponent(this.scheduleDate || today())
-    wx.navigateTo({ url, fail: () => wx.reLaunch({ url }) })
+    // ⚠️ 竞技场是**公开页**（陌生人也能看榜），走 goPublic
+    goPublic(ROUTES.arena.url + '?date=' + encodeURIComponent(this.scheduleDate || today()))
   },
 
   /**
@@ -496,8 +497,12 @@ Page({
   onAgain() {
     const articleId = this.data.result?.articleId
     if (!articleId) return
-    const url = '/pages/reading/reading?id=' + articleId + '&date=' + today()
-    wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
+    /**
+     * ⚠️ 「再次挑战」= 去朗读页（受保护页）⇒ 走带守卫的 replace。
+     *    ⚠️ 从**分享链接**进来的人可能没有账号：auth 会先静默登录一次，
+     *      仍不行就把他送到加入页 —— 而不是让他在朗读页读完才发现存不下来。
+     */
+    void replace(ROUTES.reading.url + '?id=' + articleId + '&date=' + today())
   },
 
   onRetry() {
