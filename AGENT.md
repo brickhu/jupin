@@ -284,6 +284,12 @@ UnoCSS 走「构建期扫源码 → 静态 WXSS」，运行时零开销。`uno.c
 ② UnoCSS 66 输出 CSS Color 4，产物必须过 `downgradeColorSyntax()`，否则老 WebView 整条颜色声明丢弃。
 间距刻度：1 单位 = 8rpx（`p-4` → `32rpx`）。
 
+**⚠️⚠️ WXML 注释只活在源码里，产物里一条不剩**：小程序编译器对 WXML 注释的处理**不是删掉**——
+它可能留成文本节点/空白节点，于是注释里写给工程自己的话（「本轮先不做」「别加回来」）会有机会**显示在页面上**。
+所以 `build.mjs` 的 `stripWxmlComments()` 在拷贝之后把 `dist/**/*.wxml` 的注释全删掉；
+`src/**/*.wxml` 照旧保留注释（改代码的人要看它），`src/wxml-comments.test.ts` 盯着产物那条。
+⇒ 写注释照旧写，但**别把任何"界面上的字"依赖注释承载**。
+
 ## 1.2 后端 `apps/server/`
 
 ```

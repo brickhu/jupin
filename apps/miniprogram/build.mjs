@@ -479,13 +479,38 @@ async function assertClassesResolve() {
   console.log(`[wxss] ${defined.size} 个类名定义，WXML 引用全部有对应样式`)
 }
 
-/** 静态资源全套：拷贝 → 生成 WXSS → 改写 WXML 类名 → 复查类名 */
+/**
+ * ⭐⭐ **产物里的 WXML 不留注释**（用户 2026-09 报的：界面上看到了工程备注）。
+ *
+ * ⚠️⚠️ 为什么必须做这一步，而不是靠"注释本来就不显示"：
+ *    小程序编译器对 WXML 注释的处理**不是删掉**——它可能留成文本节点/空白节点，
+ *    于是注释里那句「⇒ 别看着这块少了一行又加回来」就有机会**显示在页面上**。
+ *    这类东西在界面上出现一次，用户对整页的信任就掉一截。
+ * ⚠️ 源码里**照旧保留注释**（那份留给改代码的人看）；这里只处理 dist 里的副本。
+ * ⚠️ 顺序要在 escapeWxmlClasses **之后**：那一步靠正则找 class 属性，
+ *    注释先删掉只是少扫一点，但放在后面能保证"注释里的 class"也不会被误当成引用。
+ */
+async function stripWxmlComments() {
+  let removed = 0
+  for (const file of await collectByExt(DIST, ['.wxml'])) {
+    const code = readFileSync(file, 'utf8')
+    const next = code.replace(/<!--[\s\S]*?-->/g, '')
+    if (next !== code) {
+      await writeFile(file, next, 'utf8')
+      removed++
+    }
+  }
+  if (removed > 0) console.log(`[wxml] 从 ${removed} 个产物文件里删掉注释（源码保留）`)
+}
+
+/** 静态资源全套：拷贝 → 生成 WXSS → 改写 WXML 类名 → **删注释** → 复查类名 */
 async function syncStaticAssets() {
   await assertWxSourceValid()
   await assertHandlersExist()
   await copyAssets()
   const map = await buildUnoCss()
   await escapeWxmlClasses(map)
+  await stripWxmlComments()
   await assertClassesResolve()
 }
 

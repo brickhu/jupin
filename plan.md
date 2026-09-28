@@ -64,6 +64,8 @@
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
 - [ ] **B33** **多登录方式的身份层**（等真要接第二种登录时做，现在只留结论）：`users.openid` 现在是 `notNull().unique()` ⇒ **一个用户只能绑一种微信凭据**；而同一个人的不同入口（小程序 / 公众号 / APP 三个 appid）openid 不同、`unionid` 相同 ⇒ 会**被建成两个账号，成绩与连战对半分**。要做的是：① 新表 `user_identities(user_id, kind('wechat_mini'|'phone'|'apple'…), external_id, unionid?, created_at, unique(kind, external_id))`，`users` 不再持有 openid；② `middleware` 从"取 openid"改成"按 (kind, external_id) 查 identities → user_id，没有就建"；③ 解析顺序先 `unionid` 再 openid（同一人合并）；④ 迁移与回填（现有 openid → identities 一行）。⚠️ 现在**先不做**，因为它要动表结构与迁移，而目前只有微信小程序一种入口
 
+- [ ] **B35** **界面里不许出现工程备注**（用户 2026-09 报：「你能不能不要在界面上放你的一些工作备注？」）：WXML 注释里那些"写给自己看"的话（「本轮先不做」「⇒ 别看着这块少了一行又加回来」）**有机会被小程序编译器留成文本节点显示在页面上** —— 所以注释只活在源码里、产物里一条不剩。落地：`build.mjs` 新增 `stripWxmlComments()`（拷到 dist 之后删 `dist/**/*.wxml` 的全部注释，`src/` 照旧保留），`src/wxml-comments.test.ts` 盯着产物（dist 不存在时跳过），`AGENT.md` 的样式/构建一节写明这条契约 —— 做完的标志：`pnpm --filter @jushuo/miniprogram build` 打印「从 N 个产物文件里删掉注释」，且 `grep -c '<!--' dist/pages/reading/reading.wxml` 为 0
+
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维
