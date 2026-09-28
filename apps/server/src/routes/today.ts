@@ -64,6 +64,7 @@ todayRoutes.get('/', async (c) => {
     isToday: true,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
+    lowestScore: stats?.lowestScore ?? null,
     theme: article.theme,
   }
 

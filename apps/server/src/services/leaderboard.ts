@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, lt, max, ne, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, lt, max, min, ne, or, sql, type SQL } from 'drizzle-orm'
 import type { LeaderboardRow } from '@jushuo/shared'
 import { db } from '../db'
 import { participations, submissions, users } from '../db/schema'
@@ -311,6 +311,14 @@ export async function getLeaderboardAround(
 export interface ArenaStats {
   participantCount: number
   topScore: number | null
+  /**
+   * ⭐ 全场**最低分**（同一个人只算最好那次，与 topScore 同一个口径）。
+   *
+   * ⚠️ 它回答的是「这个场子现在什么水平」：最高分说明天花板，最低分说明入场门槛。
+   *    竞技场页把两者和参与人数放在同一张卡上（用户 2026-09 要求）。
+   * ⚠️ 没人参与时是 null，**不是 0** —— 0 会被读成「有人拿了 0 分」。
+   */
+  lowestScore: number | null
   myBest: number | null
   /**
    * 我在这个竞技场打过几次分。
@@ -327,7 +335,9 @@ export async function getArenaStatsBatch(
 ): Promise<Map<string, ArenaStats>> {
   const out = new Map<string, ArenaStats>()
   if (articleIds.length === 0) return out
-  for (const id of articleIds) out.set(id, { participantCount: 0, topScore: null, myBest: null, myAttempts: 0 })
+  for (const id of articleIds) {
+    out.set(id, { participantCount: 0, topScore: null, lowestScore: null, myBest: null, myAttempts: 0 })
+  }
 
   const inIds = sql`${participations.articleId} IN (${sql.join(articleIds.map((i) => sql`${i}`), sql`, `)})`
 
@@ -338,6 +348,8 @@ export async function getArenaStatsBatch(
         // 一人一行 ⇒ 参与人数就是行数，不再需要 COUNT(DISTINCT user_id)
         participants: count(),
         top: max(participations.bestScore),
+        // ⚠️ 与 max 同一条 SQL、同一个过滤条件 —— 两次数的话它们可能落在不同快照上
+        low: min(participations.bestScore),
       })
       .from(participations)
       .where(inIds)
@@ -356,6 +368,7 @@ export async function getArenaStatsBatch(
     out.set(row.articleId, {
       participantCount: Number(row.participants ?? 0),
       topScore: row.top === null || row.top === undefined ? null : Number(row.top),
+      lowestScore: row.low === null || row.low === undefined ? null : Number(row.low),
       myBest: null,
       myAttempts: 0,
     })

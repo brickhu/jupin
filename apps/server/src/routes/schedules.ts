@@ -175,6 +175,7 @@ schedulesRoutes.get('/', async (c) => {
       tags: c?.tags ?? [],
       participantCount: st?.participantCount ?? 0,
       topScore: st?.topScore ?? null,
+      lowestScore: st?.lowestScore ?? null,
       audio: audioOf.get(articleId) ?? null,
       theme: articleById.get(articleId)?.theme ?? null,
     }
@@ -256,6 +257,9 @@ schedulesRoutes.get('/:date', async (c) => {
     isToday: date === now,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
+    lowestScore: stats?.lowestScore ?? null,
+    // ⭐ 参考音频（句子卡左上那颗播放钮要它）—— 与 /api/arenas、/api/articles 共用同一处实现
+    audio: await scheduleAudioOf({ id: articleId, standardAudio: pick.article.standardAudio }),
     theme: pick.article.theme,
     leaderboard,
   }

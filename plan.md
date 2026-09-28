@@ -66,6 +66,8 @@
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
 - [ ] **B33** **多登录方式的身份层**（等真要接第二种登录时做，现在只留结论）：`users.openid` 现在是 `notNull().unique()` ⇒ **一个用户只能绑一种微信凭据**；而同一个人的不同入口（小程序 / 公众号 / APP 三个 appid）openid 不同、`unionid` 相同 ⇒ 会**被建成两个账号，成绩与连战对半分**。要做的是：① 新表 `user_identities(user_id, kind('wechat_mini'|'phone'|'apple'…), external_id, unionid?, created_at, unique(kind, external_id))`，`users` 不再持有 openid；② `middleware` 从"取 openid"改成"按 (kind, external_id) 查 identities → user_id，没有就建"；③ 解析顺序先 `unionid` 再 openid（同一人合并）；④ 迁移与回填（现有 openid → identities 一行）。⚠️ 现在**先不做**，因为它要动表结构与迁移，而目前只有微信小程序一种入口
 
+- [ ] **B36** **朗读挑战页（arena）改版**（用户 2026-09 定的五条）：① 标题「朗读竞技场」→**「朗读挑战」**；② 句子卡左上=播放参考音频、右上=收藏这一句（`arena-card` 加 `showFavorite`/`favorite` 两个属性 + `favorite` 事件；字形只有 outline 一个 ⇒ 已收藏画不透明、未收藏画半透明）；③ 句子卡下方**单独一张「参与概要」卡**：参与人数 / 全场最高分 / **全场最低分**（服务端新给 `lowestScore`，与 `topScore` 同一条 SQL、同口径：一人只算最好那次；没人参与是 null 不是 0）；④ 我的参与概要：挑战 N 回合（`participations.attempts`，只数出过分的）+ 位列第 N，下面接「重新朗读，再次挑战」；⑤ 底部 **`button[open-type=share]`**「邀请好友参与挑战」（普通 view 调不起转发面板；分享路径 = 这一句的挑战页）—— 做完的标志：真机上五项都在，且点右上角的心不会跳进详情页（catchtap 拦住冒泡）
+
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维

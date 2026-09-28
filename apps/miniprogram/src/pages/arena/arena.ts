@@ -1,18 +1,26 @@
 import { startButtonLabel } from '@jushuo/shared'
-import type { ArenaDetail, ArticleTheme, ScheduleDetail } from '@jushuo/shared'
+import type { ArenaDetail, ArticleTheme, ScheduleAudio, ScheduleDetail } from '@jushuo/shared'
 import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail, setFavorite } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
 import { attachAvatarSrc } from '../../lib/cloud-file'
+import { ensureLocalAudio } from '../../lib/audio/standard'
+import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go } from '../../lib/route'
 import * as me from '../../lib/store'
 
 /**
- * 挑战详情页 —— 从首页卡片点进来。
+ * 朗读挑战页 —— 从首页卡片点进来。
  *
  * ⭐ 与首页卡片的分工：卡片是「一眼扫过去」，本页是「看进去」：
- *    完整的排行榜、我的名次、以及从这里进入朗读。
+ *    这一句的参与概要（人数 / 最高 / 最低）、我的参与概要（回合 / 最好成绩 / 名次）、
+ *    完整排行榜，以及从这里进入朗读。
+ *
+ * ⚠️ 页面构成（用户 2026-09 定的五条，别随手动）：
+ *    ① 标题「朗读挑战」；② 句子卡左上播放（参考音频）、右上收藏；
+ *    ③ 单独一张卡放**这个句子的参与概要**；④ 我的参与概要 + 「重新朗读，再次挑战」；
+ *    ⑤ 底部「邀请好友参与挑战」（button open-type=share）。
  *
  * ⚠️⚠️ **两种进法，两个地址**：
  *    · `?article=<articleId>` —— ⭐ 正路：**按句子**看一个竞技场（首页卡片点进来）
@@ -41,24 +49,42 @@ Page({
     text: '',
     translation: '',
     isToday: false,
-    /** ⭐ 句子卡的展示对象（arena-card 的 entry；不带卡片头/CTA） */
+    /**
+     * ⭐ 句子卡的展示对象（arena-card 的 entry）。
+     * ⚠️ header=true（要卡片头：左上播放、右上收藏）、action 不给（本页 CTA 在下面两张卡里）。
+     * ⚠️ audio 为 null = 这句没灌标准音 ⇒ 卡片头那颗播放钮**整颗不渲染**。
+     */
     sentence: null as {
       articleId: string
       header: boolean
       text: string
       translation: string
       theme: ArticleTheme | null
+      audio: ScheduleAudio | null
+      /** ⚠️ 卡片头的播放钮要用它把时长格式化成 00:05（见 arena-card 的 Entry） */
+      durationMs: number | null
     } | null,
 
-    /** '23 人参与，最高得分 74' */
-    stat: '',
     topScore: null as number | null,
+    /** ⭐ 全场最低分（与最高分同一口径：一人只算最好那次）；没人参与是 null */
+    lowestScore: null as number | null,
+    /** 上面三个数的成品文本（WXML 里不做 toFixed） */
+    topScoreText: '—',
+    lowestScoreText: '—',
     participantCount: 0,
+    /** ⭐ 标准音是不是正在播 / 正在取音（句子卡左上那颗播放钮的状态） */
+    playingArticle: '',
+    loadingArticle: '',
     myBest: null as number | null,
     /** myBest 的展示形态（一位小数）—— WXML 里没法调 toFixed */
     myBestText: '—',
     myRank: null as number | null,
     myBeatenCount: null as number | null,
+    /**
+     * ⭐ 我在这句上**出过分**几次（= participations.attempts，只数 status='scored'）。
+     * ⚠️ 用它而不是 submissions.seq：seq 含失败/进行中，会出现「挑战 3 回合」却只有一条成绩。
+     */
+    myAttempts: 0,
     /**
      * ⭐ 我收藏了这一句吗 —— 竞技场页那个收藏按钮的状态。
      * ⚠️ 它来自**鉴权接口** /api/user/arena-records（公开的竞技场详情不含"我的"字段），
@@ -148,19 +174,31 @@ Page({
         text: d.text,
         translation: d.translation,
         isToday: d.isToday,
+        /**
+         * ⚠️ 卡片头开着（header: true）：播放（参考音频）在左上、收藏在右上。
+         *    audio 必须带过来 —— 那句话没灌标准音时它是 null，
+         *    arena-card 会**整颗播放钮都不渲染**（而不是给个点了 404 的按钮）。
+         */
         sentence: {
           articleId: d.articleId,
-          header: false,
+          header: true,
           text: d.text,
           translation: d.translation,
           theme: d.theme,
+          audio: d.audio,
+          // ⚠️ durationMs 必须**单独**给：arena-card 的 audio-button 读的是 entry.durationMs
+          //    （不是 entry.audio.durationMs）——见 arena-card.ts 的 Entry
+          durationMs: d.audio ? d.audio.durationMs : null,
         },
-        stat: this.statText(d),
         topScore: d.topScore,
+        lowestScore: d.lowestScore,
+        topScoreText: formatScore(d.topScore),
+        lowestScoreText: formatScore(d.lowestScore),
         participantCount: d.participantCount,
         // ⚠️ 名次/击败来自**个人接口**（见上面），不是公开详情
         myRank: mine?.rank ?? null,
         myBeatenCount: mine?.beatenCount ?? null,
+        myAttempts: mine?.attempts ?? 0,
         // ⚠️ 收藏与"参与过没有"无关，所以取的是 isFavorite 本身，不看 myBest
         isFavorite: mine?.isFavorite ?? false,
         /**
@@ -226,13 +264,75 @@ Page({
   },
 
   /**
-   * ⚠️ 没人参与过时**不要**写「0 人参与，最高得分 0」——
-   *    那读起来像「这题已经凉了」，而真相是「你是第一个」。
+   * ⚠️ 这里原来有一个 statText（拼「23 人参与，最高得分 74」给卡片头显示）——
+   *    2026-09 按用户要求改成**下方单独一张「参与概要」卡**（人数 / 最高 / 最低），
+   *    所以那行字与这个函数一起删了。别只删卡片上的引用、把它留成死代码。
    */
-  statText(d: ScheduleDetail | ArenaDetail): string {
-    if (d.participantCount === 0) return ''
-    const top = d.topScore === null ? '' : '，最高得分 ' + formatScore(d.topScore)
-    return d.participantCount + ' 人参与' + top
+
+  /**
+   * ⭐ 句子卡左上那颗播放钮 —— 听**参考音频**（标准音）。
+   *
+   * ⚠️ 与首页 onPlayAudio 同一套手感（那里也走 ensureLocalAudio + 全局播放器）：
+   *    · 再点一次 = 停；取音途中再点 = 取消那次的 loading（还没出声，停不下来）
+   *    · 先点亮 loading 再取音：弱网下取音要等一下，没有反馈用户会以为没点上
+   *    · 播完把标记清掉（onEnded 回调），否则会永远亮着
+   */
+  async onPlayAudio(e: WechatMiniprogram.CustomEvent<{
+    articleId: string
+    audio: { full: string; kind: 'cloud' | 'http' } | null
+  }>) {
+    const articleId = e.detail.articleId ?? ''
+    const full = e.detail.audio?.full
+    if (!articleId || !full) return
+
+    if (this.data.playingArticle === articleId) {
+      stopAudio()
+      this.setData({ playingArticle: '' })
+      return
+    }
+    if (this.data.loadingArticle === articleId) {
+      this.setData({ loadingArticle: '' })
+      return
+    }
+
+    const kind = e.detail.audio?.kind === 'cloud' ? 'cloud' : 'http'
+    this.setData({ loadingArticle: articleId, playingArticle: '' })
+    try {
+      const src = await ensureLocalAudio(full, kind)
+      if (!src) throw new Error('标准音取不到，请稍后再试')
+      // ⚠️ 等待期间用户可能又点了别的（或取消）—— 那就别再出声
+      if (this.data.loadingArticle !== articleId) return
+      this.setData({ loadingArticle: '', playingArticle: articleId })
+      await playAudioUrl(src, '标准音', () => {
+        // ⚠️ 播完只清"还是这一句"的标记，别把新点的那一句带掉
+        if (this.data.playingArticle === articleId) this.setData({ playingArticle: '' })
+      })
+    } catch (err) {
+      this.setData({ loadingArticle: '', playingArticle: '' })
+      wx.showToast({ title: (err as Error).message || '播放失败', icon: 'none', duration: 2000 })
+    }
+  },
+
+  /**
+   * ⭐ 邀请好友 —— 分享内容在这里决定（`<button open-type="share">` 只负责拉起面板）。
+   *
+   * ⚠️ 路径 = **这一句的朗读挑战页**（按句子寻址）：对方点开看到的是同一句、
+   *    同一个榜单，可以直接挑战 —— 这才叫"邀请参与挑战"。
+   *    ⚠️ 不要带 date：那是"回到那一天再读一次"的口径，与邀请无关（见文件头两种进法）。
+   */
+  onShareAppMessage() {
+    return {
+      title: '这句金句，你能读多少分？',
+      path: '/pages/arena/arena?article=' + this.data.articleId,
+    }
+  },
+
+  /** ⭐ 分享到朋友圈 —— 朋友圈只能带 query（不能带 path） */
+  onShareTimeline() {
+    return {
+      title: '这句金句，你能读多少分？',
+      query: 'article=' + this.data.articleId,
+    }
   },
 
   /**

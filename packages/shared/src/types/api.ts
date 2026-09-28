@@ -643,6 +643,8 @@ export interface ScheduleEntry {
   participantCount: number
   /** 最高分；无人参与为 null */
   topScore: number | null
+  /** ⭐ 全场最低分（同一人只算最好那次）；无人参与为 null（**不是 0**） */
+  lowestScore: number | null
   /** ⭐ 视觉主题（背景/前景/配图）；老内容为 null ⇒ 端侧用品牌色兜底 */
   theme: ArticleTheme | null
 }
@@ -710,6 +712,18 @@ export interface ScheduleDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
+  /**
+   * ⭐ 全场**最低分**（同一人只算最好那次）—— 「这个场子现在什么水平」的下限。
+   * ⚠️ 没人参与时是 **null**，不是 0（0 会被读成"有人拿了 0 分"）。
+   * ⚠️ 与 topScore 一定同时有值或同时为 null（服务端同一条 SQL 取出来的）。
+   */
+  lowestScore: number | null
+  /**
+   * ⭐ 标准音（参考音频）—— 句子卡左上那颗播放钮要它。
+   * ⚠️ 为 null = 这句没灌标准音 ⇒ 端侧**整颗播放钮都不渲染**
+   *    （渲染一个点了 404 的按钮比不渲染更糟，同 ArticleDetail.audio 的约定）。
+   */
+  audio: ScheduleAudio | null
   /** ⭐ 视觉主题（背景/前景/配图） */
   theme: ArticleTheme | null
   /** 完整榜单（从头往下数，最多 20 条） */
@@ -742,6 +756,18 @@ export interface ArenaDetail {
   isToday: boolean
   participantCount: number
   topScore: number | null
+  /**
+   * ⭐ 全场**最低分**（同一人只算最好那次）—— 「这个场子现在什么水平」的下限。
+   * ⚠️ 没人参与时是 **null**，不是 0（0 会被读成"有人拿了 0 分"）。
+   * ⚠️ 与 topScore 一定同时有值或同时为 null（服务端同一条 SQL 取出来的）。
+   */
+  lowestScore: number | null
+  /**
+   * ⭐ 标准音（参考音频）—— 句子卡左上那颗播放钮要它。
+   * ⚠️ 为 null = 这句没灌标准音 ⇒ 端侧**整颗播放钮都不渲染**
+   *    （渲染一个点了 404 的按钮比不渲染更糟，同 ArticleDetail.audio 的约定）。
+   */
+  audio: ScheduleAudio | null
   /** ⭐ 视觉主题（背景/前景/配图） */
   theme: ArticleTheme | null
   /** 完整榜单（从头往下数，最多 20 条） */

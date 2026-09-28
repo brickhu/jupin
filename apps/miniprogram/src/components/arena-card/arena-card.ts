@@ -45,6 +45,14 @@ Component({
     playing: { type: Boolean, value: false },
     /** 正在取音（还没出声）—— 播放钮显示 loading */
     loading: { type: Boolean, value: false },
+    /**
+     * ⭐ 卡片头右上角画不画「收藏」—— 只在**朗读挑战页**要（用户 2026-09 要求：
+     *    卡片左上播放参考音频、右上收藏这一句）。
+     * ⚠️ 默认 false：首页那些卡片整张是「点进详情」的目标，再挂一颗心会互相误触。
+     */
+    showFavorite: { type: Boolean, value: false },
+    /** 当前收没收藏这一句（页面从鉴权接口取的，不是卡片自己猜的） */
+    favorite: { type: Boolean, value: false },
   },
 
   data: {
@@ -73,6 +81,15 @@ Component({
     onStart() {
       const e = this.data.entry as Entry | null
       this.triggerEvent('start', { articleId: e?.articleId, date: e?.date })
+    },
+    /**
+     * ⭐ 点右上角那颗心 —— 收藏的是**这一句**（与"我读没读过"无关）。
+     * ⚠️ catchtap（WXML 上）而不是 bindtap：整张卡是「点进详情」的目标，
+     *    不拦住冒泡的话，点收藏会顺手把人送进详情页。
+     */
+    onFavorite() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('favorite', { articleId: e?.articleId })
     },
   },
 })

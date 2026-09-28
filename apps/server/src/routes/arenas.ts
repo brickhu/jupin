@@ -8,6 +8,7 @@ import { articles } from '../db/schema'
 import type { Variables } from '../middleware/auth'
 import { loadArticleContent } from '../services/content'
 import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
+import { scheduleAudioOf } from '../services/standard-audio-meta'
 
 /**
  * ⭐⭐ 竞技场详情 —— **按句子**寻址。
@@ -59,6 +60,9 @@ arenasRoutes.get('/:articleId', async (c) => {
     isToday: true,
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
+    lowestScore: stats?.lowestScore ?? null,
+    // ⭐ 参考音频：与 /api/articles/:id、/api/schedules 共用同一个 scheduleAudioOf
+    audio: await scheduleAudioOf({ id: article.id, standardAudio: article.standardAudio }),
     theme: article.theme,
     leaderboard,
   }

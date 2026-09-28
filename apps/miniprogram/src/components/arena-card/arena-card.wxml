@@ -16,6 +16,15 @@
     </view>
     <view class="flex items-center">
       <text wx:if="{{entry.stat}}" class="text-22rpx shrink-0 ac-faint">{{entry.stat}}</text>
+      <!-- ⭐ 收藏（只在朗读挑战页画，见 arena-card.ts 的 showFavorite）：
+           ⚠️ catchtap 拦住冒泡 —— 否则点收藏会顺手把人送进详情页。
+           ⚠️⚠️ 字形只有 **heart-outline** 一个（iconfont 子集里没有实心心，
+              见 tools/iconfont/build.mjs 的 ICONS）⇒ "已收藏"用 **描边 + 不透明**、
+              "未收藏"用 **描边 + 半透明**来区分，而不是假装有个实心字形。
+           ⚠️ 不用 emoji ❤：emoji 的颜色不受主题前景色控制，在 currentColor 卡片上会跳出来。 -->
+      <text wx:if="{{showFavorite}}"
+            class="shrink-0 leading-[1] iconfont icon-heart-outline ml-2 {{favorite ? '' : 'ac-faint'}} {{mode === 'list' ? 'text-32rpx' : 'text-40rpx'}}"
+            catchtap="onFavorite"></text>
       <text class="shrink-0 leading-[1] ac-faint ml-2 iconfont icon-chevron-right {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}"></text>
     </view>
   </view>

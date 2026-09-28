@@ -1,0 +1,28 @@
+/**
+ * 「邀请好友参与挑战」按钮 —— ⚠️ 必须是 <button open-type="share">：
+ *    小程序里**只有它**能主动拉起转发面板，普通 view 点了什么都不会发生。
+ *
+ * ⚠️ button 自带一整套默认样式（灰底、圆角、行高、::after 那圈边框）——
+ *    不重置的话它会在这页看起来像一个坏掉的控件。
+ *    与 pages/profile 的 .pr-share、pages/challenge 的 .cl-share 同一套处理，改一处记得看另外两处。
+ */
+.ar-invite {
+  width: 100%;
+  padding: 30rpx 0;
+  margin: 0;
+  border-radius: 9999rpx;
+  /* ⚠️ 描边胶囊（不是实心）：页面底部已经有「重新朗读，再次挑战」那颗实心主按钮，
+     两颗实心并排会让用户不知道该点哪个 —— 邀请是**次要动作**。 */
+  background: #ffffff;
+  border: 2rpx solid #4f46e5;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ⚠️ ::after 是微信给 button 自带的边框，不干掉就会有一圈额外的灰边 */
+.ar-invite::after {
+  border: none;
+}
