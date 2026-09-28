@@ -24,7 +24,60 @@ import type {
   SubmissionStatusResponse,
 } from '@jushuo/shared'
 
-import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, TARGET, TRANSPORT } from '../../config'
+import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, ENV_VERSION, PLATFORM, SDK_VERSION, TARGET, TRANSPORT } from '../../config'
+
+/**
+ * ⭐ 云能力（wx.cloud.init）的结果 —— 由 app.ts 在 onLaunch 里记录。
+ *
+ * ⚠️⚠️ 为什么要记：云托管通道的失败**有两种长得很像的原因**，
+ *    而它们的解法完全不同：
+ *      ① 手机微信的**基础库太旧**（callContainer 要 2.23.0+）—— 报「undefined is not an object」；
+ *      ② **wx.cloud.init 就没成功**（游客模式 / 未开通云能力）—— 报同一类看不懂的话。
+ *    不把 init 的结果留下来，真机上报错时这两者无法区分 —— 而官方指引里
+ *    这两个症状被归在同一条（基础库版本），照它去查就可能一路查错方向。
+ *
+ * ⚠️ 它必须住在**有状态、被外置**的模块里（见 build.mjs 的 SHARED_STATEFUL）：
+ *    写在 config.ts 那种会被内联进每个页面的模块里，app.js 写的是它自己那份，
+ *    页面读的是另一份 —— 症状是「明明记了，读出来永远是未执行」。
+ */
+let cloudInit: { ok: boolean; error: string } | null = null
+
+/** app.ts 的 onLaunch 里调它 —— 成功失败都要调（见上面那段说明） */
+export function markCloudInit(ok: boolean, err?: unknown): void {
+  cloudInit = { ok, error: ok ? '' : String((err as Error)?.message ?? err ?? '未知原因') }
+}
+
+/**
+ * 云通道失败时**必须一起报出来**的几个事实，拼成一句话。
+ *
+ * ⚠️ 基础库版本排第一：真机上最常见的那条错（undefined is not an object）
+ *    只有对着版本号才有意义 —— 2.23.0 是 callContainer 的门槛。
+ */
+export function containerDiag(): string {
+  const init = cloudInit
+    ? cloudInit.ok
+      ? 'wx.cloud.init 成功'
+      : 'wx.cloud.init 失败：' + cloudInit.error
+    : 'wx.cloud.init 未执行'
+  return `基础库 ${SDK_VERSION} · ${PLATFORM} / ${ENV_VERSION} 版 · ${TARGET} · ${init}`
+}
+
+/** callContainer 这条通道根本不存在时的统一话术（含诊断） */
+function noContainerHint(): string {
+  return (
+    '当前环境没有 wx.cloud.callContainer —— 这条通道要基础库 ≥ 2.23.0，' +
+    '或 wx.cloud.init() 没成功。请把手机微信升级到最新，' +
+    '并在小程序后台「设置 → 功能设置 → 基础库最低版本设置」填 2.23.0 或更高。' +
+    '（' + containerDiag() + '）'
+  )
+}
+
+/**
+ * 「SDK 还没就绪」的判据 —— 官方封装里就是按这个字符串判断并等 300ms 重试的。
+ * ⚠️ SDK 自己的原文是 "Cloud API isn't enabled"，但引号在不同版本里出现过
+ *    ' 和 ’ 两种，所以用 isn'?t 兜住。
+ */
+const CLOUD_NOT_READY = /Cloud API isn'?t enabled|Cloud API is not enabled/i
 
 let token = ''
 
@@ -301,31 +354,76 @@ function containerRequest<T>(path: string, options: RequestOptions): Promise<T> 
     //    ① 基础库 ≥ 2.23.0（旧基础库没有 callContainer）
     //    ② app.onLaunch 里的 wx.cloud.init() 必须成功
     if (typeof wx.cloud?.callContainer !== 'function') {
-      reject(
-        new Error(
-          '当前环境没有 wx.cloud.callContainer：基础库 ' +
-            (wx.getAppBaseInfo?.().SDKVersion ?? '未知') +
-            ' 可能低于 2.23.0，或 wx.cloud.init() 失败。' +
-            '可用「预览」而不是旧版「真机调试」再试。',
-        ),
-      )
+      reject(new Error(noContainerHint()))
       return
     }
-    wx.cloud.callContainer({
-      config: { env: CLOUD_ENV_ID },
-      path,
-      method: options.method ?? 'GET',
-      header: {
-        'Content-Type': 'application/json',
-        'X-WX-SERVICE': CLOUD_SERVICE,
-      },
-      data: (options.data ?? {}) as Record<string, unknown>,
-      // ⚠️ 上限仍是 15 秒（云托管硬限制），但由调用方按剩余预算压小
-      timeout: Math.min(15_000, Math.max(2_000, options.timeout ?? 15_000)),
-      success: (res) => handleResponse<T>(res as unknown as RawResponse, resolve, reject),
-      fail: (err) => reject(new Error(err.errMsg)),
-    })
+
+    /**
+     * ⚠️⚠️ init 是**异步**的：onLaunch 里调完 wx.cloud.init() 之后立刻发请求，
+     *    有那么一小段窗口 SDK 还没就绪，此时失败信息是「Cloud API isn't enabled」。
+     *    官方给出的封装对这条**等 300ms 再试，最多 3 次**（见「调用云托管服务 / 微信小程序」的万能封装），
+     *    我们照做 —— 否则症状是「首次打开偶发失败，再点一次就好」，
+     *    而这会被误当成冷启动、去查完全不相干的方向。
+     */
+    let readyRetry = 0
+    const call = (): void => {
+      wx.cloud.callContainer({
+        config: { env: CLOUD_ENV_ID },
+        path,
+        method: options.method ?? 'GET',
+        header: {
+          'Content-Type': 'application/json',
+          'X-WX-SERVICE': CLOUD_SERVICE,
+        },
+        data: (options.data ?? {}) as Record<string, unknown>,
+        // ⚠️ 上限仍是 15 秒（云托管硬限制），但由调用方按剩余预算压小
+        timeout: Math.min(15_000, Math.max(2_000, options.timeout ?? 15_000)),
+        success: (res) => handleResponse<T>(res as unknown as RawResponse, resolve, reject),
+        fail: (err) => {
+          // ⚠️ 「还没初始化完」是**时机的错**，不是环境的错 —— 等一会儿再来（见上面 readyRetry 的说明）
+          if (CLOUD_NOT_READY.test(err?.errMsg ?? '') && readyRetry < 3) {
+            readyRetry++
+            setTimeout(call, 300)
+            return
+          }
+          reject(containerFailure(path, err))
+        },
+      })
+    }
+    call()
   })
+}
+
+/**
+ * ⭐⭐ 云托管通道的失败**翻译** —— 把一句没法排查的话变成能动手的话。
+ *
+ * ⚠️⚠️ 为什么必须做这件事：真机上这条通道失败时，SDK 给的 errMsg 可能是
+ *    **「undefined is not an object」** —— 它一个字都没提云托管，也没提版本，
+ *    于是页面（index 的 error 卡片）原样把它显示出来，看起来像我们自己的代码炸了。
+ *
+ *    官方排查指引里这条症状是**成组**出现的（原文照抄）：
+ *      「wx.cloud.callContainer is not a function / wx.cloud.connectContainer is not a function /
+ *        fail underfined is not an object」→ 错误原因：**基础库版本太低**，
+ *      解法是把基础库升到 2.23.0+，并在后台把「基础库最低版本设置」也设成 2.23.0+。
+ *    （见 https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloudrun/src/development/call/faq.html）
+ *
+ * ⚠️ 刻意归成 **ApiError（不可重试）**：版本不够这种事重试四次只会白等六秒，
+ *    报错却一模一样 —— 见 isTransportFailure 对 ApiError 的豁免。
+ *    （其余失败仍然原样抛出，交给上层的冷启动重试去处理，只是把诊断拼在后面。）
+ */
+function containerFailure(path: string, err: { errMsg?: string }): Error {
+  const raw = err?.errMsg || '云托管调用失败'
+  if (/undefined is not an object|is not a function|Cloud API isn't enabled|Cloud API is not enabled/i.test(raw)) {
+    return new ApiError(
+      '云托管通道不可用（底层报错原文「' + raw + '」）—— 多半是手机微信的基础库低于 2.23.0：' +
+        '① 把手机微信升级到最新版；' +
+        '② 在小程序后台「设置 → 功能设置 → 基础库最低版本设置」填 2.23.0 或更高。' +
+        '（' + TARGET + ' · ' + path + ' · ' + containerDiag() + '）',
+      'CONTAINER_UNAVAILABLE',
+    )
+  }
+  // ⚠️ 其余失败照旧抛（保留 errMsg 原文，重试判据认的就是它），只把诊断附在后面
+  return new Error(raw + '（' + path + ' · ' + containerDiag() + '）')
 }
 
 interface RequestOptions {

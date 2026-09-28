@@ -105,6 +105,31 @@ function detectPlatform(): string {
 }
 
 /**
+ * ⭐ 当前运行的**微信基础库版本**（形如 '3.7.1'）。
+ *
+ * ⚠️⚠️ 为什么必须把它拿出来：真机上「云托管通道不通」的报错是
+ *    **「undefined is not an object」** —— 一句话里看不出任何与版本有关的线索，
+ *    而官方排查指引里这条正是「基础库低于 2.23.0」（callContainer 要 2.23.0+）。
+ *    所以任何云通道的失败信息都要把版本号带上，否则只能靠猜。
+ *
+ * ⚠️ 拿不到就返回 '未知'，绝不抛 —— 一个诊断值不该把启动流程带崩。
+ *    getAppBaseInfo 要 2.20.1+，老基础库退回 getSystemInfoSync（会打废弃警告）。
+ */
+function detectSdkVersion(): string {
+  try {
+    const info = wx.getAppBaseInfo?.()
+    if (info?.SDKVersion) return info.SDKVersion
+  } catch {
+    /* 老基础库没有 getAppBaseInfo，退回下面 */
+  }
+  try {
+    return wx.getSystemInfoSync().SDKVersion || '未知'
+  } catch {
+    return '未知'
+  }
+}
+
+/**
  * 小程序版本形态（基础库 1.9.6+）：
  *   'develop' 开发版 —— 真机调试、预览
  *   'trial'   体验版
@@ -169,6 +194,9 @@ export const CLOUD_ENV_ID = active.cloudEnvId
 
 export const PLATFORM = detectPlatform()
 export const ENV_VERSION = detectEnvVersion()
+
+/** ⭐ 微信基础库版本 —— 云通道报错时必须一起报出来（见 detectSdkVersion 的说明） */
+export const SDK_VERSION = detectSdkVersion()
 
 /** 本次构建的时刻（ISO 字符串）—— 报告里带上，避免分不清跑的是哪一版 */
 export const BUILD_TIME = __MP_BUILD_TIME__

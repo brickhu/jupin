@@ -1,6 +1,6 @@
 import type { MeResponse } from '@jushuo/shared'
 import { CLOUD_ENV_ID } from './config'
-import { login } from './lib/api/client'
+import { login, markCloudInit } from './lib/api/client'
 import { refreshMe } from './lib/join'
 import { hydrate, markSessionReady } from './lib/store'
 import type { MeState } from './lib/store'
@@ -39,11 +39,16 @@ App({
           ...(CLOUD_ENV_ID ? { env: CLOUD_ENV_ID } : {}),
           traceUser: true,
         })
+        // ⭐ 记下「init 这一步没抛异常」—— 云通道失败时要靠它区分
+        //    「基础库太旧」和「云能力根本没起来」（见 client.ts 的 containerDiag）
+        markCloudInit(true)
         console.log('[app] 云能力已初始化' + (CLOUD_ENV_ID ? ' env=' + CLOUD_ENV_ID : ' (默认环境)'))
       } else {
+        markCloudInit(false, '当前基础库没有 wx.cloud')
         console.warn('[app] 当前基础库不支持 wx.cloud，音频直传不可用')
       }
     } catch (err) {
+      markCloudInit(false, err)
       console.warn('[app] 云能力初始化失败（游客模式或未开通云开发）:', err)
       console.warn('[app] 音频直传不可用，但接口联调不受影响')
     }
