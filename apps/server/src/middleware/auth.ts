@@ -1,8 +1,5 @@
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
-import { eq } from 'drizzle-orm'
-import { db } from '../db'
-import { users } from '../db/schema'
 import { verifyToken } from '../lib/token'
 import { getOrCreateUserByOpenid, type User } from '../services/user'
 
@@ -13,6 +10,16 @@ export interface Variables {
 
 /**
  * 鉴权 —— 两条入口，一个出口。
+ *
+ * ⭐⭐⭐ **凭据 ≠ 身份**（用户 2026-09 定：「不要拿 openid 当成我们库里的 userid，
+ *    未来可能还有其他方式登录的用户」）：
+ *      · **身份** = `users.id`（本库自增主键）。所有业务表、所有接口、
+ *        客户端手里那个 id，都必须是它。
+ *      · **凭据** = 微信 openid（将来还有手机号 / Apple sub…）。
+ *        它只在这一个文件里、以及 lib/token.ts 的签名里出现 ——
+ *        业务代码与响应体里**一律不许出现**（有 identity-guard.test.ts 盯着）。
+ *      ⚠️ 所以本文件是**唯一**"凭据 → user.id"的翻译层：路由拿到的永远是
+ *        `c.get('userId')`。将来加登录方式时，改的只是这一层。
  *
  * ⚠️⚠️ 它同时是**全站唯一的注册点**，而这一点比「鉴权」本身更重要。
  *
@@ -84,23 +91,29 @@ async function resolveUser(c: Context<{ Variables: Variables }>): Promise<Resolv
   {
 
     /**
-     * ⭐⭐ token 里带 openid 时，**一律走「没有就创建」**，而不是「按 userId 查、查不到就 401」。
+     * ⭐⭐ token 里带凭据（现在就是 openid）时，**一律走「按凭据取或建」**，
+     *    而不是「按 userId 查」。
      *
      * ⚠️ 两者的差别不是风格，是**能不能自愈**：
      *    · 按 userId 查：那一行数据没了，这张 token 就永远是废纸 ——
-     *      用户被永久挡在门外，而他的身份（微信那边的 openid）根本没变。
+     *      用户被永久挡在门外，而他的身份（凭据）根本没变。
      *      清库、换环境、误删账号之后，每个人都要手动重启小程序才能恢复。
-     *    · 按 openid 取或建：行没了就再建一行，openid 还是同一个，对他而言**什么都没发生**。
+     *    · 按凭据取或建：行没了就再建一行，凭据还是同一个，对他而言**什么都没发生**。
      *
      * ⚠️ 这不会绕过封禁：被禁的账号 status='banned' 但仍然**存在**，
      *    getOrCreateUserByOpenid 会原样返回它，不会重建。只有真被删掉的行才会重建。
      *
-     * ⚠️ 老 token（这次改动之前签发的）里没有 openid —— 退回按 userId 查，
-     *    查不到才 401。至少不会静默地把一个老用户变成另一个人。
+     * ⚠️⚠️⚠️ **没有凭据的老 token：一律 401，绝不退回按 userId 查**（用户 2026-09 定）。
+     *    理由不是洁癖，是**静默串号**：userId 是签发那一刻的行号，那一行可能已被删，
+     *    而自增 id 会被复用 —— 按 userId 查会把请求认成**另一个人的账号**，
+     *    表现为"我的成绩变成别人的"。宁可让他重新登录一次。
+     *    ⇒ 凭据是身份的唯一入口；`userId` 只用于日志（见 lib/token.ts 的文件头）。
+     *    ⚠️ 现在只有微信这一种凭据（openid）。将来加手机号 / Apple 登录时，
+     *      这里改成"按凭据类型分发"即可，**业务代码一行都不用动** ——
+     *      因为它拿到的一直是 `users.id`，不是 openid。
      */
-    if (payload.openid) return { ok: true, user: await getOrCreateUserByOpenid(payload.openid) }
-    const [found] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1)
-    return found ? { ok: true, user: found } : { ok: false, reason: 'gone' }
+    if (!payload.openid) return { ok: false, reason: 'anonymous' }
+    return { ok: true, user: await getOrCreateUserByOpenid(payload.openid) }
   }
 }
 

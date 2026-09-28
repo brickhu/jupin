@@ -62,6 +62,10 @@
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 - [ ] **B24** **删掉全局排期**：`GET /api/schedules`（含 `/:date`）整条 + `services/schedules.ts` 的轮转 + `services/schedule-date.ts` + `schedules` 表 + `submissions.schedule_date`（连同死索引）+ `participations.last_schedule_date` + 内容管理台排期 + 金句页 `?date=` 入口（只留 `?article=`）—— **保留**每用户 24 小时窗口（`users.today_article_id` / `today_assigned_at`、`GET /api/user/today`、窗口内固定不换、按窗口起始日取模）—— 做完的标志：全仓库搜不到 `/api/schedules` / `schedule_date` / `?date=`，且首页与 24h 窗口行为不变
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
+- [ ] **B32** **凭据 ≠ 身份：把 openid 收进"凭据层"**（用户 2026-09 定：「不要拿 openid 当成我们库里的 userid，未来可能还有其他方式登录的用户」）：① `lib/token.ts` 写清 `userId` 只是可观测性、**鉴权不认它**；② `middleware/auth.ts` **删掉"按 userId 查"的回退** —— 没有凭据的老 token 一律 401（退回按 userId 查会在行被删、自增 id 被复用后**静默串号**：请求被认成另一个人）；③ 新增 `routes/identity-guard.test.ts` 机器守两条：响应体（`c.json`）里出现 `openid`/`unionid`/`sessionKey` 的键或取值即失败（剥注释后判，签名函数实参放过），除白名单外不许 `db.select().from(users)` 整行取账号（白名单必须带理由且必须仍然存在） —— 做完的标志：`pnpm --filter @jushuo/server test` 里那三条全绿，且全仓库搜「按 userId 查用户」只剩 token 签发处的日志用途
+
+- [ ] **B33** **多登录方式的身份层**（等真要接第二种登录时做，现在只留结论）：`users.openid` 现在是 `notNull().unique()` ⇒ **一个用户只能绑一种微信凭据**；而同一个人的不同入口（小程序 / 公众号 / APP 三个 appid）openid 不同、`unionid` 相同 ⇒ 会**被建成两个账号，成绩与连战对半分**。要做的是：① 新表 `user_identities(user_id, kind('wechat_mini'|'phone'|'apple'…), external_id, unionid?, created_at, unique(kind, external_id))`，`users` 不再持有 openid；② `middleware` 从"取 openid"改成"按 (kind, external_id) 查 identities → user_id，没有就建"；③ 解析顺序先 `unionid` 再 openid（同一人合并）；④ 迁移与回填（现有 openid → identities 一行）。⚠️ 现在**先不做**，因为它要动表结构与迁移，而目前只有微信小程序一种入口
+
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维
