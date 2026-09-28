@@ -50,13 +50,22 @@
     </view>
 
     <!-- ── s2 顶行：红点 + 录音中…｜右侧红色计时器 ───────────── -->
-    <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's2'}}">
+    <!-- -- 给改代码的人 --
+         min-h-[76rpx] 是**故意的**：s1/s3 那一行里放着 ui-button size="md"
+         （= 76rpx 高的圆钮 / IPA 胶囊），而这一行只有一个小红点和几个字 ——
+         不撑高的话，s1 → s2 那一下整张卡的内容会**往上跳**
+         （用户 2026-09 报的「s2 顶栏和 s1 高度不一致」）。
+         76 与 ub-s-md 是同一个数，改按钮尺寸时一起改。 -->
+    <view class="flex items-center justify-between mb-3 min-h-[76rpx]" wx:if="{{phase === 's2'}}">
       <view class="flex items-center">
         <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0"></view>
         <text class="text-28rpx text-body ml-2">录音中...</text>
       </view>
-      <!-- ⚠️ 时间在 TS 里格式化（见 mmss）：WXML 不做任何计算 -->
-      <text class="text-28rpx text-bad">{{elapsedText}}</text>
+      <!-- -- 给改代码的人 --
+           时间在 TS 里格式化（见 mmss）：WXML 不做任何计算。
+           字号取 32rpx：s1/s3 那一行右边是 ub-s-md 的 IPA 胶囊（28rpx），
+           而这是一个**正在走的计时器** —— 比胶囊里的静态标签再重一档才读得清。 -->
+      <text class="text-32rpx text-bad">{{elapsedText}}</text>
     </view>
 
     <!-- ── s1 / s2 / s3 主体：句子（逐词渲染）────────────────────
