@@ -28,10 +28,6 @@
     <text class="text-26rpx leading-[1.6] block ac-faint">{{entry.translation}}</text>
   </view>
 
-  <!-- ⭐ 推荐理由：为什么今天给你这一句（见 arena-card.ts 的 note 说明） -->
-  <view wx:if="{{mode === 'featured' && entry.note}}" class="mt-2">
-    <text class="text-22rpx leading-[1.6] block ac-faint">{{entry.note}}</text>
-  </view>
 
   <!-- ⚠️ 挑战按钮与「还没参加」的状态**只有 featured 卡有**：
        list（小卡）是「一眼扫过去」的列表，不放按钮，也不放参与状态。 -->

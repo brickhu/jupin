@@ -132,10 +132,6 @@
 
     <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
     <view class="mt-5" wx:if="{{phase === 's3'}}">
-      <!-- ⚠️ 从缓存恢复的那段录音必须**说出来**：用户会以为是自己刚录的，
-           然后直接提交 —— 而他并不记得那段音频里读的是什么 -->
-      <text class="text-22rpx text-faint block mb-2" wx:if="{{restored}}">这是上次录的，还没提交</text>
-
       <view class="flex items-center">
         <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" bind:press="onRestart">
           <text class="text-36rpx text-ink">↺</text>

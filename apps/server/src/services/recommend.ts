@@ -22,8 +22,9 @@ import { articles, participations, users } from '../db/schema'
  *   ③ **未读优先**（只算**今天之前**读过的）：如果这一档今天那句我**以前**参与过，
  *      就换成"我还没参与过的"。
  *      池子越小这条越关键（句子量少时，同一句几天就轮回来一次）。
- *   ④ **兜底**：该档一句都没有（内容还没铺到那一档）→ 就近换档，
- *      并在 reason 里**说清楚换了**（别让用户以为系统瞎推）。
+ *   ④ **兜底**：该档一句都没有（内容还没铺到那一档）→ 就近换档。
+ *      ⚠️ 「换了档」这件事**只记在 level / myLevel 两个字段上**（端侧要区分时自己比），
+ *        曾经还拼一句 reason 显示给用户 —— 已删（见 TodayPick 的说明）。
  *
  * ⚠️ 只返回「选哪一句 + 为什么」；正文 / 统计 / 音频由路由去补
  *    （见 routes/today.ts）—— 这一层不碰内容文件。
@@ -138,8 +139,12 @@ export interface TodayPick {
   myLevel: ArticleLevel
   /** 档位是怎么来的 */
   levelBasis: string
-  /** 为什么是这一句（人话，卡片直接显示） */
-  reason: string
+  /**
+   * ⚠️ 这里原来有一个 `reason`（"为什么是这一句"）—— **2026-09 删掉**：
+   *    它承载的是下面的**选取规则**，而那是给改代码的人看的工程备注，
+   *    不该出现在界面上（用户口径：「你这些信息不应该展示给用户」）。
+   *    规则留在本文件顶部那段说明里。
+   */
 }
 
 /** 该档的句子，顺序**必须稳定**（按 id）—— 取模结果不能让查询计划改变 */
@@ -154,7 +159,7 @@ async function bandOf(lv: ArticleLevel, database: Database): Promise<string[]> {
 
 /**
  * 就近换档：距离近的先试；同距离**先往下**（别把初级用户扔进专家场）。
- * ⚠️ 内容没铺满时这条会被频繁走到 —— 所以它必须在 reason 里说出来。
+ * ⚠️ 内容没铺满时这条会被频繁走到 —— 所以 level / myLevel 必须如实反映它。
  */
 function neighborLevels(lv: ArticleLevel): ArticleLevel[] {
   const all: ArticleLevel[] = [0, 1, 2, 3]
@@ -241,7 +246,6 @@ export async function recommendToday(
           level: normalizeLevel(stillThere.difficulty) ?? me.level,
           myLevel: me.level,
           levelBasis: me.basis,
-          reason: '这一句在你当前的 24 小时窗口里是固定的 —— 窗口内不会换',
         }
       }
     }
@@ -250,14 +254,12 @@ export async function recommendToday(
   // ★ ② 该档的候选；空了就就近换档
   let level = me.level
   let pool = await bandOf(level, database)
-  let degraded = false
   if (pool.length === 0) {
     for (const alt of neighborLevels(me.level)) {
       const p = await bandOf(alt, database)
       if (p.length > 0) {
         pool = p
         level = alt
-        degraded = true
         break
       }
     }
@@ -299,7 +301,6 @@ export async function recommendToday(
     const fresh = pool.filter((id) => !read.has(id))
     if (fresh.length > 0) {
       pickId = fresh[((dayNumber(date) % fresh.length) + fresh.length) % fresh.length] as string
-      why = '这一档你还没读过这句'
     } else {
       // ★ ⑤ 整档都读过了 → 挑**放得最久**的那句（不是随机，也不是从头再来）
       let oldest = pickId
@@ -312,13 +313,19 @@ export async function recommendToday(
         }
       }
       pickId = oldest
-      why = '这一档你都读过了 —— 挑了放得最久的那句'
     }
   }
 
-  const reason =
-    (why === '' ? '同一档的人今天读的是同一句' : why) +
-    (degraded ? '（' + LABEL[me.level] + '场还没有句子，先给你' + LABEL[level] + '场）' : '')
+  /**
+   * ⚠️⚠️ 这里原来会拼一句 `reason`（「这一句在你当前的 24 小时窗口里是固定的 ——
+   *    窗口内不会换」/「这一档你都读过了 —— 挑了放得最久的那句」/…），
+   *    端侧把它当卡片上那行小字显示 —— **那全是选取规则，是工程备注，不是给用户看的话**
+   *    （用户 2026-09：「你这些信息不应该展示给用户，它是你的工作备注」）。
+   *
+   *    ⇒ 整段删掉，不再往外给 `reason`。选取规则留在上面的注释里（那才是它该在的地方），
+   *      卡片上因此少一行小字 —— 今日挑战那张卡的头部本来就已经说了这是今天要读的句子。
+   *    ⚠️ 别为了"看着空"再补一句场面话：那是同一个错误的软版本。
+   */
 
   /**
    * ★ ⑥ 落库 —— 这是「同一个窗口内不再变」的唯一依据。
@@ -337,6 +344,5 @@ export async function recommendToday(
     level,
     myLevel: me.level,
     levelBasis: me.basis,
-    reason,
   }
 }

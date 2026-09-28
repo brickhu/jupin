@@ -27,11 +27,10 @@ interface Entry {
   durationMs?: number
   stat?: string
   /**
-   * ⭐ 今日推荐的理由（"为什么给你推这一句"）—— 只有 featured 卡有。
-   * ⚠️ 它是推荐能"解释自己"的唯一出口：说不出理由的个性化等于随机。
-   * ⚠️ list（历史小卡）不放：历史卡是"一眼扫过去"，不需要解释。
+   * ⚠️ 这里原来有一个 `note`（今日卡那行「为什么给你推这一句」，来自服务端 reason）——
+   *    2026-09 删掉（用户：那是选取规则 = 工作备注，不该给用户看）。
+   *    字段与渲染都删了：留着"永远为空的备注位"只会诱人再往里塞一句话。
    */
-  note?: string
   action?: string
   hint?: string
   theme?: ArticleTheme | null

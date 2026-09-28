@@ -72,7 +72,6 @@ todayRoutes.get('/', async (c) => {
     myLevel: pick.myLevel,
     level: pick.level,
     levelBasis: pick.levelBasis,
-    reason: pick.reason,
     myBest: stats?.myBest ?? null,
     myAttempts: stats?.myAttempts ?? 0,
   }

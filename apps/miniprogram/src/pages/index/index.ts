@@ -61,12 +61,6 @@ function boardListOf(b: GrowthRankResponse): BoardView[] {
 interface CardView {
   /** 只有今日那一张有（见 toView 的说明） */
   date: string
-  /**
-   * ⭐ 今日卡上那行小字：**为什么给你推这一句**（来自 /api/user/today 的 reason）。
-   * ⚠️ 推荐必须能解释自己 —— 说不出理由的个性化等于随机（见 services/recommend.ts）。
-   * ⚠️ 只有今日那张有；最新上线卡片是空串 ⇒ WXML 里不渲染。
-   */
-  note: string
   articleId: string
   /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
@@ -290,8 +284,6 @@ Page({
      *    动态下标 + 点号连写在小程序模板里支持得很勉强，换个写法就白屏。
      */
     activeRows: [] as GrowthRankRow[],
-    /** 今日推荐的理由（/api/user/today 的 reason）—— 只有那张卡显示 */
-    todayReason: '',
     /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
     boardsLoaded: false,
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
@@ -312,12 +304,6 @@ Page({
 
   /** 请求是否在途 —— 只用来挡并发，不参与任何业务判断 */
   requesting: false,
-
-  /**
-   * 今日推荐的理由（/api/user/today 的 reason）—— 卡片上那行小字。
-   * ⚠️ 放实例上而不是 data：它不是可直接渲染的结构，render() 会把它拼进 today.note。
-   */
-  todayReason: '',
 
   /**
    * 服务端给的**卡片原始数据**（句子、人数…）。
@@ -605,7 +591,6 @@ Page({
        */
       void fetchToday()
         .then((t) => {
-          this.todayReason = t.reason
           if (this.cards) this.cards = { today: t.entry, latest: this.cards.latest }
           this.render()
           /**
@@ -653,7 +638,6 @@ Page({
      *      所以这一步必须留在端侧。）
      */
     const today = this.toView(c.today)
-    today.note = this.todayReason
     this.setData({
       stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
       today,
@@ -677,8 +661,6 @@ Page({
        *    点进去走的是按句子寻址的 arena（data-article）。
        */
       date: card.date ?? '',
-      /** ⚠️ 理由由 render() 单独注入（只有今日那张有，见 CardView.note） */
-      note: '',
       articleId: card.articleId,
       theme: card.theme,
       header: true,

@@ -669,12 +669,17 @@ export interface TodayResponse {
   entry: ScheduleEntry
   /** 我原本的档位（0–3） */
   myLevel: ArticleLevel
-  /** 实际用了哪一档 —— 与 myLevel 不同说明这一档还没有句子，就近换了（见 reason） */
+  /** 实际用了哪一档 —— 与 myLevel 不同说明这一档还没有句子，就近换了 */
   level: ArticleLevel
   /** 档位是怎么来的（人话） */
   levelBasis: string
-  /** 为什么是这一句（人话，卡片上直接显示 —— 推荐必须能解释自己） */
-  reason: string
+  /**
+   * ⚠️ 这里原来有一个 `reason`（「为什么是这一句」），**2026-09 删掉**（用户口径：
+   *    「你这些信息不应该展示给用户，它是你的工作备注」）。
+   *    它承载的是**选取规则**（同档同句 / 未读优先 / 整档挑最久 / 兜底换档 /
+   *    窗口内固定）—— 那是给改代码的人看的，不是给用户看的一句话。
+   *    ⇒ 规则留在 services/recommend.ts 的注释里；卡片上不再有这一行小字。
+   *    ⚠️ 别再以任何形式把它加回来（包括"换成人话再说一遍"）。
   /** 我在这句上的最好成绩 / 挑战次数（与竞技场同一口径） */
   myBest: number | null
   myAttempts: number

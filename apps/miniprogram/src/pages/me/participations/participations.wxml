@@ -25,7 +25,6 @@
   <view class="bg-white rounded-2.5 px-5 py-10 text-center" wx:elif="{{empty}}">
     <text class="text-56rpx block">🎯</text>
     <text class="text-30rpx text-ink font-medium block mt-3">还没有参与过</text>
-    <text class="text-24rpx text-faint block mt-2 leading-[1.6]">回首页读今天这一句，读完这里就有第一场。</text>
   </view>
 
   <block wx:else>
