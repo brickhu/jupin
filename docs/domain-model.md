@@ -207,8 +207,8 @@
 
 | # | 位置 | 在写什么 | 为什么危险 |
 |---|---|---|---|
-| 1 | `apps/server/src/services/user.ts:53` | `UPDATE users SET energy=9999`，**不写 `energy_ledger`** | 余额与流水结构上可永久漂移；这是唯一一个「缓存有值、账本没有对应入账」的运行时写点。仅 `NODE_ENV!==production` 生效（`user.ts:36-38`） |
-| 2 | `apps/server/src/services/user.ts:75` | 建号 insert 时直接给 `users.energy` | 同上，且发生在「用户第一次出现」这个没有账本行的时刻 |
+| 1 | `apps/server/src/services/user.ts:53` | `UPDATE users SET energy=9999`，**不写 `energy_ledger`** | 余额与流水结构上可永久漂移；这是唯一一个「缓存有值、账本没有对应入账」的运行时写点。仅 `NODE_ENV!==production` 生效（`user.ts:36-38`） **已修**：改走 `grantEnergy`（能量唯一写入方），判据换成显式开关 `DEV_ENERGY_TOPUP`（默认关），并新增只读对账 `pnpm db:energy` |
+| 2 | `apps/server/src/services/user.ts:75` | 建号 insert 时直接给 `users.energy` | 同上，且发生在「用户第一次出现」这个没有账本行的时刻 **已修**：建号只插 openid，能量改由 `withLocalDevPrivilege` 走账本补一条流水 |
 | 3 | `tools/admin/server.ts:662` | `INSERT/UPDATE articles` 的整行：`is_active`、`theme`、`standard_audio`、`difficulty`、`published_at` | 难度这一列绕过 `syncArticleIndex`（`article-index.ts:73`）由 admin 直接写；`:663` 再让 syncArticleIndex 写一遍。若 `:663` 失败，库里留的是 admin 那一份 |
 | 4 | `tools/admin/server.ts:880` | `UPDATE articles SET is_active`（+ 必要时 `published_at`） | `is_active` 的第二个写入方；与 `upsertArticle` 的发布逻辑是两套代码 |
 | 5 | `apps/server/src/db/seed-articles.ts:86-94` | 灌库 insert：`is_active=true`、`published_at=now`、`theme` | 灌库=上线（注释自认，`seed-articles.ts:75`）。`published_at` 被写成**灌库时刻**，不是真实上线时刻；`.ignore()` 又让重复灌库不修正已有行 |
