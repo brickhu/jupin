@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "ui-button": "/components/ui-button/ui-button"
+  }
+}

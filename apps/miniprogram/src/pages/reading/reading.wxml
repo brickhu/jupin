@@ -17,12 +17,13 @@
     </view>
   </view>
 
-  <!-- ══ 当前挑战卡：s1–s6 共用同一张卡，只是内容不同 ══════════
+  <!-- ══ 当前挑战卡：s1 / s2 / s3 共用同一张卡 ══════════════════
        （状态机与每一态的来龙去脉见 reading.ts 的文件头注释）
-       ⚠️ 非 s4 也挂着 2px 的**透明**描边：s4 换成绿描边时才不会把整张卡撑大 2px
-          （否则进 s4 那一下整页会跳一下）。 -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3 border-2 border-solid {{phase === 's4' ? 'border-ok' : 'border-transparent'}}"
-        wx:if="{{phase === 's1' || phase === 's2' || phase === 's3' || phase === 's4' || phase === 's5' || phase === 's6'}}">
+       ⚠️⚠️ 提交之后的三个态（上传中 / 评测中 / s5 / s6）**不在这张卡里** ——
+          用户 2026-09 把它们整体搬进了 components/eval-dialog 的浮层：
+          等待期天然禁止点击，结果也不再和句子挤在同一屏。 -->
+  <view class="bg-white rounded-2.5 p-3.5 mb-3"
+        wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
 
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
     <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's1' || phase === 's3'}}">
@@ -56,22 +57,6 @@
       </view>
       <!-- ⚠️ 时间在 TS 里格式化（见 mmss）：WXML 不做任何计算 -->
       <text class="text-28rpx text-bad">{{elapsedText}}</text>
-    </view>
-
-    <!-- ── s5 / s6 顶行：结果图标 + 标题｜评测详情 ────────────
-         ⚠️ 标题按态取：s5 是「第 N 次朗读」（用户 2026-09 要求，N = 服务端给的 attempts），
-            s6 仍是「AI口语测评」—— 那一把没出分，说「第几次朗读」没有意义。 -->
-    <view class="flex items-center justify-between mb-4" wx:if="{{phase === 's5' || phase === 's6'}}">
-      <view class="flex items-center">
-        <view class="w-[64rpx] h-[64rpx] rounded-full flex items-center justify-center shrink-0 {{phase === 's5' ? 'bg-ok' : 'bg-bad'}}">
-          <!-- ⚠️ s6 是**红底 X**：设计稿画的是红底对勾，失败态用 ✓ 会被读成成功
-               （用户 2026-09 已确认换成 X） -->
-          <text class="text-32rpx text-white">{{phase === 's5' ? '✓' : '✕'}}</text>
-        </view>
-        <text class="text-30rpx font-medium text-ink ml-2">{{phase === 's5' && attemptTitle ? attemptTitle : 'AI口语测评'}}</text>
-      </view>
-      <!-- ⭐ 只放摘要，「评测详情」去 pages/challenge（那一页保留） -->
-      <ui-button size="sm" variant="outline" color="default" bind:press="onOpenDetail">评测详情</ui-button>
     </view>
 
     <!-- ── s1 / s2 / s3 主体：句子（逐词渲染）────────────────────
@@ -161,87 +146,19 @@
       <text class="text-22rpx text-faint block text-center mt-2">{{energyNote}}</text>
     </view>
 
-    <!-- ── s4 AI 评测中：整块换成绿色描边卡片 ─────────────────────
-         ⚠️⚠️ 这一态**只保留可点的「试听录音」胶囊**（设计稿明确画了它）。
-            「禁止页面点击」由结构保证：别的按钮压根不存在 ——
-            而不是盖一层全屏遮罩，那会把允许的试听也一起挡住。 -->
-    <view class="py-8 flex flex-col items-center" wx:if="{{phase === 's4'}}">
-      <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 -->
-      <text class="text-56rpx text-ok iconfont icon-loading animate-spin"></text>
-      <text class="text-48rpx font-bold text-ok mt-3">AI评测中</text>
-
-      <view class="mt-4 w-[60%]">
-        <ui-button variant="outline" color="default" size="md" width="full"
-                   loading="{{replayState === 'loading'}}"
-                   icon="{{replayState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
-                   bind:press="onReplay">{{recordDurationText}}</ui-button>
-      </view>
-
-      <!-- ⚠️ 上传阶段给**真实进度**：录音几百 KB，上传那几秒也会停在这一态，
-           不显示百分比的话，「AI评测中」会盖住一段其实还在传的时间（看着像卡死） -->
-      <text class="text-22rpx text-faint mt-3" wx:if="{{uploadPercent < 100}}">正在上传录音 {{uploadPercent}}%</text>
-      <text class="text-22rpx text-faint mt-3" wx:else>{{energyNote}}</text>
-    </view>
-
-    <!-- ── s5 评测成功 ──────────────────────────────────────────── -->
-    <view class="flex flex-col items-center" wx:if="{{phase === 's5'}}">
-      <text class="text-140rpx font-bold text-ok leading-[1]">{{scoreText}}</text>
-      <text class="text-26rpx text-ok mt-2 text-center leading-[1.6]">{{scoreSubtitle}}</text>
-
-      <!-- ⭐ 三张成长值卡：数据来自服务端给的本把快照（SubmitResponse.growth）。
-           拿不到时 growthCards 是空数组 ⇒ 整块不渲染 ——
-           而不是拿 /me 的累计值凑一个数（那会是 +128 这种，见 reading.ts）。
-           ⚠️ 入场过渡（淡入 + 上浮）：cardsIn 由 reading.ts 控制 ——
-              刚出分时先 false 再 true 才有过渡；恢复出来的 s5 直接 true，不再演一遍。
-           ⚠️ 只用 transition / opacity / translate，没有 :hover、属性选择器、通配符
-              （Skyline 约束，见 uno.config.mjs）。 -->
-      <view class="flex items-stretch gap-2 mt-5 w-full transition-all duration-500 ease-out {{cardsIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}}"
-            wx:if="{{growthCards.length > 0}}">
-        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
-              wx:for="{{growthCards}}" wx:key="key">
-          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
-          <text class="text-40rpx font-bold text-ink leading-[1.2]">{{item.value}}</text>
-        </view>
-      </view>
-
-      <view class="w-full mt-6">
-        <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onRestart">
-          <text class="text-34rpx">↺ 重新挑战</text>
-        </ui-button>
-      </view>
-
-      <text class="text-22rpx text-faint mt-3">{{energyNote}}</text>
-    </view>
-
-    <!-- ── s6 评测失败 ──────────────────────────────────────────── -->
-    <view class="flex flex-col items-center" wx:if="{{phase === 's6'}}">
-      <text class="text-72rpx font-bold text-bad">检测失败</text>
-      <!-- ⚠️ 副标题默认是设计稿那句「录音不符合规范，无法检测发音」；
-           但**超时**进 s6 时会换成一句真话（分数可能还在云端算，见 reading.ts）——
-           超时不是「录音不符合规范」，照抄那句就是把锅扣错地方。 -->
-      <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
-
-      <!-- ⚠️ 失败三张卡恒为 +0（灰）：这里的值不需要服务端给 ——
-           失败不扣能量、也不加成长值（见 reading.ts 的 zeroGrowthCards）。
-           ⚠️ **刻意不做数字滚动 / 入场过渡**：+0 没有"涨"这回事，
-              在这里演一遍动画只会让人以为涨了又归零。 -->
-      <view class="flex items-stretch gap-2 mt-5 w-full">
-        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
-              wx:for="{{growthCards}}" wx:key="key">
-          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
-          <text class="text-40rpx font-bold leading-[1.2] {{item.textCls}}">{{item.value}}</text>
-        </view>
-      </view>
-
-      <view class="w-full mt-6">
-        <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onRestart">
-          <text class="text-34rpx">↺ 重新挑战</text>
-        </ui-button>
-      </view>
-
-      <text class="text-22rpx text-faint mt-3">{{energyNote}}</text>
-    </view>
   </view>
+
+  <!-- ══ 评测弹窗 ══════════════════════════════════════════════
+       ⚠️⚠️ 提交评测之后的三个态（上传中 / 评测中 / 出分 s5 / 失败 s6）**都在这一层里**
+          （用户 2026-09 定）：等待期禁止点击由遮罩天然保证，结果也不和句子挤在同一屏。
+       ⚠️ 它自己判断画不画（看 phase），这里不需要 wx:if。
+       ⚠️ 两个回调都由本页实现：onConfirmResult（关窗 + 回 s1 + 这一次进历史）/
+          onOpenDetail（navigateTo pages/challenge）。 -->
+  <eval-dialog phase="{{phase}}" uploadPercent="{{uploadPercent}}"
+               scoreText="{{scoreText}}" scoreSubtitle="{{scoreSubtitle}}"
+               attemptTitle="{{attemptTitle}}" growthCards="{{growthCards}}"
+               failDetail="{{failDetail}}" energyNote="{{energyNote}}"
+               bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
 
   <!-- ── 通用错误条（横跨六态，不改变状态）─────────────────────
        ⚠️ 麦克风没授权、能量不够、上传失败、轮询断网……都在这里说一句人话。

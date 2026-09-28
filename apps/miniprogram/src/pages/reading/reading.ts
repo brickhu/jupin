@@ -41,30 +41,34 @@ import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
- * ⭐⭐ 朗读页 —— **六个状态的显式状态机**（规格：docs/design/reading/SPEC.md）。
+ * ⭐⭐ 朗读页 —— 状态机（规格：docs/design/reading/SPEC.md）。
  *
  *   s1 未录音 ──点麦克风──▶ s2 录音中 ──停止──▶ s3 录音预览
  *    ▲                                             │ ✓（确认 = 提交评测）
  *    │                                             ▼
- *    │                                        s4 AI 评测中
- *    │                                          │        │
- *    │                                   评分成功│        │引擎失败 / 评测超时
- *    │                                          ▼        ▼
- *    └────────「重新挑战」（清缓存）──────── s5 成功    s6 失败
- *    └────────「重录」  （清缓存）─────────────────────┘
+ *    │                                  ╔═══ 评测弹窗（components/eval-dialog）═══╗
+ *    │                                  ║ uploading 上传中 ──▶ scoring 评测中      ║
+ *    │                                  ║        │                    │          ║
+ *    │                                  ║  评分成功│                    │失败/超时  ║
+ *    │                                  ║        ▼                    ▼          ║
+ *    │                                  ║   s5 成功（出分）        s6 失败         ║
+ *    │                                  ╚═══════════「确认」═══════════════════════╝
+ *    └────────「确认」= 关窗 + 清缓存回 s1（s3 的 ↺ 重录走同一段代码）
  *
- * ⚠️⚠️ 为什么把它写成**显式**六态，而不是原来那串 ready/recording/recorded/done：
- *    设计稿是逐态画的（顶行、主体、底部三块各自不同），而原来那套名字和设计稿
- *    对不上号 —— 对着稿子改代码时要在脑子里先做一次翻译，翻错一次就是
- *    「改了 s4、结果是 s5 变了」。现在 WXML 里写的就是设计稿上的 sN。
+ * ⚠️⚠️ **s4 这个名字已经没有了**（用户 2026-09 把提交之后那一段搬进弹窗）：
+ *    原来的 s4 = 现在的 'uploading' + 'scoring' 两态；s5 / s6 仍在，但画在弹窗里。
+ *    弹窗的四种 phase 与页面的 Phase 是**同一份枚举** —— 不再有第二套命名。
  *
- * ⚠️ 另有两个**不属于六态**的东西，别混进来：
+ * ⚠️ 另有两个**不属于状态机**的东西，别混进来：
  *    · loading —— 句子还没拉到（拉失败也停在这里，给「重试」）；
  *    · error   —— 一句人话，横跨所有状态（麦克风没授权 / 能量不够 / 上传失败…），
  *                它**不改变状态**，只是多一条红条（见 WXML 末尾）。
  *
  * ⚠️⚠️ 提交被拒**不都是错误**：能量不够是业务规则、不是故障，必须和真错误分开说，
  *    否则用户以为小程序坏了，然后反复重试（而那正是要拦的行为）。
+ *
+ * ⚠️ 为什么弹窗里的两个等待态要拆开：合成一个的时候，"卡在 0%（网络慢）"和
+ *    "卡在 99%（引擎慢）"在屏幕上长得一模一样（见 Phase 的说明）。
  *
  * ══════════════════════════════════════════════════════════════════
  * ⚠️⚠️ **这里曾经有一整套「实时逐词跟随」，已经作为产品决策整体摘掉。**
@@ -84,10 +88,21 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  * ══════════════════════════════════════════════════════════════════
  */
 
-type Phase = 'loading' | 's1' | 's2' | 's3' | 's4' | 's5' | 's6'
+/**
+ * ⭐ 页面状态。
+ *
+ * ⚠️⚠️ 'uploading' / 'scoring' 就是**原来的 s4**（提交评测那一段等待），用户 2026-09
+ *    把它拆成了两个、并搬进弹窗（见 components/eval-dialog）：
+ *      · 'uploading' —— 录音正在传，有真实百分比；
+ *      · 'scoring'   —— 已经受理，正在等云端打分（只能转圈）。
+ *    拆开的理由：合成一个态时，"卡在 0%（网络慢）"和"卡在 99%（引擎慢）"
+ *    在屏幕上长得一模一样，而它们该说的话完全不同。
+ *    ⚠️ 页面上真正"盖住一切"的那一层由组件按这两个值 + s5/s6 决定画不画。
+ */
+type Phase = 'loading' | 's1' | 's2' | 's3' | 'uploading' | 'scoring' | 's5' | 's6'
 
 /**
- * ⭐ s4 的**超时** —— 到点即进 s6（用户 2026-09 定：等待期不做手工取消，只做超时兜底）。
+ * ⭐ 等待态的**超时** —— 到点即进 s6（用户 2026-09 定：等待期不做手工取消，只做超时兜底）。
  *
  * ⚠️⚠️ 这个数**不是**「打分最多能跑多久」的估计，而是「人盯着转圈能忍多久」。
  *    服务端那条链路**刻意没有时长上限**（靠心跳判活，见 apps/server 的 services/scoring.ts：
@@ -297,7 +312,7 @@ Page({
     ipaOn: false,
 
     /**
-     * ⚡ 能量点数 —— s3/s4/s5/s6 底部那行小字要用它。
+     * ⚡ 能量点数 —— s3 / s5 / s6 与弹窗底部那行小字要用它。
      * ⚠️ 只从服务端给的 profile 里读（每次 /me 顺手补足到 3 点），端侧不自己算余额。
      */
     energy: 0,
@@ -353,7 +368,7 @@ Page({
     /** 老版本留下的「帧拼 WAV」副本 —— **试听兜底用**（新录音恒为空串） */
     playPath: '',
     durationMs: 0,
-    /** 我的录音时长 `00:23` —— s3/s4 那颗 outline 胶囊上显示的就是它 */
+    /** 我的录音时长 `00:23` —— s3 那颗 outline 胶囊上显示的就是它 */
     recordDurationText: '',
     /** s2 顶行那个红色计时器 `00:23`（在 TS 里按毫秒格式化，见 mmss） */
     elapsedText: '00:00',
@@ -369,7 +384,7 @@ Page({
     // ⚠️ 显式标成 boolean：RECORD_SPEC.frames 是 as const 的 true，
     //    不标的话这个字段会被推断成字面量类型 true，而运行时还要能置成 false（见 handleFrame）。
     waveOn: WAVE_ON as boolean,
-    /** 上传进度（0–100）—— s4 里给一句真实进度，别让「AI评测中」盖住还在上传的那几秒 */
+    /** 上传进度（0–100）—— 'uploading' 那一态给真实进度（别让「AI评测中」盖住还在传的那几秒） */
     uploadPercent: 0,
 
     /** ⭐ s5 的成品：大号总分（formatScore，一位小数） */
@@ -392,13 +407,6 @@ Page({
      *         见 zeroGrowthCards 与 WXML 里 s6 那一块）。
      */
     growthCards: [] as GrowthCard[],
-    /**
-     * ⭐ 三张卡的**入场过渡**开关（WXML 上用 transition + opacity/translate 表达）。
-     *    false = 透明 + 下移（初始态）；true = 淡入 + 上浮到位。
-     * ⚠️ 只在**刚出分**（s4→s5）时先 false 再 true，给 CSS 过渡留"从哪来"的那一帧；
-     *    二次进入恢复出来的 s5 直接置 true —— 用户已经看过一次，再淡入只是拖慢他。
-     */
-    cardsIn: false,
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -946,7 +954,7 @@ Page({
   /**
    * ⭐ 底部那行能量小字 —— **在 TS 里算好**，WXML 只负责摆。
    *
-   *   已消耗（s3 预览要提交 / s4 评测中 / s5 成功）：评测消耗能量2，剩余3
+   *   已消耗（s3 预览要提交 / uploading 上传中 / scoring 评测中 / s5 成功）：评测消耗能量2，剩余3
    *   未消耗（s6 失败）：                              本次评测消耗能量0，剩余5
    *
    * ⚠️⚠️ 端侧**不做结算**（受理时锁 2 点、失败释放都在服务端）：这里显示的「剩余」
@@ -960,7 +968,8 @@ Page({
     const left = Math.max(0, energy - ENERGY_PER_CHALLENGE)
     /**
      * ⚠️ 措辞按设计稿分两种（不是随手加的「本次」）：
-     *    预览 / 评测中说的是**还没落定**的一次消耗 ——「评测消耗能量2，剩余3」；
+     *    预览 / 等待（'uploading' 上传中、'scoring' 评测中）说的是**还没落定**的一次
+     *    消耗 ——「评测消耗能量2，剩余3」；
      *    出了结果（s5 / s6）才谈得上「**本次**评测消耗能量…」。
      */
     const head = phase === 's5' || phase === 's6' ? '本次评测消耗能量' : '评测消耗能量'
@@ -970,7 +979,7 @@ Page({
      *    用户点了 ✓ 才被服务端拒 —— 而「明天会补到 3 点」才是他真正需要知道的事。
      */
     const short =
-      energy < ENERGY_PER_CHALLENGE && (phase === 's3' || phase === 's4')
+      energy < ENERGY_PER_CHALLENGE && (phase === 's3' || phase === 'uploading' || phase === 'scoring')
         ? '（不够了，明天会补到 3 点）'
         : ''
     this.setData({
@@ -1033,7 +1042,6 @@ Page({
         scoreSubtitle: '',
         growthCards: [],
         // ⚠️ 同 onRestart：入场开关要复位
-        cardsIn: false,
         failDetail: '',
       },
       /**
@@ -1138,7 +1146,7 @@ Page({
   },
 
   /**
-   * 试听**我的录音**（s3 / s4 那颗 outline 胶囊）。
+   * 试听**我的录音**（s3 那颗 outline 胶囊）。
    *
    * ⭐ 录音格式是 mp3 之后，这件事**变简单了**：落盘的那个文件本身就是能播的容器，
    *    两个平台播的都是它。
@@ -1337,13 +1345,14 @@ Page({
   },
 
   // ----------------------------------------------------------------
-  // s3 → s4：提交评测
+  // s3 → 弹窗：提交评测
   // ----------------------------------------------------------------
   async onSubmit() {
     const { audioPath, durationMs, articleId, phase } = this.data
     if (!audioPath) return
-    // ⚠️ s4 里那颗 ✓ 已经不在界面上了；这里再挡一道是防连点（会白烧一次上传流量）
-    if (phase === 's4') return
+    // ⚠️ 弹窗里的按钮已经盖住了页面（✓ 点不到第二次）；这里再挡一道是防连点
+    //    （会白烧一次上传流量 + 白锁一次能量）
+    if (phase === 'uploading' || phase === 'scoring') return
 
     // ⚠️ 这里**不拦「加入过没有」**：身份（openid）是静默拿到的，而服务端在
     //    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）。
@@ -1364,11 +1373,18 @@ Page({
     }
 
     this.setData({
-      phase: 's4',
+      /**
+       * ⭐⭐ 弹窗在这里**就打开了**（用户 2026-09：「在 s4 之前」）——
+       *    点下 ✓ 的同一帧，整页被遮罩盖住：等待期禁止点击这条口径由浮层天然保证。
+       * ⚠️ 'uploading' 与 'scoring' 是**弹窗自己的两个等待态**（原来的 s4 拆成了它们）：
+       *    上传有真实百分比、打分只能转圈 —— 合成一个态会让"卡在 0%"和"卡在 99%"
+       *    在屏幕上长得一模一样。页面状态机里它们仍然统称等待。
+       */
+      phase: 'uploading',
       error: '',
       uploadPercent: 0,
       restored: false,
-      // ⚠️ 进 s4 前先把播放停掉：录音还在响的话，那颗「试听」钮的状态会留在 playing
+      // ⚠️ 进等待态前先把播放停掉：录音还在响的话，那颗「试听」钮的状态会留在 playing
       replayState: 'unplay',
     })
     stopAudio()
@@ -1379,6 +1395,8 @@ Page({
         articleId,
         onProgress: (p) => this.setData({ uploadPercent: p }),
       })
+      // ⚠️ 上传完了就换「AI评测中」：不换的话进度条会停在 100%，而后面还有十几秒打分
+      if (this.data.phase === 'uploading') this.setData({ phase: 'scoring' })
 
       // ⭐ 只受理，不等打分（打分要 10–20 秒，见 lib/api/client.ts 的注释）
       // ⚠️ 回传的是**当初点进来的那一天**，不是今天：
@@ -1386,7 +1404,7 @@ Page({
       // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值（false）落库，
       //    结果页（pages/challenge）再给那个开关。
       const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl)
-      // ⭐ 记住它：s5 的「评测详情」要靠它去 pages/challenge
+      // ⭐ 记住它：弹窗里「评测详情」要靠它去 pages/challenge
       this.submissionId = task.submissionId
       // ⚠️ 受理阶段就被判失败（音频不合规 / 文章不存在）→ 直接进 s6
       if (task.status === 'failed') {
@@ -1395,7 +1413,7 @@ Page({
         return
       }
       // 幂等命中：这段音频早就打过分，结果直接就在包里
-      // ⚠️ roll=true：用户刚点完提交、正盯着 s4 → 这就是「刚出分」那一刻
+      // ⚠️ roll=true：用户刚点完提交、正盯着转圈 → 这就是「刚出分」那一刻
       if (task.status === 'scored' && task.result) {
         this.applyResult(task.result, true)
         return
@@ -1457,7 +1475,9 @@ Page({
       await new Promise((r) => setTimeout(r, wait))
       // ⚠️ 这里原来只判 phase；页面被销毁时 phase 不会变，于是轮询会继续往
       //    一个已经没了的页面上 setData（报错刷屏）。必须把 gone 也判上。
-      if (this.gone || this.data.phase !== 's4') return
+      // ⚠️ 判 'scoring'（不是原来的 's4'）：上传与打分现在是两个等待态，
+      //    等待期间**只有 'scoring' 该继续轮询** —— 还在上传时不该问结果。
+      if (this.gone || this.data.phase !== 'scoring') return
 
       // ⭐ 超时兜底（见本函数的说明）：到点就按失败处理，但**换一句副标题**
       if (Date.now() - startedAt > SCORING_TIMEOUT_MS) {
@@ -1485,7 +1505,7 @@ Page({
       }
 
       if (st.status === 'scored' && st.result) {
-        // ⚠️ roll=true：轮询拿到分 = 刚出分（s4→s5），要播数字滚动
+        // ⚠️ roll=true：轮询拿到分 = 刚出分（等待态 → s5），要播数字滚动
         this.applyResult(st.result, true)
         return
       }
@@ -1498,7 +1518,10 @@ Page({
   },
 
   /**
-   * ⭐ s4 → s6：评测失败（引擎判失败 / 受理就失败 / 客户端超时）。
+   * ⭐ 等待态 → s6：评测失败（引擎判失败 / 受理就失败 / 客户端超时）。
+   *
+   * ⚠️ 弹窗**不关**：失败也是「这一把的结果」，用户要看着它、再决定重录还是走开
+   *    （关掉它只发生在「确认」那一下，见 onConfirmResult）。
    *
    * @param detail 副标题。空串 = 用设计稿那句「录音不符合规范，无法检测发音」；
    *               **超时**时传一句真话进来（分数可能还在云端算）——
@@ -1524,12 +1547,12 @@ Page({
   },
 
   /**
-   * ⭐ s4 → s5：云端权威结果到手的这一刻。
+   * ⭐ 等待态 → s5：云端权威结果到手的这一刻。
    *
-   * ⚠️ 顺序不能换：store 与刷新必须**先**做完 —— 用户可能立刻点「重新挑战」或退出，
+   * ⚠️ 顺序不能换：store 与刷新必须**先**做完 —— 用户可能立刻点「确认」或退出，
    *    那时再想补写就没有机会了（首页会一直停在旧数据上）。
    *
-   * @param roll 要不要播「数字滚动」。**只有刚出分（s4→s5）才传 true**：
+   * @param roll 要不要播「数字滚动」。**只有刚出分（等待态 → s5）才传 true**：
    *   两个调用点是「提交受理时幂等命中」与「轮询拿到 scored」。
    *   二次进入从本地缓存恢复出来的 s5 传 false —— 用户已经看过一次，
    *   再滚一遍只是拖慢他（见 onLoad 的恢复分支）。
@@ -1573,39 +1596,33 @@ Page({
      *       清早了按钮就点了没反应。真正的清理在 onUnload（见那里的说明）。
      */
     const growth = growthDeltaOf(result)
-    this.setData(
-      {
-        phase: 's5',
-        error: '',
-        // ⚠️ 先落**最终值**：数字滚动只是"盖在上面"的临时显示，
-        //    任何一帧被打断（定时器被清）都不能让界面停在半路。
-        scoreText: formatScore(result.score),
-        scoreSubtitle: this.subtitleOf(result),
-        attemptTitle: result.attempts > 0 ? '第' + result.attempts + '次朗读' : 'AI口语测评',
-        growthCards: growthCardsOf(growth),
-        // ⚠️ 恢复出来的 s5（roll=false）直接置 true：卡片不再淡入
-        cardsIn: !roll,
-        failDetail: '',
-        playingWord: -1,
-        sentenceState: 'unplay',
-        replayState: 'unplay',
-      },
-      () => {
-        /**
-         * ⚠️ 等**首帧渲染完**（setData 回调）再动：
-         *    卡片要先以「透明 + 下移」出现，下一帧再置 cardsIn=true，
-         *    CSS 过渡才有"从哪来"的那一帧。
-         */
-        if (!roll) return
-        this.rollNumbers(result.score, growth)
-        this.setData({ cardsIn: true })
-      },
-    )
+    this.setData({
+      phase: 's5',
+      error: '',
+      // ⚠️ 先落**最终值**：数字滚动只是"盖在上面"的临时显示，
+      //    任何一帧被打断（定时器被清）都不能让界面停在半路。
+      scoreText: formatScore(result.score),
+      scoreSubtitle: this.subtitleOf(result),
+      attemptTitle: result.attempts > 0 ? '第' + result.attempts + '次朗读' : 'AI口语测评',
+      growthCards: growthCardsOf(growth),
+      failDetail: '',
+      playingWord: -1,
+      sentenceState: 'unplay',
+      replayState: 'unplay',
+    })
+    /**
+     * ⭐ 分数从 0 滚到最终分（只在这一把**刚出分**时演）。
+     *
+     * ⚠️ 原来这里靠 setData 回调先摆一帧"透明 + 下移"的卡片再置 cardsIn ——
+     *    卡片搬进弹窗之后，弹窗自己有一次进出场过渡（见 eval-dialog 的 entered），
+     *    再给卡片加一层淡入是两次动画叠在一起，所以那一套整个删了。
+     */
+    if (roll) this.rollNumbers(result.score, growth)
     this.syncEnergyNote()
     /**
      * ⭐⭐ 出了分 = 这一句的历史多了一条 —— 立刻重拉。
      *
-     * ⚠️⚠️ 必须在这里拉，不能只靠 onShow：用户从 s4 等到出分**从没离开过这一页**，
+     * ⚠️⚠️ 必须在这里拉，不能只靠 onShow：用户在评测中等到出分、**从没离开过这一页**，
      *    不拉的话下方那段历史会一直停在"进页面时"的样子 ——
      *    刚读完这一次却在历史里找不到它，看起来就像记录丢了。
      * ⚠️ 这一条**不会出现在列表里**（submissionId 正是要免掉的那一个，见 loadHistory）——
@@ -1728,32 +1745,59 @@ Page({
   /**
    * 「评测详情」—— 详细结果在 pages/challenge（五个分项 / 逐词上色 / 榜单 / 分享）。
    *
-   * ⚠️ 用 redirectTo 而不是 navigateTo：从详情页返回应该回到**进入朗读页之前**那一页
-   *    （首页 / 竞技场 / 我的挑战），而不是退回来对着一个已经交掉的录音界面。
-   * ⚠️ 这一页**保留**（SPEC 已定口径）：s5/s6 只放摘要。
+   * ⚠️⚠️ 用 **navigateTo**（不是原来那个 redirectTo）：用户 2026-09 定的出口是
+   *    弹窗底部那两个按钮，而用户看完详情按返回时，应该回到**还开着的结果弹窗**上 ——
+   *    再点「确认」才收工。从详情返回直接掉回首页会让他以为那次成绩没了。
+   * ⚠️ 这一页**保留**（SPEC 已定口径）：弹窗里只放摘要。
    */
   onOpenDetail() {
-    const url = CHALLENGE_PAGE + '?sid=' + encodeURIComponent(this.submissionId)
-    wx.redirectTo({ url, fail: () => wx.reLaunch({ url }) })
+    openChallengePage(this.submissionId)
   },
 
   /**
-   * ⭐ 「重录」（s3 的 ↺）/「重新挑战」（s5、s6）—— **清缓存回 s1**。
+   * ⭐⭐ 弹窗底部的「确认」——**结果态的唯一出口**（用户 2026-09 定）。
    *
-   * ⚠️ 三个入口共用这一个动作，因为它们的意图完全一样：这一段不要了，从头来。
-   *    （措辞不同只是因为所处状态不同：预览时叫重录，出分后叫重新挑战。）
-   * ⚠️ 必须**一起清掉缓存**：不清的话，下次再进这一页又会被恢复成 s3 ——
-   *    点「重录」等于没点（这是踩过的坑）。
-   * ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐。
+   * 一次动作做三件事，顺序不能换：
+   *   ① 清掉这一把的缓存 —— 不然下次进这一句又会被恢复成 s5（见 clearAttempt）；
+   *   ② 忘掉这一把的提交 id —— 它已经出分、已经落库，**本来就是历史了**，
+   *      再免着它就会出现「我刚打的分从历史里消失了」（见 loadHistory 的口径）；
+   *   ③ 重拉历史 —— 让它**立刻**出现在下面那段里：用户点「确认」时最想确认的
+   *      就是"这次算数了"，而列表里多出来的那一条就是最好的证据。
+   *
+   * ⚠️ 关窗 = 页面回 s1（那张卡重新可录），**不是**回首页：用户多半还想再读一遍
+   *    （「重新挑战」这个动作就并进了确认 —— 反正弹窗关掉之后卡片本来就是 s1）。
+   */
+  onConfirmResult() {
+    this.clearAttempt()
+    this.submissionId = ''
+    void this.loadHistory()
+  },
+
+  /**
+   * 「重录」（s3 的 ↺）—— **清缓存回 s1**，这一段不要了从头来。
+   *
+   * ⚠️ 它和 onConfirmResult 是**两件事**，别合并：
+   *    · 重录 = 结果还没出来（s3 预览里不满意），那一次的提交 id 还不存在；
+   *    · 确认 = 结果已经出来了，要顺带把它送进历史。
+   *    ⚠️ 但两者**清缓存 + 复位界面**的那一半完全一样 ⇒ 共用 clearAttempt()，
+   *      免得将来只改了其中一处（"重录之后又恢复成 s3"那个坑就是这么来的）。
    */
   onRestart() {
+    this.clearAttempt()
+  },
+
+  /**
+   * ⭐ 清掉「这一把」的本地缓存并把界面复位到 s1。
+   *
+   * ⚠️ 必须**一起清掉录音与结果两份缓存**：
+   *    · 录音不清 —— 下次再进这一页又会被恢复成 s3，点「重录」等于没点；
+   *    · 结果不清 —— 下次进来被恢复成 s5，「确认」等于没点（同一个坑的另一半）。
+   * ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐。
+   */
+  clearAttempt() {
     // ⚠️ 先停数字滚动：不停的话它会继续往 s1 的界面上写 scoreText（见 rollNumbers）
     this.stopRoll()
     if (this.recordingKey) clearLastRecording(this.recordingKey)
-    /**
-     * ⚠️⚠️ 结果的缓存也要一起清 —— 不清的话下次进来又被恢复成 s5，
-     *    「重新挑战」等于没点（和上面录音那条是同一个坑）。
-     */
     if (this.recordingKey) clearLastResult(this.recordingKey)
     this.setData({
       phase: 's1',
@@ -1767,9 +1811,8 @@ Page({
       uploadPercent: 0,
       scoreText: '',
       scoreSubtitle: '',
+      attemptTitle: '',
       growthCards: [],
-      // ⚠️ 卡片入场开关也要复位，否则下一次 s5 一进来就是"已现身"（没有过渡）
-      cardsIn: false,
       failDetail: '',
       playingWord: -1,
       sentenceState: 'unplay',
@@ -1777,17 +1820,6 @@ Page({
     })
     stopAudio()
     this.syncEnergyNote()
-    /**
-     * ⭐⭐ 忘掉刚才那一次的提交 id —— 它现在的身份变了。
-     *
-     * ⚠️⚠️ 「历史列表不含当前这一次」里那个"当前"，指的是**用户正看着分数的那一次**。
-     *    点了重新挑战之后就不再看着它了（界面已回 s1），而那一条**本来就是历史**
-     *    （它已经出分、已经落库）—— 继续免着它，用户一重挑战就发现
-     *    「我刚打的分从历史里消失了」，而它其实好好的在库里。
-     * ⚠️ 重新拉一次，让那一条回到列表里（顺带表头计数 +1）。
-     */
-    this.submissionId = ''
-    void this.loadHistory()
   },
 
   // ----------------------------------------------------------------

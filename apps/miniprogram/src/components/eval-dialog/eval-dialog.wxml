@@ -1,0 +1,112 @@
+<!--
+  ⭐⭐ 评测弹窗 —— 朗读页「提交评测 → 评测中 → 出分 / 失败」这三态**盖在页面上**的那一层。
+
+  ⚠️ 为什么把它做成浮层，而不是继续让页面中间那张卡换内容（用户 2026-09 定）：
+     · 等待期本来就该**禁止点击**（SPEC 口径）—— 一层盖住整页的遮罩天然做到了，
+       原来只能靠"别让用户以为卡死"这类文案兜；
+     · 结果（大号分数 + 成长值三卡 + 按钮）不再和上面的句子、下面的历史挤在同一屏，
+       一屏只有一件事；
+     · 确认关掉之后页面干净地回 s1，不会出现"已经交掉的录音界面"这种半截状态。
+
+  ⚠️⚠️ 四种 phase 共用一张卡，但**只有一个出口**：
+     uploading（上传中，有真实进度）/ scoring（AI 评测中，只能转圈）/ s5（出分）/ s6（失败）。
+     关不关得掉由 phase 自己判（见 ts 的 onMaskTap）—— **评测中绝对关不掉**
+     （点遮罩无效、右上角不画 ×）：那次提交的能量已经锁了、云端也在打分，
+     关掉只会让用户以为白花了一次（SPEC 口径：等待期不做手工取消，只做超时）。
+
+  ⚠️ 按钮上的每个动作都由页面实现（组件只发事件）：这里不发请求、不判状态、不碰能量。
+-->
+<view class="ed-layer" wx:if="{{phase === 'uploading' || phase === 'scoring' || phase === 's5' || phase === 's6'}}">
+  <!--
+    ⚠️ 遮罩和卡片是**兄弟**（同 user-sheet）：遮罩负责挡滚动与点击，
+       卡片自己 catchtap/catchtouchmove，否则点在卡片上会穿透到下面的页面。
+    ⚠️ 遮罩在结果态接点击（关窗）；评测中那次 bindtap 会走到 onMaskTap 里被判掉。
+  -->
+  <view class="ed-mask {{entered ? 'ed-mask-on' : ''}}" bindtap="onMaskTap" catchtouchmove="noop"></view>
+
+  <view class="ed-card {{entered ? 'ed-card-on' : ''}}" catchtap="noop" catchtouchmove="noop">
+
+    <!-- ── ① 上传中 / 评测中：卡片中部一个转圈 + 一句人话 ──────────
+         ⚠️ 右上角在这一态**不画 ×**（关不掉），见文件头。 -->
+    <view class="ed-body" wx:if="{{phase === 'uploading' || phase === 'scoring'}}">
+      <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 ——
+           和页面上原来那张 s4 卡用的是同一套（不另造一个 CSS ring）。 -->
+      <text class="text-56rpx {{phase === 'uploading' ? 'text-brand' : 'text-ok'}} iconfont icon-loading animate-spin"></text>
+      <text class="text-34rpx font-bold mt-3 {{phase === 'uploading' ? 'text-brand' : 'text-ok'}}">
+        {{phase === 'uploading' ? '正在上传录音' : 'AI评测中'}}
+      </text>
+      <!-- ⚠️ 上传百分比来自真实的 onProgress（见 uploadAudio）——
+           等待期最怕的是"看不出在动"，所以先把能报的进度报出来。
+           ⚠️ 100% 之后到出分之间还有十几秒（打分本身），那时换下面那句。 -->
+      <text class="text-26rpx text-muted mt-2" wx:if="{{phase === 'uploading' && uploadPercent > 0}}">已上传 {{uploadPercent}}%</text>
+      <text class="text-26rpx text-muted mt-2" wx:else>马上就好</text>
+      <!-- ⚠️ 等超过 SLOW_HINT_MS 才说这句（见 ts）：一进来就说"比平时久"是假的，
+           而真的久的时候不说，用户只会以为卡死了。 -->
+      <text class="text-22rpx text-faint mt-3" wx:if="{{slow}}">比平时久一点，分数还在云端算 —— 别退出，出分就弹给你</text>
+    </view>
+
+    <!-- ── ② 出分（s5）──────────────────────────────────────── -->
+    <view class="ed-body" wx:elif="{{phase === 's5'}}">
+      <!-- ⚠️ 「第N次朗读」与副标题里的名次都来自服务端（见 reading.ts 的 attemptTitle /
+           subtitleOf）—— 组件不自己算这两个数。 -->
+      <text class="text-26rpx text-muted">{{attemptTitle}}</text>
+      <!-- ⚠️ 大号分数行是数字**滚动**的落点（见 reading.ts 的 rollNumbers）：
+           scoreText 由页面逐帧写进来，这里只负责画。 -->
+      <text class="text-120rpx font-bold text-ok leading-[1.1]">{{scoreText}}</text>
+      <text class="text-26rpx text-body mt-2 text-center leading-[1.6]">{{scoreSubtitle}}</text>
+
+      <!-- ⭐ 三张成长值卡：这一把加了多少（服务端下发；拿不到时整块不渲染） -->
+      <view class="flex items-stretch gap-2 mt-5 w-full" wx:if="{{growthCards.length > 0}}">
+        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
+              wx:for="{{growthCards}}" wx:key="key">
+          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
+          <text class="text-40rpx font-bold text-ink leading-[1.2]">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ── ③ 检测失败（s6）────────────────────────────────────
+         ⚠️ 标题用「检测失败」而不是对勾（设计稿那张红底对勾会被读成成功）。 -->
+    <view class="ed-body" wx:elif="{{phase === 's6'}}">
+      <text class="text-72rpx font-bold text-bad">检测失败</text>
+      <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
+
+      <!-- ⚠️ 失败三张卡恒为 +0（灰）：失败不扣能量、也不加成长值 -->
+      <view class="flex items-stretch gap-2 mt-5 w-full">
+        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
+              wx:for="{{growthCards}}" wx:key="key">
+          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
+          <text class="text-40rpx font-bold leading-[1.2] {{item.textCls}}">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ⚠️ 本次消耗的能量那行小字（已经扣了 / 失败没扣）由页面拼好传进来 -->
+    <text class="text-22rpx text-faint mt-4" wx:if="{{energyNote}}">{{energyNote}}</text>
+
+    <!-- ── 底部按钮：结果态才有 ─────────────────────────────────
+         ⚠️ 两个动作都由**页面**实现（组件只发事件）：
+              · 确认 → 关窗 + 回 s1 + 把这一次追加进历史（confirm）
+              · 详情 → pages/challenge?sid=…（openDetail） -->
+    <view class="ed-actions" wx:if="{{phase === 's5' || phase === 's6'}}">
+      <!-- ⚠️ 主按钮是「确认」（关闭）：用户 2026-09 定的出口 ——
+           关掉弹窗 = 这一次结束了，卡片回到干净的可录状态。 -->
+      <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onConfirm">
+        <text class="text-34rpx">确认</text>
+      </ui-button>
+      <!-- ⚠️ 「详情」只在**出分**时给：失败那次没有分项 / 榜单可看 -->
+      <view class="mt-3" wx:if="{{phase === 's5'}}">
+        <ui-button variant="outline" color="default" width="full" bind:press="onOpenDetail">
+          <text class="text-30rpx">评测详情</text>
+        </ui-button>
+      </view>
+    </view>
+
+    <!-- ── 右上角 × ：**只在结果态**画 ──────────────────────────
+         ⚠️ 与「确认」是同一个动作（都走 confirm）—— 给一个习惯性的出口，
+           但评测中不画（关不掉，见文件头）。 -->
+    <text class="ed-close iconfont icon-chevron-right"
+          wx:if="{{phase === 's5' || phase === 's6'}}"
+          bindtap="onConfirm"></text>
+  </view>
+</view>

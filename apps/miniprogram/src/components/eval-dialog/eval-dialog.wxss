@@ -1,0 +1,91 @@
+/**
+ * ⭐ 评测弹窗的**浮层结构**（遮罩 / 居中卡片 / 进出场）。
+ *
+ * ⚠️ 和 nav-bar / user-sheet 同一个理由：固定定位 + 过渡动画这一层**不用 UnoCSS 工具类** ——
+ *    fixed / inset / z- / translate / transition 里任何一个在 weapp 预设下没生成，
+ *    表现都是**静默失效**（弹窗变成页面里的一块内容，看着像样式坏了）。
+ *    卡片**里面**的内容照旧用工具类（那是页面里的写法）。
+ * ⚠️ 层级要压过导航栏（z-index: 100）和用户面板（200）—— 弹窗盖住一切。
+ */
+/* ⚠️ 本组件是 isolated，app.wxss 里的 .iconfont 进不来，必须自己引一份 */
+@import "../../iconfont.wxss";
+
+.ed-layer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 300;
+}
+
+/* ⚠️ 不能用 inset: 0 简写 —— 老 WebView 不认，整条声明会被丢掉 */
+.ed-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+
+.ed-mask-on {
+  opacity: 1;
+}
+
+/**
+ * 卡片：**居中**（不是从底部推上来 —— 那是用户面板的做法）。
+ * ⚠️ 上下各留 80rpx：长内容（副标题换行 + 三张卡 + 两个按钮）也不会顶到屏幕边。
+ */
+.ed-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 620rpx;
+  max-height: 82vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx 40rpx 36rpx;
+  background: #ffffff;
+  border-radius: 32rpx;
+  transform: translate(-50%, -46%) scale(0.96);
+  opacity: 0;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+.ed-card-on {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+/* 主体：一律居中一列（等待态一句话、结果态一堆块都走它） */
+.ed-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* 右上角那个 × —— 用字体里的右箭头转 45°（字体里没有 close 字形） */
+.ed-close {
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+  width: 64rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-size: 40rpx;
+  color: #999999;
+  transform: rotate(-45deg);
+}
+
+.ed-actions {
+  width: 100%;
+  margin-top: 40rpx;
+}
