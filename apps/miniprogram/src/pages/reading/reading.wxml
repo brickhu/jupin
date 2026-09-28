@@ -280,7 +280,14 @@
             <!-- ⚠️ 拿不到时间（老记录）时这一格**不渲染**，不画 Invalid Date —— 见 lib/time.ts -->
             <text class="text-22rpx text-faint ml-2" wx:if="{{item.ago}}">{{item.ago}}</text>
           </view>
-          <text class="text-32rpx font-bold text-ink shrink-0">{{item.scoreText}}</text>
+          <view class="flex items-center shrink-0">
+            <text class="text-32rpx font-bold text-ink">{{item.scoreText}}</text>
+            <!-- ⭐ 分数后面这颗 › =「点得进去」的提示（用户 2026-09 要求）。
+                 ⚠️ 整行本来就 bindtap 进那一次的结果屏（见 onOpenHistory）——
+                    没有它的时候这一行看起来只是一条只读记录，点了会跳是"猜"出来的。
+                 ⚠️ 与「我的挑战」列表里那颗箭头是同一个字形（iconfont 的 icon-chevron-right）。 -->
+            <text class="text-32rpx text-faint ml-1 leading-[1] iconfont icon-chevron-right"></text>
+          </view>
         </view>
       </block>
     </view>
