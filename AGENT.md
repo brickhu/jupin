@@ -38,6 +38,8 @@ docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · �
 [experiments/](docs/experiments/validation-experiment.md)（合并验证实验）·
 [probes/](docs/probes/probe-ise-stream.cjs) · archive/（v1 废弃）。
 
+**数据模型 ↔ 业务概念对照 / 越界写入清单**见 [docs/domain-model.md](docs/domain-model.md)（只读审计，描述现状，不是真相来源）。
+
 > ⚠️ **任务清单不在本文件**：历史的「当前状态 / 下一步」表已收编进 plan.md。
 
 ---
