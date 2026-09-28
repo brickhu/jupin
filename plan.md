@@ -70,6 +70,17 @@
 
 ### C. 上线 / 运维
 
+- [ ] **C7** **dev 环境还在跑旧代码，要重新部署**（2026-09-28 查证）：云托管 dev 最新版本是
+  `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
+  而本会话的后端改动都在这之后 —— 用时序 + **线上响应形状**两条独立证据确认过：
+  ① `POST /api/auth/session` + 只有 `userId`（无 openid）的老 token 仍然 **200**
+  （B32 把这条件改成了必须 401）；② `/api/user/today` 仍然返回 `reason`
+  （B34 已把这条字段整根删掉，值还是那句工程备注「同一档的人今天读的是同一句」）。
+  ⇒ 后端 **B32（凭据≠身份）/ B34（删 reason、入口冷启动预算）都还没上 dev**。
+  要做的：`git push` 到 dev 等 CI（注意 CI #64 曾失败，jupin-062/063/064 create_failed、
+  jupin-070 build_failed 都是它），推完在控制台确认新版本 `流量=100%` 且
+  `/api/user/today` 不再有 `reason`。⚠️ 只有 `apps/miniprogram/**` 的提交不触发后端部署。
+
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
 - [ ] **C2** dev 临时开 **MySQL 外网地址** —— 才能从本机灌种子；灌完可关
 - [ ] **C3** **prod 的 `jushuo` 库还不存在**（`Unknown database`）—— 先建库再谈迁移
