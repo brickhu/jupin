@@ -76,3 +76,5 @@ npm-debug.log*
 
 
 
+apps/miniprogram/dist.tmp
+apps/miniprogram/dist.old

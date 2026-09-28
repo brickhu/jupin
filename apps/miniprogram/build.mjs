@@ -47,7 +47,14 @@ const WATCH = process.argv.includes('--watch')
 const PKG_DIR = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(PKG_DIR, '../..')
 const SRC = resolve(PKG_DIR, 'src')
-const DIST = resolve(PKG_DIR, 'dist')
+/**
+ * ⚠️ 产物落点可用 `BUILD_DIST` 覆盖 —— 给 build-atomic.mjs 用：先构建到 dist.tmp，
+ *    **成功后再整体替换 dist/**。为什么必须这样见那个文件头：
+ *    原来「先 rm -rf dist 再重建」，任何中途失败都会把 dist 留在
+ *    「有 app.wxss、没有 uno.wxss」的半成品状态，而工具报的是**指向源码**的
+ *    「path ./uno.wxss not found」—— 看起来像源码缺文件，实际是产物缺一块。
+ */
+const DIST = process.env.BUILD_DIST ? resolve(process.env.BUILD_DIST) : resolve(PKG_DIR, 'dist')
 /** UnoCSS 产物落点 —— src/app.wxss 里 @import "./uno.wxss" 指的就是它 */
 const UNO_OUT = resolve(DIST, 'uno.wxss')
 

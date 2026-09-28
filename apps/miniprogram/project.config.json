@@ -37,9 +37,9 @@
     "include": []
   },
   "scripts": {
-    "beforeCompile": "node build.mjs",
-    "beforePreview": "node build.mjs",
-    "beforeUpload": "node build.mjs"
+    "beforeCompile": "node build-atomic.mjs",
+    "beforePreview": "node build-atomic.mjs",
+    "beforeUpload": "node build-atomic.mjs"
   },
   "editorSetting": {}
 }
