@@ -33,9 +33,13 @@ Component({
     mode: { type: String, value: 'bar' },
     row: { type: Object },
     theme: { type: Object },
-    playing: { type: Boolean, value: false },
-    /** 正在取音（还没出声）—— 播放钮显示 loading */
-    loading: { type: Boolean, value: false },
+    /**
+     * ⚠️ 这里原来有 `playing` / `loading` 两个属性（页面传"是不是这一行在播"进来，
+     *    再把点击转发给页面去取音播放）—— **2026-09 删掉**：
+     *    那套行为现在整个归 `recording-player`（它自己管三态），
+     *    而页面也不再需要"正在播的是第几行"这个下标。
+     *    ⇒ 别把它们加回来：一旦页面又拿状态回传，"两处各自演化"就回来了。
+     */
     index: { type: Number, value: 0 },
   },
 
@@ -52,8 +56,13 @@ Component({
   },
 
   methods: {
-    onPlay() {
-      this.triggerEvent('play', { index: this.data.index })
+    /**
+     * ⭐ 播放钮报错 → 转给页面去说。
+     * ⚠️ 这一层**不弹 toast**：同一个组件在别的宿主里可能是页面红条 / 别的说法，
+     *    组件只把"发生了什么"往上送（见 recording-player 的事件说明）。
+     */
+    onAudioError(e: WechatMiniprogram.CustomEvent<{ message?: string }>) {
+      this.triggerEvent('audioError', { message: e.detail?.message ?? '播放失败' })
     },
     onOpen() {
       this.triggerEvent('open', { index: this.data.index })

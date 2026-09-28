@@ -48,10 +48,13 @@
       <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
     </view>
 
-    <!-- ⭐ 一行 = 一张「提交卡（bar）」——订阅/详情/播放都在组件里，主题色也跟着句子走 -->
+    <!-- ⭐ 一行 = 一张「提交卡（bar）」——订阅/详情/播放都在组件里，主题色也跟着句子走。
+         ⚠️ 2026-09：播放那一套（取音/落盘/播/停）搬进了共用的 recording-player，
+            所以这里**不再传** playing / loading，也不再接 play 事件 ——
+            那一行的播放钮自己管自己的三态（见 components/recording-player）。
+         ⚠️ 播放失败由卡转上来（audioError），这一页只用一句话说清。 -->
     <submission-card wx:for="{{rows}}" wx:for-item="row" wx:key="submissionId"
                      mode="bar" row="{{row}}" index="{{index}}"
-                     playing="{{playing === index}}" loading="{{audioLoading === index}}"
-                     bind:play="onPlay" bind:open="onOpen" />
+                     bind:audioError="onAudioError" bind:open="onOpen" />
   </block>
 </view>

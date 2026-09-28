@@ -264,17 +264,14 @@
               data-i="{{index}}" bindtap="onOpenHistory">
           <view class="flex items-center">
             <!-- ⭐ 听这一次的录音（用户 2026-09：第 N 次前面加一个播放按钮）。
-                 ⚠️ 全站唯一那颗播放钮（audio-button）：描边=没播、实心=在响，
-                    一屏好几颗时扫一眼就知道声音从哪儿来。
-                 ⚠️ 录音地址是**按需向服务端要**的（每条单独授权、会过期）
-                    ⇒ 点的时候才取，取音途中转圈（见 onPlayHistory）。
-                 ⚠️ 为什么这里不需要写 catchtap：audio-button **自己**在根节点上用
-                    catchtap 拦住了冒泡（见那个组件的说明）—— 否则整行是「进那一次的结果屏」
-                    的入口，点播放就会顺手跳走。这一点由 wxml-handlers 的静态检查 +
-                    那个组件自己的注释一起守着，别在这儿再多写一道（写了反而要凭空加个空方法）。 -->
-            <audio-button size="sm"
-                          state="{{historyPlaying === index ? 'playing' : (historyAudioLoading === index ? 'loading' : 'unplay')}}"
-                          bind:play="onPlayHistory" data-i="{{index}}" />
+                 ⚠️⚠️ 用**共用组件** recording-player，不在这里手写"取音 / 落盘 / 播 / 停"：
+                    那套行为原来在「我的挑战」里已经有一份，再抄一份就是两处各自演化
+                    （症状：同一个录音，一个列表里能播、另一个列表里点了没反应）。
+                    组件内部自带三态与防连点，页面**不再需要** playing/loading 两个下标。
+                 ⚠️ 录音地址按需向服务端要（每条单独授权、会过期）—— 这件事也在组件里。
+                 ⚠️ 点它**不会**跳进详情：audio-button 自己 catchtap 拦住了冒泡。 -->
+            <recording-player submissionId="{{item.submissionId}}" size="sm"
+                              bind:error="onHistoryAudioError" />
             <text class="text-28rpx text-ink font-medium ml-2">第 {{item.seq}} 次</text>
             <!-- ⚠️ 「最高」标在**目前的最高分**那一行（并列时都标）——
                  它比一个数字更直接地回答"我最好那次是哪回"。 -->

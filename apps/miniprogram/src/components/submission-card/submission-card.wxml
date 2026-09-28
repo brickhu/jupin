@@ -7,10 +7,14 @@
 <view wx:if="{{mode === 'bar'}}" class="sc-bar" style="background:{{bg}};color:{{fg}}"
       data-i="{{index}}" bindtap="onOpen">
   <view class="flex items-center">
-    <!-- 播放钮 = audio-button（尺寸/状态/反色都在组件里） -->
-    <audio-button class="mr-2" size="md"
-                  state="{{loading ? 'loading' : (playing ? 'playing' : 'unplay')}}"
-                  fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
+    <!-- ⭐ 播放钮 = 共用组件 recording-player（取音/落盘/播/停都在它里面，见那个组件的说明）。
+         ⚠️ 以前这里收页面传下来的 playing / loading 两个状态、再把点击转发给页面 ——
+            那套"行为"因此在这一页和朗读页各写了一份。现在整件事归组件，
+            页面连"正在播的是第几行"都不用存了。
+         ⚠️ 反色（主题卡上是"卡片前景底 + 卡片底色图标"）透传 fill / ink。
+         ⚠️ 取音 / 播放失败时组件发 error，这里转给页面去说（怎么说是页面的语言）。 -->
+    <recording-player class="mr-2" size="md" submissionId="{{row.submissionId}}"
+                      fill="{{fg}}" ink="{{bg}}" bind:error="onAudioError" />
 
     <view class="sc-line">
       <view class="flex">

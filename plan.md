@@ -66,6 +66,8 @@
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
 - [ ] **B33** **多登录方式的身份层**（等真要接第二种登录时做，现在只留结论）：`users.openid` 现在是 `notNull().unique()` ⇒ **一个用户只能绑一种微信凭据**；而同一个人的不同入口（小程序 / 公众号 / APP 三个 appid）openid 不同、`unionid` 相同 ⇒ 会**被建成两个账号，成绩与连战对半分**。要做的是：① 新表 `user_identities(user_id, kind('wechat_mini'|'phone'|'apple'…), external_id, unionid?, created_at, unique(kind, external_id))`，`users` 不再持有 openid；② `middleware` 从"取 openid"改成"按 (kind, external_id) 查 identities → user_id，没有就建"；③ 解析顺序先 `unionid` 再 openid（同一人合并）；④ 迁移与回填（现有 openid → identities 一行）。⚠️ 现在**先不做**，因为它要动表结构与迁移，而目前只有微信小程序一种入口
 
+- [x] **B37** **录音播放收成一个共用组件**（用户 2026-09：「你能不能同意采用播放组件？？？？」）：新建 `components/recording-player`（取音 → 落盘 → 播 / 停 / 失败说法全在它里面，只管行为，外观仍交给 `audio-button`）。替换两处手写实现：**朗读页历史行**（B36 里我抄的第二份）与**「我的挑战」列表**（`submission-card` 的 bar 形态，它的 `playing`/`loading` 两个属性与 `play` 事件一并退休）。⇒ 页面**不再需要**「正在播的是第几行」那种下标。⚠️ 剩下 `pages/challenge` 还有一份（结果屏那颗钮要缓存 `audioRef`、且 loading 要一路亮到真出声），本轮**没动**，见 B38。
+- [ ] **B38** **把结果屏那颗播放钮也换成 recording-player**：`pages/challenge` 的 `onPlayAudio` 是同一套逻辑的第三份，但它有两处真实差异 —— ① 结果包里有 `audioRef` 可缓存（不必每次问服务端）；② 它的 loading **一路亮到真的能出声**（先亮 stop 再卡住会被读成"按了停止却没停"）。要做得给组件加"可传入地址、跳过取音"与"loading 到出声"两个能力，再删掉那份实现 —— 做完的标志：全仓库只剩 recording-player 一处 `fetchSubmissionAudio` + `ensureLocalAudio` + `playAudioUrl` 的组合。
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维

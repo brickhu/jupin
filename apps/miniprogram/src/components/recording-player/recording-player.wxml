@@ -1,0 +1,17 @@
+<!--
+  ⭐⭐ 一次挑战的**录音播放钮**（用户 2026-09："同意采用播放组件"）。
+
+  ⚠️⚠️ 这个组件存在的唯一理由：把「取音 → 落盘 → 播 → 停 → 失败怎么说」
+     这套**行为**收成一份。
+     在这之前它有两份手写实现（pages/me/challenges 与 pages/reading 的历史行），
+     而两份的实现细节已经开始分叉（一处判 audio 为 null、一处忘了）——
+     这类分叉的症状是"同一个录音，在一个列表里能播、在另一个列表里点了没反应"。
+
+  ⚠️ 只管**行为**，外观交给 audio-button（全站唯一那颗钮：描边=没播、实心=在响、
+     取音中转圈）。宿主如果要反色（主题卡上），传 fill / ink 下去。
+  ⚠️ 同时只可能播一段（全站共用一个播放器，见 lib/audio/play.ts）⇒
+     这里的状态就是"这一颗钮"的三态，不需要"列表级"的正在播下标。
+     宿主也不必再存 playing/loading 两个下标 —— 那是这个组件内部的事。
+-->
+<audio-button size="{{size}}" showDuration="{{showDuration}}" durationMs="{{durationMs}}"
+              state="{{state}}" fill="{{fill}}" ink="{{ink}}" bind:play="onTap" />

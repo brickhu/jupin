@@ -2,6 +2,6 @@
   "component": true,
   "styleIsolation": "apply-shared",
   "usingComponents": {
-    "audio-button": "/components/audio-button/audio-button"
+    "recording-player": "/components/recording-player/recording-player"
   }
 }

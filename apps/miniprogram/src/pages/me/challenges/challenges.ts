@@ -8,9 +8,8 @@ import {
 } from '@jushuo/shared'
 import type { ArticleTheme, ChallengeRecord, ChallengeWordScore } from '@jushuo/shared'
 
-import { fetchChallenges, fetchSubmissionAudio } from '../../../lib/api/client'
-import { ensureLocalAudio } from '../../../lib/audio/standard'
-import { playAudioUrl, stopAudio } from '../../../lib/audio/play'
+import { fetchChallenges } from '../../../lib/api/client'
+import { stopAudio } from '../../../lib/audio/play'
 import { openChallengePage } from '../../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 import { agoText } from '../../../lib/time'
@@ -136,14 +135,11 @@ Page({
     /** 一次都没挑战过 —— 和「加载中」是两件事，文案也不同 */
     empty: false,
     /**
-     * ⭐ 正在播的那一行的下标（-1 = 没在播）。
-     * ⚠️ 只存一个下标，不给每行加 playing 字段：
-     *    同时只可能播一段（见 lib/audio/play.ts），存两份状态迟早不同步。
+     * ⚠️ 这里原来有 `playing` / `audioLoading` 两个下标（哪一行在播 / 在取音）——
+     *    **2026-09 删掉**：那两件事现在归 `recording-player` 组件自己管
+     *    （页面既不需要知道、也不该知道"第几行在响"）。
+     *    ⇒ 别加回来：一旦页面又存播放状态，就会出现"页面说在播、组件说没播"。
      */
-    playing: -1,
-    /** ⭐ 正在**取音**的那一行的下标（-1 = 没有）—— 那一行的播放钮显示 loading。
-     *  ⚠️ 与列表自己的 loading（首次加载）区分开 */
-    audioLoading: -1,
   },
 
   onLoad() {
@@ -160,12 +156,17 @@ Page({
    * ⚠️ 离开页面就停声音：列表里点开一条详情，那段录音不该在背后继续响。
    *    两处都停（hide 是「翻走了」，unload 是「真没了」）。
    */
+  /**
+   * ⚠️ 离开这一页就停声音：列表里点开一条详情 / 翻走时，那段录音不该在背后继续响。
+   *    （那一行的播放钮自己也会在自己被销毁时停 —— 两道都留着：
+   *      页面被 hide（不是销毁）时组件还活着，这时只有这里能停。）
+   */
   onHide() {
-    this.stopPlayback()
+    stopAudio()
   },
 
   onUnload() {
-    this.stopPlayback()
+    stopAudio()
   },
 
   onPullDownRefresh() {
@@ -192,64 +193,14 @@ Page({
     void this.load()
   },
 
-  /** 停掉正在播的那一段（并清掉行上的标记） */
-  stopPlayback() {
-    stopAudio()
-    if (this.data.playing !== -1 || this.data.audioLoading !== -1) {
-      this.setData({ playing: -1, audioLoading: -1 })
-    }
-  },
+
 
   /**
-   * ⭐ 播放这一行的录音。
-   *
-   * ⚠️ 地址是**按需向服务端要**的（见 fetchSubmissionAudio）：
-   *    它每条单独授权、会过期，所以不能提前批量取、也不能缓存起来长期用。
-   * ⚠️ catchtap 而不是 bindtap：整行是「进详情」的入口，
-   *    不拦住冒泡的话，点播放会顺手把人送进详情页。
+   * ⭐ 播放钮报错时说一句话（取音失败 / 播放失败 / 录音不在了）。
+   * ⚠️ 组件只发事件、不弹 toast（怎么说是页面的语言）—— 这一页就是 toast。
    */
-  async onPlay(e: WechatMiniprogram.CustomEvent<{ index: number }>) {
-    const i = e.detail.index
-    const row = this.data.rows[i]
-    if (!row) return
-
-    // 再点一次 = 停（同一行）
-    if (this.data.playing === i) {
-      this.stopPlayback()
-      return
-    }
-    // ⚠️ 取音途中再点 = 忽略：还没出声，再发一次只会让两段音频抢同一个播放器
-    if (this.data.audioLoading === i) return
-
-    if (row.failed) {
-      wx.showToast({ title: '这段录音已经不在了', icon: 'none' })
-      return
-    }
-
-    // 先切到 loading：等网络回来再给反馈的话，用户会以为没点上而连点几次
-    stopAudio()
-    this.setData({ audioLoading: i, playing: -1 })
-
-    try {
-      const { audio } = await fetchSubmissionAudio(row.submissionId)
-      // ⚠️ audio 为 null = 音频不在了（失败的提交会被服务端删掉）
-      if (!audio) throw new Error('这段录音已经不在了')
-      // ⚠️ 拿本地文件再播：同一个地址反复听时不必每次重下（见 lib/audio/standard.ts）
-      const path = await ensureLocalAudio(audio.src, audio.kind)
-      if (!path) throw new Error('取不到这段录音')
-      // ⚠️ 等待期间用户可能已经点了别的行 —— 那就别再播这一段了
-      if (this.data.audioLoading !== i) return
-      this.setData({ audioLoading: -1, playing: i })
-      await playAudioUrl(path, '录音', () => {
-        // ⚠️ 播完清标记，但只在「还是这一行」时清，别把新点的那一行带掉
-        if (this.data.playing === i) this.setData({ playing: -1 })
-      })
-    } catch (err) {
-      if (this.data.audioLoading === i || this.data.playing === i) {
-        this.setData({ audioLoading: -1, playing: -1 })
-      }
-      wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2000 })
-    }
+  onAudioError(e: WechatMiniprogram.CustomEvent<{ message?: string }>) {
+    wx.showToast({ title: e.detail?.message || '播放失败', icon: 'none', duration: 2000 })
   },
 
   /** 点一条 → 挑战详情（朗读页的结果屏） */
@@ -269,7 +220,7 @@ Page({
       wx.showToast({ title: '还在检测中，稍后再看', icon: 'none' })
       return
     }
-    this.stopPlayback()
+    stopAudio()
     openChallengePage(row.submissionId)
   },
 })
