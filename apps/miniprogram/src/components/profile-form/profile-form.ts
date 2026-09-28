@@ -4,6 +4,7 @@ import { CLOUD_ENV_ID } from '../../config'
 import { getUserId, saveProfile } from '../../lib/api/client'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import { refreshMe } from '../../lib/join'
+import { ensureIdentity } from '../../lib/session'
 import * as me from '../../lib/store'
 
 /**
@@ -176,6 +177,18 @@ Component({
 
       this.setData({ saving: true, error: '' })
       try {
+        /**
+         * ⭐⭐ ⓪ 先要一个身份 —— **保存昵称头像前必须先把那条 `users` 行建出来**。
+         *
+         * ⚠️⚠️ 为什么会走到这里：加入页有三个入口（导航栏那格、用户面板那格、
+         *    首页「开始挑战」确认身份失败时），其中**后面两个可能在 uid=0 时进来**——
+         *    那时服务端还不认识我，`POST /api/user/profile` 没有 user_id 可挂，
+         *    再漂亮的昵称也存不下来。
+         * ⚠️ 这一步就是**注册**（服务端 getOrCreateUserByOpenid 没有就当场建一行），
+         *    所以它失败时**不能装作保存成功**，也不能只显示一句"保存失败"——
+         *    要说清是"没连上"，并且让用户能再试一次。
+         */
+        await ensureIdentity()
         // ① 头像先上传（只有**重新选过**才传 —— 否则保持库里那张）
         let fileId = ''
         let avatarFailed = false
@@ -210,6 +223,10 @@ Component({
         // ④ 告诉页面：成了，你自己决定去哪儿
         this.triggerEvent('saved', { avatarFailed })
       } catch (err) {
+        /**
+         * ⚠️ 身份那一步失败时给的那句已经是一句人话（见 lib/session.ts），
+         *    照原样显示；其它失败才用兜底文案。
+         */
         this.setData({ error: (err as Error).message || '保存失败，请重试' })
       } finally {
         this.setData({ saving: false })

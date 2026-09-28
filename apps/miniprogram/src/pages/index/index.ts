@@ -15,6 +15,7 @@ import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { openJoinPage, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
+import { ensureIdentity, hasIdentity } from '../../lib/session'
 import * as me from '../../lib/store'
 import type { ArenaRecord } from '../../lib/store'
 
@@ -254,6 +255,13 @@ Page({
     error: '',
 
     /**
+     * ⭐ 「开始挑战」正在确认身份（见 onStart）—— 那几秒里把按钮写成「确认中…」。
+     * ⚠️ 必须有这个反馈：本机没身份时那一次静默登录可能等几秒，
+     *    期间按钮毫无变化，用户只会以为点了没反应，然后连点。
+     */
+    starting: false,
+
+    /**
      * ⭐ 状态卡上的三个数。
      *
      * ⚠️ 拿不到时是 null（整张卡不渲染），**不是**三个 0 ——
@@ -322,6 +330,12 @@ Page({
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
 
+  /**
+   * 页面已销毁 —— 「开始挑战」里那次确认身份是异步的（见 onStart），
+   * 回来时页面可能已经没了（用户跳走 / 退出）。判活用，别往销毁的页面上写。
+   */
+  gone: false,
+
   onLoad() {
     // ⚠️ 在 onLoad 里取：它赶得上首帧渲染，不会先顶到状态栏再跳下来
     this.setData({ navTop: navPadTop() })
@@ -349,7 +363,7 @@ Page({
      */
     const cached = me.cachedSchedules()
     if (cached) {
-      this.cards = { today: cached.today, latest: cached.latest }
+      this.cards = { today: cached.today, latest: cached.latest ?? [] }
       this.setData({ loading: false })
       this.render()
     }
@@ -499,6 +513,9 @@ Page({
     // ⚠️ 必须退订：不退的话页面销毁后回调还在跑，里面一句 setData 就报错
     this.unsubStore?.()
     this.unsubStore = null
+    // ⚠️ 还有一件异步的事在做：「开始挑战」里那次确认身份（见 onStart）——
+    //    它回来时页面可能已经没了，那句 setData 会被拦在 gone 上
+    this.gone = true
   },
 
   async load() {
@@ -514,13 +531,27 @@ Page({
       // ⭐ 先把「我的记录」写进 store（广播给所有页面），再本地重画一次
       me.applySchedules(d)
       /**
+       * ⚠️⚠️ **服务端可能比端侧旧** —— 这里必须容错，不能直接 d.latest.map()。
+       *
+       *    真实事故（2026-09-28 真机预览）：这个字段在 09-28 那次改口径时
+       *    从 `history` 改名成 `latest`（服务端 schedules 路由），而 dev 云托管上
+       *    还跑着 09-25 的旧版本 —— 旧服务端返回的是 `{ date, today, history }`。
+       *    于是 `d.latest.map(...)` 当场抛 **「undefined is not an object」**：
+       *      · 报错信息里一个字都没提字段名与版本，看着像我们自己的代码坏了；
+       *      · 开发者工具里一切正常（它打的是本机 Docker，那份是当前代码），
+       *        只有真机（打云托管 dev）才炸 —— 极易被误判成「真机特有问题」。
+       *    ⇒ 端侧发版与服务端发版是**两条独立的节奏**，端侧对新增字段一律当**可选**，
+       *      缺了就少一段列表，页面照常可用（见下面 latest 的兜底）。
+       */
+      const latest = d.latest ?? []
+      /**
        * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
        *    myBest / myAttempts 属于「我的」，按页面模型走鉴权接口，端侧按 articleId
        *    融合（见 store 的 applyArenaRecords）—— 公开列表只管公开数据。
        * ⚠️ 只问**这一屏上的 id**（最多 6 个），不是把我的全量记录拉下来。
        * ⚠️ 不 await：列表先出来；个人那份到了会走 store 广播重画。
        */
-      void fetchArenaRecords([d.today.articleId, ...d.latest.map((x) => x.articleId)]).then((r) =>
+      void fetchArenaRecords([d.today.articleId, ...latest.map((x) => x.articleId)]).then((r) =>
         me.applyArenaRecords(r.items),
       )
       /**
@@ -558,7 +589,7 @@ Page({
        * ⚠️ 先按**公开列表**把首页画出来（latest 那一段只有它有），
        *    今日那张卡再被下面的推荐替换掉 —— 推荐接口慢/失败都不能让首屏空着。
        */
-      this.cards = { today: d.today, latest: d.latest }
+      this.cards = { today: d.today, latest }
       this.setData({ loading: false })
       this.render()
 
@@ -620,7 +651,12 @@ Page({
     this.setData({
       stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
       today,
-      latest: c.latest.filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
+      /**
+       * ⚠️ `?? []` 不是多余的：c 可能来自**上次启动落下的缓存**，
+       *    而那份缓存是更早的端侧版本写的（那时这个字段还叫 history）——
+       *    少了这层兜底，首页会在「读取缓存」这条路上白屏，且毫无线索。
+       */
+      latest: (c.latest ?? []).filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
     })
   },
 
@@ -649,7 +685,8 @@ Page({
       hint: hintText(mine),
       // ⚠️ 用 myBest 判断而不是 myAttempts：两者在正常流程里同进同退，
       //    但「参与过」的权威判据是**有没有成绩**。
-      action: startButtonLabel(mine.myBest !== null),
+      // ⚠️ 正在确认身份（见 onStart）时按钮换一句 —— 那几秒不能毫无反馈
+      action: this.data.starting ? '确认中…' : startButtonLabel(mine.myBest !== null),
     }
   },
 
@@ -703,18 +740,59 @@ Page({
     wx.navigateTo({ url: '/pages/arena/arena?article=' + articleId })
   },
 
-  /** 开始/再次挑战 —— 必须把**这一天的日期**带过去 */
-  onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string; date: string }>) {
+  /**
+   * ⭐⭐ 开始 / 再次挑战 —— 先过**身份那一关**，再跳朗读页（用户 2026-09 定）。
+   *
+   * ⚠️⚠️ 为什么这里必须拦（而不是像原来那样直接跳）：
+   *    **uid = 0 时那条 `users` 行根本还没建**（服务端 `getOrCreateUserByOpenid`
+   *    是全站唯一的注册点，它在**第一个成功的请求**上才建行）。那时用户读得再认真，
+   *    成绩也**没有归属** —— 分数、榜单、成长值全挂在 user_id 上：
+   *      · 录音上传路径 `audio/{句子id}/{uid}/…` 里的 uid 非法，上传必失败；
+   *      · 就算传上去了，那条提交也不属于任何人。
+   *    ⇒ "让他先读、提交时再说"是错的：他会花 20 秒读一遍、再等上传，然后一无所获。
+   *
+   * ⚠️ 拦的**不是**"加入过没有"（昵称/头像）：那件事随时能补、也不影响成绩归属
+   *    （见 pages/join 与 lib/session.ts 的说明）。
+   *
+   * 处置：本机没身份 → 先**静默重登一次**（这一步顺带完成注册）：
+   *    · 成了 → 照常进朗读页；
+   *    · 没成 → 跳**加入句拼**页（用户 2026-09 定的去处）。那一页的「确认加入」
+   *      会自己再要一次身份（见 profile-form 的 onSubmit），要不到就明说，
+   *      不会把它变成一个点了没反应的按钮。
+   */
+  async onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string; date: string }>) {
     const ds = { id: e.detail.articleId, date: e.detail.date }
     if (!ds.id || !ds.date) return
-    /**
-     * ⚠️ 这里**不再拦「加入过没有」**。身份（openid）是静默拿到的，而服务端在
-     *    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）——
-     *    能不能挑战由服务端说了算。昵称 / 头像只是榜上显示成什么，
-     *    可以随时补、也可以一直不补（见 pages/join），端侧不该拿它当门。
-     */
-    wx.navigateTo({
-      url: '/pages/reading/reading?id=' + ds.id + '&date=' + ds.date,
-    })
+    // ⚠️ 连点保护：确认身份的那几秒里按钮还在，重复点会打出好几次 login
+    if (this.data.starting) return
+
+    if (hasIdentity()) {
+      this.goReading(ds.id, ds.date)
+      return
+    }
+
+    // ⚠️ 立刻重画一次：按钮要从「开始挑战」变成「确认中…」——
+    //    toView 只在 render() 里跑，不重画的话这几秒界面上什么都没变
+    this.setData({ starting: true })
+    this.render()
+    try {
+      await ensureIdentity()
+      this.goReading(ds.id, ds.date)
+    } catch (err) {
+      wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2500 })
+      openJoinPage()
+    } finally {
+      // ⚠️ 页面可能已经被 navigateTo 走了 —— 那 setData 会打在隐藏页上，无害但不必要
+      //    ⚠️ 也要把按钮文案还原：失败后用户还停在这一页，卡在「确认中…」会像坏了
+      if (!this.gone) {
+        this.setData({ starting: false })
+        this.render()
+      }
+    }
+  },
+
+  /** 进朗读页（开始挑战的唯一出口）—— 必须把**这一天的日期**带过去 */
+  goReading(articleId: string, date: string) {
+    wx.navigateTo({ url: '/pages/reading/reading?id=' + articleId + '&date=' + date })
   },
 })

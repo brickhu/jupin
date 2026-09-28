@@ -109,7 +109,12 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    → 能量（弹窗里问权威余额：够就列清「消耗/剩余」等确认，不够给【去补能量】）。
    落在 `lib/join.ts` 的 `ensureSessionForSubmit()` + 朗读页的 `onSubmit()` /
    `onConfirmStart()`；确认那一层与评测那一层共用 `components/eval-dialog`。
-7. ✅ **s4 / s5 / s6 搬进弹窗**（用户 2026-09 的追加需求，覆盖上面 s4–s6 三节的排版）：
+7. ✅ **入口也要拦身份**（用户 2026-09 定）：首页「开始挑战」在跳朗读页之前先确认身份
+   （没有就先静默重登一次；仍失败 → 跳加入页）。理由同上：uid=0 时那条 `users` 行还没建，
+   **成绩没有归属** —— 让他先读 20 秒再在提交时被打回是错的。
+   落地：`lib/session.ts`（`hasIdentity()` / `ensureIdentity()`，全站唯一实现）+
+   首页 `onStart()`（按钮在那几秒显示「确认中…」）+ `profile-form` 保存前先要身份。
+8. ✅ **s4 / s5 / s6 搬进弹窗**（用户 2026-09 的追加需求，覆盖上面 s4–s6 三节的排版）：
    落地在 `components/eval-dialog`（浮层）+ 朗读页的状态机改写。
    - 点下 s3 那颗绿 ✓ 的**同一帧**弹窗就出现（用户说的"在 s4 之前"）：
      原来那个 s4 被拆成 **'uploading'（有真实进度）/ 'scoring'（只能转圈）**两态 ——

@@ -62,6 +62,7 @@
 - [ ] **B6** **支付链路**（等 A2/A3/A4 定了再开工）：goods / payments 表、虚拟支付、发货推送验签、pages/me/energy 充值、对账与退款（payment-and-purchase.md）
 - [ ] **B24** **删掉全局排期**：`GET /api/schedules`（含 `/:date`）整条 + `services/schedules.ts` 的轮转 + `services/schedule-date.ts` + `schedules` 表 + `submissions.schedule_date`（连同死索引）+ `participations.last_schedule_date` + 内容管理台排期 + 金句页 `?date=` 入口（只留 `?article=`）—— **保留**每用户 24 小时窗口（`users.today_article_id` / `today_assigned_at`、`GET /api/user/today`、窗口内固定不换、按窗口起始日取模）—— 做完的标志：全仓库搜不到 `/api/schedules` / `schedule_date` / `?date=`，且首页与 24h 窗口行为不变
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
+- [ ] **B30** **入口也拦身份**（用户 2026-09 定）：`lib/session.ts` 收成身份检查的唯一实现（`hasIdentity()` / `ensureIdentity()`：本机没有 uid 就静默重登一次）；首页「开始挑战」跳朗读页之前先过它（没有就先确认，仍失败 → 跳加入页，按钮在那几秒显示「确认中…」）；加入页的资料保存前也要一次身份（`profile-form` 的 onSubmit ⓪ 步）—— 否则 uid=0 时 `POST /api/user/profile` 没有 user_id 可挂，**那条 `users` 行根本还没建，成绩没有归属**。做完的标志：全新安装（清 storage）→ 服务端可达时点「开始挑战」能直接读、不可达时落地在加入页且保存按钮给出可行动的提示
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维

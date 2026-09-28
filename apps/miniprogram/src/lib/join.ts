@@ -1,4 +1,5 @@
-import { ApiError, fetchMe, getUserId, login } from './api/client'
+import { ApiError, fetchMe } from './api/client'
+import { ensureIdentity } from './session'
 import * as me from './store'
 
 /** 「加入句拼」页（wx.navigateTo 用的带斜杠形式） */
@@ -54,45 +55,25 @@ export async function refreshMe(): Promise<boolean | null> {
 /**
  * ⭐⭐ 「提交评测之前三份检查」里的**身份那一份**（用户 2026-09 定）。
  *
- * 判据只有一条，和**导航栏那一格完全相同**（见 components/nav-bar）：
- *   **服务端应答过我吗** —— 即 GET /api/user/me 能不能返回。
+ * 判据/重登都走 `lib/session.ts`（只有一处实现：**服务端应答过我吗**）——
+ * 见那个文件头的说明，尤其**它与昵称 / 头像无关**这一点。
  *
- * ⚠️⚠️ 与**昵称 / 头像毫无关系**（这一点我被绕进去过一次，写在这里免得再错）：
- *    · 导航栏那个「加入」按钮 = `hasJoined()` = `state.userInfo !== null`
- *      —— 意思是"服务端应答过我"，不是"我起过名字"；
- *    · "加入页"只是**补资料**的地方（昵称/头像），它**不是登录、也不是前置条件**；
- *    · 用户面板里那一格（`named ? 修改资料 : 加入页`）是**补资料的措辞分流**，
- *      跟"能不能提交"没关系，别把它当成本函数的模型。
+ * 这里多做的一件事是**顺手拿权威余额**：`GET /api/user/me` 会先把当天该补的能量
+ * 补上（惰性 + 幂等，见 services/energy.ts），所以提交前那一次确认用的是它。
  *
- * 真正会出事的是另一种情形：**本机从没拿到过身份**（uid = 0）——
- *    全新安装、或启动那次登录时服务端不可达。那时录音的上传路径
- *    （audio/{句子id}/{uid}/…）里没有合法的 uid，提交**必然**失败，
- *    而失败发生在用户等完上传之后。
+ * ⚠️ 不跳加入页：加入页只是**补昵称头像**的地方，而"连身份都没有"这件事它同样解决不了 ——
+ *    唯一解法是重登一次（`ensureIdentity()` 就是干这个的）。所以这里失败时抛一句人话，
+ *    调用方把它显示出来让用户"检查网络、再点一次"。
  *
- * ⇒ 所以这里做的是：**要一次权威的 /me**
- *    · 拿到了 —— 服务端认识我，顺带得到**权威余额**（能量确认要用它）；
- *    · 拿不到 —— 先把「谁的问题」翻成人话，并**拦下这次提交**。
- *      ⚠️ 不跳加入页：加入页要 POST /api/user/profile 才存得下，而那个接口
- *        同样需要身份 —— 没账号时跳过去是个走不通的房间（导航栏碰到这种情况
- *        也是原地重确认，不跳页）。
+ * ⚠️ 顺手 `applyProfile`：/me 那个 energy 是权威值，写回 store 之后导航栏 / 面板 /
+ *    朗读页底部那行小字当场就一致了，不必各自再拉一次。
  *
- * ⚠️ 顺手 `applyProfile`：/me 里那个 energy 是**惰性补足后**的权威值，写回 store
- *    之后导航栏/面板/朗读页底部那行小字当场就一致了，不必各自再拉一次。
- *
- * @returns 权威能量余额（能量确认要用它）
- * @throws Error  带一句**可以直接展示给用户**的人话（连不上 / 身份过期）
+ * @returns 权威能量余额（提交前的能量确认要用它）
+ * @throws Error  带一句**可以直接展示给用户**的人话
  */
 export async function ensureSessionForSubmit(): Promise<number> {
-  // ⚠️ 本机连身份都没有 —— 先补一次登录（不然后面那个请求连 header 都凑不出）
-  if (getUserId() === 0) {
-    try {
-      await login()
-    } catch (err) {
-      // ⚠️ 这里**不抛底层那句机器话**（"request:fail" 之类）：此刻用户能做的
-      //    只有一件事 —— 确认网络、再点一次。
-      throw new Error('没连上服务器，暂时取不到你的身份。检查网络后再点一次。')
-    }
-  }
+  // ⚠️ 第一次调用可能只是"要个身份"（uid=0 → 静默登录一次）
+  await ensureIdentity()
 
   try {
     const profile = await fetchMe()
