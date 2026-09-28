@@ -86,11 +86,16 @@
                  icon="mdi:microphone" bind:press="onStartRecord">点击录音并朗读</ui-button>
     </view>
 
-    <!-- ── s2 底部：↺（禁用占位）｜实时波形｜结束录音 ───────────── -->
+    <!-- ── s2 底部：↺（禁用占位）｜实时波形｜结束录音 ─────────────
+         ⚠️ 三态里的圆钮**一律 size="xl"**（= 100rpx）：s2 的结束录音、s3 的 ↺ / ✓、
+            s1 的 CTA 都是这一档。它们在同一张卡里、同一个位置、隔一帧就换 ——
+            尺寸不一致（88 vs 100rpx）在切换时会明显"跳一下"。
+            ⚠️ 中间那颗胶囊是 **md**：它是 UI 模板宽度的一段内容，不是圆钮，
+              行高由 xl 的圆钮撑开，它自己居中即可。 -->
     <view class="mt-5 flex items-center" wx:if="{{phase === 's2'}}">
       <!-- ⚠️ 录音中这颗 ↺ 是**禁用的**（用户已确认：录音中不给重录，只作占位）。
            ⚠️ ↺ 用的是 unicode 字符：iconfont 子集里没有重录字形（见 ui-button 的说明） -->
-      <ui-button onlyIcon="{{true}}" size="lg" variant="ghost" color="default" disabled="{{true}}">
+      <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" disabled="{{true}}">
         <text class="text-36rpx text-ink">↺</text>
       </ui-button>
 
@@ -126,7 +131,7 @@
       <text class="text-22rpx text-faint block mb-2" wx:if="{{restored}}">这是上次录的，还没提交</text>
 
       <view class="flex items-center">
-        <ui-button onlyIcon="{{true}}" size="lg" variant="ghost" color="default" bind:press="onRestart">
+        <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" bind:press="onRestart">
           <text class="text-36rpx text-ink">↺</text>
         </ui-button>
 
@@ -139,7 +144,7 @@
                      bind:press="onReplay">{{recordDurationText}}</ui-button>
         </view>
 
-        <ui-button onlyIcon="{{true}}" size="lg" variant="fill" color="success" bind:press="onSubmit">
+        <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="success" bind:press="onSubmit">
           <text class="text-36rpx text-ink">✓</text>
         </ui-button>
       </view>
