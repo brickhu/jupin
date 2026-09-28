@@ -205,6 +205,8 @@
 
 判定标准：**绕过某个函数/模块声称的唯一写入方，或让同一真相出现第二个写入方**。逐条给 `文件:行` + 写什么 + 为什么危险。
 
+> **这道规矩现在由机器守**：`apps/server/src/db/domain-write-guard.test.ts` 把「唯一写入方」变成断言（表/列 → 所有者），并把下面这张清单逐条登记成豁免；新增越界在 CI 就会红，清理一处只需删一行豁免。
+
 | # | 位置 | 在写什么 | 为什么危险 |
 |---|---|---|---|
 | 1 | `apps/server/src/services/user.ts:53` | `UPDATE users SET energy=9999`，**不写 `energy_ledger`** | 余额与流水结构上可永久漂移；这是唯一一个「缓存有值、账本没有对应入账」的运行时写点。仅 `NODE_ENV!==production` 生效（`user.ts:36-38`） **已修**：改走 `grantEnergy`（能量唯一写入方），判据换成显式开关 `DEV_ENERGY_TOPUP`（默认关），并新增只读对账 `pnpm db:energy` |
