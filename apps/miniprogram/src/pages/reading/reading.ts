@@ -13,14 +13,21 @@ import { plainWordsOf } from '@jushuo/shared'
 import type { GrowthView, SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
-import { ApiError, fetchSubmissionStatus, getUserId, submitReading } from '../../lib/api/client'
+import {
+  ApiError,
+  fetchArticleRecords,
+  fetchSubmissionStatus,
+  getUserId,
+  submitReading,
+} from '../../lib/api/client'
+import { historyRowsOf, type HistoryRow } from '../../lib/article-history'
 import { uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { Recorder, type RecordResult } from '../../lib/audio/recorder'
 import { fetchArticleContent } from '../../lib/content'
-import { CHALLENGE_PAGE } from '../../lib/challenges'
+import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
 import { refreshPreviousPage } from '../../lib/refresh-previous'
@@ -398,6 +405,24 @@ Page({
      *   但**超时**进 s6 时会换成一句真话（分数可能还在云端算）—— 见 SCORING_TIMEOUT_MS。
      */
     failDetail: '',
+
+    /**
+     * ⭐⭐ 下方「历史挑战」—— **我在这一句上还读过哪几次**（SPEC 施工计划第 4 步）。
+     *
+     * ⚠️⚠️ 列表里**不含「当前这一次」**（SPEC 已定口径，实现见 lib/article-history.ts）：
+     *    用户正看着 s5 那个大号分数，下面再列一条一模一样的会让他以为多了一次。
+     *    ⚠️ 因此「历史」与「我在这句上的总次数」是**两个数**，别拿 historyAttempts
+     *      去说总量（总量在 s5 标题那句「第 N 次朗读」里，来自服务端的 seq）。
+     */
+    historyRows: [] as HistoryRow[],
+    /** 历史还在路上（第一次进页面时为 true）—— 骨架那句「正在取…」 */
+    historyLoading: false,
+    /** 历史取失败的一句话；**列表已有内容时也照常说**（不清列表，见 loadHistory） */
+    historyError: '',
+    /** 免掉当前这一次之后还剩几次（= historyRows.length，给表头用） */
+    historyAttempts: 0,
+    /** 这些历史里的最高分（'89.5'）；一次都没有时是空串 */
+    historyBestText: '',
   },
 
   recorder: null as Recorder | null,
@@ -677,6 +702,20 @@ Page({
   },
 
   /**
+   * ⭐ 回到这一页就把「历史挑战」重拉一次。
+   *
+   * ⚠️ 为什么必须重拉：从结果屏（pages/challenge）返回时，用户可能刚在那边
+   *    点过「重新挑战」／改过公开设置；更常见的是**刚从这一页提交完**——
+   *    那一条必须出现在下面的历史里（见 applyResult 里那次调用）。
+   * ⚠️ 首次进入时 onShow 会先于内容到达跑一次（articleId 那时已经有了）：
+   *    这次请求不算白费 —— 它和 loadContent 里那次要的是同一份数据，
+   *    谁先回来都只是把同一份列表写上。
+   */
+  onShow() {
+    void this.loadHistory()
+  },
+
+  /**
    * 页面滚动 → 导航栏（白底什么时候出现，见 lib/nav.ts 的 navSolidFrom）。
    *
    * ⚠️ 必须由页面来转这一手：小程序里**只有页面**有 onPageScroll，
@@ -734,6 +773,67 @@ Page({
   // ----------------------------------------------------------------
   // 内容
   // ----------------------------------------------------------------
+  /**
+   * ⭐⭐ 拉「我在这一句上的历史挑战」—— 页面下方那一段（SPEC 施工计划第 4 步）。
+   *
+   * ⚠️⚠️ 列表**都不含「当前这一次」**（`this.submissionId` 原样传进去免掉）——
+   *    口径见 lib/article-history.ts 的说明。恢复出来的 s5 也照这条走：
+   *    两种 s5 在界面上长得一模一样，用户分不出是哪一种，列表就不该有两种样子。
+   *
+   * ⚠️ 失败**不清已有列表**：拉不到新的不该把已经看到的记录也抹掉
+   *    （同 pages/me/challenges 的 load）。第一次就失败时列表本来就是空的，
+   *    那就是一句错误 + 重试。
+   * ⚠️ 页面销毁后不再 setData（同页面上其它异步回调的规矩，见 onUnload）。
+   */
+  async loadHistory() {
+    const articleId = this.data.articleId
+    // ⚠️ 只有**第一次**拉才显示「正在取…」：后面每次回页都会重拉，
+    //    每次都闪一下那句骨架，会让已经看到的内容像在抖。
+    if (this.data.historyRows.length === 0 && !this.data.historyError) {
+      this.setData({ historyLoading: true })
+    }
+    try {
+      const res = await fetchArticleRecords(articleId)
+      // ⚠️ 期间用户可能已经换了页面 / 这一页销毁了
+      if (this.gone || this.data.articleId !== articleId) return
+      const { rows, attempts, bestScoreText } = historyRowsOf(res, this.submissionId)
+      this.setData({
+        historyLoading: false,
+        historyError: '',
+        historyRows: rows,
+        historyAttempts: attempts,
+        historyBestText: bestScoreText,
+      })
+    } catch (err) {
+      if (this.gone || this.data.articleId !== articleId) return
+      this.setData({
+        historyLoading: false,
+        historyError: (err as Error).message || '取不到历史记录',
+      })
+    }
+  },
+
+  onRetryHistory() {
+    void this.loadHistory()
+  },
+
+  /**
+   * 点一条历史 → 看**那一次**的结果屏（pages/challenge?sid=…）。
+   *
+   * ⚠️ 用 navigateTo 而不是 onOpenDetail 那个 redirectTo：那边是「这一把刚读完，
+   *    退回来不该对着一个已经交掉的录音界面」；而这里用户是**在页面上翻历史**，
+   *    退回来必须还在这一页（他还要接着看别的几次 / 重新挑战）。
+   */
+  onOpenHistory(e: WechatMiniprogram.BaseEvent) {
+    const i = Number((e.currentTarget.dataset as { i?: number }).i)
+    const row = this.data.historyRows[i]
+    if (!row) return
+    // ⚠️ 别把正在响的声音带进详情页
+    stopAudio()
+    this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' })
+    openChallengePage(row.submissionId)
+  },
+
   async loadContent() {
     this.setData({ phase: 'loading', error: '' })
     try {
@@ -824,6 +924,13 @@ Page({
         })
       }
       this.syncEnergyNote()
+      /**
+       * ⭐ 历史也拉一遍 —— 与 onShow 那次是**同一份数据**（重复一次请求，很便宜）：
+       *    这是"一定会拉"的那一条路，而 onShow 只保证"回到页面时"会拉。
+       * ⚠️ 放在恢复出来那个 s5 的 return **之后**，所以恢复 s5 时不会走到这里 ——
+       *    那条路靠 onShow 那次（它跑在 loadContent 之前）。
+       */
+      void this.loadHistory()
     } catch (err) {
       this.setData({ phase: 'loading', error: (err as Error).message })
     }
@@ -1495,6 +1602,17 @@ Page({
       },
     )
     this.syncEnergyNote()
+    /**
+     * ⭐⭐ 出了分 = 这一句的历史多了一条 —— 立刻重拉。
+     *
+     * ⚠️⚠️ 必须在这里拉，不能只靠 onShow：用户从 s4 等到出分**从没离开过这一页**，
+     *    不拉的话下方那段历史会一直停在"进页面时"的样子 ——
+     *    刚读完这一次却在历史里找不到它，看起来就像记录丢了。
+     * ⚠️ 这一条**不会出现在列表里**（submissionId 正是要免掉的那一个，见 loadHistory）——
+     *    大号分数就在上面，下面再列一遍等于把同一次说了两遍。
+     *    它要的效果是：历史的**表头计数与最高分**跟着这次成绩更新。
+     */
+    void this.loadHistory()
   },
 
   /**
@@ -1659,6 +1777,17 @@ Page({
     })
     stopAudio()
     this.syncEnergyNote()
+    /**
+     * ⭐⭐ 忘掉刚才那一次的提交 id —— 它现在的身份变了。
+     *
+     * ⚠️⚠️ 「历史列表不含当前这一次」里那个"当前"，指的是**用户正看着分数的那一次**。
+     *    点了重新挑战之后就不再看着它了（界面已回 s1），而那一条**本来就是历史**
+     *    （它已经出分、已经落库）—— 继续免着它，用户一重挑战就发现
+     *    「我刚打的分从历史里消失了」，而它其实好好的在库里。
+     * ⚠️ 重新拉一次，让那一条回到列表里（顺带表头计数 +1）。
+     */
+    this.submissionId = ''
+    void this.loadHistory()
   },
 
   // ----------------------------------------------------------------

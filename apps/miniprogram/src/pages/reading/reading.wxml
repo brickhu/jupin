@@ -252,6 +252,71 @@
     <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
   </view>
 
-  <!-- ⚠️ 下方「历史挑战」列表是**下一轮**的事（SPEC 第 4 步）：
-       接口 fetchArticleRecords 已经有了，本轮不接。 -->
+  <!-- ══ 下方「历史挑战」——我在**这一句**上还读过哪几次 ═══════════
+       ⚠️ 与「我的挑战」列表（pages/me/challenges）不是一回事：那边一行还要显示句子本身，
+          而这一页的句子就在上面 —— 一行只留三件事：第几次 · 什么时候 · 多少分。
+       ⚠️ 列表里**不含当前这一次**（口径与实现见 lib/article-history.ts）。
+       ⚠️ 只在句子已经拉到时才画这一块：句子都没有的时候，这一页的主体现在是
+          「正在加载句子…」/「重试」，下面再挂一段历史会喧宾夺主。 -->
+  <view class="mt-3" wx:if="{{phase !== 'loading'}}">
+    <!-- ⚠️ 表头那句「共 N 次」是**除当前这次之外**的次数（见 historyAttempts）——
+         别读成"我在这句上一共读过几次"，那个数在 s5 的标题里。 -->
+    <view class="flex items-baseline justify-between px-1 mb-2">
+      <text class="text-26rpx text-muted">历史挑战</text>
+      <text class="text-22rpx text-faint" wx:if="{{historyAttempts > 0}}">共 {{historyAttempts}} 次 · 最高 {{historyBestText}}</text>
+    </view>
+
+    <view class="bg-white rounded-2.5">
+      <!-- ── 正在取（首次进入）────────────────────────────────── -->
+      <view class="p-5" wx:if="{{historyLoading}}">
+        <text class="text-28rpx text-muted">正在取历史记录…</text>
+      </view>
+
+      <!-- ── 一条都没有 ────────────────────────────────────────
+           ⚠️ 它和「正在取」是两件事：空列表配「正在取…」会让人一直等下去（同我的挑战列表）。
+           ⚠️ 这条分支只有**真的读到了零条**才算数 —— 拉失败时进下面那条
+              "取不到"，不能报「这句上还没有别的记录」（那是句假话）。 -->
+      <view class="px-5 py-8 text-center" wx:elif="{{historyAttempts === 0 && !historyError}}">
+        <text class="text-26rpx text-faint leading-[1.6]">这句上还没有别的记录 —— 再读一次，这里就会有第二条。</text>
+      </view>
+
+      <!-- ── 取不到（且一条都没拿到）→ 一句话 + 重试 ───────────── -->
+      <view class="p-5" wx:elif="{{historyAttempts === 0}}">
+        <text class="text-28rpx text-bad leading-[1.6]">{{historyError}}</text>
+        <view class="flex justify-end mt-2">
+          <text class="text-26rpx text-brand" bindtap="onRetryHistory">重试</text>
+        </view>
+      </view>
+
+      <!-- ── 一行 = 我在这一句上的一次挑战 ──────────────────────
+           ⚠️ 点进去看的是**那一次**的结果屏（pages/challenge?sid=…），
+              不是当前这一次 —— 每行都非要带上自己的 submissionId 不可。
+           ⚠️ 分隔线画在**每一行自己**的下边（同 pages/me/energy 的列表）：
+              最后一行那条贴着卡片圆角，肉眼看不出来，不值得为它加一条 last: 规则。 -->
+      <block wx:else>
+        <view class="flex items-center justify-between px-3.5 py-3 border-b-[1rpx] border-b-solid border-b-line"
+              hover-class="active__opacity-60"
+              wx:for="{{historyRows}}" wx:key="submissionId"
+              data-i="{{index}}" bindtap="onOpenHistory">
+          <view class="flex items-center">
+            <text class="text-28rpx text-ink font-medium">第 {{item.seq}} 次</text>
+            <!-- ⚠️ 「最高」标在**目前的最高分**那一行（并列时都标）——
+                 它比一个数字更直接地回答"我最好那次是哪回"。 -->
+            <text class="text-20rpx text-white bg-ok rounded-full px-2 py-[2rpx] ml-2"
+                  wx:if="{{item.isBest}}">最高</text>
+            <!-- ⚠️ 拿不到时间（老记录）时这一格**不渲染**，不画 Invalid Date —— 见 lib/time.ts -->
+            <text class="text-22rpx text-faint ml-2" wx:if="{{item.ago}}">{{item.ago}}</text>
+          </view>
+          <text class="text-32rpx font-bold text-ink shrink-0">{{item.scoreText}}</text>
+        </view>
+      </block>
+    </view>
+
+    <!-- ⚠️ 列表已经有内容、这次刷新却失败 → 一行细提示 + 重试，**保留**已有记录
+         （同 pages/me/challenges：拉不到新的不该把已经看到的也抹掉）。 -->
+    <view class="mt-2" wx:if="{{historyError && historyAttempts > 0}}">
+      <text class="text-22rpx text-bad">{{historyError}}</text>
+      <text class="text-22rpx text-brand ml-2" bindtap="onRetryHistory">重试</text>
+    </view>
+  </view>
 </view>
