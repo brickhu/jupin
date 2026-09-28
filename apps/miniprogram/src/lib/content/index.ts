@@ -1,6 +1,6 @@
 import type { ArticleDetail } from '@jushuo/shared'
 
-import { request } from '../api/client'
+import { LAUNCH_BUDGET_MS, request } from '../api/client'
 
 /**
  * 内容拉取。
@@ -25,7 +25,23 @@ export async function fetchArticleContent(id: string): Promise<ArticleDetail> {
   const hit = contentCache.get(id)
   if (hit) return hit
 
-  const content = await request<ArticleDetail>('/api/articles/' + id)
+  /**
+   * ⚠️⚠️ **必须给冷启动预算**（`LAUNCH_BUDGET_MS`，50 秒），不能吃默认的 12 秒。
+   *
+   *    线上是云托管，`MinReplicas = 0` —— 没人用时容器**缩到零**，
+   *    下一个请求要等冷启动（本项目实测 **30 秒级**，见 B23）。
+   *    而默认预算 12 秒会在冷启动完成之前就被掐断，
+   *    客户端把它翻译成「服务正在启动中（云托管冷启动要十几秒），请再试一次」——
+   *    用户看到的就是这句（用户 2026-09 报的「dev 环境 reading 页打不开」）。
+   *
+   *    ⚠️ 为什么是**这一条**要 50 秒而不是所有请求：
+   *      它是「从首页点进朗读页」那一次 —— 与首屏同一类：用户刚做了一个动作，
+   *      界面上什么都没有，只能等。其余请求（历史 / 战绩 / 轮询）失败时界面还有内容，
+   *      12 秒掐断更划算（省流量、快速失败）。
+   *    ⚠️ 服务端那条路**不鉴权、不查库**（读盘 + 拼 fileID），冷启动之后是毫秒级 ——
+   *      所以这 50 秒花的是"容器起来"的时间，不是这条接口慢。
+   */
+  const content = await request<ArticleDetail>('/api/articles/' + id, { budgetMs: LAUNCH_BUDGET_MS })
   contentCache.set(id, content)
   return content
 }

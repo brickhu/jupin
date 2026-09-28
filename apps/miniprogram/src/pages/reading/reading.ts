@@ -468,6 +468,13 @@ Page({
   gone: false,
 
   /**
+   * 「历史挑战」那一拉**已经因为冷启动重试过一次了**（见 loadHistory 的 catch）。
+   * ⚠️ 只重试一次：真的服务挂了时，无限重试会把请求风暴和"永远在转圈"一起送上来。
+   * ⚠️ 换句子（loadContent）时复位 —— 那是新的一次加载，理应再有一次冷启动兜底。
+   */
+  historyRetried: false,
+
+  /**
    * ⭐ 这一轮的帧**走哪条路**：
    *   'deciding' …… 还没定，正在试解码；
    *   'decoded'  …… 平台解码器能用（真机上的正常路径）；
@@ -835,6 +842,23 @@ Page({
       })
     } catch (err) {
       if (this.gone || this.data.articleId !== articleId) return
+      /**
+       * ⭐⭐ 冷启动兜底：云托管 `MinReplicas = 0`，闲置后**第一个请求**要等容器起来
+       *    （实测 30 秒级，见 api/client 的 LAUNCH_BUDGET_MS）。
+       *    正文那一次已经拿了 50 秒预算（它把容器**叫醒了**），而这一条走的是默认 12 秒 ——
+       *    所以「刚点进朗读页」那一次多半会先失败。
+       *
+       *    ⇒ 第一次失败**自己再试一次**（这时实例已经热了，几百毫秒就回来），
+       *      用户什么都不会看到。⚠️ 只重试一次：真的连不上时不要变成无限重试。
+       *    ⚠️ 正文那次成功（容器已热）就不需要这一手。
+       */
+      if (!this.historyRetried) {
+        this.historyRetried = true
+        setTimeout(() => {
+          if (!this.gone) void this.loadHistory()
+        }, 1500)
+        return
+      }
       this.setData({
         historyLoading: false,
         historyError: (err as Error).message || '取不到历史记录',
@@ -864,6 +888,8 @@ Page({
   },
 
   async loadContent() {
+    // ⚠️ 新的一次加载 ⇒ 「历史那一拉」的冷启动重试机会也要复位（见 historyRetried）
+    this.historyRetried = false
     this.setData({ phase: 'loading', error: '' })
     try {
       const content = await fetchArticleContent(this.data.articleId)
