@@ -66,29 +66,10 @@
 - [ ] **B25** **「最新上线」搬到 `GET /api/articles/latest`**：公开接口，按 `articles.published_at` 倒序取 6，复用 `services/schedule-shape.ts` 的 `pickLatestArticles`（已有单测）—— 做完的标志：首页「最新上线」由新接口供数，`/api/schedules` 不再是它的来源。⚠️ 公开接口拿不到调用者的「今日那一句」，`pickLatestArticles` 的「剔除今日」要么由客户端过滤、要么取消 —— 先定这一条再动手
 - [ ] **B33** **多登录方式的身份层**（等真要接第二种登录时做，现在只留结论）：`users.openid` 现在是 `notNull().unique()` ⇒ **一个用户只能绑一种微信凭据**；而同一个人的不同入口（小程序 / 公众号 / APP 三个 appid）openid 不同、`unionid` 相同 ⇒ 会**被建成两个账号，成绩与连战对半分**。要做的是：① 新表 `user_identities(user_id, kind('wechat_mini'|'phone'|'apple'…), external_id, unionid?, created_at, unique(kind, external_id))`，`users` 不再持有 openid；② `middleware` 从"取 openid"改成"按 (kind, external_id) 查 identities → user_id，没有就建"；③ 解析顺序先 `unionid` 再 openid（同一人合并）；④ 迁移与回填（现有 openid → identities 一行）。⚠️ 现在**先不做**，因为它要动表结构与迁移，而目前只有微信小程序一种入口
 
-- [x] **B37** **录音播放收成一个共用组件**（用户 2026-09：「你能不能同意采用播放组件？？？？」）：新建 `components/recording-player`（取音 → 落盘 → 播 / 停 / 失败说法全在它里面，只管行为，外观仍交给 `audio-button`）。替换两处手写实现：**朗读页历史行**（B36 里我抄的第二份）与**「我的挑战」列表**（`submission-card` 的 bar 形态，它的 `playing`/`loading` 两个属性与 `play` 事件一并退休）。⇒ 页面**不再需要**「正在播的是第几行」那种下标。⚠️ 剩下 `pages/challenge` 还有一份（结果屏那颗钮要缓存 `audioRef`、且 loading 要一路亮到真出声），本轮**没动**，见 B38。
 - [ ] **B38** **把结果屏那颗播放钮也换成 recording-player**：`pages/challenge` 的 `onPlayAudio` 是同一套逻辑的第三份，但它有两处真实差异 —— ① 结果包里有 `audioRef` 可缓存（不必每次问服务端）；② 它的 loading **一路亮到真的能出声**（先亮 stop 再卡住会被读成"按了停止却没停"）。要做得给组件加"可传入地址、跳过取音"与"loading 到出声"两个能力，再删掉那份实现 —— 做完的标志：全仓库只剩 recording-player 一处 `fetchSubmissionAudio` + `ensureLocalAudio` + `playAudioUrl` 的组合。
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维
-
-- [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
-  `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
-  而本会话的后端改动都在这之后 —— 用时序 + **线上响应形状**两条独立证据确认过：
-  ① `POST /api/auth/session` + 只有 `userId`（无 openid）的老 token 仍然 **200**
-  （B32 把这条件改成了必须 401）；② `/api/user/today` 仍然返回 `reason`
-  （B34 已把这条字段整根删掉，值还是那句工程备注「同一档的人今天读的是同一句」）。
-  ⇒ 后端 **B32（凭据≠身份）/ B34（删 reason、入口冷启动预算）都还没上 dev**。
-  ⚠️⚠️ **真正的拦路石不是 CI，是本机仓库被 pnpm 缓存撑胖了**（2026-09-29 00:30 查明）：
-  `.pnpm-home` 487M + `.npm-cache` 43M + `.cache` 24M + `apps/*/.pnpm-home` 各 39M
-  —— 这些**没进 .dockerignore 的"上传包"**（`.dockerignore` 只管 Docker 构建上下文），
-  于是上传包被撑到解压/建镜像阶段**静默失败**（`create_failed`，构建日志里连一行报错都没有）。
-  删掉这 612M 后一次就过：**`jupin-076` normal / 流量 100%**。
-  验证（线上响应形状）：老 token（无 openid）→ **401**；`/api/user/today` **不再有 reason**；
-  `/api/arenas/:id` 已带 `lowestScore` 与 `audio.durationMs`。
-  ⚠️ 教训写下来：**跑 `pnpm`/`npx` 别把 store 落在仓库里**（本机被沙箱挡住
-  `~/Library/pnpm` 时最容易发生）；部署前先 `du -sh .` 看一眼。
-  ⚠️ 仍未解决：CI 那条路（push 到 dev 没有产出新版本）—— 要查 GitHub Actions 得先 `gh auth login`。
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）
 - [ ] **C2** dev 临时开 **MySQL 外网地址** —— 才能从本机灌种子；灌完可关
@@ -165,6 +146,26 @@
 - [x] **B35** **界面里不许出现工程备注**（用户 2026-09 报：「你能不能不要在界面上放你的一些工作备注？」）：WXML 注释里那些"写给自己看"的话（「本轮先不做」「⇒ 别看着这块少了一行又加回来」）**有机会被小程序编译器留成文本节点显示在页面上** —— 所以注释只活在源码里、产物里一条不剩。落地：`build.mjs` 新增 `stripWxmlComments()`（拷到 dist 之后删 `dist/**/*.wxml` 的全部注释，`src/` 照旧保留），`src/wxml-comments.test.ts` 盯着产物（dist 不存在时跳过），`AGENT.md` 的样式/构建一节写明这条契约 —— 做完的标志：`pnpm --filter @jushuo/miniprogram build` 打印「从 N 个产物文件里删掉注释」，且 `grep -c '<!--' dist/pages/reading/reading.wxml` 为 0
 
 - [x] **B36** **朗读挑战页（arena）改版**（用户 2026-09 定的五条）：① 标题「朗读竞技场」→**「朗读挑战」**；② 句子卡左上=播放参考音频、右上=收藏这一句（`arena-card` 加 `showFavorite`/`favorite` 两个属性 + `favorite` 事件；字形只有 outline 一个 ⇒ 已收藏画不透明、未收藏画半透明）；③ 句子卡下方**单独一张「参与概要」卡**：参与人数 / 全场最高分 / **全场最低分**（服务端新给 `lowestScore`，与 `topScore` 同一条 SQL、同口径：一人只算最好那次；没人参与是 null 不是 0）；④ 我的参与概要：挑战 N 回合（`participations.attempts`，只数出过分的）+ 位列第 N，下面接「重新朗读，再次挑战」；⑤ 底部 **`button[open-type=share]`**「邀请好友参与挑战」（普通 view 调不起转发面板；分享路径 = 这一句的挑战页）—— 做完的标志：真机上五项都在，且点右上角的心不会跳进详情页（catchtap 拦住冒泡）
+
+- [x] **B37** **录音播放收成一个共用组件**（用户 2026-09：「你能不能同意采用播放组件？？？？」）：新建 `components/recording-player`（取音 → 落盘 → 播 / 停 / 失败说法全在它里面，只管行为，外观仍交给 `audio-button`）。替换两处手写实现：**朗读页历史行**（B36 里我抄的第二份）与**「我的挑战」列表**（`submission-card` 的 bar 形态，它的 `playing`/`loading` 两个属性与 `play` 事件一并退休）。⇒ 页面**不再需要**「正在播的是第几行」那种下标。⚠️ 剩下 `pages/challenge` 还有一份（结果屏那颗钮要缓存 `audioRef`、且 loading 要一路亮到真出声），本轮**没动**，见 B38。
+
+- [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
+  `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
+  而本会话的后端改动都在这之后 —— 用时序 + **线上响应形状**两条独立证据确认过：
+  ① `POST /api/auth/session` + 只有 `userId`（无 openid）的老 token 仍然 **200**
+  （B32 把这条件改成了必须 401）；② `/api/user/today` 仍然返回 `reason`
+  （B34 已把这条字段整根删掉，值还是那句工程备注「同一档的人今天读的是同一句」）。
+  ⇒ 后端 **B32（凭据≠身份）/ B34（删 reason、入口冷启动预算）都还没上 dev**。
+  ⚠️⚠️ **真正的拦路石不是 CI，是本机仓库被 pnpm 缓存撑胖了**（2026-09-29 00:30 查明）：
+  `.pnpm-home` 487M + `.npm-cache` 43M + `.cache` 24M + `apps/*/.pnpm-home` 各 39M
+  —— 这些**没进 .dockerignore 的"上传包"**（`.dockerignore` 只管 Docker 构建上下文），
+  于是上传包被撑到解压/建镜像阶段**静默失败**（`create_failed`，构建日志里连一行报错都没有）。
+  删掉这 612M 后一次就过：**`jupin-076` normal / 流量 100%**。
+  验证（线上响应形状）：老 token（无 openid）→ **401**；`/api/user/today` **不再有 reason**；
+  `/api/arenas/:id` 已带 `lowestScore` 与 `audio.durationMs`。
+  ⚠️ 教训写下来：**跑 `pnpm`/`npx` 别把 store 落在仓库里**（本机被沙箱挡住
+  `~/Library/pnpm` 时最容易发生）；部署前先 `du -sh .` 看一眼。
+  ⚠️ 仍未解决：CI 那条路（push 到 dev 没有产出新版本）—— 要查 GitHub Actions 得先 `gh auth login`。
 
 ## 已完成 · 无 commit（手写）
 
