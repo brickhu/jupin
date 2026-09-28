@@ -139,10 +139,10 @@ describe('openProfilePage —— 用户面板里的「修改」', () => {
     fetchMe.mockResolvedValue(meResponse('张三'))
     await join.ensureAuthed()
     nav.length = 0
+    // ⚠️ 受保护页的判据是 uid（见 lib/auth）——上面那次 ensureAuthed 已经把它落下了
     join.openProfilePage()
-    // ⚠️ goOnce 是 async 的，等一个微任务队列让跳转落下来
-    await Promise.resolve()
-    expect(nav).toEqual(['to:' + join.PROFILE_PAGE])
+    // ⚠️ goOnce → go 是 async 的（中间还要过一次 auth）：等它落下来再断言
+    await vi.waitFor(() => expect(nav).toEqual(['to:' + join.PROFILE_PAGE]))
     expect(join.PROFILE_PAGE).not.toBe(join.JOIN_PAGE)
   })
 

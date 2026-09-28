@@ -40,6 +40,16 @@ beforeAll(async () => {
   auth = await import('./auth')
 })
 
+/**
+ * ⭐ 「已经有账号」= 本机有 uid（端侧唯一判据，见 lib/auth）+
+ *    可选地把资料也补上（画界面 / 拿权威余额用）。
+ * ⚠️ uid 与 userInfo 是两件事：**登录成功但 /me 断网**时只有前者 —— 那也是"有账号"。
+ */
+function becomeAuthed(profileEnergy: number | null = 3): void {
+  memory.set('uid', 7)
+  if (profileEnergy !== null) store.applyProfile(profile(profileEnergy))
+}
+
 /** 造一份能塞进 store 的 /me 响应（只填这个用例关心的字段） */
 const profile = (energy = 3) =>
   ({
@@ -64,10 +74,15 @@ beforeEach(() => {
 
 describe('isAuthed —— 只读判断，不发请求', () => {
   it('服务端应答过我 → true（判据是账号，与昵称无关）', () => {
-    store.applyProfile(profile())
+    becomeAuthed()
     expect(auth.isAuthed()).toBe(true)
     expect(fetchMe).not.toHaveBeenCalled()
     expect(login).not.toHaveBeenCalled()
+  })
+
+  it('⭐⭐ 只有 uid、还没拿到资料 → 仍然算有账号（不许因为断网翻脸）', () => {
+    becomeAuthed(null)
+    expect(auth.isAuthed()).toBe(true)
   })
 
   it('从没应答过 → false', () => {
@@ -77,7 +92,7 @@ describe('isAuthed —— 只读判断，不发请求', () => {
 
 describe('ensureAuthed —— 动手前的门禁', () => {
   it('⭐⭐ 已经有身份：一次网络都不发', async () => {
-    store.applyProfile(profile())
+    becomeAuthed()
     await expect(auth.ensureAuthed()).resolves.toBe(true)
     expect(login).not.toHaveBeenCalled()
     expect(fetchMe).not.toHaveBeenCalled()
@@ -106,6 +121,15 @@ describe('ensureAuthed —— 动手前的门禁', () => {
     expect(fetchMe).not.toHaveBeenCalled()
   })
 
+  it('⭐⭐⭐ 登录成功、但 /me 断网 → 仍然算有账号（不许把老用户推去加入页）', async () => {
+    becomeAuthed()
+    fetchMe.mockRejectedValue(new Error('boom'))
+    // 有账号：needProfile 时 /me 失败 = 拿不到余额，但**身份是有的**
+    await expect(auth.ensureAuthed({ needProfile: true })).resolves.toBe(false)
+    // ⚠️ 返回 false 只表示"没拿到资料"；**绝不能跳加入页**（那会让人以为账号没了）
+    expect(nav).toEqual([])
+  })
+
   it('⭐⭐ 登录成功但 /me 问不到 → 跳加入页并返回 false', async () => {
     login.mockImplementation(() => {
       memory.set('uid', 7)
@@ -126,7 +150,7 @@ describe('ensureAuthed —— 动手前的门禁', () => {
   })
 
   it('needProfile：已有身份但要顺带拿资料时补一次 /me', async () => {
-    store.applyProfile(profile(5))
+    becomeAuthed(5)
     fetchMe.mockResolvedValue(profile(1))
     await expect(auth.ensureAuthed({ needProfile: true })).resolves.toBe(true)
     expect(fetchMe).toHaveBeenCalledTimes(1)

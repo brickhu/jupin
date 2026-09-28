@@ -90,7 +90,11 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    `lib/route.ts` —— 全站唯一的跳页入口（`go` / `replace` / `goPublic` / `goOnce` / `back`
    + `ROUTES` 路径表）；受保护页的守卫只在那一个地方，页面里不再出现裸的
    `wx.navigateTo`。公开页（首页 / 加入页 / 竞技场 / 挑战详情 / 成绩墙）在文件里逐条列明。
-   ⚠️ 判据与导航栏那一格相同：**服务端应答过我吗** —— 与昵称/头像无关。
+   ⚠️ 判据是 **uid**（`getUserId() > 0`）—— **不取 `hasJoined()`**：
+      那个是 `userInfo !== null`（"我拉过资料"），登录成功但紧随那次 `/me` 断网时它是 false，
+      于是有账号的人会被判成没账号、被推去加入页。导航栏那一格用 hasJoined() 是对的
+      （它要画头像，没资料就没头像可画）—— 两处判据不同是刻意的。
+   ⚠️ 与昵称/头像无关（那是"榜上显示成什么"，随时能补）。
 
 1. ✅ **服务端 GET /api/user/article-records?article=** —— 逐次历史（只回有得分的，最近在前），
    加端侧 fetchArticleRecords()。已本地验证：failed 不算 / 最近在前 / best 现算 / 清理干净。
