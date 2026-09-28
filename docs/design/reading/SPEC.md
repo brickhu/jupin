@@ -101,10 +101,17 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
 
 1. ✅ **服务端 GET /api/user/article-records?article=** —— 逐次历史（只回有得分的，最近在前），
    加端侧 fetchArticleRecords()。已本地验证：failed 不算 / 最近在前 / best 现算 / 清理干净。
-2. ⬜ **reading 页状态机 s1–s6**（本次设计稿的核心）：s1 待录 → s2 录音中 → s3 预览 →
-   s4 评测中 → s5 成功 / s6 失败。保留现有：标准音试听、录音、上传、提交受理、轮询、
+2. ✅ **reading 页状态机 s1–s3**（设计稿的核心；s4–s6 已按用户口径搬进弹窗，见第 8 步）：
+   s1 待录 → s2 录音中 → s3 预览。保留：标准音试听、录音、上传、提交受理、轮询、
    失败处理、本地缓存录音（有缓存自动进 s3）。
-3. ⬜ **s2 的实时波形 + 计时器**（音量走现有录音链路，不引新依赖）。
+   ⚠️ 逐条对着设计稿核过的三处（2026-09）：
+   · s1 底部 CTA = **红色描边胶囊 + 麦克风字形**（那颗字形原来不在 iconfont 子集里，
+     本轮补成第 13 个字形，见 tools/iconfont/build.mjs 的 ICONS）；
+   · s3 底下那行「评测消耗能量2，剩余3」**居中、压在胶囊与 ✓ 之间**（不是行尾）；
+   · s6 用 X 不用红底对勾（见下面「用户已确认」第 3 条）。
+3. ✅ **s2 的实时波形 + 计时器**：波形走 canvas（`peakBars` 纯函数算柱高，中线对称），
+   计时器 1 秒一跳（`mmss`）；**没有帧就不画**（`waveOn=false` 退化成一条中线，
+   绝不摆不动的假波形）。⚠️ 开发者工具的 WebAudio 解不开 mp3 码流，那里恒为无波形。
 4. ✅ **下方「历史挑战」列表**（用第 1 步的接口；不含「当前这一次」，点重新挑战后追加）。
    落地：`lib/article-history.ts`（纯函数 + 单测 `article-history.test.ts`）把接口响应变成一行，
    朗读页只负责拉与画（`loadHistory` / `onOpenHistory`）。
@@ -116,8 +123,9 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    ⚠️ 「最高」的**现算口径**：免掉当前这一条之后在剩下这批里取 max，
       不能直接用响应里的 `bestScore`（那个数含当前这次，会出现"旁边标着最高 89.5，
       而列表里一行都没标"）。
-5. ⬜ **s5 的三张成长值卡**（+5）—— 需要 SubmitResponse 带上这一把的成长值快照
-   （submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
+5. ✅ **s5 的三张成长值卡**（+5）—— 服务端已把这一把的快照带出来
+   （`services/submission-view.ts` 从 `submissions.growth_*` 读出，字段名就叫 `growth`，
+   端侧 `growthDeltaOf` 直接读；**没结算就不给这个字段**，端侧整块不渲染）。
    ⚠️ s5 副标题「首次挑战，打败5人，位列第5」**不需要新字段**：
    首次 = previousBest === null，其余 beatenCount / rank 都在 SubmitResponse 里。
 6. ✅ **提交前的三份检查**（用户 2026-09 定）：时长（本地）→ 身份（一次权威 /me；
@@ -141,6 +149,12 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
        再点确认才收工；原来那个 redirectTo 会把人直接送回首页）。
    - 等待超过 10 秒补一句「比平时久一点，分数还在云端算」——**不是超时**，
      真正的超时仍是 SCORING_TIMEOUT_MS（2 分钟 → s6，并说明分数可能还在云端）。
+9. ✅ **标准音时长（顶行那个 `▶ 00:23`）**：详情接口 `/api/articles/:id` 的 `audio`
+   从 `AudioRef` 改成 **`ScheduleAudio`**（= AudioRef + durationMs），
+   服务端与列表接口**共用** `scheduleAudioOf`（同一个事实只有一处实现）；
+   端侧按可选字段读，读不到就**不渲染那几个字**（不是 00:00）。
+   落地：`types/api.ts` 的 `ArticleDetail.audio` + `routes/articles.ts` + `reading.ts` 的
+   `readStdDurationMs`；契约由 `services/standard-audio-meta.test.ts` 守着。
 
 ## 已定口径（不再讨论）
 

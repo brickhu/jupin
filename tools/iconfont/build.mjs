@@ -49,6 +49,7 @@ const ICONS = [
   { md: 'clipboard-text-outline', cp: 0xe00a, cls: 'clipboard', use: '用户面板 我的挑战' },
   { md: 'fire',          cp: 0xe00b, cls: 'fire',          use: '用户面板菜单 连战记录' },
   { md: 'bell-outline',  cp: 0xe00c, cls: 'bell',          use: '用户面板 通知' },
+  { md: 'microphone',    cp: 0xe00d, cls: 'microphone',    use: '朗读页 s1 · 点击录音并朗读（设计稿口径）' },
   // ⚠️ 只把「控件 / 导航」做成字形。**表达性 / 语义标记一律用 emoji**，故意不放进这张表：
   //    · 📈 🔥 🏔️  成长值三指标（徽章那一类的荣誉标记，与 pages/profile 的做法一致）
   //    · ⚡ ❄️      能量 / 解冻卡（「我手上有什么」的语义标记，不是控件）

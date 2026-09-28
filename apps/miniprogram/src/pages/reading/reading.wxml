@@ -77,12 +77,13 @@
     <!-- ⚠️ 译文**不放**（用户 2026-09 明确：阅读卡片不用显示翻译）。
          朗读练习看中文是上一版的旧口径，已作废 —— 别看着"空了一块"又加回来。 -->
 
-    <!-- ── s1 底部：红色描边胶囊「点击录音并朗读」───────────────
+    <!-- ── s1 底部：红色描边胶囊「🎤 点击录音并朗读」─────────────
          ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）。
-         ⚠️ 设计稿这颗按钮左侧还有一个麦克风图标 —— iconfont 子集里没有它
-            （只有 12 个字形，见 components/ui-button 的说明），本轮不加字形，只留文字。 -->
+         ⚠️ 左侧那颗麦克风字形是 2026-09 补进 iconfont 子集的（第 13 个字形，
+            见 tools/iconfont/build.mjs 的 ICONS）—— 之前没有它，只留了文字。 -->
     <view class="mt-5" wx:if="{{phase === 's1'}}">
-      <ui-button variant="outline" color="error" size="xl" width="full" bind:press="onStartRecord">点击录音并朗读</ui-button>
+      <ui-button variant="outline" color="error" size="xl" width="full"
+                 icon="mdi:microphone" bind:press="onStartRecord">点击录音并朗读</ui-button>
     </view>
 
     <!-- ── s2 底部：↺（禁用占位）｜实时波形｜结束录音 ───────────── -->

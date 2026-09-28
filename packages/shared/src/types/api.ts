@@ -493,7 +493,15 @@ export interface ArticleDetail {
    */
   advice: string | null
   tags: string[]
-  audio: AudioRef | null
+  /**
+   * ⭐ 标准音 —— 阅读页顶行要显示 `▶ 00:23`，所以**时长跟着一起来**。
+   * ⚠️ 用 ScheduleAudio（= AudioRef + durationMs）而不是 AudioRef：
+   *    同一个事实（"这段音频多长"）在列表接口、详情接口、结果页三处
+   *    必须是**同一种表达**，否则客户端要按接口各写一套解析。
+   * ⚠️ durationMs 可能是 null（算不出来）—— 那时端侧**只显示按钮、不显示时长**，
+   *    不能显示 00:00（那看着像音频坏了）。
+   */
+  audio: ScheduleAudio | null
   theme: ArticleTheme | null
 }
 

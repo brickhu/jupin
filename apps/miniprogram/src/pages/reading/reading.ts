@@ -355,13 +355,10 @@ Page({
     /**
      * ⭐ 顶行标准音那颗圆钮右边的 `00:23`。
      *
-     * ⚠️⚠️ 本轮**拿不到这个数**：朗读页拉的是 /api/articles/:id，那份响应里的 audio
-     *    只有 { full, kind }，**没有 durationMs**（列表接口的 ScheduleAudio 才有）。
-     *    而本轮明确不动服务端 ⇒ 这里按**可选字段**读（见 readStdDurationMs），
-     *    读不到就是空串，WXML 里据此**不渲染那几个字**
-     *    （不是显示 00:00 —— 那看着像音频坏了）。
-     *    下一轮让详情接口把 durationMs 带上（服务端已有现成的 standardAudioMs），
-     *    这里自动就显示了，端侧不用改。
+     * ⚠️ 数据来自详情接口的 audio.durationMs（= shared 的 ScheduleAudio，
+     *    服务端用同一个 scheduleAudioOf 拼，与列表接口同源）。
+     *    拿不到（老服务端 / 文件缺失 / 解析失败）就是空串，WXML 据此**不渲染那几个字** ——
+     *    不是显示 00:00（那看着像音频坏了）。
      */
     stdDurationText: '',
 
@@ -1995,17 +1992,18 @@ Page({
 /**
  * ⭐ 从内容接口的 audio 上读**标准音时长**（毫秒）。
  *
- * ⚠️⚠️ 现在这个字段**根本不在响应里**：朗读页拉的 /api/articles/:id 给的 audio
- *    只有 { full, kind }（ArticleDetail.audio: AudioRef）—— 带 durationMs 的是列表接口的
- *    ScheduleAudio。而本轮明确不改服务端。
- *    ⇒ 按**可选字段**读：服务端哪天把它带上（它已有现成的 standardAudioMs），
- *      这里不用改一行，顶行的 00:23 自己就出来了。
+ * ⚠️ 现在详情接口的 audio 就是 shared 的 **ScheduleAudio**（= AudioRef + durationMs）——
+ *    与列表接口同一套（服务端走同一个 scheduleAudioOf）。所以顶行那个 `00:23` 有值了。
+ * ⚠️ 仍然按**可选**读，且 <= 0 / NaN 一律当"没有"：
+ *    · 老服务端（没带这个字段）；
+ *    · 音频文件缺失 / MP3 解析不出时长（服务端会老实给 null）。
+ *    ⇒ 这时**不渲染那几个字**（见 WXML），而不是显示 00:00 —— 那看着像音频坏了。
  * ⚠️ 不要用别的办法估：InnerAudioContext 的时长要等音频真的加载完才知道，
  *    为了几个字去建一个播放器实例，代价比收益大得多（还可能被音频池限制）。
  */
-function readStdDurationMs(audio: { full: string; kind: 'cloud' | 'http' } | null): number {
+function readStdDurationMs(audio: { full: string; kind: 'cloud' | 'http'; durationMs?: number | null } | null): number {
   if (!audio) return 0
-  const ms = (audio as { durationMs?: number }).durationMs
+  const ms = audio.durationMs
   return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? ms : 0
 }
 

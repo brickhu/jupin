@@ -1,11 +1,11 @@
 import { Hono } from 'hono'
 import { desc, eq } from 'drizzle-orm'
 import { normalizeLevel, normalizeTags, plainWordsOf } from '@jushuo/shared'
-import type { ArticleDetail, ArticleListItem, AudioRef } from '@jushuo/shared'
+import type { ArticleDetail, ArticleListItem, ScheduleAudio } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { contentPathOf, loadArticleContent } from '../services/content'
-import { audioRefOf, fileIdOf } from '../services/standard-audio'
+import { fileIdOf } from '../services/standard-audio'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
 
@@ -93,16 +93,20 @@ articlesRoutes.get('/:id', async (c) => {
    *    此时必须老实返回 null，让客户端**隐藏播放入口**。
    *    否则会渲染一个能点、点了报 404 的喇叭 —— 那比没有按钮更难排查。
    */
-  const ref = audioRefOf(article)
-  // ⚠️ 没有标准音就是 **null**，不是 { full: null }：客户端据此隐藏播放入口。
-  //    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定 ——
-  //    同一个事实（「这段音频存不存在」）在三个接口里必须是同一种表达。
   /**
+   * ⭐ 标准音引用 + **时长**（阅读页顶行那个 `00:23`）。
+   * ⚠️ 走 scheduleAudioOf 这一个入口，不要在这里自己 audioRefOf + 算时长：
+   *    列表接口用的就是它，两处各写一遍迟早出现"列表有 00:23、详情没有"。
+   */
+  /**
+   * ⚠️ 没有标准音时 `scheduleAudioOf` 返回 **null**（不是 `{ full: null }`）：
+   *    客户端据此隐藏播放入口。与 ArticleListItem.audio / SubmissionAudioResponse.audio
+   *    同一个约定 —— 同一个事实（「这段音频存不存在」）在三个接口里必须是同一种表达。
    * ⚠️⚠️ 这里**以前还拼一份逐词音频地址数组**（audio.words），已删除（2026-09）：
    *    点词播放改走微信 TTS。逐词音频从来没有独立文件，是服务端从整句切出来的；
    *    现在正文里也没有时间戳了（见 types/content.ts 的 ArticleWordItem）。
    */
-  const audio: AudioRef | null = ref ?? null
+  const audio: ScheduleAudio | null = await scheduleAudioOf(article)
 
   /**
    * ⚠️⚠️ **逐个字段列出**，不再 `{ ...content }`。

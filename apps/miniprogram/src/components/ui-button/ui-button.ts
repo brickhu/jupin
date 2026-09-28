@@ -27,8 +27,9 @@ import type { ArticleTheme } from '@jushuo/shared'
  * ⚠️ 图标用的是项目自带的 **iconfont**（Iconify/MDI 子集，见 app.wxss 与
  *    tools/iconfont/build.mjs）—— 所以 icon 传的是 **iconify 名**（mdi:play / mdi:star），
  *    组件取冒号后面的部分拼成 `icon-<name>` 类。
- *    ⚠️⚠️ 子集里**没有**的图标画不出来（只有 12 个：play / stop / home / share /
- *    bell / target / clipboard / fire / heart-outline / chevron-left / chevron-right / loading）
+ *    ⚠️⚠️ 子集里**没有**的图标画不出来（只有 13 个：play / stop / home / share /
+ *    bell / target / clipboard / fire / heart-outline / chevron-left / chevron-right /
+ *    loading / microphone）
  *    —— 要新图标得先把它加进子集再重新生成。
  */
 
@@ -36,6 +37,8 @@ import type { ArticleTheme } from '@jushuo/shared'
 const KNOWN_ICONS = new Set([
   'play', 'stop', 'home', 'share', 'bell', 'target', 'clipboard',
   'fire', 'heart-outline', 'heart', 'chevron-left', 'chevron-right', 'loading',
+  // ⚠️ 朗读页 s1 那颗「点击录音并朗读」按设计稿挂了麦克风字形（2026-09）
+  'microphone',
 ])
 
 type Variant = 'fill' | 'outline' | 'ghost' | 'link'
