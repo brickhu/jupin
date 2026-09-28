@@ -20,7 +20,7 @@ import {
   getUserId,
   submitReading,
 } from '../../lib/api/client'
-import { historyRowsOf, type HistoryRow } from '../../lib/article-history'
+import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -439,6 +439,18 @@ Page({
     historyAttempts: 0,
     /** 这些历史里的最高分（'89.5'）；一次都没有时是空串 */
     historyBestText: '',
+    /**
+     * ⭐ 「我的参与」摘要卡的四个数（挑战 / 最高 / 位列 / 最低）。
+     * ⚠️ 与历史行的口径不同：**含当前这一把**（见 lib/article-history.ts 的 historySummaryOf）。
+     * ⚠️ 名次 / 参与人数 / 最低分只能来自服务端（`rank` / `participantCount` / `lowestScore`）。
+     */
+    summary: { attemptsText: '0 次', bestScoreText: '—', rankText: '—', lowestScoreText: '—' },
+    /**
+     * ⭐ 摘要卡的数据到手过没有。
+     * ⚠️ 没拿到就**不画那张卡**（而不是画一张全是「—」的）——
+     *    后者会让人以为"我这句一次都没读过"，而真相是"这次没问到"。
+     */
+    historyReady: false,
 
     /**
      * ⭐⭐ 提交前那层「确认能量」的开关（用户 2026-09 定）。
@@ -839,6 +851,9 @@ Page({
         historyRows: rows,
         historyAttempts: attempts,
         historyBestText: bestScoreText,
+        // ⭐ 摘要卡：四个数直接从接口读（口径见 data 里的说明）
+        summary: historySummaryOf(res),
+        historyReady: true,
       })
     } catch (err) {
       if (this.gone || this.data.articleId !== articleId) return

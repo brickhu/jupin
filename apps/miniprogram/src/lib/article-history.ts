@@ -81,3 +81,43 @@ export function historyRowsOf(
     bestScoreText: best === null ? '' : formatScore(best),
   }
 }
+
+/**
+ * ⭐⭐ 朗读页那张「我的参与」摘要卡（用户 2026-09：做成 pages/me/participations 那样的卡片）。
+ *
+ * 四个数与「我的挑战」列表同一套：**挑战 / 最高 / 位列 / 最低**。
+ *
+ * ⚠️⚠️ 与 `historyRowsOf` 的口径差别（两张卡挨着放，最容易混的就是这里）：
+ *    · **行**（历史挑战）免掉"当前这一次"，而**这张卡说的是"我在这一句上的全部"** ——
+ *      所以它用响应里的 `attempts` / `bestScore`，**不**跟着免当前那一次。
+ *      用户正看着 s5 的分数时，卡片上那个"最高"应该就是含这一把的当前水平。
+ *    · 行里的「最高」是**标在某一行的角标**（哪几次是我的最好水平），两者不冲突。
+ *
+ * ⚠️ 名次 / 参与人数 / 最低分**只能来自服务端**（跨用户算的），别在端侧凑。
+ * ⚠️ 「位列」写 `N / M`（同 participations 的 rankText）：只写「第 N」在 9 人的场
+ *    和 900 人的场是两件事。
+ */
+export interface HistorySummary {
+  /** '3 次'；一次都没有是 '0 次' */
+  attemptsText: string
+  /** 我的最好成绩 '89.5'；没出过分是 '—' */
+  bestScoreText: string
+  /** '2 / 18'；没名次（没出过分 / 服务端没给）是 '—' */
+  rankText: string
+  /** 全场最低分；没人参与是 '—' */
+  lowestScoreText: string
+}
+
+export function historySummaryOf(res: ArticleRecordsResponse): HistorySummary {
+  return {
+    attemptsText: res.attempts + ' 次',
+    bestScoreText: formatScore(res.bestScore),
+    rankText:
+      // ⚠️ `> 0` 而不是"非 null"：服务端对"没参与过"的人给的是 rank=0
+      //    （leaderboard 的约定），显示成「第 0 名」是句错话。
+      typeof res.rank === 'number' && res.rank > 0
+        ? res.rank + ' / ' + res.participantCount
+        : '—',
+    lowestScoreText: formatScore(res.lowestScore),
+  }
+}

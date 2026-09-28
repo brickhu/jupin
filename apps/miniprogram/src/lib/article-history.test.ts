@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ArticleRecordsResponse } from '@jushuo/shared'
 
-import { historyRowsOf } from './article-history'
+import { historyRowsOf, historySummaryOf } from './article-history'
 
 /**
  * ⭐ 朗读页「历史挑战」列表的行 —— 纯函数，所以能在这里直说口径。
@@ -15,8 +15,12 @@ import { historyRowsOf } from './article-history'
 /** 固定一个"现在"，否则相对时间只能断言"包含分钟前"这种废话 */
 const NOW = new Date('2026-09-21T12:00:00+08:00').getTime()
 
+/**
+ * ⚠️ 这一组用例盯的是**行**（免掉当前这一次、最高现算），与摘要卡那三个数无关 ⇒
+ *    名次/人数/最低分给一组无关紧要的缺省值即可（摘要卡自己有单独一组用例）。
+ */
 function resOf(items: ArticleRecordsResponse['items'], bestScore: number | null): ArticleRecordsResponse {
-  return { items, bestScore, attempts: items.length }
+  return { items, bestScore, attempts: items.length, rank: null, participantCount: 0, lowestScore: null }
 }
 
 const item = (
@@ -94,5 +98,57 @@ describe('historyRowsOf —— 朗读页的历史挑战列表', () => {
   it('parse 不了的提交时间 → 时间那一格是空串，不画 Invalid Date', () => {
     const res = resOf([item('s1', 60, 1, '不是时间')], 60)
     expect(historyRowsOf(res, '', NOW).rows[0]?.ago).toBe('')
+  })
+})
+
+/**
+ * ⭐ 朗读页「我的参与」摘要卡 —— 与历史行的**口径差别**是这里唯一要盯的事：
+ *    行免掉"当前这一次"，而这张卡说的是"我在这一句上的全部"（含这一把）。
+ */
+describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位列 / 最低）', () => {
+  it('四个数各就各位（位列带参与人数，同 participations 的口径）', () => {
+    const res: ArticleRecordsResponse = {
+      items: [],
+      attempts: 3,
+      bestScore: 89.456,
+      rank: 2,
+      participantCount: 18,
+      lowestScore: 41,
+    }
+    expect(historySummaryOf(res)).toEqual({
+      attemptsText: '3 次',
+      bestScoreText: '89.5',
+      rankText: '2 / 18',
+      lowestScoreText: '41.0',
+    })
+  })
+
+  it('⚠️ 一次都没读过 → 0 次 + 三个破折号（不写 0 分 / 第 0 名）', () => {
+    const res: ArticleRecordsResponse = {
+      items: [],
+      attempts: 0,
+      bestScore: null,
+      rank: null,
+      participantCount: 0,
+      lowestScore: null,
+    }
+    expect(historySummaryOf(res)).toEqual({
+      attemptsText: '0 次',
+      bestScoreText: '—',
+      rankText: '—',
+      lowestScoreText: '—',
+    })
+  })
+
+  it('⚠️ 名次 0（服务端对"没参与过"会给 0）必须显示成 —，不能出现「0 / 5」', () => {
+    const res: ArticleRecordsResponse = {
+      items: [],
+      attempts: 0,
+      bestScore: null,
+      rank: 0,
+      participantCount: 5,
+      lowestScore: 60,
+    }
+    expect(historySummaryOf(res).rankText).toBe('—')
   })
 })

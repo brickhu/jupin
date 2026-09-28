@@ -196,11 +196,38 @@
        ⚠️ 只在句子已经拉到时才画这一块：句子都没有的时候，这一页的主体现在是
           「正在加载句子…」/「重试」，下面再挂一段历史会喧宾夺主。 -->
   <view class="mt-3" wx:if="{{phase !== 'loading'}}">
-    <!-- ⚠️ 表头那句「共 N 次」是**除当前这次之外**的次数（见 historyAttempts）——
-         别读成"我在这句上一共读过几次"，那个数在 s5 的标题里。 -->
+    <!-- ⚠️ 表头只剩分组名（用户 2026-09）：原来右边还有一句「共 N 次 · 最高 X」——
+         那个数现在由**下面的「我的参与」摘要卡**说（而且那张说的是"含当前这一把"的全部，
+         与历史行的口径不同，见 lib/article-history.ts）。同一件事不摆两处。 -->
     <view class="flex items-baseline justify-between px-1 mb-2">
       <text class="text-26rpx text-muted">历史挑战</text>
-      <text class="text-22rpx text-faint" wx:if="{{historyAttempts > 0}}">共 {{historyAttempts}} 次 · 最高 {{historyBestText}}</text>
+    </view>
+
+    <!-- ══ 我的参与（摘要卡）——用户 2026-09：做成 pages/me/participations 那样的卡片 ══
+         ⚠️ 四个数与「我的挑战」列表同一套：**挑战 / 最高 / 位列 / 最低**，
+            上标签下数字、四等分（那页就是这两行结构，别在这儿改成别的排法）。
+         ⚠️⚠️ 它与下面「历史挑战」的行**口径不同**：这张卡说的是"我在这一句上的全部"
+            （含当前这一把），行那一列免掉"当前这一次" —— 见 lib/article-history.ts 的说明。
+         ⚠️ 只在真的拿到过数据时画（historyReady）：否则会先闪一张全是「—」的卡。 -->
+    <view class="bg-white rounded-2.5 p-4 mb-3" wx:if="{{historyReady}}">
+      <view class="flex">
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">挑战</text>
+          <text class="text-30rpx font-semibold text-ink">{{summary.attemptsText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">最高</text>
+          <text class="text-34rpx font-bold text-brand">{{summary.bestScoreText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">位列</text>
+          <text class="text-30rpx font-semibold text-ink">{{summary.rankText}}</text>
+        </view>
+        <view class="flex-1">
+          <text class="text-22rpx text-faint block">最低</text>
+          <text class="text-30rpx font-semibold text-muted">{{summary.lowestScoreText}}</text>
+        </view>
+      </view>
     </view>
 
     <view class="bg-white rounded-2.5">

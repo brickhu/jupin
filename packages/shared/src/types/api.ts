@@ -588,6 +588,18 @@ export interface ArticleRecordsResponse {
   bestScore: number | null
   /** 我在这句上出过分几次 */
   attempts: number
+  /**
+   * ⭐ 我在这句上的**名次**（跨用户算）；没出过分是 null。
+   * ⚠️ 端侧算不出这个数（要别人的成绩）⇒ 必须服务端给（同 arena-records 的 ranks 口径）。
+   */
+  rank: number | null
+  /** 这一句的参与人数；没人参与是 0 */
+  participantCount: number
+  /**
+   * ⭐ 全场**最低分**（同一个人只算最好那次，与最高分同口径）；没人参与是 null。
+   * ⚠️ 朗读页那张「我的参与」摘要卡要用它（与「我的挑战」列表的四个数同一套）。
+   */
+  lowestScore: number | null
 }
 
 /** GET /api/user/arena-records 的响应 */

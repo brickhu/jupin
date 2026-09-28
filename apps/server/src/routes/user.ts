@@ -6,7 +6,7 @@ import { env } from '../env'
 import { loadArticleRefText } from '../services/content'
 import { getTotalConquered } from '../services/conquest'
 import { favoriteIdsOf } from '../services/favorites'
-import { getRank } from '../services/leaderboard'
+import { getArenaStatsBatch, getRank } from '../services/leaderboard'
 import { challengeStats } from '../services/submission'
 import { readEnergy } from '../services/energy'
 import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
@@ -164,10 +164,26 @@ userRoutes.get('/article-records', async (c) => {
    *    那个派生索引是"一人一句一行"的榜单口径，这里要的是同一份真相的
    *    另一种投影 —— 两者都由 submissions 推出，不会互相矛盾。
    */
+  /**
+   * ⭐ 另外三个数给朗读页那张「我的参与」摘要卡（挑战 / 最高 / 位列 / 最低）：
+   *    · 名次 —— 跨用户算的，端侧**算不出来**，必须服务端给（复用 getRank，与竞技场同一处实现）；
+   *    · 参与人数 / 最低分 —— 复用 getArenaStatsBatch（与竞技场页的「参与概要」同一个来源）。
+   * ⚠️ 不自己写 SQL 算名次：那套全序（分数 → 谁先拿到 → id）只在 leaderboard.ts 里有一份，
+   *    抄一份出去迟早和榜单对不上（同分先后是这里最容易错的地方）。
+   */
+  const [stats, rankInfo] = await Promise.all([
+    getArenaStatsBatch([articleId], userId).then((m) => m.get(articleId)),
+    // ⚠️ getRank 对"没参与过"的人回 rank=0 ⇒ 这里统一成 null（0 会被读成"第 0 名"）
+    getRank(articleId, userId).then((r) => (r.rank > 0 ? r.rank : null)),
+  ])
+
   const data: ArticleRecordsResponse = {
     items,
     bestScore: items.length === 0 ? null : Math.max(...items.map((i) => i.score)),
     attempts: items.length,
+    rank: rankInfo,
+    participantCount: stats?.participantCount ?? 0,
+    lowestScore: stats?.lowestScore ?? null,
   }
   return c.json({ ok: true, data })
 })
