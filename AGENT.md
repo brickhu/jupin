@@ -58,6 +58,25 @@ docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · �
 ⚠️ **commit 里的 `plan <ID>` 表示「这条任务完成」** —— 只是**记录**一条任务、或改计划本身的提交
 **不要挂那个 ID**（写成 `chore(plan): 新增 B14`）。否则 `plan:sync` 会把刚记下的任务立刻勾成完成。
 
+### ⚠️⚠️ 验证脚本不许清库（一次真实事故，写在这里不许再犯）
+
+**本机 dev 库（容器 `jushuo-db`）与开发者工具 / 真机联调是同一个库** ——
+你在脚本里删的**不是「你的测试数据」，是用户的参与记录**。
+
+真实发生过：验证脚本为了「跑完清干净」执行了 `DELETE FROM participations`
+加「按 user 循环删 submissions」（等于全表删），把本机所有参与记录、挑战记录、
+榜单、连战一次清光 —— 首页数字全变 0，而那是数据真的没了，不是显示问题。
+
+**规矩**：
+
+1. 临时数据必须**能精确定位**：专用 id 前缀（本仓库约定 `z…`）或专用测试用户；
+2. 清理时**只删自己造的那些行**：`WHERE id IN (…)` / `WHERE user_id = <测试用户>`；
+3. **绝不允许** `DELETE FROM <表>`、`TRUNCATE`、或按 user 循环删全量；
+4. 要看「空库」效果就**另起一个库/容器**，别拿共用库开刀。
+
+⚠️ 万一真删了：MySQL 侧 `binlog_format=ROW` + `binlog_row_image=FULL` 是可以救的 ——
+DELETE 事件带完整 before-image，用 `mysqlbinlog --base64-output=DECODE-ROWS -v` 还原成 INSERT；
+`participations` **不用救**（派生索引）：`pnpm db:participations --apply` 重建即可。
 **提交信息格式**（scope 里挂任务 ID）：
 
 ```
