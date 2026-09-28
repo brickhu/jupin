@@ -151,14 +151,23 @@
   <!-- ══ 评测弹窗 ══════════════════════════════════════════════
        ⚠️⚠️ 提交评测之后的三个态（上传中 / 评测中 / 出分 s5 / 失败 s6）**都在这一层里**
           （用户 2026-09 定）：等待期禁止点击由遮罩天然保证，结果也不和句子挤在同一屏。
-       ⚠️ 它自己判断画不画（看 phase），这里不需要 wx:if。
-       ⚠️ 两个回调都由本页实现：onConfirmResult（关窗 + 回 s1 + 这一次进历史）/
-          onOpenDetail（navigateTo pages/challenge）。 -->
-  <eval-dialog phase="{{phase}}" uploadPercent="{{uploadPercent}}"
+       ⚠️ 它自己判断画不画（看 mode + phase），这里不需要 wx:if。
+       ⚠️ 两块各由谁来决定：
+          · mode=precheck（提交前确认能量）—— confirmOpen 说了算，
+            用 phase='precheck' 表示"正在问权威余额"；
+          · mode=submitting（评测过程与结果）—— 原来的 s4/s5/s6。
+       ⚠️ 四个回调都由本页实现：onConfirmResult（关窗 + 回 s1 + 这一次进历史）/
+          onOpenDetail（navigateTo pages/challenge）/ onConfirmStart（真的开始提交）/
+          onConfirmCancel（取消，什么都没发生）/ onConfirmGoEnergy（去能量页）。 -->
+  <eval-dialog mode="{{confirmOpen ? 'precheck' : 'submitting'}}"
+               phase="{{phase}}" uploadPercent="{{uploadPercent}}"
                scoreText="{{scoreText}}" scoreSubtitle="{{scoreSubtitle}}"
                attemptTitle="{{attemptTitle}}" growthCards="{{growthCards}}"
                failDetail="{{failDetail}}" energyNote="{{energyNote}}"
-               bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
+               costEnergy="{{costEnergy}}" balanceEnergy="{{confirmEnergy}}"
+               bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail"
+               bind:start="onConfirmStart" bind:cancel="onConfirmCancel"
+               bind:goEnergy="onConfirmGoEnergy" />
 
   <!-- ── 通用错误条（横跨六态，不改变状态）─────────────────────
        ⚠️ 麦克风没授权、能量不够、上传失败、轮询断网……都在这里说一句人话。

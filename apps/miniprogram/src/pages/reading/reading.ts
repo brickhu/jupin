@@ -37,6 +37,8 @@ import {
   recordingKeyOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
+import { ensureSessionForSubmit } from '../../lib/join'
+import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
@@ -99,7 +101,21 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  *    在屏幕上长得一模一样，而它们该说的话完全不同。
  *    ⚠️ 页面上真正"盖住一切"的那一层由组件按这两个值 + s5/s6 决定画不画。
  */
-type Phase = 'loading' | 's1' | 's2' | 's3' | 'uploading' | 'scoring' | 's5' | 's6'
+type Phase =
+  | 'loading'
+  | 's1'
+  | 's2'
+  | 's3'
+  /**
+   * ⭐ 提交前的**身份 / 能量确认**（用户 2026-09 定的三份检查里的第 1、3 份）。
+   * ⚠️ 'precheck' 是"正在问服务端权威余额"那一下（几百毫秒）——
+   *    它**不是**可以随便关掉的中间态：关掉的话用户会以为点了没反应。
+   */
+  | 'precheck'
+  | 'uploading'
+  | 'scoring'
+  | 's5'
+  | 's6'
 
 /**
  * ⭐ 等待态的**超时** —— 到点即进 s6（用户 2026-09 定：等待期不做手工取消，只做超时兜底）。
@@ -431,6 +447,27 @@ Page({
     historyAttempts: 0,
     /** 这些历史里的最高分（'89.5'）；一次都没有时是空串 */
     historyBestText: '',
+
+    /**
+     * ⭐⭐ 提交前那层「确认能量」的开关（用户 2026-09 定）。
+     *    false = 不显示；true = 显示（内容看 phase：'precheck' 问余额中 / s3 等确认）。
+     * ⚠️⚠️ 它**必须和 phase 分开**：用户在确认弹窗里点「去补能量」时，
+     *    我们既要保持"用户不在看页面"（这层不关），又不能让朗读页停在 precheck —— 
+     *    他是去能量页了，回来该看到 s3（录音还在、随时能再点 ✓）。
+     *    一个字段表达不了这两件事，所以用两个。
+     */
+    confirmOpen: false,
+    /**
+     * ⭐ 权威余额（GET /api/user/me 给的，**不是**本机缓存）——
+     *    确认弹窗里那行「消耗 2 点，确认后剩 1 点」用它。
+     *    ⚠️ 只在这一层打开时才可信（见 onConfirmStart 里那次 setData）。
+     */
+    confirmEnergy: 0,
+    /**
+     * ⭐ 确认弹窗里那句「本次评测消耗 N 点」的 N —— 取自 shared 的 ENERGY_PER_CHALLENGE。
+     * ⚠️ 端侧**不写死 2**（同 syncEnergyNote 的口径）；它是常量，所以放 data 里给 WXML 用。
+     */
+    costEnergy: ENERGY_PER_CHALLENGE,
   },
 
   recorder: null as Recorder | null,
@@ -1345,24 +1382,35 @@ Page({
   },
 
   // ----------------------------------------------------------------
-  // s3 → 弹窗：提交评测
+  // s3 → 弹窗：提交评测（**先三份检查，再上传**）
   // ----------------------------------------------------------------
+  /**
+   * ⭐⭐ 点 s3 那颗绿 ✓ —— **提交前的三份检查**（用户 2026-09 定）。
+   *
+   * 顺序是刻意的（先便宜后贵、先本地后网络、最后才锁能量）：
+   *   ① **时长**（本地、零成本）：录音太短是**技术无效**，不该走到上传 ——
+   *      原来它只在页面底部挂一条红字，用户得自己低头看；现在它在**弹窗正文**里
+   *      说清"你录了 0.8 秒、至少要说满 1.5 秒"。
+   *   ② **身份**（一次权威 /me，顺带拿到余额）—— 判据与**导航栏那一格完全相同**：
+   *      "服务端应答过我吗"。本机连身份都没有（uid = 0）或 /me 问不到 → 拦住这次提交，
+   *      给一句人话。⚠️ 与昵称 / 头像**毫无关系**（那是"补资料"，不是前置条件）。
+   *   ③ **能量**：余额够 → 列清「消耗 2 / 确认后剩 1」等用户点确认；不够 → 【去补能量】。
+   *      ⚠️ 用的是 /me 那份**权威余额**（它会顺手把当天该补的补上），不是本机缓存 ——
+   *        否则会出现"本机以为够 → 白传一次 → 被服务端打回"。
+   *
+   * ⚠️ 三份都过了才进 onConfirmStart()（那一步才真的锁能量、开评测弹窗）。
+   */
   async onSubmit() {
-    const { audioPath, durationMs, articleId, phase } = this.data
+    const { audioPath, durationMs, phase } = this.data
     if (!audioPath) return
     // ⚠️ 弹窗里的按钮已经盖住了页面（✓ 点不到第二次）；这里再挡一道是防连点
     //    （会白烧一次上传流量 + 白锁一次能量）
-    if (phase === 'uploading' || phase === 'scoring') return
+    if (phase === 'uploading' || phase === 'scoring' || phase === 'precheck') return
 
-    // ⚠️ 这里**不拦「加入过没有」**：身份（openid）是静默拿到的，而服务端在
-    //    每个业务接口前按 openid 取用户、没有就建一行（middleware/auth.ts）。
-    //    本页可以被分享 / 扫码直接打开，那些人也一样 —— 先让他读。
-    //    昵称 / 头像只是榜上显示成什么，不是任何功能的前置条件。
-
-    // ⭐ 本地预检 —— 刻意极度宽松：放行垃圾的成本极低，误伤用户的成本是流失。
-    //    这里只拦「明显没录上」，真正的语音检测在引擎侧。
-    //    ⚠️ 不合格时**留在 s3**（不是进 s6）：s6 是「引擎判失败」的结果屏，
-    //      而这一条在提交之前就能拦住，用户改一下再点就是了。
+    // ⭐ 检查 1：时长 —— 不合格时**留在 s3**（不是进 s6）：s6 是「引擎判失败」的结果屏，
+    //    而这一条在提交之前就能拦住，用户重录一遍再点就是了。
+    //    ⚠️ 它刻意**不进确认弹窗**：那会变成"打开一个弹窗只为了报错"，
+    //      而这一条根本不需要用户做决定（他只需要重录）。
     if (durationMs < PREFLIGHT.minDurationMs) {
       this.setData({
         error:
@@ -1371,6 +1419,81 @@ Page({
       })
       return
     }
+
+    /**
+     * ⭐ 检查 2 / 3：先开确认层，再问服务端要权威余额。
+     * ⚠️ 先开层（phase='precheck' + confirmOpen）再 await：这几百毫秒里用户
+     *    必须看到"在处理"，而不是点了一下什么都没发生。
+     */
+    this.setData({
+      confirmOpen: true,
+      phase: 'precheck',
+      error: '',
+      confirmEnergy: this.data.energy,
+    })
+
+    let check
+    try {
+      check = await ensureSessionForSubmit()
+    } catch (err) {
+      // ⚠️ 检查没做完 —— 关掉这一层、回 s3 并**在页面上**说一句人话。
+      //    不留在弹窗里：他此刻要做的是"检查网络、再点一次"，而不是在这儿等。
+      this.setData({
+        confirmOpen: false,
+        phase: 's3',
+        error: (err as Error).message,
+      })
+      this.syncEnergyNote()
+      return
+    }
+
+    // ⚠️ 期间用户可能已经退出了这一页（或者重录了）—— 那就不再往下走
+    if (this.gone || this.data.phase !== 'precheck') return
+
+    // ⚠️ 够不够**不在这里判**：给 WXML 的是余额本身，比大小是模板里的事（两个数都来自服务端）
+    this.setData({
+      // 停在 s3 等用户决定：够 → 「确认提交」；不够 → 「去补能量」
+      phase: 's3',
+      confirmEnergy: check,
+      // ⚠️ 顺手把权威余额写进页面那一格（底部那行小字当场跟着变，见 syncEnergyNote）
+      energy: check,
+    })
+    this.syncEnergyNote()
+  },
+
+  /**
+   * ⭐ 确认层上那颗「确认提交」—— 到这里才真的开始上传 / 锁能量。
+   *
+   * ⚠️ 顺序：先关掉确认层、**再同步进 'uploading'**（同一个 setData 里做完）——
+   *    两帧之间不能让用户看到"遮罩没了、页面回来了"那一瞬间的空档。
+   * ⚠️ 确认弹窗里显示的那份余额是几分钟前问的（用户可能去充过值又回来）——
+   *    真正的判断仍在服务端（ENERGY_EXHAUSTED 那条分支会把权威余额给回来）。
+   */
+  onConfirmStart() {
+    if (this.data.phase !== 's3' || !this.data.confirmOpen) return
+    this.setData({ confirmOpen: false })
+    void this.startSubmit()
+  },
+
+  /** 确认层上那颗「取消」—— 什么都没发生：不锁能量、不上传，录音还在 */
+  onConfirmCancel() {
+    this.setData({ confirmOpen: false, phase: 's3' })
+  },
+
+  /** 确认层上那颗「去补能量」—— 这一层**不关**（回来接着确认），有余额了再点 ✓ */
+  onConfirmGoEnergy() {
+    openEnergyPage()
+  },
+
+  /**
+   * ⭐⭐ 三份检查都过了 —— 真的开始提交（上传 → 受理 → 轮询）。
+   *
+   * ⚠️ 从这里开始能量就会被锁（服务端在受理时锁 2 点），所以它只能由
+   *    onConfirmStart() 进来 —— 别的入口一律先走 onSubmit() 那三份检查。
+   */
+  async startSubmit() {
+    const { audioPath, articleId } = this.data
+    if (!audioPath) return
 
     this.setData({
       /**

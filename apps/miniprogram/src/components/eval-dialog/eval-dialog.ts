@@ -1,6 +1,12 @@
 /**
- * ⭐⭐ 评测弹窗 —— 朗读页「提交评测 → 评测中 → 出分 / 失败」
- *    （原来的 s4 / s5 / s6）**盖在页面上**（用户 2026-09 定）。
+ * ⭐⭐ 评测弹窗 —— 朗读页上**两块浮层**（都由这一张卡承担）：
+ *
+ *  ① 提交前的**确认能量**（'precheck'，用户 2026-09 追加）：问服务端要一次权威余额 →
+ *     够就列清「消耗 / 剩余」让用户点确认，不够就一句人话 + 「去补能量」；
+ *  ② 提交之后的**评测过程与结果**（'submitting'，原来的 s4 / s5 / s6）。
+ *
+ * ⚠️ 为什么两块合成一个组件而不是两个：它们**同一时刻只会出现一个**（页面按 phase 决定），
+ *    都用同一套遮罩 / 居中卡片 / 进出场，拆成两个组件只会让那套浮层样式出现两份。
  *
  * 职责边界（刻意很窄）：
  *   · 它**只画**：遮罩、居中卡片、等待态、结果态、底部两个按钮；
@@ -33,8 +39,19 @@ const SLOW_HINT_MS = 10_000
 Component({
   properties: {
     /**
-     * 'uploading' 上传中 / 'scoring' 评测中 / 's5' 出分 / 's6' 失败。
-     * ⚠️ 其它值（s1/s2/s3/loading）一律**什么都不画** —— 页面不用自己控制显隐。
+     * 这一层是**哪一块**：
+     *   · 'precheck'  —— 提交前的确认能量（见文件头 ①）
+     *   · 'submitting' —— 评测过程与结果（见文件头 ②）
+     * ⚠️ 由**页面**决定：同一份 phase 在两种 mode 下含义完全不同（precheck 时 phase
+     *    是 asking / confirm / no-energy / denied），组件不自己猜。
+     */
+    mode: { type: String, value: '' },
+    /**
+     * mode = 'submitting' 时：'uploading' 上传中 / 'scoring' 评测中 / 's5' 出分 / 's6' 失败。
+     * mode = 'precheck' 时：'precheck' 正在问服务端权威余额；'s3' =
+     *   已经拿到余额（够 / 不够都由 balanceEnergy 与 costEnergy 比出来）。
+     * ⚠️ "问不到"（连不上 / 身份过期）**不在这一层**：页面会关掉它、回 s3 说人话。
+     * ⚠️ 其它值一律**什么都不画** —— 页面不用自己控制显隐。
      */
     phase: { type: String, value: '' },
     /** 上传进度 0–100（只有 uploading 时有意义） */
@@ -51,6 +68,10 @@ Component({
     failDetail: { type: String, value: '' },
     /** 底部那行能量小字（成品文本，页面拼） */
     energyNote: { type: String, value: '' },
+    /** precheck 用：这一把要消耗几点（来自 shared 的 ENERGY_PER_CHALLENGE） */
+    costEnergy: { type: Number, value: 0 },
+    /** precheck 用：服务端给的权威余额（'asking' 与 'denied' 时可能是本机缓存值，别展示） */
+    balanceEnergy: { type: Number, value: 0 },
   },
 
   data: {
@@ -116,19 +137,42 @@ Component({
     noop() {},
 
     /**
-     * 点遮罩 —— **只有结果态才关得掉**。
+     * 点遮罩 —— **只有"可以退出"的那几态才关得掉**：
+     *   · 结果态（s5 / s6）：与「确认」同一个动作（关窗、回 s1、这一次进历史）；
+     *   · 确认能量态（'confirm' / 'no-energy'）：等于取消，什么都没发生（录音还在）。
      *
-     * ⚠️⚠️ 评测中那两次（uploading / scoring）点遮罩必须**什么都不做**：
-     *    那次提交的能量已经锁了、云端也已经在打分，关掉只会让用户以为白花了一次。
-     *    （同时页面在这一态根本不画 ×，两条路都堵死。）
+     * ⚠️⚠️ 其余三态点遮罩必须**什么都不做**：
+     *    · 'asking'（正在问权威余额）—— 还没问完就关，用户会以为没反应；
+     *    · 'uploading' / 'scoring' —— 能量已经锁了、云端已经在打分，
+     *      关掉只会让他以为白花了一次（同时这几态也不画 ×，两条路都堵死）。
      */
     onMaskTap() {
-      if (this.data.phase === 's5' || this.data.phase === 's6') this.onConfirm()
+      const { mode, phase } = this.data
+      if (mode === 'precheck') {
+        if (phase === 'confirm' || phase === 'no-energy') this.onCancel()
+        return
+      }
+      if (phase === 's5' || phase === 's6') this.onConfirm()
     },
 
-    /** 确认 / 右上角 × —— 交给页面：关窗 + 回 s1 + 把这一次追加进历史 */
+    /** 结果态：确认 / 右上角 × —— 关窗 + 回 s1 + 把这一次追加进历史 */
     onConfirm() {
       this.triggerEvent('confirm')
+    },
+
+    /** 确认能量态：**开始提交**（页面接手：关这一层、开评测那一层、上传+受理） */
+    onStart() {
+      this.triggerEvent('start')
+    },
+
+    /** 确认能量态：取消（这一把不提交了；录音还在手上，随时能再点 ✓） */
+    onCancel() {
+      this.triggerEvent('cancel')
+    },
+
+    /** 余额不够：去「能量」页（页面负责导航；回来还能接着读，不用重录） */
+    onGoEnergy() {
+      this.triggerEvent('goEnergy')
     },
 
     /** 评测详情 —— 交给页面：navigateTo pages/challenge?sid=… */

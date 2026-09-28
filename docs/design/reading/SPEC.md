@@ -104,7 +104,12 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    （submissions.growth_self / growth_diligence / growth_standout 已落库，只是没往外给）。
    ⚠️ s5 副标题「首次挑战，打败5人，位列第5」**不需要新字段**：
    首次 = previousBest === null，其余 beatenCount / rank 都在 SubmitResponse 里。
-6. ✅ **s4 / s5 / s6 搬进弹窗**（用户 2026-09 的追加需求，覆盖上面 s4–s6 三节的排版）：
+6. ✅ **提交前的三份检查**（用户 2026-09 定）：时长（本地）→ 身份（一次权威 /me；
+   判据**与导航栏那一格相同**：服务端应答过我 —— 与昵称/头像无关，也不是跳加入页）
+   → 能量（弹窗里问权威余额：够就列清「消耗/剩余」等确认，不够给【去补能量】）。
+   落在 `lib/join.ts` 的 `ensureSessionForSubmit()` + 朗读页的 `onSubmit()` /
+   `onConfirmStart()`；确认那一层与评测那一层共用 `components/eval-dialog`。
+7. ✅ **s4 / s5 / s6 搬进弹窗**（用户 2026-09 的追加需求，覆盖上面 s4–s6 三节的排版）：
    落地在 `components/eval-dialog`（浮层）+ 朗读页的状态机改写。
    - 点下 s3 那颗绿 ✓ 的**同一帧**弹窗就出现（用户说的"在 s4 之前"）：
      原来那个 s4 被拆成 **'uploading'（有真实进度）/ 'scoring'（只能转圈）**两态 ——
