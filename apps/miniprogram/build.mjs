@@ -355,19 +355,6 @@ async function buildUnoCss() {
   assertWxssSafe(out) // ⚠️ 产物不合规直接让构建失败，别留到真机上才发现
   await writeFile(UNO_OUT, out, 'utf8')
 
-  /**
-   * ⚠️⚠️ 同一份产物**也写一份进 src/**（用户 2026-09 报的「找不到 ./uno.wxss」就是这个）。
-   *
-   *    开发者工具编译哪一层，取决于它**自己记住的项目根目录**（可能是 dist/，也可能是 src/），
-   *    而 src/app.wxss 里那句 `@import "./uno.wxss"` 是同一份源码；
-   *    一旦工具按 src/ 编译，dist/ 里的产物它根本看不到，就报「path ./uno.wxss not found」。
-   *
-   *    ⚠️ 这条报错**指向源码**，看起来像"文件丢了"，实际是"编译的根本不是你构建出来的那份" ——
-   *       排查时很容易被带偏（我自己就先怀疑了半天构建失败）。
-   *    ⚠️ src/uno.wxss 是**生成物**（已在 .gitignore），不要手改、也不要提交。
-   */
-  await writeFile(resolve(SRC, 'uno.wxss'), out, 'utf8')
-
   console.log(
     `[uno] ${files.length} 个源文件 → ${matched.size} 个候选 → uno.wxss ${(out.length / 1024).toFixed(1)} KiB`,
   )
