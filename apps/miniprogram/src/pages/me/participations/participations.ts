@@ -3,7 +3,7 @@ import type { ParticipationRecord } from '@jushuo/shared'
 
 import { fetchParticipations } from '../../../lib/api/client'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
-import { ROUTES, goPublic } from '../../../lib/route'
+import { ROUTES, go } from '../../../lib/route'
 
 /**
  * ⭐ 「参与场次」—— 我在哪些句子上参与过，最近参与的排前面。
@@ -12,9 +12,10 @@ import { ROUTES, goPublic } from '../../../lib/route'
  *    同一句读十次也只有一张卡，「挑战几次 / 最高 / 最低」是卡里的数字。
  *    想看每一次的明细，去「我的挑战」—— 那一页才是提交粒度。
  *
- * ⚠️ 点卡片进的是**竞技场**（那一场的完整榜单），不是结果页：
- *    这张卡讲的是「我在这场里的位置」，落点自然就是那一场。
- */
+ * ⚠️ 点卡片**直接进朗读页**（用户 2026-09 定）：这一页是"我读过哪些句子"的清单，
+ *    点进去的自然动作是**再读一遍这一句**（卡片上的数字是"我在这一句上的战绩"）。
+ *    ⚠️ 原来点的是竞技场（看那一场的榜单）—— 想看榜从那句的挑战页/朗读页都能到，
+ *      而"再读一遍"在竞技场里还要多点一次。
 
 /** 列表里一行（显示形态与接口字段分开：WXML 里没法算） */
 interface Row {
@@ -86,22 +87,25 @@ Page({
     void this.load()
   },
 
-  /** 点一张卡 → **竞技场**（那一场，不是今天那一场） */
+  /**
+   * ⭐ 点一张卡 → **直接进朗读页**（用户 2026-09 定）。
+   *
+   * ⚠️⚠️ `date` 必须带**服务端给的** `lastScheduleDate`（我上一次挑战这一句算哪一天）——
+   *    朗读页用它决定"这一次提交记到哪一天"：不带的话就是今天，
+   *    而那会把昨天那张卡的数字改掉（见朗读页与 routes/arenas 的说明）。
+   *    拿端侧的今天去凑是同一个错，所以这里一律用服务端字段。
+   * ⚠️ 老记录可能没有 schedule_date（空串）⇒ 这时**照跳**，让它退回今天：
+   *    为了"再读一遍"这件事，日期不准也比点不动强（原来那条"看不到榜单"的拦截
+   *    是给竞技场用的 —— 竞技场按日期寻址，没日期就是空页面；朗读页不是）。
+   * ⚠️ 朗读页是**受保护页**（要花能量、成绩要有归属）⇒ 走带守卫的 go，不是 goPublic。
+   */
   onOpen(e: WechatMiniprogram.BaseEvent) {
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     const row = this.data.rows[i]
     if (!row) return
 
-    /**
-     * ⚠️ 日期必须来自**服务端**（那次提交属于哪一天）。
-     *    拿端侧的今天去凑，用户看到的是另一场的榜单 —— 而那一场里可能根本没有他。
-     * ⚠️ 老成绩没有 schedule_date → 空串，这时明说一句，别跳到一个空页面。
-     */
-    if (!row.scheduleDate) {
-      wx.showToast({ title: '这一场太久远了，看不到榜单', icon: 'none', duration: 2000 })
-      return
-    }
-    // ⚠️ 竞技场是公开页（见 lib/route 里那段说明）
-    goPublic(ROUTES.arena.url + '?date=' + encodeURIComponent(row.scheduleDate))
+    const q = '?id=' + encodeURIComponent(row.articleId) +
+      (row.scheduleDate ? '&date=' + encodeURIComponent(row.scheduleDate) : '')
+    void go(ROUTES.reading.url + q)
   },
 })
