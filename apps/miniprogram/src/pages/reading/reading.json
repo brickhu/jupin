@@ -3,6 +3,7 @@
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
     "ui-button": "/components/ui-button/ui-button",
-    "eval-dialog": "/components/eval-dialog/eval-dialog"
+    "eval-dialog": "/components/eval-dialog/eval-dialog",
+    "audio-button": "/components/audio-button/audio-button"
   }
 }

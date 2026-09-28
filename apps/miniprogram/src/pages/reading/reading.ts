@@ -16,6 +16,7 @@ import { PLATFORM } from '../../config'
 import {
   ApiError,
   fetchArticleRecords,
+  fetchSubmissionAudio,
   fetchSubmissionStatus,
   getUserId,
   submitReading,
@@ -446,6 +447,15 @@ Page({
      */
     summary: { attemptsText: '0 次', bestScoreText: '—', rankText: '—', lowestScoreText: '—' },
     /**
+     * ⭐ 历史行里**正在播**的那一行的下标（-1 = 没在播）。
+     * ⚠️ 只存一个下标，不给每行加 playing 字段：同时只可能播一段
+     *    （见 lib/audio/play.ts —— 全站共用一个播放器），存两份状态迟早不同步。
+     *    （同 pages/me/challenges 的 playing）
+     */
+    historyPlaying: -1,
+    /** ⭐ 正在**取音**的那一行（-1 = 没有）—— 那一行的播放钮显示转圈 */
+    historyAudioLoading: -1,
+    /**
      * ⭐ 摘要卡的数据到手过没有。
      * ⚠️ 没拿到就**不画那张卡**（而不是画一张全是「—」的）——
      *    后者会让人以为"我这句一次都没读过"，而真相是"这次没问到"。
@@ -774,6 +784,8 @@ Page({
   },
 
   onUnload() {
+    // ⚠️ 历史里那段录音也要停：用户已经离开这一页了，声音不该跟着走
+    stopAudio()
     /**
      * ⭐ 打完分（s5）、又离开了这一页 → 本地这段录音才算**真正消费掉**。
      *
@@ -886,6 +898,64 @@ Page({
   },
 
   /**
+   * ⭐ 听历史里**某一次**的录音（第 N 次前面那颗播放钮）。
+   *
+   * ⚠️ 地址是**按需向服务端要**的（`/api/challenge/:sid/audio`，每条单独授权、会过期）
+   *    ⇒ 不能提前批量取、也不能长期缓存（同 pages/me/challenges 的 onPlay）。
+   * ⚠️ 失败时的三种说法要分开：
+   *    · 音频不在了（服务端对失败的提交会删音频，audio 为 null）→「这段录音已经不在了」；
+   *    · 取不到地址（网络）→ 把那句错误原样说出来；
+   *    · 其他 → 播放失败。
+   *    一律**不要**静默：点了没反应最像是按钮坏了。
+   */
+  async onPlayHistory(e: WechatMiniprogram.CustomEvent<Record<string, never>>) {
+    const i = Number((e.currentTarget.dataset as { i?: number }).i)
+    const row = this.data.historyRows[i]
+    if (!row) return
+
+    // 再点一次 = 停（同一行）
+    if (this.data.historyPlaying === i) {
+      this.stopHistoryAudio()
+      return
+    }
+    // ⚠️ 取音途中再点 = 忽略：还没出声，再发一次只会让两段音频抢同一个播放器
+    if (this.data.historyAudioLoading === i) return
+
+    // 先切到 loading：等网络回来再给反馈的话，用户会以为没点上而连点几次
+    this.stopHistoryAudio()
+    this.setData({ historyAudioLoading: i, historyPlaying: -1 })
+
+    try {
+      const { audio } = await fetchSubmissionAudio(row.submissionId)
+      // ⚠️ audio 为 null = 那段录音已经不在了（失败的提交会被服务端删掉）
+      if (!audio) throw new Error('这段录音已经不在了')
+      // ⚠️ 拿本地文件再播：同一个地址反复听时不必每次重下（见 lib/audio/standard.ts）
+      const path = await ensureLocalAudio(audio.src, audio.kind)
+      if (!path) throw new Error('取不到这段录音')
+      // ⚠️ 等待期间用户可能已经点了别的行 —— 那就别再播这一段了
+      if (this.gone || this.data.historyAudioLoading !== i) return
+      this.setData({ historyAudioLoading: -1, historyPlaying: i })
+      await playAudioUrl(path, '录音', () => {
+        // ⚠️ 播完清标记，但只在「还是这一行」时清，别把新点的那一行带掉
+        if (this.data.historyPlaying === i) this.setData({ historyPlaying: -1 })
+      })
+    } catch (err) {
+      if (this.data.historyAudioLoading === i || this.data.historyPlaying === i) {
+        this.setData({ historyAudioLoading: -1, historyPlaying: -1 })
+      }
+      wx.showToast({ title: (err as Error).message, icon: 'none', duration: 2000 })
+    }
+  },
+
+  /** 停掉历史里正在播 / 在取音的那一段（离开页面、点别的行、进详情都要调） */
+  stopHistoryAudio() {
+    stopAudio()
+    if (this.data.historyPlaying !== -1 || this.data.historyAudioLoading !== -1) {
+      this.setData({ historyPlaying: -1, historyAudioLoading: -1 })
+    }
+  },
+
+  /**
    * 点一条历史 → 看**那一次**的结果屏（pages/challenge?sid=…）。
    *
    * ⚠️ 用 navigateTo 而不是 onOpenDetail 那个 redirectTo：那边是「这一把刚读完，
@@ -896,8 +966,8 @@ Page({
     const i = Number((e.currentTarget.dataset as { i?: number }).i)
     const row = this.data.historyRows[i]
     if (!row) return
-    // ⚠️ 别把正在响的声音带进详情页
-    stopAudio()
+    // ⚠️ 别把正在响的声音带进详情页（历史行里那颗播放钮也算）
+    this.stopHistoryAudio()
     this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' })
     openChallengePage(row.submissionId)
   },
