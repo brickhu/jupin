@@ -122,9 +122,6 @@
         <view class="h-[64rpx] flex items-center" wx:else>
           <view class="w-full h-[4rpx] rounded-full bg-line"></view>
         </view>
-        <!-- ⚠️ 只在开发者工具里显示：波形不出来的原因有好几种（帧没来 / 画布没就绪 /
-             数据是压缩字节），它们在屏幕上长得一模一样。真机上恒为空。 -->
-        <text class="text-20rpx text-faint block text-center leading-[1.5]" wx:if="{{waveOn && waveDebug}}">{{waveDebug}}</text>
       </view>
 
       <!-- ⚠️ 红色实心圆里的方块：设计稿是**黑方块**，不是白色 stop 字形 -->

@@ -114,6 +114,9 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
 3. ✅ **s2 的实时波形 + 计时器**：波形走 canvas（`peakBars` 纯函数算柱高，中线对称），
    计时器 1 秒一跳（`mmss`）；**没有帧就不画**（`waveOn=false` 退化成一条中线，
    绝不摆不动的假波形）。⚠️ 开发者工具的 WebAudio 解不开 mp3 码流，那里恒为无波形。
+   ⚠️ 波形诊断（画布就绪 / 收了几帧 / 峰值 / 解码通路）**只进控制台、不上屏幕**
+   （用户 2026-09：「s2 那些画布就绪之类的信息删掉」）—— 界面上那一行 `waveDebug` 已删，
+   连它专用的 `maxPeak` 统计也一起去掉了。
 4. ✅ **下方「历史挑战」列表**（用第 1 步的接口；不含「当前这一次」，点重新挑战后追加）。
    落地：`lib/article-history.ts`（纯函数 + 单测 `article-history.test.ts`）把接口响应变成一行，
    朗读页只负责拉与画（`loadHistory` / `onOpenHistory`）。

@@ -386,11 +386,6 @@ Page({
     /** s2 顶行那个红色计时器 `00:23`（在 TS 里按毫秒格式化，见 mmss） */
     elapsedText: '00:00',
     /**
-     * ⚠️ **只在开发者工具里显示**的一行诊断（真机上恒为空）。
-     *    波形不出来的原因有好几种，它们屏幕上长得一模一样，只能靠这行字区分。
-     */
-    waveDebug: '',
-    /**
      * ⭐ 这一轮要不要画实时波形 —— 由录音格式决定（见 WAVE_ON）。
      * ⚠️ 它必须是 data：WXML 里读不到模块常量，而画布在 wx:if 里。
      */
@@ -529,9 +524,10 @@ Page({
             setTimeout(() => this.prepareWaveCanvas(attempt + 1), 120)
             return
           }
-          console.warn('[wave] 没拿到画布节点，这一轮不画波形')
-          // ⚠️ 这句诊断只给开发者工具看：真机上用户看到「画布没拿到」比看到一块空白更糟
-          if (IS_DEVTOOLS) this.setData({ waveDebug: '画布没拿到（' + JSON.stringify(info ?? null) + '）' })
+          // ⚠️ 诊断只进控制台（用户 2026-09：界面上不要这些工程信息）。
+          //    WXML 那一块这时只留一条中线，"帧没来"与"画得不对"在屏幕上本来就分不出来 ——
+          //    要查就看这行日志。
+          console.warn('[wave] 没拿到画布节点，这一轮不画波形', info ?? null)
           return
         }
         // ⚠️ getWindowInfo 要 2.20.1+，与 lib/nav.ts 一样留一条老基础库的退路
@@ -547,9 +543,9 @@ Page({
         //    没有它，一块什么都没画的 canvas 和"这个功能不存在"长得一模一样 ——
         //    排查时会一直怀疑代码没生效（这个坑本次就踩了）。
         this.drawBaseline()
-        this.setData({
-          waveDebug: '画布就绪 ' + node.width + '×' + node.height + '，等音频帧…',
-        })
+        // ⚠️ 这里原来还往屏幕上写一行「画布就绪 N×M，等音频帧…」——
+        //    用户 2026-09 要求删掉（界面上不要工程信息）。要查就 console.log：
+        console.log('[wave] 画布就绪 ' + node.width + '×' + node.height)
       })
   },
 
@@ -614,13 +610,13 @@ Page({
       '[wave] 帧是编码后的音频，而这个环境解不开它（开发者工具的 WebAudio 不工作）—— ' +
         '已停掉波形。见 docs/research/recorder-output-formats.md',
     )
-    // ⭐ 这件事必须**同时写在屏幕上**：一块不动的空画布比没有更糟 ——
-    //    用户会以为是自己手机 / 麦克风的问题。
-    //    ⚠️ s2 那一格这时只留一条中线（见 WXML），**不摆假波形**。
-    this.setData({
-      waveOn: false,
-      waveDebug: IS_DEVTOOLS ? '模拟器不提供音频解码通路 —— 波形只在真机上有意义' : '',
-    })
+    /**
+     * ⭐ 停掉波形、那一格退回一条中线（见 WXML）——**绝不摆一条不动的假波形**：
+     *    一块不动的空画布比没有更糟，用户会以为是自己手机 / 麦克风的问题。
+     * ⚠️ 这里原来还往屏幕上写一句「模拟器不提供音频解码通路」—— 用户 2026-09 要求删掉
+     *    （界面上不要工程信息）。上面那行 console.warn 保留：排查要靠它。
+     */
+    this.setData({ waveOn: false })
   },
 
   /**
@@ -631,6 +627,8 @@ Page({
    *
    * ⚠️ 柱高算在 @jushuo/shared 的 peakBars 里（纯函数、有单测）——
    *    采样有两个来源（解码 / 裸 PCM），但「每根柱子多高」只能有一份实现。
+   * ⚠️ 这里**不再统计 maxPeak**：原来它只为画布下方那行诊断服务，
+   *    那行诊断已按用户要求从界面上删掉（要看就去控制台临时加一行）。
    */
   drawSamples(samples: Float32Array, byteLength = 0) {
     const ctx = this.waveCtx
@@ -650,32 +648,21 @@ Page({
     ctx.clearRect(0, 0, w, h)
     ctx.fillStyle = WAVE_COLOR
 
-    let maxPeak = 0
     for (let i = 0; i < heights.length; i++) {
       const peak = heights[i] as number
       // ⚠️ 最低 2px：静音时也留一条细线，不然整条波形会消失，
       //    看起来像画布没渲染出来（与参考实现里的 Math.max(2, ...) 同理）
       const barH = Math.max(2, peak * h * 0.92)
       ctx.fillRect(i * step + (step - barW) / 2, mid - barH / 2, barW, barH)
-      if (peak > maxPeak) maxPeak = peak
     }
 
-    this.waveFrames++
     /**
-     * ⚠️ 开发者工具里把「收到几帧、这一帧多少字节、峰值多少、走的哪条路」写在画布下方。
-     *
-     *    这一条不是装饰：波形不显示的原因有好几种（帧没来 / 画布没就绪 /
-     *    解码不可用 / 数据是压缩字节），它们在屏幕上**长得一模一样**。
-     *    没有这行字，只能靠反复猜 —— 本项目为此白跑过两轮。
-     *    真机上不显示（IS_DEVTOOLS 为假）。
+     * ⚠️ 帧计数**留着**（不渲染，只给下面那个"2 秒没帧"的看门狗用）—— 别顺手删。
+     * ⚠️ 这里原来每个几帧往画布下方写一行「第 N 帧 · 字节 · 峰值 · 走的哪条路」，
+     *    用户 2026-09 要求删掉（界面上不要工程信息）。
+     *    要查就临时 console.log —— 真机上本来就看不到那行字。
      */
-    if (IS_DEVTOOLS) {
-      const next =
-        '第 ' + this.waveFrames + ' 帧 · ' + byteLength + ' 字节 · 峰值 ' + maxPeak.toFixed(2) +
-        ' · ' + (this.frameMode === 'pcm' ? '裸 PCM' : '解码后')
-      // 每帧都 setData 太浪费，隔几帧写一次就够看
-      if (this.waveFrames % 5 === 1) this.setData({ waveDebug: next })
-    }
+    this.waveFrames++
   },
 
   /** 画一条极淡的中线 —— 让"画布在哪儿"当场可见，见 prepareWaveCanvas 的说明 */
@@ -1069,7 +1056,6 @@ Page({
         phase: 's2',
         error: '',
         elapsedText: '00:00',
-        waveDebug: WAVE_ON && IS_DEVTOOLS ? '准备画布…' : '',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
         audioPath: '',
@@ -1101,17 +1087,16 @@ Page({
       this.setData({ elapsedText: mmss(Date.now() - startedAt) })
 
       /**
-       * ⚠️ 开发者工具里：录了两秒还一帧都没收到，就**主动说出来**。
-       *
-       *    否则屏幕上是"一块空画布"，而"帧没来"和"画得不对"长得一模一样 ——
-       *    只能靠反复猜（本次就为此白跑了两轮）。
+       * ⚠️ 录了两秒还一帧都没收到，**主动说一句**（只进控制台 —— 用户 2026-09 要求
+       *    界面上不要工程信息）。"帧没来"和"画得不对"在屏幕上长得一模一样，
+       *    没有这条日志就只能反复猜（本项目为此白跑过两轮）。
        *    ⚠️ 复用这个 100ms 的计时器，不为一行诊断再开一个 setTimeout。
        */
       if (IS_DEVTOOLS && sec > 2 && this.waveFrames === 0 && !this.waveWarned) {
         this.waveWarned = true
-        this.setData({
-          waveDebug: (this.waveCtx ? '画布就绪，但' : '画布没就绪，且') + ' 2 秒内没收到任何音频帧',
-        })
+        console.warn(
+          '[wave] 录了 2 秒还没收到任何音频帧（' + (this.waveCtx ? '画布已就绪' : '画布没就绪') + '）',
+        )
       }
     }, 100)
 
