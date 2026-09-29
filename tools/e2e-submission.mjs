@@ -7,7 +7,7 @@
  *
  * 它按客户端的**真实请求顺序**走一遍：
  *   ① 造一个测试用户（给能量）
- *   ② GET /api/user/today            拿今日句子
+ *   ② GET /api/articles/today?uid=  拿今日句子（公开接口，带 uid 按此人档位）
  *   ③ POST /api/user/uploads         传音频（拿 audioKey/audioUrl）
  *   ④ POST /api/user/submissions     受理（新 attemptId）
  *   ⑤ 轮询 /api/user/submissions/:id  直到 scored / failed
@@ -54,9 +54,11 @@ await conn.execute('UPDATE users SET energy = 20 WHERE id = ?', [uid])
 check('测试用户就绪', !!uid, 'uid=' + uid + ' energy=20')
 
 // ---- ② 今日句子 ----
-step('②', 'GET /api/user/today')
-const today = await j(await fetch(BASE + '/api/user/today', { headers: H }))
-const entry = today?.data?.entry
+// ⚠️ 2026-09：这条改成公开接口 GET /api/articles/today?uid=<id>（不再走鉴权前缀），
+//    返回的是**标准 ArticleCard**（不再是 { entry, myLevel, ... } 那个信封）。
+step('②', 'GET /api/articles/today?uid=' + uid)
+const today = await j(await fetch(BASE + '/api/articles/today?uid=' + uid))
+const entry = today?.data
 check('拿到今日句子', !!entry?.articleId, entry?.articleId + ' | ' + String(entry?.text).slice(0, 32))
 if (!entry?.articleId) { console.error(JSON.stringify(today).slice(0, 300)); process.exit(1) }
 const articleId = entry.articleId
@@ -228,10 +230,12 @@ await conn.execute(
  *    · 悬空判定：心跳超过 3 分钟（STALE_MS）
  *    · 触发节流：两次清扫间隔 60 秒（THROTTLE_MS）
  * ⇒ 所以要**持续发请求**直到跨过节流窗口，而不是打一次就断言。
+ * ⚠️ 这里必须打一条**鉴权**接口（/api/user/*）——/api/articles/today 是公开前缀，
+ *    不经过那个中间件，打它触发不了清扫（这是 2026-09 改接口时最容易漏的一处）。
  */
 let swept = false
 for (let i = 0; i < 18 && !swept; i++) {
-  await fetch(BASE + '/api/user/today', { headers: H }).catch(() => {})
+  await fetch(BASE + '/api/user/me', { headers: H }).catch(() => {})
   await new Promise((r) => setTimeout(r, 5000))
   const [r] = await conn.execute('SELECT COUNT(*) n FROM submissions WHERE id=?', [ghostId])
   swept = r[0].n === 0

@@ -1389,7 +1389,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (!c) return fail(res, '句库没有这一条', 404)
     /**
      * ⚠️ 这里原来会查"这一句被排在哪些天"（`schedules` 表）。
-     *    2026-09 排期表整体删除：句子归哪天由 `/api/user/today` 的 24 小时窗口决定，
+     *    2026-09 排期表整体删除：句子归哪天由 `/api/articles/today?uid=` 的 24 小时窗口决定，
      *    所以**没有"排期"这个字段可给了** —— 前端也不再显示它。
      */
     const sched: Array<{ date: string }> = []
@@ -1540,7 +1540,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
    *    2026-09 删除（用户定：**删掉 schedules 表与接口，统一用 today 接口**）。
    *
    *    它是那次删除里最"顺手"的一块：句子归哪一天不再需要人指定 ——
-   *    `/api/user/today` **按 24 小时窗口 + 这个用户的难度档**推荐，
+   *    `/api/articles/today?uid=` **按 24 小时窗口 + 这个用户的难度档**推荐（uid 可省略 = 匿名），
    *    所以"运营排期"这个动作连同它的全部约束（草稿不能排、一天一句、替换要报告）
    *    一起消失了。admin 现在只做"句子"这一件事。
    */

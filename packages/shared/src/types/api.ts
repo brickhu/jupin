@@ -598,11 +598,17 @@ export interface ArenaRecordsResponse {
 /**
  * ⭐ 首页/列表上的一张竞技场卡片。
  *
- * ⚠️⚠️ `date` / `isScheduled` / `isToday` **只有今日那一张有** ——
+ * ⚠️⚠️ `date` **只有今日那一张有** ——
  *    因为「日期只是一个编辑精选的容器，和竞技场无关」（db/schema.ts）。
  *    历史卡片来自**句库**：它回答的是「还有哪些竞技场」，不是「过去哪几天」，
- *    所以那三个字段对整个历史列表都没有意义。
+ *    所以这个字段对整个历史列表都没有意义。
  *    ⇒ 点进竞技场一律按 **articleId** 寻址（/api/arenas/:articleId），不再用日期。
+ *
+ * ⚠️ 这里原来还有 `isScheduled` / `isToday` 两个可选布尔（2026-09 删）：
+ *    · `isScheduled` 随 schedules 表/接口一起废弃，**全仓库没有任何地方再写它**；
+ *    · `isToday` 只有 today 接口写 `true`，**没有任何客户端读它** ——
+ *      端侧把今日那张卡放在 `cards.today` 这个槽里，本来就不需要卡片自报身份。
+ *    ⇒ 两个都是"只写不读"的死字段，只会让文档示例多出两个恒为 true 的键。
  */
 export interface ArticleCard {
   /**
@@ -650,43 +656,26 @@ export interface ArticleCard {
 }
 
 /**
- * ⭐⭐ **今日推荐** —— 「你今天适合读哪一句」（GET /api/user/today）。
+ * ⭐⭐ **今日推荐** —— 「你今天适合读哪一句」。
  *
- * ⚠️ **它是"今天读哪一句"的唯一来源**（原来那条 `/api/schedules` 的排期口径已删）：
- *   · 公开列表（`/api/articles?latest=N`）只回答"最近上线了哪几句"，与"今天"无关；
- *     它只剩「端侧兜底」和「这次提交记到哪一天」两个用途。
- *   · 这个走**我的参与记录**：同一档位的用户拿到同一句（保住竞技场），
- *     不同档位的人拿到不同的句子。
+ * ⚠️⚠️ **2026-09 改口径**：它不再是 `/api/user/today` 那个专用信封，而是
+ *    `GET /api/articles/today?uid=<id>` 直接返回的一张 **ArticleCard**
+ *    （与 `/api/articles?latest=N` 的 items **同一个形状** ⇒ 端侧一套渲染）。
  *
- * ⚠️⚠️ **2026-09 口径：以用户为单位，每 24 小时换一次**（不再是全局自然日）。
- *    分配落在 users.today_article_id / today_assigned_at 上，窗口内**原样返回**，
- *    所以「读完返回首页卡片变成另一句」那个 bug 不会再发生。
- *    选句按**窗口起始日**的天号取模 —— 同一天开始窗口的人拿到同一句，
- *    任意时刻每档最多两句「在飞」（昨天的 + 今天的），竞技场不会碎成一人一句。
- *    ⚠️ entry 里那个 `date` 仍然是**服务端的今天**：它是「这次提交记到哪一天」用的，
- *       与 24 小时窗口不是一回事（提交归属走 streak 的自然日口径）。
+ * 为什么这么改（用户定的）：
+ *   · 这条接口**只收 0 个或 1 个 uid**，公开可读（`/api/articles/*` 本来就是公开前缀）；
+ *   · **uid 可省略（匿名 / 未登录）**：**默认初级档**，在该档句子里**随机**挑一条、
+ *     **参与人数多的更容易被抽中**，且**不写任何用户行** —— 首页对游客也要画得出那张卡；
+ *   · 「我今天在这句上的战绩」是**另一件事**，拆到鉴权接口
+ *     `GET /api/user/participation/{articleId}`（返回 ParticipationRecord，没参与过为 null）。
+ *
+ * ⚠️ 选句口径没变（见 services/recommend.ts）：以 uid 为单位、每 24 小时换一次，
+ *    分配落在 users.today_article_id / today_assigned_at 上，窗口内**原样返回**。
+ *    卡片上的 `date` 是**服务端的今天**（这次提交记到哪一天），与 24 小时窗口不是一回事。
+ *
+ * ⚠️ 别再加回 `myLevel` / `level` / `levelBasis` / `myBest` / `myAttempts`：
+ *    前三项是**工程备注**（用户明确不要），后两项已经在 participation 接口里。
  */
-export interface TodayResponse {
-  /** 卡片要的那一份（形状与排期卡片一致 ⇒ 端侧不用为它写第二套渲染） */
-  entry: ArticleCard
-  /** 我原本的档位（0–3） */
-  myLevel: ArticleLevel
-  /** 实际用了哪一档 —— 与 myLevel 不同说明这一档还没有句子，就近换了 */
-  level: ArticleLevel
-  /** 档位是怎么来的（人话） */
-  levelBasis: string
-  /**
-   * ⚠️ 这里原来有一个 `reason`（「为什么是这一句」），**2026-09 删掉**（用户口径：
-   *    「你这些信息不应该展示给用户，它是你的工作备注」）。
-   *    它承载的是**选取规则**（同档同句 / 未读优先 / 整档挑最久 / 兜底换档 /
-   *    窗口内固定）—— 那是给改代码的人看的，不是给用户看的一句话。
-   *    ⇒ 规则留在 services/recommend.ts 的注释里；卡片上不再有这一行小字。
-   *    ⚠️ 别再以任何形式把它加回来（包括"换成人话再说一遍"）。
-  /** 我在这句上的最好成绩 / 挑战次数（与竞技场同一口径） */
-  myBest: number | null
-  myAttempts: number
-}
-
 
 /**
  * ⭐⭐ 竞技场详情 —— **按句子**寻址（`/api/arenas/:articleId`）。
@@ -737,8 +726,8 @@ export interface ArenaDetail {
 
 /** ⭐ **最新上线**（`GET /api/articles?latest=N`）—— 公开接口，对所有人一样。
  *
- * ⚠️⚠️ 它与「今天挑战」（`/api/user/today`）是**两个接口**（用户 2026-09 明确）：
- *    一个对所有人一样（按 `articles.published_at` 倒序），一个按人（24 小时窗口 + 我的难度档）。
+ * ⚠️⚠️ 它与「今天挑战」（`GET /api/articles/today?uid=<id>`）是**两个接口**：
+ *    一个对所有人一样（按 `articles.published_at` 倒序），一个按 uid（24 小时窗口 + 那个人的难度档）。
  *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除。
  */
 export interface LatestCardsResponse {

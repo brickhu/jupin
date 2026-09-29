@@ -206,8 +206,8 @@ MySQL 的 `TIMESTAMP` 只到 **2038 年**；而 Drizzle 的 `datetime` 没有 `d
 ## 七之二、今日推荐：按**参与记录分场**，不是给所有人同一句
 
 > 用户 2026-09：按天轮转给所有人推同一句「很鸡肋」—— 长期在高级场的人被推回初级。
-> ⇒ 首页那张「今日挑战」卡改走 `GET /api/user/today`（见 `services/recommend.ts`），
->   排期（`schedules`）只再负责「历史挑战」和「这次提交记到哪一天」。
+> ⇒ 首页那张「今日挑战」卡改走 `GET /api/articles/today?uid=<id>`（见 `services/recommend.ts`），
+>   ⚠️ uid **可省略 = 匿名**（初级档、按参与人数加权随机）；排期（`schedules`）只再负责「历史挑战」和「这次提交记到哪一天」。
 
 四条规则，**顺序就是优先级**：
 

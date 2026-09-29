@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       for (const m of mapping) {
         const themeJson = JSON.stringify(m.theme)
         await conn.execute('UPDATE articles SET id = ?, theme = ? WHERE id = ?', [m.newId, themeJson, m.oldId])
-        // ⚠️ schedules 表 2026-09 已删除（'哪一天读哪一句'改由 /api/user/today 的 24 小时窗口决定）
+        // ⚠️ schedules 表 2026-09 已删除（'哪一天读哪一句'改由 /api/articles/today 的 24 小时窗口决定）
         await conn.execute('UPDATE submissions SET article_id = ? WHERE article_id = ?', [m.newId, m.oldId])
         // ⚠️ article_tags 表 2026-09 已删除（没人查它），这一步随之去掉
       }

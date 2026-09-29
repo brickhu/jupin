@@ -273,7 +273,7 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   /**
    * ⚠️ 这里原来会 `ensureSchedules([scheduleDate])` —— 给这一天补一行**排期**
    *    （"哪一天读哪一句"是提前排好的数据）。2026-09 排期表整体删除：
-   *    句子的归属由 `/api/user/today` 的 24 小时窗口决定，
+   *    句子的归属由 `/api/articles/today?uid=` 的 24 小时窗口决定（匿名那一支没有窗口），
    *    不再需要"这一天必须先有一条排期行"。
    * ⚠️ `scheduleDate` 本身**留着**：它是"这次提交算哪一天"的归属信息
    *    （历史挑战要归到那一天，否则昨天那张卡的数字会变）。

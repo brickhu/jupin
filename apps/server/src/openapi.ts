@@ -84,8 +84,10 @@ export function mountOpenApiDocs(app: ReturnType<typeof createApp>): void {
         '**不是**手写的 —— 改了接口就改了文档。',
     },
     tags: [
-      { name: '今天挑战', description: '按人：24 小时窗口 + 我的难度档' },
-      { name: '句库', description: '公开：最新上线 / 详情' },
+      // ⚠️ 这里原来有 `{ name: '今天挑战', description: '按人：24 小时窗口 + 我的难度档' }` ——
+      //    2026-09 删除：today 已并入 /api/articles/today（tag 用「句库」），
+      //    这个分组已经没有路由在用（留着只会在 Swagger UI 上挂一个空组）。
+      { name: '句库', description: '公开：今日推荐 / 最新上线 / 详情' },
       { name: '挑战提交', description: '上传与提交检测' },
       { name: '我的', description: '鉴权：我的成绩 / 历史 / 能量' },
       { name: '竞技场', description: '按句子寻址的场子与榜单' },

@@ -436,9 +436,13 @@ admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准
 `GET /api/schedules/:date`、admin 的排期面板、以及 `GET /api/schedules` 这个**路径**都删了。
 替代关系只有两条，别再往回长：
 
-- **"今天读哪一句"** → `/api/user/today`：以 **24 小时**为单位
-  （`users.today_article_id` + `users.today_assigned_at`）、**按这个用户的难度档**推荐一句
-  （`services/recommend.ts`）。
+- **"今天读哪一句"** → `GET /api/articles/today?uid=<id>`（**公开**，uid **可省略 = 匿名**）：
+  以 **24 小时**为单位（`users.today_article_id` + `users.today_assigned_at`）、
+  **按这个用户的难度档**推荐一句（`services/recommend.ts`），返回**标准 ArticleCard**。
+  ⚠️ 匿名（不带 uid / uid=0）按初级档 + 当天给一句，且**不写任何用户行**。
+  ⚠️ 它**不在 `/api/user/*` 下**（2026-09 改）：公开可读，所以游客首页也有今日卡。
+  ⭐ 「我今天在这句上的战绩」是**另一件事** → `GET /api/user/participation/{articleId}`
+  （鉴权，返回 ParticipationRecord；**没参与过 data 为 null**）。
 - **"最近上线了哪几句"** → `GET /api/articles?latest=N`（**公开**，数据源一直是 `articles` 句库，
   与排期无关）。⚠️ 它原来就叫 `/api/schedules` —— 名字与内容不符，已随排期一起改名。
 

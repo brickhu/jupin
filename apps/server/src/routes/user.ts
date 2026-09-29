@@ -7,6 +7,7 @@ import { loadArticleRefText } from '../services/content'
 import { getTotalConquered } from '../services/conquest'
 import { favoriteIdsOf } from '../services/favorites'
 import { getArenaStatsBatch, getRank } from '../services/leaderboard'
+import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { challengeStats } from '../services/submission'
 import { readEnergy } from '../services/energy'
 import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
@@ -32,6 +33,7 @@ import {
   errorResponse,
   MeResponseSchema,
   ParticipationRecordListSchema,
+  ParticipationRecordResponseSchema,
   ProfileUpdateResponseSchema,
   StreakRecordResponseSchema,
   UnfreezeResponseSchema,
@@ -325,43 +327,47 @@ userRoutes.openapi(participationsRoute, async (c) => {
     .where(eq(participations.userId, userId))
     .orderBy(desc(participations.lastAt))
 
-    const items = await Promise.all(
-      rows.map(async (r) => {
-        /**
-         * ⚠️ **原文取自快照**（`participations.text`，用户 2026-09 要求）——
-         *    历史必须自足：句子没上线 / 内容改过，列表照样显示「我当时读的是哪句」。
-         *    原来这里回查文章正文，关联不上就是一片空白。
-         */
-        const text = r.text ?? ''
-        const rankInfo = await getRank(r.articleId, userId)
-        return {
-          articleId: r.articleId,
-          text,
-          /**
-           * ⚠️ 词数用**快照**（`participations.words`），不再拿 text 现算 ——
-           *    现算的话切词规则一改，历史卡片的词数就跟着变（而用户当时读的是旧那一份）。
-           *    没有快照的老记录退回现算，别让卡片显示 0。
-           */
-          words: Array.isArray(r.words) ? r.words.length : plainWordsOf(text).length,
-          attempts: Number(r.attempts ?? 0),
-          bestScore: Number(r.best ?? 0),
-          worstScore: Number(r.worst ?? 0),
-          rank: rankInfo.rank,
-          participantCount: rankInfo.participantCount,
-          lastAt: new Date(r.lastAt as unknown as string).toISOString(),
-          /**
-           * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
-           * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
-           *    而不是端侧算今天：用户参与的可能是几天前那一场。
-           * ⚠️ 它随参与记录一起物化（写入时算好），不再逐行回查 submissions。
-           */
-          lastScheduleDate: r.lastScheduleDate ?? '',
-          theme: r.theme,
-        }
-      }),
+  /**
+   * ⚠️ 映射走 services/participations.ts 的 `toParticipationRecord` ——
+   *    与单取接口 `GET /api/user/participation/{articleId}` **共用同一份口径**
+   *    （原文/词数取快照、名次跨用户现算），两处各写一遍迟早自相矛盾。
+   */
+  const items = await Promise.all(
+    rows.map(async (r) => toParticipationRecord(r, await getRank(r.articleId, userId))),
   )
 
   return c.json({ ok: true, data: { items } }, 200)
+})
+
+/**
+ * ⭐⭐ **我在这条句子上的参与记录**（`GET /api/user/participation/{articleId}`）。
+ *
+ * ⚠️ 与上面的「参与场次」列表是**同一个事实的单取形式**：列表给全部、这条给一条。
+ *    形状完全一样（ParticipationRecord），**没参与过时 data 为 null**
+ *    （不是 404、更不是一条全 0 的假记录 —— 0 分是合法成绩）。
+ *
+ * ⚠️ 鉴权前缀 `/api/user/*` ⇒ 只有本人能读自己的记录；articleId 只是个筛选键，
+ *    不会因此看到别人的数据（见 routes/participation-scope.test.ts）。
+ */
+const participationRoute = createRoute({
+  method: 'get',
+  path: '/participation/{articleId}',
+  tags: ['我的'],
+  summary: '我在这条句子上的参与记录（没参与过为 null）',
+  security: [{ userToken: [] }],
+  request: { params: z.object({ articleId: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ParticipationRecordResponseSchema } },
+      description: '成功（data 为 null = 我还没挑战过这一句）',
+    },
+  },
+})
+
+userRoutes.openapi(participationRoute, async (c) => {
+  const userId = c.get('userId')
+  const articleId = c.req.param('articleId')
+  return c.json({ ok: true, data: await participationRecordOf(userId, articleId) }, 200)
 })
 
 /**

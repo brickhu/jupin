@@ -354,10 +354,11 @@ export const articles = mysqlTable('articles', {
  *    2026-09 删除（用户定：**删掉 schedules 表与接口，统一用 today 接口**）。
  *
  *    它编码的是"**哪一天读哪一句是提前排好的数据**"：按天号轮转 + 运营指定 + 预排两周。
- *    替代它的是 `/api/user/today`：
+ *    替代它的是 `/api/articles/today?uid=`：
  *      · **以 24 小时为单位**（`users.today_article_id` + `users.today_assigned_at`）
  *        —— 一个用户在一个窗口里固定读同一句；
- *      · **按这个用户的难度档**推荐（services/recommend.ts）。
+ *      · **按这个用户的难度档**推荐（services/recommend.ts）；
+ *      · uid **可省略 = 匿名**（初级档里按参与人数加权随机，不写用户行）。
  *    ⇒ "日期"因此不再是内容的一部分，只是**归属信息**（这次提交算哪一天，
  *      见 services/schedule-date.ts）—— 所以 `submissions.schedule_date` 那一列留着。
  *

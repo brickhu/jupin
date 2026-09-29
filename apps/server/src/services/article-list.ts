@@ -82,9 +82,11 @@ export function pickLatestArticles<T extends LatestCandidate>(
 /**
  * ⭐⭐ **首页「最新上线」那一段的数据**（句库里按上线时间倒序的最新 N 句，含竞技统计）。
  *
- * ⚠️⚠️ **它是 `/api/user/today` 的一部分**（用户 2026-09 定：删掉 schedules 表与接口后，
- *    首页要的东西**统一由 today 这一个接口给**）—— 所以这里不是"另一个接口的实现"，
- *    而是 today 内部的一段取数。别为它再开一条路由（那正是之前那轮混乱的来源）。
+ * ⚠️⚠️ **它是 `GET /api/articles?latest=N` 的实现**（2026-09 定）——
+ *    首页下半段那一段由它给。⚠️ 「今天读哪一句」是**另一条接口**
+ *    （`GET /api/articles/today?uid=`，见 routes/articles.ts 的 today 路由），
+ *    别把两者合成一个包：一个对所有人一样、按上线时间；一个按 uid（或匿名）、24 小时窗口。
+ *    ⚠️ 别为它再开一条路由（那正是之前那轮混乱的来源）。
  *
  * ⚠️ 只列 `isActive`；**正文读不到的句子直接丢掉**（给一张空卡片比不显示更糟）。
  * ⚠️ `excludeArticleId` 用来避开"今天推荐的那一句"，别让同一句在首屏出现两次。

@@ -62,8 +62,10 @@ for (let i = 0; i < 40; i++) {
 }
 
 // ① 服务端还活着吗
+// ⚠️ 用一个**鉴权**接口（/api/user/*）—— /api/articles/today 现在是公开前缀，
+//    拿它探活不会经过用户身份中间件，探不到那条链路（2026-09 改接口时差点漏掉）。
 let alive = false
-try { alive = (await fetch(BASE + '/api/user/today', { headers: H })).ok } catch { alive = false }
+try { alive = (await fetch(BASE + '/api/user/me', { headers: H })).ok } catch { alive = false }
 console.log('  ① 服务端仍然存活：' + (alive ? '✅' : '❌ 崩了'))
 
 // ② 序号连续吗

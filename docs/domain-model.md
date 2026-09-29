@@ -15,13 +15,13 @@
 
 | # | 业务概念 | 真相在哪 | 唯一写入方 | 派生物 / 对账 | 主要读者 |
 |---|---|---|---|---|---|
-| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles?latest=N`、`/api/articles/:id`、`/api/arenas`、`/api/user/today` |
+| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles?latest=N`、`/api/articles/:id`、`/api/articles/today`、`/api/arenas` |
 | 2 | 一次朗读（录音） | 对象存储里的音频；索引在 `submissions`（`audio_key` / `audio_url` / `bytes` / `duration_ms` / `is_public`） | **无** —— 3 个写点（受理 insert、评测 update、可见性 update） | 失败时对象被删；成功时归档成 mp3 并改 `audio_key` | `GET /api/challenge/:sid/audio`、`/api/user/challenges` |
 | 3 | 一次评测（分数 / 逐词 / 点评） | `submissions` 的 `score` / `word_scores` / `dimensions` / `score_parts` / `ai_comment` / `ai_advice` | 唯一模块 `services/scoring.ts`；**函数级不唯一**（`runScoring` / `fail`） | `participations`（比分）；`users.growth_*`（结算） | `GET /api/user/submissions/:id`、`GET /api/challenge/:sid`、`/api/user/challenges` |
 | 4 | 一次奖励结算（成长值 / 连战 / 能量） | `submissions`（快照）+ `users`（累计/连战/能量）+ `energy_ledger` + `unfreeze_cards` + `reward_grants` | 唯一入口 `services/settle.ts:47`；**但内部跨 4+ 个独立事务** | `submissions.growth_*` / `streak_delta` 是快照 | 结果页 `SubmitResponse.growth` / `.streak`、`/api/user/me` |
 | 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/arena-records`、首页卡片 |
 | 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/arenas/:articleId`、`/api/user/submissions/:id` |
-| 7 | 今日挑战（24 小时窗口） | `users.today_article_id` + `today_assigned_at` | `recommendToday`（`services/recommend.ts:330`） | 无 | `GET /api/user/today` |
+| 7 | 今日挑战（24 小时窗口） | `users.today_article_id` + `today_assigned_at` | `recommendToday`（`services/recommend.ts:330`） | 无 | `GET /api/articles/today?uid=`（uid 可省略 = 匿名，走 `pickAnonymousArticle`） |
 | 8 | 难度档位 | **`articles.scores`**（三个判据分才是源）；`articles.difficulty` 由它算出 | `services/article-content.ts`（写 scores 时一并算 difficulty） | `articles.difficulty`（派生列，供 SQL 筛选） | 端侧展示读 `difficulty`；SQL 筛选读同一列 |
 | 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/arena-records` |
 | 10 | 连战 | `users.streak_days` / `streak_best` / `last_read_date` | `recordRead`（`services/streak.ts:83`）——**但被 `unfreeze.ts:183` 绕过一处** | 连战日历现算（`services/streak-record.ts`） | `/api/user/me`、`/api/user/streak-record` |
@@ -51,7 +51,7 @@
 - 自洽检查在正文层：`services/content-files.test.ts:54` 验 `difficulty === difficultyFromScores(scores)`（**不查库**）。
 - `is_active` / `published_at`：**没有对账命令**。
 
-**④ 读它的地方。** `GET /api/articles?latest=N`（`routes/articles.ts` 的列表路由）、`GET /api/articles/:id`、`GET /api/arenas/:articleId`（`routes/arenas.ts`）、`GET /api/user/today`（`routes/today.ts`）。注意 `arenas` **不校验 isActive**（`routes/arenas.ts:25`）。
+**④ 读它的地方。** `GET /api/articles?latest=N`（`routes/articles.ts` 的列表路由）、`GET /api/articles/:id`、`GET /api/articles/today?uid=`（`routes/articles.ts` 的 today 路由）、`GET /api/arenas/:articleId`（`routes/arenas.ts`）。注意 `arenas` **不校验 isActive**（`routes/arenas.ts:25`）。
 
 ### 1.2 一次朗读（录音）
 
@@ -135,8 +135,11 @@
 
 **③ 派生物 / 对账。** 无。`recommend` 依赖 `participations`（`recommend.ts:285-296`）判「未读优先」；`participations` 漂移会改变推荐结果。
 
-**④ 读它的地方。** `GET /api/user/today`（`routes/today.ts:28`）。
+**④ 读它的地方。** `GET /api/articles/today?uid=<id>`（`routes/articles.ts` 的 today 路由）。
+⚠️ **uid 可省略 = 匿名**：不走窗口，改走 `pickAnonymousArticle`（`services/recommend.ts`）——
+**初级档**里有正文的句子、按**参与人数加权随机**挑一条，**不写任何用户行**。
 ⚠️ 排期那套（`schedules` 表 + `services/schedules.ts` + `/api/schedules`）**已整体删除** ⇒ "今天读哪一句"只有这一个来源，不存在"两套口径"。
+⭐ 「我今天在这句上的战绩」不在 today 里，走 `GET /api/user/participation/{articleId}`（鉴权，没参与过 data 为 null）。
 
 ### 1.8 难度档位
 
@@ -146,7 +149,7 @@
 
 **③ 派生物 / 对账。** `articles.difficulty` + `article_tags`（`article-index.ts:72-80`），幂等重建 `reindexArticles`（`:109`）。命令 `pnpm content:regrade --apply`（`tools/regrade-content.ts:11,66`）。自洽单测 `services/content-files.test.ts:54`（只验正文，不验库）。
 
-**④ 读它的地方。** SQL 筛选：`recommend.ts:150`（按 `articles.difficulty` 取该档池子）。端侧展示：一律读**正文**再 `normalizeLevel`（`routes/articles.ts:47,122`、`routes/schedules.ts:146,253`、`routes/arenas.ts:55`、`routes/today.ts:61`、`routes/favorites.ts:86`）。
+**④ 读它的地方。** SQL 筛选：`recommend.ts`（`pickAnonymousArticle` 按 `articles.difficulty` 取初级档池子；`bandOf` 按该档取池子）。端侧展示：一律读**正文**再 `normalizeLevel`（`routes/articles.ts`、`routes/arenas.ts:55`、`routes/favorites.ts:86`）。
 
 ### 1.9 收藏
 

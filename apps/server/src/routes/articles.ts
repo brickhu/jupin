@@ -1,11 +1,13 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { desc, eq } from 'drizzle-orm'
 import { normalizeLevel, normalizeTags, plainWordsOf, today } from '@jushuo/shared'
-import type { ArticleDetail, StandardAudio } from '@jushuo/shared'
+import type { ArticleCard, ArticleDetail, StandardAudio } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { loadArticleContent } from '../services/content'
 import { latestArticleCards } from '../services/article-list'
+import { getArenaStatsBatch } from '../services/leaderboard'
+import { pickAnonymousArticle, recommendToday } from '../services/recommend'
 import { fileIdOf } from '../services/standard-audio'
 import { standardAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
@@ -14,6 +16,7 @@ import {
   ArticleDetailSchema,
   errorResponse,
   LatestCardsResponseSchema,
+  TodayArticleResponseSchema,
 } from '../openapi/schemas'
 
 export const articlesRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -25,9 +28,10 @@ const MAX_LATEST = 50
 /**
  * ⭐ **最新上线** —— 句库里按上线时间倒序的最新 N 句（首页下半段那一段）。
  *
- * ⚠️⚠️ 它和「今天挑战」（`GET /api/user/today`）是**两个接口**（用户 2026-09 明确）：
+ * ⚠️⚠️ 它和「今天挑战」（`GET /api/articles/today?uid=<id>`）是**两个接口**：
  *    · 这条：**公开**、对所有人一样，答「最近上线了哪几句」，按 `articles.published_at` 排；
- *    · today：**按人**，答「你今天适合读哪一句」，按 24 小时窗口 + 我的难度档。
+ *    · today：**按 uid**（或不带 uid = 匿名随机），答「今天适合读哪一句」，
+ *      带 uid 时按 24 小时窗口 + 那个人的难度档。
  *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除
  *    （schedules 表/接口都不再有，别让那个名字回来）。
  *
@@ -57,6 +61,120 @@ articlesRoutes.openapi(latestCardsRoute, async (c) => {
     : DEFAULT_LATEST
 
   return c.json({ ok: true, data: { date: today(), items: await latestArticleCards(limit) } }, 200)
+})
+
+/**
+ * ⭐⭐ **今日推荐** —— 「今天适合读哪一句」。
+ *
+ * ⚠️⚠️ **它收 0 个或 1 个 uid**（`?uid=`，**可省略**），公开可读 ——
+ *    `/api/articles/*` 本来就没有鉴权中间件。
+ *      · **带了 uid**：走 recommendToday —— 24 小时窗口 + **这个人的难度档**，
+ *        确定性、窗口内**原样返回**同一句（users.today_article_id），
+ *        所以"读完回首页卡片变成另一句"那个 bug 不会再发生；
+ *      · **没带 uid（匿名 / 未登录）**：走 pickAnonymousArticle —— **初级档**里
+ *        **随机 + 按参与人数加权**挑一条（越热闹越容易被抽中），
+ *        且**一个用户行都不写**（没有"这个人"，就没有窗口可谈）。
+ *    用户 2026-09 定的口径：句子归谁由 uid 决定；「这个 uid 在这句上的战绩」是**另一件事**，
+ *    拆到鉴权接口 `GET /api/user/participation/{articleId}`。
+ *
+ * ⚠️ 返回的是**标准 ArticleCard**（与 `GET /api/articles?latest=N` 的 items **同形**），
+ *    不是专用信封 —— 端侧一套类型、一套渲染。
+ *
+ * ⚠️⚠️ **注册顺序要害**：它必须排在下面的 `/{id}` **之前**。Hono 对同前缀是**按注册顺序**
+ *    匹配的（实测：先注册 `/{id}` 的话，`/today` 会被当成 id="today" 的详情请求）。
+ *    ⇒ 别把这段挪到详情路由后面。
+ *
+ * ⚠️ 带 uid 时它会**写库**（首次分配时落 users.today_article_id）—— 公开接口也不例外。
+ *    但分配是确定性的（按窗口起始日取模 + 窗口内固定），重复调用不会改变结果。
+ *    匿名那一支是**纯只读**的。
+ */
+const todayArticleRoute = createRoute({
+  method: 'get',
+  path: '/today',
+  tags: ['句库'],
+  summary: '今天读哪一句（带 uid 按此人档位；不带 uid = 初级档随机偏热门）',
+  description:
+    '⚠️ 可以不传 uid（匿名/未登录）：**默认初级档**，在该档句子里**随机**挑一条，' +
+    '参与人数多的更容易被抽中；**不写任何用户行**。\n\n' +
+    '返回标准 ArticleCard（与 GET /api/articles?latest=N 同形）。\n\n' +
+    '⚠️ 与「最新上线」是两个接口：这条按 uid（或匿名随机）、有 uid 时 24 小时换一次；' +
+    '那条对所有人一样、按上线时间倒序。\n\n' +
+    '⚠️ 「我今天在这句上的战绩」不在这里，走 GET /api/user/participation/{articleId}。',
+  request: {
+    query: z.object({
+      /**
+       * ⚠️ **可省略**：不传 = 匿名（uid 0）。
+       * `.nonnegative()` 让显式的 `?uid=0` 也等价于匿名 —— 端侧在未登录时
+       * 要么不带这个参数、要么带 0，两种写法都得能用。
+       */
+      uid: z.coerce.number().int().nonnegative().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: TodayArticleResponseSchema } },
+      description: '今日推荐卡片（标准 ArticleCard）',
+    },
+    400: errorResponse('uid 存在但不是非负整数'),
+    500: errorResponse('推荐的句子不存在（并发删库 —— 理论上不会发生）'),
+    503: errorResponse('句库为空（部署问题：检查 SEED_ON_START 是否生效）'),
+  },
+})
+
+articlesRoutes.openapi(todayArticleRoute, async (c) => {
+  /**
+   * ⚠️⚠️ **两种选法，别合并**（用户 2026-09 定）：
+   *   · 有 uid：走 recommendToday —— 24 小时窗口 + **这个人的难度档**，确定性、窗口内固定；
+   *   · 无 uid（或 uid=0）：走 pickAnonymousArticle —— **初级档**里**随机 + 按参与人数加权**
+   *     挑一条，且**一个用户行都不写**（没有"这个人"，就没有窗口可谈）。
+   *   早先的写法是把匿名也当成 recommendToday(0)，那是"按窗口起始日取模"的确定性选法，
+   *   与口径要的"随机、偏热门"不是一回事 —— 已改掉。
+   */
+  const uid = c.req.valid('query').uid ?? 0
+  // ⚠️ 日期一律取服务端的（客户端时钟可改，见 shared/day.ts）——
+  //    而且"同档同句"的取模要所有人算出来一样，更不能让端侧传日期
+  const date = today()
+
+  const pickedId =
+    uid > 0 ? (await recommendToday(uid, date))?.articleId : await pickAnonymousArticle()
+  if (!pickedId) {
+    // ⚠️ 与 /api/articles 同一条口径：句库为空是**部署问题**，
+    //    报成"今天没有推荐"会让排查方向完全跑偏
+    return c.json({ ok: false, error: '句库为空：没有可用的句子（检查 SEED_ON_START 是否生效）' }, 503)
+  }
+
+  const [article] = await db.select().from(articles).where(eq(articles.id, pickedId)).limit(1)
+  if (!article) {
+    // 选句是从 articles 里选的，查不到只可能是并发删库 —— 明确报错
+    return c.json({ ok: false, error: '推荐的句子不存在：' + pickedId }, 500)
+  }
+
+  const content = await loadArticleContent(pickedId)
+  /**
+   * ⚠️ 统计按这个 uid 算（匿名是 0）—— 卡片上要显示"这场有多少人/最高/最低"。
+   *    myBest / myAttempts 不在这里给（已拆到 /api/user/participation/{articleId}）。
+   */
+  const stats = (await getArenaStatsBatch([pickedId], uid)).get(pickedId)
+  const audio = await standardAudioOf(article)
+
+  const card: ArticleCard = {
+    // ⭐ date 仍然带今天：朗读页要用它把这次提交记到哪一天
+    date,
+    articleId: article.id,
+    text: content?.text ?? '',
+    translation: content?.translation ?? '',
+    // ⚠️ 老内容可能没有难度 / 标签 ⇒ 一律过规范化，认不出就是 null / []
+    difficulty: normalizeLevel(content?.difficulty),
+    tags: normalizeTags(content?.tags),
+    audio,
+    isToday: true,
+    participantCount: stats?.participantCount ?? 0,
+    topScore: stats?.topScore ?? null,
+    lowestScore: stats?.lowestScore ?? null,
+    theme: article.theme,
+  }
+
+  return c.json({ ok: true, data: card }, 200)
 })
 
 

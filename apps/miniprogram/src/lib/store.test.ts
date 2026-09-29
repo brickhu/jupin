@@ -52,7 +52,7 @@ function entry(date: string, articleId: string, myBest: number | null = null, my
 
 /**
  * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/articles?latest=N`）
- *    **不含「今日」那一句**（它由鉴权接口 `/api/user/today` 给，见 LatestCardsResponse）。
+ *    **不含「今日」那一句**（它由公开接口 `/api/articles/today` 给，见 LatestCardsResponse）。
  *    这里曾经塞过 `today`，而 `as never` 把类型检查绕过去了 ——
  *    夹具"模仿了一个不存在的契约"，最容易误导后来人。
  */

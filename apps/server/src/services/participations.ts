@@ -1,7 +1,9 @@
 import { and, asc, count, desc, eq, max, min, or } from 'drizzle-orm'
 
 import { db } from '../db'
-import type { ArticleWordItem } from '@jushuo/shared'
+import { plainWordsOf } from '@jushuo/shared'
+import type { ArticleTheme, ArticleWordItem, ParticipationRecord } from '@jushuo/shared'
+import { getRank } from './leaderboard'
 
 import { articles, participations, submissions } from '../db/schema'
 
@@ -373,4 +375,97 @@ export async function rebuildParticipations(
   }
 
   return { computed, rows, orphans, mismatches }
+}
+
+/**
+ * ⭐⭐ **一条 ParticipationRecord**（一人一句）—— 列表与单取**共用同一个投影**。
+ *
+ * ⚠️⚠️ 为什么要有这个函数：`GET /api/user/participations`（列表）与
+ *    `GET /api/user/participation/{articleId}`（单取）回答的是**同一个事实**。
+ *    两处各写一遍映射，迟早出现"列表说读了 3 次、单取说 1 次"这种同一屏自相矛盾。
+ *    ⇒ 口径（原文取快照、词数优先用快照、名次跨用户现算）只留这一份。
+ *
+ * ⚠️ 原始行的列名与 drizzle 的 select 别名一一对应（`best` / `worst` 是别名）。
+ * ⚠️ DECIMAL 读回来是**字符串** ⇒ 一律 Number()；`lastAt` 可能是字符串或 Date。
+ */
+export interface ParticipationRecordSource {
+  articleId: string
+  attempts: number
+  /** DECIMAL，drizzle 读回来是字符串 */
+  best: string | number | null
+  /** 同上 */
+  worst: string | number | null
+  lastAt: Date | string
+  lastScheduleDate: string | null
+  /** 这一句的原文**快照**（历史自足：句子下线/改过也要认得出当时读的是哪句） */
+  text: string | null
+  /** 词表**快照**；老记录没有 ⇒ 退回用 text 现算 */
+  words: unknown
+  theme: ArticleTheme | null
+}
+
+/** 参与行 + 名次 → ParticipationRecord（两个接口唯一的映射入口） */
+export function toParticipationRecord(
+  row: ParticipationRecordSource,
+  rankInfo: { rank: number; participantCount: number },
+): ParticipationRecord {
+  const text = row.text ?? ''
+  return {
+    articleId: row.articleId,
+    text,
+    /**
+     * ⚠️ 词数用**快照**，不再拿 text 现算 —— 现算的话切词规则一改，
+     *    历史卡片的词数就跟着变（而用户当时读的是旧那一份）。
+     *    没有快照的老记录退回现算，别让卡片显示 0。
+     */
+    words: Array.isArray(row.words) ? row.words.length : plainWordsOf(text).length,
+    attempts: Number(row.attempts ?? 0),
+    bestScore: Number(row.best ?? 0),
+    worstScore: Number(row.worst ?? 0),
+    rank: rankInfo.rank,
+    participantCount: rankInfo.participantCount,
+    lastAt: new Date(row.lastAt as unknown as string).toISOString(),
+    /**
+     * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
+     * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
+     *    而不是端侧算今天：用户参与的可能是几天前那一场。
+     */
+    lastScheduleDate: row.lastScheduleDate ?? '',
+    theme: row.theme,
+  }
+}
+
+/**
+ * ⭐ 单个 (userId, articleId) 的参与记录；**没参与过返回 null**。
+ *
+ * ⚠️ 坚决**不编一条全 0 的假记录**：0 分是合法成绩，两者混起来客户端会把
+ *    「没挑战过」显示成「最高 0 分」。
+ * ⚠️ 名次（rank/participantCount）走 getRank —— 跨用户算的，端侧算不出来；
+ *    与榜单、与列表接口**同源**。
+ */
+export async function participationRecordOf(
+  userId: number,
+  articleId: string,
+): Promise<ParticipationRecord | null> {
+  const [row] = await db
+    .select({
+      articleId: participations.articleId,
+      attempts: participations.attempts,
+      best: participations.bestScore,
+      worst: participations.worstScore,
+      lastAt: participations.lastAt,
+      lastScheduleDate: participations.lastScheduleDate,
+      text: participations.text,
+      words: participations.words,
+      theme: articles.theme,
+    })
+    .from(participations)
+    .innerJoin(articles, eq(articles.id, participations.articleId))
+    // ⚠️ 必须同时限 userId 与 articleId（见 routes/participation-scope.test.ts）：
+    //    只按 articleId 查会把**别人**的那一行当成"我的"
+    .where(and(eq(participations.userId, userId), eq(participations.articleId, articleId)))
+    .limit(1)
+
+  if (!row) return null
+  return toParticipationRecord(row, await getRank(articleId, userId))
 }

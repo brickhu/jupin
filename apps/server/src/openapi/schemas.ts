@@ -37,7 +37,6 @@ import type {
   StreakView,
   SubmissionStatusResponse,
   SubmitResponse,
-  TodayResponse,
   TokenResponse,
   VirtualPayData,
   WordScore,
@@ -156,17 +155,21 @@ export const LatestCardsResponseSchema = okEnvelope(
     .openapi('LatestCardsResponse'),
 )
 
-export const TodayResponseSchema = okEnvelope(
-  z
-    .object({
-      entry: ArticleCardSchema,
-      myLevel: ArticleLevelSchema,
-      level: ArticleLevelSchema,
-      levelBasis: z.string(),
-      myBest: z.number().nullable(),
-      myAttempts: z.number().int(),
-    })
-    .openapi('TodayResponse'),
+/**
+ * ⭐ **今日推荐**（`GET /api/articles/today?uid=<id>`，**uid 可省略 = 匿名**）——
+ *    data 就是**一张标准 ArticleCard**（与 `/api/articles?latest=N` 的 items 同形
+ *    ⇒ 端侧一套渲染）。
+ *
+ * ⚠️ 匿名（不带 uid / uid=0）时：**默认初级档**，在该档句子里**随机**挑一条、
+ *    **参与人数多的更容易被抽中**，且**不写任何用户行**。
+ *    带 uid 时按那个人的 24 小时窗口 + 难度档，确定性选句。
+ *
+ * ⚠️ 这里刻意**没有** myLevel / level / levelBasis / myBest / myAttempts：
+ *    前三项是工程备注（用户 2026-09 明确不要），后两项走
+ *    `GET /api/user/participation/{articleId}`。
+ */
+export const TodayArticleResponseSchema = okEnvelope(ArticleCardSchema).openapi(
+  'TodayArticleResponse',
 )
 
 /* ---------- 我的：挑战记录 / 参与场次 / 能量 ---------- */
@@ -222,6 +225,16 @@ export const ChallengeRecordListSchema = okEnvelope(
 export const ParticipationRecordListSchema = okEnvelope(
   z.object({ items: z.array(ParticipationRecordSchema) }).openapi('ParticipationsResponse'),
 )
+
+/**
+ * ⭐ 单取一条参与记录（`GET /api/user/participation/{articleId}`）。
+ *
+ * ⚠️ 没参与过时 **data 为 null**（不是 404、也不是一条全 0 的假记录）——
+ *    客户端据此显示「还没挑战过」，而不是把 0 分当成成绩。
+ */
+export const ParticipationRecordResponseSchema = okEnvelope(
+  ParticipationRecordSchema.nullable(),
+).openapi('ParticipationRecordResponse')
 
 /** ⭐ 竞技场一条（按句子）—— `ranks=1` 时才带名次/击败人数 */
 export const ArenaRecordSchema = z
@@ -802,7 +815,10 @@ type _LatestParity = Equal<
   z.infer<typeof LatestCardsResponseSchema>['data'],
   LatestCardsResponse
 >
-type _TodayParity = Equal<z.infer<typeof TodayResponseSchema>['data'], TodayResponse>
+type _ParticipationOneParity = Equal<
+  z.infer<typeof ParticipationRecordResponseSchema>['data'],
+  ParticipationRecord | null
+>
 type _SubmitParity = Equal<z.infer<typeof SubmitResponseSchema>, SubmitResponse>
 type _StatusParity = Equal<
   z.infer<typeof SubmissionStatusResponseSchema>['data'],
@@ -882,7 +898,7 @@ type _SubAudioParity = Equal<
 const _parityChecks: [
   _CardParity,
   _LatestParity,
-  _TodayParity,
+  _ParticipationOneParity,
   _SubmitParity,
   _StatusParity,
   _WordsParity,

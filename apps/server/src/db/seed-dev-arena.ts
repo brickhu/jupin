@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   /**
    * ⚠️ 这里原来调 `ensureSchedules(dates)` 让**服务端的排期逻辑**决定"哪一天读哪一句"。
    *    排期表已删（2026-09）⇒ 造数据脚本自己按天号取模选句子即可 ——
-   *    它只是"造点历史成绩"，不需要和线上推荐口径一致（那由 /api/user/today 负责）。
+   *    它只是"造点历史成绩"，不需要和线上推荐口径一致（那由 /api/articles/today 负责）。
    */
   const allArticles = await db.select({ id: articles.id }).from(articles)
   const articleOf = new Map<string, string>()

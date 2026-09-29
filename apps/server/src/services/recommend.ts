@@ -3,6 +3,8 @@ import { dayNumber, dayStartUtc, normalizeLevel } from '@jushuo/shared'
 import type { ArticleLevel } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, participations, users } from '../db/schema'
+import { hasContent } from './content'
+import { getArenaStatsBatch } from './leaderboard'
 
 /**
  * ⭐⭐ **今日推荐** —— 按参与记录**分场**，不再给所有人同一句。
@@ -27,7 +29,7 @@ import { articles, participations, users } from '../db/schema'
  *        曾经还拼一句 reason 显示给用户 —— 已删（见 TodayPick 的说明）。
  *
  * ⚠️ 只返回「选哪一句 + 为什么」；正文 / 统计 / 音频由路由去补
- *    （见 routes/today.ts）—— 这一层不碰内容文件。
+ *    （见 routes/articles.ts 的 today 路由）—— 这一层不碰内容文件。
  */
 
 /** 库句柄 —— 可注入，理由同 services/article-index.ts 的 Database */
@@ -350,4 +352,72 @@ export async function recommendToday(
     myLevel: me.level,
     levelBasis: me.basis,
   }
+}
+
+/**
+ * ⭐ **加权随机（轮盘赌）** —— 纯函数，单独抽出来是为了能单测。
+ *
+ * ⚠️ 权重 ≤ 0 的一律按 0 处理（参与人数不可能为负，但脏数据不该让抽样炸掉）。
+ * ⚠️ 总权重 ≤ 0（冷启动：这一档还没人参与过）⇒ **等概率**，
+ *    而不是固定挑第一条 —— 否则游客永远只看到同一句。
+ *
+ * @param rng 随机源，默认 Math.random；单测注入它把边界钉死
+ * @returns 空数组时 null
+ */
+export function weightedPick<T>(
+  items: T[],
+  weights: number[],
+  rng: () => number = Math.random,
+): T | null {
+  if (items.length === 0) return null
+  const total = weights.reduce((a, w) => a + Math.max(0, w), 0)
+  if (total <= 0) return items[Math.floor(rng() * items.length)] ?? items[0] ?? null
+
+  let roll = rng() * total
+  for (let i = 0; i < items.length; i++) {
+    roll -= Math.max(0, weights[i] ?? 0)
+    if (roll < 0) return items[i]!
+  }
+  // 浮点边界兜底（rng() 逼近 1 时理论上到不了这里）
+  return items[items.length - 1]!
+}
+
+/**
+ * ⭐⭐ **匿名推荐**（未登录 / 无 uid）—— 首页对游客也要有一张"今日"卡。
+ *
+ * 口径（用户 2026-09 定）：
+ *   · **默认初级档**（0）—— 游客没有画像，从最简单那一档开始；
+ *   · 在该档**有正文**的句子里**随机**挑一条；
+ *   · 且**参与人数多的更容易被挑中** —— 越热闹的场子越可能被游客看到
+ *     （卡片上那行"N 人参与"也更好看）。
+ *
+ * ⚠️ 与 recommendToday 的关系，以及为什么**不**复用它的 uid=0 分支：
+ *   · 有 uid：24 小时窗口 + 这个人的难度档，**确定性**、窗口内固定（会写 users 那一行）；
+ *   · 无 uid：根本没有"这个人"，也就没有窗口可谈 ⇒ 每次请求现摇一次，
+ *     而且**一个用户行都不写**（纯只读兜底 —— 公开接口不该有建号/改库的副作用）。
+ *     recommendToday(0) 是"按窗口起始日取模"的确定性选法，与"随机 + 热度"不是一回事。
+ *
+ * ⚠️ 权重 = 参与人数（与卡片上"N 人参与"**同源**，都来自 getArenaStatsBatch）。
+ * ⚠️ 只从**有正文**的行里挑：给一张点进去空白的卡比不给更糟。
+ *
+ * @returns 初级档一句都没有（内容没铺到那一档 / 句库为空）时 null，调用方按部署问题报 503
+ */
+export async function pickAnonymousArticle(database: Database = db): Promise<string | null> {
+  // ① 初级档 + 有正文 —— 顺序按 id，保证"等概率"那一支抽样的集合是稳定的
+  const rows = await database
+    .select({ id: articles.id, text: articles.text })
+    .from(articles)
+    .where(and(eq(articles.isActive, true), eq(articles.difficulty, 0)))
+    .orderBy(asc(articles.id))
+  const pool = rows.filter((r) => hasContent(r))
+  if (pool.length === 0) return null
+
+  // ② 热度 = 参与人数（一次批量取数，走与卡片、与榜单同一处实现）
+  const stats = await getArenaStatsBatch(
+    pool.map((r) => r.id),
+    0,
+  )
+  const weights = pool.map((r) => stats.get(r.id)?.participantCount ?? 0)
+
+  return weightedPick(pool, weights)?.id ?? null
 }

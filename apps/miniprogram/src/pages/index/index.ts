@@ -314,8 +314,8 @@ Page({
    */
   /**
    * ⚠️ `today` **可空**：公开列表接口（`/api/articles?latest=N`）**不返回它**
-   *    （2026-09 随 `schedules` 表一起删）—— 今日那一句只由鉴权推荐接口
-   *    `/api/user/today` 给。首屏先只画 `latest`，今日卡等推荐回来再填。
+   *    （2026-09 随 `schedules` 表一起删）—— 今日那一句只由公开推荐接口
+   *    `GET /api/articles/today` 给（可匿名调用）。首屏先只画 `latest`，今日卡等推荐回来再填。
    */
   cards: null as { today: ArticleCard | null; latest: ArticleCard[] } | null,
 
@@ -357,7 +357,7 @@ Page({
     if (cached) {
       /**
        * ⚠️ 缓存里**没有** `today`（公开列表接口不返回它，见 LatestCardsResponse 的说明）：
-       *    今日那一张由 `/api/user/today` 填，这里先留空。
+       *    今日那一张由 `GET /api/articles/today` 填，这里先留空。
        */
       this.cards = { today: null, latest: cached.items ?? [] }
       this.setData({ loading: false })
@@ -593,22 +593,23 @@ Page({
       this.render()
 
       /**
-       * ⭐⭐ 今日那一张走**推荐**（按我的参与记录分场），不再用排期里今天那一条。
+       * ⭐⭐ 今日那一张走**推荐**（公开接口 `GET /api/articles/today`，本地有 uid 就带上，
+       *    没有则匿名：初级档里随机 + 偏热门），不再用排期里今天那一条。
        *    用户 2026-09：按天轮转对所有人推同一句"很鸡肋"。
        */
       void fetchToday()
         .then((t) => {
-          if (this.cards) this.cards = { today: t.entry, latest: this.cards.latest }
+          if (this.cards) this.cards = { today: t, latest: this.cards.latest }
           this.render()
           /**
            * ⚠️「我的」那一份必须跟着**换过的**今日句再取一次：
-           *    否则那张卡的「已参与 / 最高分 / 按钮文案」还是按排期那句算的
+           *    否则那张卡的「已参与 / 最高分 / 按钮文案」还是按别的句子算的
            *    （明明读过却写着"立即朗读，参与挑战"）。
-           * ⚠️ 不 await：卡片先出来，回来走 store 广播重画。
+           * ⚠️ 匿名时这本就会失败/为空 —— 不 await，失败只影响那张卡的角标。
            */
-          void fetchArenaRecords([t.entry.articleId]).then((r) => me.applyArenaRecords(r.items))
+          void fetchArenaRecords([t.articleId]).then((r) => me.applyArenaRecords(r.items))
         })
-        .catch((err: Error) => console.warn('[index] 今日推荐失败（退回排期那句）：' + err.message))
+        .catch((err: Error) => console.warn('[index] 今日推荐失败（今日卡留空）：' + err.message))
     } catch (err) {
       /**
        * ⚠️⚠️ 冷启动（云托管缩容到 0）**不是网络故障**，不能说成「连不上服务器」——

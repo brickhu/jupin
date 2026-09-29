@@ -1,10 +1,12 @@
 import type {
   ApiResult,
   ArenaDetail,
+  ArticleCard,
   ChallengesResponse,
   EnergyResponse,
   GrowthRankResponse,
   MeResponse,
+  ParticipationRecord,
   ParticipationsResponse,
   ProfileUpdate,
   ProfileUpdateResponse,
@@ -12,7 +14,6 @@ import type {
   ArenaRecordsResponse,
   ChallengeShareResponse,
   LatestCardsResponse,
-  TodayResponse,
   FavoritesResponse,
   ArticleRecordsResponse,
   ShopGoodsResponse,
@@ -723,14 +724,30 @@ export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
 }
 
 /**
- * ⭐⭐ **今日推荐** —— 首页那张"今日挑战"卡的数据源（鉴权）。
+ * ⭐⭐ **今日推荐** —— 首页那张"今日挑战"卡的数据源（公开；**未登录也能拿**）。
  *
  * ⚠️ 与 fetchLatestCards 的分工：那个给「最新上线」（公开、对所有人一样），
- *    这个给「你今天适合读哪一句」（按我的参与记录分场，见 services/recommend.ts）。
+ *    这个给「今天适合读哪一句」（按 uid 的参与记录分场，见 services/recommend.ts）。
+ *
+ * ⚠️⚠️ **uid 可省略**：本地有 uid 就带上（按我的难度档选句，窗口内固定）；
+ *    没有就**不带** —— 服务端按匿名给：**初级档**里**随机 + 按参与人数加权**挑一条。
+ *    游客的首页也要有这张卡（老接口 `/api/user/today` 是鉴权的，未登录直接 401、卡片永远空着）。
  * ⚠️ 首页**不 await 它**（拿不到就少一张今日卡，其余照常画 —— 卡片不能空着整页）。
  */
-export function fetchToday(): Promise<TodayResponse> {
-  return request<TodayResponse>('/api/user/today', { budgetMs: LAUNCH_BUDGET_MS })
+export function fetchToday(): Promise<ArticleCard> {
+  const uid = getUserId()
+  const q = uid > 0 ? '?uid=' + uid : ''
+  return request<ArticleCard>('/api/articles/today' + q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐ **我在这条句子上的参与记录**（鉴权）—— 首屏今日卡的「已参与 / 最高分 / 按钮文案」。
+ *
+ * ⚠️ 服务端在没参与过时给 **data: null**（不是 404、也不是一条全 0 的记录）——
+ *    0 分是合法成绩，两者不能混。
+ */
+export function fetchParticipation(articleId: string): Promise<ParticipationRecord | null> {
+  return request<ParticipationRecord | null>('/api/user/participation/' + articleId)
 }
 
 /**

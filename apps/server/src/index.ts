@@ -17,7 +17,6 @@ import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
-import { todayRoutes } from './routes/today'
 import { favoritesRoutes } from './routes/favorites'
 import { shopRoutes } from './routes/shop'
 import { arenasRoutes } from './routes/arenas'
@@ -202,12 +201,12 @@ app.route('/api/admin', adminRoutes)
 
 app.route('/api/articles', articlesRoutes)
 /**
- * ⭐⭐ 今日推荐 —— 首页那张"今日挑战"卡。
- * ⚠️ 它挂 /api/user/ 下（而不是另开一个公开前缀）：要 userId 才画得出像，
- *    而"需要鉴权的接口全部在 /api/user/* 下"是这个仓库的一条铁律
- *    （见上面那段说明，也是 middleware/auth.test.ts 在钉的规则）。
+ * ⭐⭐ 今日推荐 —— 首页那张"今日挑战"卡（`GET /api/articles/today?uid=<id>`）。
+ * ⚠️ 2026-09 改口径：它**不再挂在 /api/user/* 下**，而是并入 `/api/articles` 前缀，
+ *    只收一个 uid（公开可读）。「我今天在这句上的战绩」在
+ *    `/api/user/participation/{articleId}`（那条仍然在鉴权前缀下）。
+ *    ⇒ 路由本体在 routes/articles.ts（**必须排在 `/{id}` 之前**，见那里的说明）。
  */
-app.route('/api/user/today', todayRoutes)
 // ⭐ 我的收藏：收/取消一个句子 + 列表（挂在 /api/user/* 下 ⇒ 自动受鉴权保护）
 app.route('/api/user/favorites', favoritesRoutes)
 app.route('/api/user', userRoutes)
