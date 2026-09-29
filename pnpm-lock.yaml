@@ -120,6 +120,9 @@ importers:
 
   tools/admin:
     dependencies:
+      '@jushuo/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(mysql2@3.24.4(@types/node@22.20.2))(postgres@3.4.9)
