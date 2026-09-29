@@ -471,6 +471,30 @@ export async function initDatabase(): Promise<void> {
         const { seedArticles } = await import('./seed-articles')
         const n = await seedArticles()
         console.log(`[db] 已灌种子文章 ${n} 篇`)
+      /**
+       * ⭐ 过渡期自愈：把**已存在行**里缺失的正文补上（见 backfillMissingContent 的说明）。
+       *
+       * ⚠️⚠️ 为什么不能省：`seedArticles()` 用 `insert().ignore()`，已存在的行一律不动 ⇒
+       *    迁移 0042 给老行加的 `content` 列会一直是 NULL，而 `loadArticleContent()`
+       *    现在读库 ⇒ **每个环境的朗读页都会同时打不开**（症状完全指不出真因）。
+       * ⚠️ 它只填 NULL，幂等，也不覆盖 admin 改过的正文。
+       * ⚠️ 与灌种子共用同一个开关（SEED_ON_START）：dev 每次启动都会跑到，
+       *    而 prod 只有显式打开那一次才会跑 —— 行为与"灌种子"完全一致，不引入新语义。
+       */
+      /**
+       * ⭐ 正文回填 —— **云端这条路**也要（它不跑 `pnpm seed`，见 seed.ts 里的说明）。
+       *    本地容器走的是 entrypoint 的 `pnpm seed`，那里也有一次；两处都留着是**故意的**：
+       *    两条初始化路径各自自洽，谁都不依赖另一条先跑过。
+       */
+      try {
+        const { backfillMissingContent } = await import('./seed-articles')
+        const b = await backfillMissingContent()
+        if (b.filled > 0 || b.stillEmpty > 0) {
+          console.log(`[db] 正文回填：补上 ${b.filled} 条 · 仍为空 ${b.stillEmpty} 条`)
+        }
+      } catch (err) {
+        console.error('[db] 正文回填失败（不影响启动）：', (err as Error).message)
+      }
       } catch (err) {
         // 灌种子失败不该让服务起不来 —— 服务活着 + /health 能看到问题，比直接崩好排查
         console.error('[db] 灌种子失败：', (err as Error).message)
