@@ -3,6 +3,10 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ArticleContent } from '@jushuo/shared'
 
+import { db } from '../db'
+import { articles } from '../db/schema'
+import { eq } from 'drizzle-orm'
+
 import { env } from '../env'
 
 /**
@@ -63,27 +67,25 @@ export function contentPathOf(articleId: string): string {
 
 /** 读取正文；任何失败都返回 null（调用方决定是 404 还是空参考文本） */
 export async function loadArticleContent(articleId: string): Promise<ArticleContent | null> {
-  const rel = contentPathOf(articleId)
-  const base = resolveStaticRoot()
-  if (!base) {
-    console.warn('[content] 找不到静态资源根目录（可用 STATIC_ROOT 指定）')
-    return null
-  }
-
-  // ⚠️ 仍然防路径穿越：id 理论上来自数据库 / 调用方，别让 ../ 读到根目录之外
-  //    （resolveStaticPath 里已有同一道防护，这里只是不绕过它）
-  const abs = resolve(base, rel.replace(/^\/+/, ''))
-  if (abs !== base && !abs.startsWith(base + '/')) {
-    console.warn(`[content] 拒绝越界路径：${rel}`)
-    return null
-  }
-
-  try {
-    return JSON.parse(await readFile(abs, 'utf8')) as ArticleContent
-  } catch (err) {
-    console.warn(`[content] 读取失败 ${abs}：${(err as Error).message}`)
-    return null
-  }
+  /**
+   * ⭐⭐ **正文住在库里**（`articles.content`）—— 2026-09 用户定的方向：内容只走 admin。
+   *
+   * ⚠️ 这里以前是"按 id 推导出一个文件路径再读盘"（`content/articles/<id>.json`）。
+   *    那套的病是**同一份内容两个住址**：正文在 git 里、`is_active` 在库里，
+   *    于是"改不改得动"取决于本机仓库里那个文件在不在（admin 详情页会直接报
+   *    「正文不在本机仓库里，改不了」），而部署包里还得永远带着 content/。
+   *    ⇒ 现在库是唯一真相；`content/articles/*.json` 只剩"一次性导入"
+   *      （`pnpm --filter @jushuo/server content:import`，见 scripts/import-content-files.ts）。
+   *
+   * ⚠️ `content` 为 NULL 与"文件不存在"同义：这份内容在这个环境里没有。
+   *    调用方按 null 处理（列表接口跳过、详情接口 404、轮转池剔除）。
+   */
+  const [row] = await db
+    .select({ content: articles.content })
+    .from(articles)
+    .where(eq(articles.id, articleId))
+    .limit(1)
+  return row?.content ?? null
 }
 
 /**
@@ -103,22 +105,18 @@ function resolveStaticPath(relPath: string): string | null {
 }
 
 /**
- * 这个部署读得到这条句子吗？（只 stat，**不读内容**）
+ * 这个部署读得到这条句子的正文吗？
  *
- * ⭐ 存在的意义是回答「能不能把它排给用户」。
- *    `articles.isActive = true` 和「正文在这个部署的镜像里」是**两件事**：
- *    内容刚发布进库、镜像还没重新部署时，那一行会被抽中当天的题目，
- *    而客户端拿 contentJson 去取正文只会失败 —— 表现就是朗读页「正文加载失败」，
- *    且**当天所有人都打不开**（不是个别设备问题）。
+ * ⚠️⚠️ 它现在是**库查询**（正文在 `articles.content`），不再 stat 文件 ——
+ *    所以「内容刚发布、镜像还没重新部署」这一类不一致**从根上没有了**：
+ *    发布进库的那一刻，所有副本立刻都读得到。
  *
- * ⚠️ 只 stat 不读文件：轮转池每个请求都要过一遍这里（见 schedules.ts）。
- * ⚠️ 远程形态（http(s)://，将来的 CDN）一律算「有」——
- *    那由 CDN 负责，本机判断不了，也不该误判成「没有」而把句子踢掉。
- * ⚠️ 路径解析复用 resolveStaticPath()：防穿越那一段只允许有一份实现。
+ * ⚠️ 优先用调用方**手上已有的那一行**（`row.content !== null`）判断：
+ *    轮转池那里本来就把 articles 全查出来了，再为每条查一次库是白花往返。
+ *    这个函数留给"只有 id、没有行"的调用方。
  */
-export function contentExists(articleId: string): boolean {
-  const abs = resolveStaticPath(contentPathOf(articleId))
-  return abs !== null && existsSync(abs)
+export function hasContent(row: { content: unknown }): boolean {
+  return row.content !== null && row.content !== undefined
 }
 
 /** 读一个静态资源文件；拿不到就是 null */

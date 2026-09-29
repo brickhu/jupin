@@ -295,6 +295,13 @@
       "when": 1790645561021,
       "tag": "0041_goofy_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1790647551720,
+      "tag": "0042_puzzling_nehzno",
+      "breakpoints": true
     }
   ]
 }

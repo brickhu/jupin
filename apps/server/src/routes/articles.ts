@@ -4,7 +4,7 @@ import { normalizeLevel, normalizeTags, plainWordsOf } from '@jushuo/shared'
 import type { ArticleDetail, ArticleListItem, ScheduleAudio } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
-import { contentPathOf, loadArticleContent } from '../services/content'
+import { loadArticleContent } from '../services/content'
 import { fileIdOf } from '../services/standard-audio'
 import { scheduleAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
@@ -69,10 +69,14 @@ articlesRoutes.get('/:id', async (c) => {
   const [article] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
   if (!article) return c.json({ ok: false, error: '文章不存在' }, 404)
 
-  // ⚠️ 正文路径由 id 推导（contentPathOf），库里不再存路径
+  /**
+   * ⚠️ 正文现在住在**库里**（`articles.content`）—— 2026-09 内容改为以库为真相。
+   *    所以这条错误信息不再指向一个文件路径（那句 `contentPathOf(...)` 已经过期了：
+   *    它会把排查的人引去仓库里找文件，而真正的原因是"这一行的正文是空的"）。
+   */
   const content = await loadArticleContent(article.id)
   if (!content) {
-    return c.json({ ok: false, error: `正文加载失败：${contentPathOf(article.id)}` }, 404)
+    return c.json({ ok: false, error: '这条句子的正文还没入库（在 admin 里补上）' }, 404)
   }
 
   /**

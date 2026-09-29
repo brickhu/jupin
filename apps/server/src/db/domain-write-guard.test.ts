@@ -215,6 +215,15 @@ const EXEMPTIONS: Exemption[] = [
     why: 'admin 排期直接 insert schedules，绕过 services/schedules.ts 的 setSchedule；它走独立 dbOf(mode) 连接，复用服务层要改 admin 的取库方式。',
   },
   {
+    audit: '审计外',
+    file: 'apps/server/scripts/import-content-files.ts',
+    tables: ['articles'],
+    why:
+      '把正文从 content/articles/*.json 一次性搬进 articles.content（2026-09 内容改为以库为真相）。' +
+      '它是**迁移工具**：只在"首次部署 / 换环境 / 从备份恢复"时跑一次，且默认只填 content IS NULL 的行；' +
+      '交给发布服务层反而要求那个服务先能读文件，等于把要删掉的那条依赖留在原地。',
+  },
+  {
     audit: '#5 / #6',
     file: 'apps/server/src/db/seed-articles.ts',
     tables: ['articles'],

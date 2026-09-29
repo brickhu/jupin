@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { contentExists, probeContentFiles, resolveStaticRoot } from './content'
+import { hasContent, probeContentFiles, resolveStaticRoot } from './content'
 
 /** 仓库里真实存在的一份正文的 **id**（内容寻址：文件名就是 id，去掉 .json） */
 async function someRealArticleId(): Promise<string> {
@@ -79,27 +79,29 @@ describe('probeContentFiles —— 正文自检的盘上那一层', () => {
   })
 })
 
-describe('contentExists —— 「这个部署读得到它吗」', () => {
-  it('仓库里真实存在的正文 → true（入参是 **id**，不是路径）', async () => {
-    expect(contentExists(await someRealArticleId())).toBe(true)
+/**
+ * ⭐ 「这一行有正文吗」的判据。
+ *
+ * ⚠️ 这一组原来是 `contentExists(id)` —— 它 stat 盘上的 `content/articles/<id>.json`，
+ *    于是要测"路径穿越不能读到仓库外"那一类。**2026-09 正文搬进库之后这些都不存在了**：
+ *    判据就是 `articles.content` 是不是空，没有路径、没有文件、没有穿越可言。
+ *    ⇒ 换成对这个判据本身的测试（它的两个失败方向都会让产品静默出错）：
+ *      · 把"有正文"判成没有 ⇒ 那一句被轮转池踢掉（当天没题可排）
+ *      · 把"没正文"判成有 ⇒ 排出一句读不出来的题（全站朗读页打不开）
+ */
+describe('hasContent —— 「这一行有正文吗」', () => {
+  it('有正文 → true', () => {
+    expect(hasContent({ content: { id: 'a', text: 'hi' } })).toBe(true)
   })
 
-  it('盘上没有的 id → false', async () => {
-    expect(contentExists('f'.repeat(64))).toBe(false)
+  it('⚠️ null / undefined 都是"没有"（NULL 与"这份内容不存在"同义）', () => {
+    expect(hasContent({ content: null })).toBe(false)
+    expect(hasContent({ content: undefined })).toBe(false)
   })
 
-  /**
-   * ⚠️ 这个函数的入参是 **文章 id**（正文路径由 contentPathOf 推导）——
-   *    以前它收的是「正文路径」字符串（那时库里存着 content_json 一列）。
-   *    下面几条锁住新语义：路径形态不再被当成合法输入，更不允许穿越。
-   */
-  it('把路径当 id 传 → false（不再接受路径形态）', async () => {
-    expect(contentExists('/content/articles/' + 'f'.repeat(64) + '.json')).toBe(false)
-    expect(contentExists('https://cdn.example.com/content/articles/x.json')).toBe(false)
-  })
-
-  it('id 里带 ../ 也不能读到仓库外 → false', async () => {
-    expect(contentExists('/../package.json')).toBe(false)
-    expect(contentExists('../../package.json')).toBe(false)
+  it('⚠️ 合法的空对象也算"有"：判据是"这一列填过没有"，不是"里面字段齐不齐"', () => {
+    // 起因：如果这里写 `Boolean(row.content)`，一个 `{}`（admin 建了草稿、正文还没填内容）
+    // 会被判成"没有"而被踢出池子 —— 而真正该拦它的是内容校验，不是这条判据。
+    expect(hasContent({ content: {} })).toBe(true)
   })
 })

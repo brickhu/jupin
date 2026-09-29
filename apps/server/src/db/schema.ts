@@ -2,7 +2,12 @@ import { sql } from 'drizzle-orm'
 import {
   mysqlTable, int, varchar, boolean, datetime, decimal, text, json, index, uniqueIndex, primaryKey,
 } from 'drizzle-orm/mysql-core'
-import { ARTICLE_ID_LENGTH, SUBMISSION_ID_LENGTH, type ArticleTheme } from '@jushuo/shared'
+import {
+  ARTICLE_ID_LENGTH,
+  SUBMISSION_ID_LENGTH,
+  type ArticleContent,
+  type ArticleTheme,
+} from '@jushuo/shared'
 
 /**
  * 数据模型（与用户对齐后的最终版）。
@@ -200,6 +205,25 @@ export const articles = mysqlTable('articles', {
    *    这种完全可推导的形状 —— 真做起来也该按 id 推导，不该存。
    *    ⇒ 与其留一列等人去猜「它是不是有用」，不如删掉；要用时按 id 推导即可。
    */
+  /**
+   * ⭐⭐⭐ **正文 —— 全站唯一的那份真相**（2026-09 用户定的方向：内容只走 admin）。
+   *
+   * ⚠️⚠️ 这里以前是**文件**：`content/articles/<id>.json`（正文）+ 库里只有外框列。
+   *    那是**两个住址**：正文改不改得到取决于"本机仓库里那个文件在不在"
+   *    （admin 的详情页就会报「正文不在本机仓库里，改不了」），
+   *    而 `is_active`（上线状态）从第一天起就只在库里 —— 同一份内容一半在 git、一半在库。
+   *    ⇒ 现在正文整份进库，`content/articles/*.json` **只保留"一次性导入"这一条路**
+   *      （首次部署 / 换环境 / 备份），不再被运行时读取。
+   *
+   * ⚠️ 为什么是**一整列 JSON** 而不是拆成 text / translation / words… 各一列：
+   *    `ArticleContent` 的形状是**内容自己的形状**（words 带音标/音节/重音、links 是词间连读），
+   *    拆列等于把"内容长什么样"这件事再抄一遍到 schema 里 —— 加一个内容字段就要一次迁移。
+   *    真正需要走 SQL 筛选的两个字段（difficulty / tags）本来就已经有各自的派生索引。
+   *
+   * ⚠️ 可空：老行在回填之前是 NULL；`loadArticleContent()` 对 NULL 的处理是
+   *    "这份内容不存在"（与原来找不到文件同义）。
+   */
+  content: json('content').$type<ArticleContent>(),
   /** 标准发音 MP3 地址 */
   standardAudio: varchar('standard_audio', { length: 512 }),
   /**

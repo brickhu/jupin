@@ -2,7 +2,6 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { addDays, dayNumber, today } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
-import { contentExists } from './content'
 
 /**
  * ⭐ 每日挑战 —— 「哪一天读哪一句」。
@@ -109,18 +108,21 @@ export async function scheduleAhead(days = 14, from: string = today()): Promise<
   const active = await db.select().from(articles).where(eq(articles.isActive, true)).orderBy(articles.id)
 
   /**
-   * ⚠️⚠️ 池子里只能有**这个部署读得到正文**的句子。
-   *    isActive 是**库**的状态，正文在**镜像**里 —— 两者不一致时
-   *    （内容刚发布进库、还没重新部署）被抽中的那一天，
-   *    全站朗读页都是「正文加载失败」，而且看不出跟这次发布有关。
-   *    宁可池子小一点（少排几天），也不要排出一天谁都打不开的题。
-   * ⚠️ 只 stat 不读内容：这个函数在每次读列表时都会跑。
+   * ⚠️⚠️ 池子里只能有**真的有正文**的句子。
+   *
+   *    以前这里是"正文在**镜像**里吗"（stat 文件）—— 因为那时正文是文件，
+   *    `is_active` 是库状态，两者可以不一致（内容刚发布、镜像还没重部署），
+   *    而后果是**那一天全站朗读页都打不开**。
+   *    ⚠️ 2026-09 正文搬进库之后，这一类不一致**从根上消失**：发布即所有副本可见。
+   *       所以这里不再需要"探一探这个部署读不读得到"，只剩一条普通的数据完整性检查：
+   *       这一行的正文是不是空的（可能是 admin 建了草稿还没填正文）。
+   * ⚠️ 判据用**手上这一行**（`active` 就是刚查出来的），不为每条再查一次库。
    */
-  const pool = active.filter((a) => contentExists(a.id))
+  const pool = active.filter((a) => a.content !== null)
   if (pool.length !== active.length) {
     console.warn(
-      '[schedules] ' + (active.length - pool.length) + ' 条句子的正文在这个部署里读不到，' +
-        '已从轮转池剔除（镜像没重新部署？跑 /health?deep=1 看差集）',
+      '[schedules] ' + (active.length - pool.length) + ' 条句子已上线但正文为空，' +
+        '已从轮转池剔除（在 admin 里补正文，或看 /health?deep=1）',
     )
   }
   if (pool.length === 0) return 0

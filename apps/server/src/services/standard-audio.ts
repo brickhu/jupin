@@ -170,9 +170,13 @@ export async function seedStandardAudio(
   const storage = getStorage()
 
   for (const row of rows) {
-    // ⚠️ 只要正文文件在就够（音频与词表无关了）—— 但要确认它在，否则会灌一个孤儿音频
-    const jsonPath = resolve(root, contentPathOf(row.id).replace(/^\/+/, ''))
-    if (!existsSync(jsonPath)) continue
+    /**
+     * ⚠️ 只要**这一行有正文**就够（灌标准音与词表无关，只看这个 id 该不该有音频）——
+     *    但要确认它在，否则会灌一个孤儿音频。
+     * ⚠️ 2026-09：判据从"仓库里有没有那个 json 文件"改成"库里这一行有没有正文"
+     *    （正文已经搬进 `articles.content`，见 services/content.ts）。
+     */
+    if (row.content === null) continue
 
     const localFull = resolve(root, KEY_PREFIX, `${row.id}.mp3`)
     if (!existsSync(localFull)) {
