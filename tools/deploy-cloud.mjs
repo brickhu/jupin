@@ -83,6 +83,27 @@ if (!['dev', 'prod'].includes(target)) {
   process.exit(1)
 }
 
+/**
+ * ⭐⭐ **prod 不许 --reset**（2026-09 加）。
+ *
+ * ⚠️ 这条不是"防手滑"，是防**一条命令毁掉生产库**：
+ *    `--reset` 会一路传到容器（SCHEMA_RESET=true）→ `DROP DATABASE IF EXISTS`（db/index.ts），
+ *    而且部署用的是 `--noConfirm`，**全程没有第二次确认**。
+ *    原来唯一的防线是那句注释（"生产环境勿用"）和"人记得别敲"。
+ *
+ * ⚠️ 刻意**不留** `--i-know-what-im-doing` 这类逃生门：真要重建生产库，
+ *    正确做法是去云控制台手工操作（那一步天然需要人看着）；
+ *    留一个开关只会让"某天有人加上它"变成下一次事故的入口。
+ */
+if (target === 'prod' && reset) {
+  console.error(
+    '\n❌ 拒绝对 prod 使用 --reset：它会 DROP 掉生产库，且这一步没有二次确认。\n' +
+      '   真要在生产上重建 schema：请去云控制台手工执行，并先确认备份。\n' +
+      '   （对 dev 用 --reset 不受影响。）',
+  )
+  process.exit(1)
+}
+
 // ---- 读环境变量：**只加载属于本次目标的那两份** ----
 // ⚠️ loadEnv 会把结果写进 process.env（真实环境变量优先），所以下面一律读 process.env
 loadEnv(target)
@@ -190,8 +211,16 @@ const params = {
   WX_CLOUD_ENV_ID: envId,
   // 容器启动时跑迁移 + 自举建库。⚠️ 多副本时关掉（会并发迁移），本项目副本数为 1
   AUTO_MIGRATE: 'true',
-  // ⭐ 云上 Dockerfile 的 CMD 不 seed，不开这个 dev 环境就是空句库（真机朗读页读不到正文）
-  SEED_ON_START: target === 'dev' ? 'true' : 'false',
+  /**
+   * ⭐ 云上 Dockerfile 的 CMD 不 seed，不开这个 dev 环境就是空句库（真机朗读页读不到正文）。
+   *
+   * ⚠️⚠️ **必须先看环境变量**：`.github/workflows/deploy.yml` 会把仓库变量
+   *    `vars.SEED_ON_START` 传进来，用来做"prod 首次部署灌一次种子"。
+   *    这里原来是硬编码 `target === 'dev' ? 'true' : 'false'` ⇒ 那个 Variable
+   *    从来没有被读过，**prod 首次部署灌种子这条路是假的**（文档与 workflow 注释都以为它生效）。
+   * ⚠️ 缺省仍然是"dev 开 / prod 关"：prod 每次冷启动都灌种子既慢又没必要。
+   */
+  SEED_ON_START: process.env.SEED_ON_START ?? (target === 'dev' ? 'true' : 'false'),
   // 深度自检（/health?deep=1）：只在 dev 开 —— 它会真的调微信开放接口和对象存储
   DIAG_ENABLED: target === 'dev' ? 'true' : 'false',
   // --reset 时删库重建；否则明确关掉，避免误删
