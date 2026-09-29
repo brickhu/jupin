@@ -68,6 +68,7 @@
 
 - [ ] **B38** **把结果屏那颗播放钮也换成 recording-player**：`pages/challenge` 的 `onPlayAudio` 是同一套逻辑的第三份，但它有两处真实差异 —— ① 结果包里有 `audioRef` 可缓存（不必每次问服务端）；② 它的 loading **一路亮到真的能出声**（先亮 stop 再卡住会被读成"按了停止却没停"）。要做得给组件加"可传入地址、跳过取音"与"loading 到出声"两个能力，再删掉那份实现 —— 做完的标志：全仓库只剩 recording-player 一处 `fetchSubmissionAudio` + `ensureLocalAudio` + `playAudioUrl` 的组合。
 - [ ] **C9** **审计里需要产品/运维拍板才动的项**（本轮**故意没做**，逐条附理由）：`/api/auth/session` 零调用但**是当前唯一的部署验证探针**（别删）；`POST /api/user/unfreeze` 界面没有入口（接上还是砍）；`ArticleDetail.challenge`/`.advice` 与 `SubmitResponse.dimensions` 服务端给了但端侧从不读；三张零引用表 `subscriptions`/`likes`/`reviews` 与六个零读列（`memberUntil`/`likeCount`/`prepayId`/`refund*`/`startsAt`）—— **不可逆且 refund 系是未实现的 roadmap 位**；`paths-ignore` 可能跳过与后端 lockfile 相关的改动；`MYSQL_*`/`TOKEN_SECRET` 的 **GitHub Secrets 与本地 .env 两份真相**（本地改对了、CI 会覆盖回去）；CI 那条路**仍然产不出版本**（要查得先 `gh auth login`）。
+- [ ] **C10** **本地开发镜像是"残留档案"，不是当前代码的镜像**：`docker-compose` 挂的是源码 + `Dockerfile.development` 用 `tsx` 直跑，而 `apps/server/dist/index.mjs` 是 **9/21 的旧构建产物**（连 `attemptId` 都没有）却没被清理 ⇒ 我按它判断"本地容器跑的是旧代码"，**结论下反了**（本地确实跑新源码）。⇒ 要做的：① `docker-compose` 或 entrypoint 里打印一次"当前生效的提交 / 是否 tsx 直跑"，让判断有据可依；② 把 `apps/server/dist` 加进 `.gitignore` 或让 dev 容器启动时重建一次，别让一个从不被执行的产物误导人（`AGENT.md` 里那条"判断运行时代码要看行为、不要看产物"也补一句）。
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 
 ### C. 上线 / 运维
