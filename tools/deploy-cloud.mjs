@@ -463,10 +463,21 @@ async function versionNames() {
  *    而这时的 CLI **既不报错也不返回，就那样挂着** —— 实测挂了 20 分钟没动静。
  *    CI 里那就是一路占着 runner 直到 job 超时。
  *    ⇒ 所以这里自己按版本状态判定：normal = 成功，create_failed = 可重试的失败。
+ *
+ * ⚠️⚠️⚠️ 但"出现了一个新版本"**不等于**"我们的新代码上台了"（2026-09-29 踩到，很隐蔽）：
+ *    平台会因为**配置变更**（比如随部署一起写的环境变量）自己造一个版本，
+ *    特征是 `BuildId=0` / `UploadType=image` / 备注由平台生成（"server config change"）——
+ *    **里面没有我们的任何新代码**。
+ *    原实现只要"新版本名 + 状态 normal"就报成功 ⇒ 脚本打印 ✅，
+ *    而线上跑的还是上一个版本的代码（现象：**CI 全绿，但新接口在 dev 上根本不存在**，
+ *    用户看到的就是"api docs 里只有 1 个接口"）。
+ *    ⇒ 判据改成：**备注必须等于我们这次传的 remark**（CI 传的是 `CI dev <sha>`）。
+ *      平台的配置变更版本备注对不上，会被明确跳过而不是被当成成功。
  */
 async function waitForNewVersion(before) {
   const DEADLINE = Date.now() + 12 * 60_000
   let last = ''
+  const skipped = new Set()
   while (Date.now() < DEADLINE) {
     await sleep(10_000)
     let items = []
@@ -478,8 +489,21 @@ async function waitForNewVersion(before) {
     }
     const fresh = items.filter((v) => !before.has(v.VersionName))
     if (fresh.length === 0) continue
+    /**
+     * ⚠️ 只认**我们这次提交**的版本：备注对不上的（平台配置变更版本）跳过并说明原因，
+     *    免得它把"部署成功"这个结论偷走。
+     */
+    const ours = fresh.filter((v) => v.Remark === remark)
+    for (const other of fresh.filter((v) => v.Remark !== remark && !skipped.has(v.VersionName))) {
+      skipped.add(other.VersionName)
+      console.log(
+        `· 跳过 ${other.VersionName}：备注是「${other.Remark ?? ''}」而不是我们这次的「${remark}」` +
+          `（BuildId=${other.BuildId ?? '?'}）—— 平台为配置变更造的版本，不含本次代码`,
+      )
+    }
+    if (ours.length === 0) continue
     // 取最新提交的那个
-    const v = fresh.sort((a, b) => String(a.CreatedTime).localeCompare(String(b.CreatedTime))).at(-1)
+    const v = ours.sort((a, b) => String(a.CreatedTime).localeCompare(String(b.CreatedTime))).at(-1)
     if (v.Status !== last) {
       last = v.Status
       console.log(`· ${v.VersionName} 状态：${v.Status}`)
@@ -524,6 +548,36 @@ async function waitForNewVersion(before) {
       }
       return { ok: false, name: v.VersionName }
     }
+  }
+  /**
+   * ⚠️⚠️ 超时**必须把"这次到底出现了什么版本"打出来**（2026-09-29 加）。
+   *
+   *    起因：CI 全绿，但线上还是旧代码（用户看到的是"api docs 只有 1 个接口"）。
+   *    复盘时手上只有一句"超时未出结果"，而真正的事实是
+   *    **平台只造了一个"配置变更"版本、压根没造代码版本** ——
+   *    不把版本清单打出来，下一个人还要再查一遍。
+   */
+  try {
+    const r = await DescribeCloudBaseRunServer({ EnvId: envId, ServerName: SERVICE, Offset: 0, Limit: 20 })
+    const all = [...(r.VersionItems ?? [])].sort((a, b) =>
+      String(a.CreatedTime).localeCompare(String(b.CreatedTime)),
+    )
+    console.log(`\n· 超时 —— 这次等的是备注为「${remark}」的版本。最近的版本清单：`)
+    for (const v of all.slice(-5)) {
+      console.log(
+        `    ${v.VersionName} | ${v.Status} | 备注「${v.Remark ?? ''}」| BuildId=${v.BuildId ?? '?'} | ` +
+          `${v.UploadType ?? '?'} | ${v.CreatedTime} | 流量=${v.FlowRatio ?? 0}%`,
+      )
+    }
+    if (all.filter((v) => v.Remark === remark).length === 0) {
+      console.log(
+        '  ⚠️ 一个属于本次提交的版本都没有 ⇒ **平台没为这次部署造出代码版本**（构建那一步就没了）。\n' +
+          '     常见成因：平台侧「创建构建镜像」卡住（脚本注释里记过），或上传包过大被静默拒绝。\n' +
+          '     ⚠️ 此时**不要**把"有一个新版本变 normal"当成成功 —— 那可能是平台的配置变更版本，里面没有本次代码。',
+      )
+    }
+  } catch {
+    /* 清单只是一份诊断，拉不到就算了 */
   }
   return { ok: false, name: '(超时未出结果)' }
 }
