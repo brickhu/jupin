@@ -91,6 +91,22 @@ submissionsRoutes.post('/', async (c) => {
   if (attemptId !== undefined && attemptId !== '' && !/^[a-f0-9]{32}$/.test(attemptId)) {
     return c.json({ ok: false, error: 'attemptId 不合法（需要 32 位十六进制）' }, 400)
   }
+  /**
+   * ⚠️⚠️ **全 0 的 attemptId 明确拒绝** —— 形状合法、语义必然出错。
+   *
+   *    真实事故（2026-09）：客户端的 `wx.getRandomValues` 被传了 `Uint8Array`
+   *    （微信要 ArrayBuffer）⇒ **静默不回填** ⇒ attemptId 恒为 `000…0` ⇒
+   *    每一次提交都被幂等命中成"同一次" ⇒ **永远返回第一次那条成绩**，
+   *    而服务端日志里只有一句"幂等命中"，看起来完全正常。
+   *    ⇒ 这种键**早失败**比"静默返回旧结果"好得多（客户端一眼能看出是键的问题）。
+   */
+  if (attemptId === '0'.repeat(32)) {
+    console.warn('[submissions] 拒绝全 0 的 attemptId（客户端随机源失效？）user=' + userId)
+    return c.json(
+      { ok: false, error: 'attemptId 全为 0（客户端随机源失效）—— 请重新录一遍再提交' },
+      400,
+    )
+  }
   if (!attemptId) {
     console.warn('[submissions] 这次提交没带 attemptId（旧客户端？）—— 按 audioKey 判重 user=' + userId)
   }

@@ -95,19 +95,42 @@ function makeAudioKey(articleId: string, userId: number, attemptId: string, file
 export function newAttemptId(): string {
   const bytes = new Uint8Array(16)
   /**
-   * ⚠️ 优先用平台提供的密码学随机（`wx.getRandomValues`，基础库 2.15+）。
-   * ⚠️ 退回 Math.random 是可以接受的：这是**幂等键**不是密钥 —— 可预测不会造成越权，
-   *    最坏是极小概率的撞键，而服务端的唯一索引会挡住（用户重录一次即可）。
-   * ⚠️ 刻意**不写 `globalThis`**：它是 ES2020，而小程序产物必须停在 es2017
+   * ⚠️⚠️ **先用 `Math.random` 填满，再试着叠加平台的密码学随机** —— 顺序不能反。
+   *
+   *    真实事故（2026-09，用户报"每次都在显示前一次的结果"）：这里原来写的是
+   *    "优先 `wx.getRandomValues(bytes)`，拿不到才退回 Math.random"。而微信的
+   *    `wx.getRandomValues` 要的是 **ArrayBuffer**，传 `Uint8Array` 进去**静默不回填** ——
+   *    于是 bytes 全是 0 ⇒ `attemptId` 恒为 `000…0`（32 个 0）⇒
+   *    服务端每次都判成"同一次提交"（幂等键相同）⇒ **永远返回第一次那条成绩**。
+   *    更阴的是服务端日志里只有一句"幂等命中"，看起来完全正常。
+   *
+   *    ⚠️ 用 Math.random 是**可接受**的：这是幂等键、不是密钥 ——
+   *    可预测不造成越权，最坏是极小概率撞键，而服务端的唯一索引会挡住。
+   *    ⇒ **"保证非零"比"用密码学随机"重要得多**。
+   *    ⚠️ 刻意**不写 `globalThis`**：它是 ES2020，而小程序产物必须停在 es2017
    *    （build.mjs 的 assertNoModernSyntax 会当场拦下 —— 这一版就先被它拦过一次）。
    */
-  const wxCrypto = (wx as unknown as { getRandomValues?: (a: Uint8Array) => void }).getRandomValues
-  if (typeof wxCrypto === 'function') {
-    wxCrypto(bytes)
-  } else {
-    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  try {
+    const wxCrypto = (wx as unknown as { getRandomValues?: (a: ArrayBuffer) => void }).getRandomValues
+    // ⚠️ 传 `bytes.buffer`（ArrayBuffer）；即使微信那边仍不认，上面填好的随机值也不会变成 0
+    if (typeof wxCrypto === 'function') wxCrypto(bytes.buffer)
+  } catch {
+    /* 拿不到就用 Math.random 那份，不影响幂等性 */
   }
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  /**
+   * ⚠️ 兜底断言：全 0 的键会让"每一次提交"都被服务端当成同一次 ——
+   *    宁可现造一个随机值，也不要返回一个必然出错的键。
+   */
+  if (/^0+$/.test(id)) {
+    console.warn('[upload] attemptId 全为 0（随机源异常）—— 现造一个')
+    return (
+      Date.now().toString(16).padStart(12, '0') +
+      Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0')
+    )
+  }
+  return id
 }
 
 export function uploadAudio(filePath: string, opts: UploadOptions): Promise<UploadResult> {
