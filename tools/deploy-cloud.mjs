@@ -261,6 +261,19 @@ if (!params.MYSQL_DATABASE) params.MYSQL_DATABASE = 'jushuo'
 // ⭐ 讯飞凭据 —— 公用 .env 里的（两个环境共用同一个讯飞应用）
 // ⚠️ 只在**有值**时写入：显式写 undefined 会被 JSON.stringify 丢掉，
 //    反而把服务上原有的值抹掉。
+/**
+ * ⭐ 内容管理接口的口令（`/api/admin/*` 的 ADMIN_TOKEN）。
+ *
+ * ⚠️⚠️ 这个脚本**不是"把 .env 全量传给服务"** —— 它只显式列关键键
+ *    （见下面 XFYUN / XPAY 两个循环）。所以新加一个服务端环境变量时，
+ *    **必须在这里也加一行**，否则本机 `.env.<env>` 里配得好好的，
+ *    云上却是停的：症状是 `/api/admin/*` 返回 503「服务端没有配置 ADMIN_TOKEN」，
+ *    而"我明明配了"会让人完全找错方向（这与 SEED_ON_START 那次是同一类坑）。
+ * ⚠️ 没配就**不传**（而不是传空串）：服务端对"没配"的处置是 503 拒绝服务，
+ *    比"配了一个空口令"更安全、也更好排查。
+ */
+if (process.env.ADMIN_TOKEN) params.ADMIN_TOKEN = process.env.ADMIN_TOKEN
+
 for (const k of XFYUN_KEYS) {
   if (process.env[k]) params[k] = process.env[k]
 }
