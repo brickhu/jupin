@@ -14,11 +14,12 @@
       <p class="muted">内容管理台 · 本地操作台</p>
       <label>账号<input name="user" value="admin" autocomplete="username" /></label>
       <label>密码<input name="password" type="password" autocomplete="current-password" /></label>
-      <div class="env-pick">
-        <p class="env-pick-head">环境<span class="muted tiny">（这次会话写哪个库）</span></p>
-        <div id="login-envs" class="env-options"></div>
-        <p id="login-env-note" class="muted tiny"></p>
-      </div>
+      <label>环境
+        <select id="login-env" name="env" disabled>
+          <option value="">正在探测各环境…</option>
+        </select>
+      </label>
+      <p id="login-env-note" class="muted tiny">这次会话写哪个环境（不可用的会标出原因，且选不中）</p>
       <p id="login-error" class="error" hidden></p>
       <button class="primary" type="submit">登录</button>
       <p class="muted tiny">口令在仓库根的 <code>.env.local</code> 里（ADMIN_PASSWORD）。</p>

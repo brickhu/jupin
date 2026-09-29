@@ -53,19 +53,12 @@ a:hover { text-decoration: underline; }
 .login-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 
 /* 环境选择（登录页）—— 它是这次会话的**前提**，所以放在最显眼的位置 */
-.env-pick { border-top: 1px solid var(--line); padding-top: 14px; }
-.env-pick-head { font-size: 13px; color: var(--muted); margin-bottom: 8px !important; }
-.env-options { display: flex; flex-direction: column; gap: 6px; }
-.env-option {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px;
-  border: 1px solid var(--line); border-radius: 9px; cursor: pointer; background: var(--bg);
-}
-.env-option:hover { border-color: #37404f; }
-.env-option input { width: auto; margin: 0; }
-.env-option.on { border-color: var(--brand); background: #1b1c33; }
-.env-option.dead { opacity: .55; cursor: not-allowed; }
-.env-option .env-name { font-size: 13px; }
-.env-option .env-note { font-size: 11px; color: var(--warn); }
+  /**
+   * ⚠️ 这里原来的规则是给**三个单选按钮**用的（.env-pick / .env-options / .env-option），
+   *    用户 2026-09 要求把环境选择改成**下拉框** ⇒ 那些选择器全部删掉，
+   *    只留"禁用态"这一条（探测中 / 该环境不可用时要看得出来）。
+   */
+  .login-card select:disabled { opacity: .55; cursor: not-allowed; }
 
 input, textarea, select, button { font: inherit; color: inherit; }
 input, textarea, select {

@@ -152,17 +152,26 @@ function renderEnvBadge() {
  * ⚠️ 不可用的环境**列出来但禁掉**、并把原因写在旁边 —— 直接隐藏的话，
  *    「dev 怎么没了」会变成一个需要翻代码才能回答的问题。
  */
+/**
+ * 登录页的环境选择 —— **下拉框**（原先是三个单选按钮，用户 2026-09 要求改成下拉）。
+ *
+ * ⚠️ 不可用的环境**照样列在下拉里但禁掉**（`option.disabled`）、原因写在旁边 ——
+ *    直接隐藏的话，「dev 怎么没了」会变成一个需要翻代码才能回答的问题。
+ * ⚠️ 探测要过一次网（约几秒），所以先禁用下拉并显示「正在探测…」；
+ *    这段空窗期里提交也不会错：`state.pickedEnv` 的初值是 local（**最安全**的默认，
+ *    不会把内容写进云环境）。
+ */
 async function loadLoginEnvs() {
-  const box = $("#login-envs")
-  /**
-   * ⚠️ 环境列表要真探一次云库（约 5 秒），所以先给一句话。
-   *    这段空窗期里提交也不会错：state.pickedEnv 的初值是 local ——
-   *    那是**最安全**的默认（不会把内容写进云环境）。
-   */
-  box.textContent = "正在探测各环境…"
+  const sel = $("#login-env")
+  const note = $("#login-env-note")
+  sel.disabled = true
+  sel.innerHTML = '<option value="">正在探测各环境…</option>'
+
   try {
     const data = await api("/api/envs")
     state.envs = data.list
+
+    // 默认选中：保持上次的环境；它不可用就退到第一个可用的
     let pick = data.current
     const cur = data.list.find(function (e) { return e.mode === pick })
     if (!cur || !cur.reachable) {
@@ -170,44 +179,36 @@ async function loadLoginEnvs() {
       pick = first ? first.mode : ""
     }
     state.pickedEnv = pick
-    box.textContent = ""
+
+    sel.textContent = ""
     data.list.forEach(function (e) {
-      const lab = document.createElement("label")
-      lab.className = "env-option" + (e.reachable ? "" : " dead") + (e.mode === pick ? " on" : "")
-      const radio = document.createElement("input")
-      radio.type = "radio"
-      radio.name = "env"
-      radio.value = e.mode
-      radio.checked = e.mode === pick
-      radio.disabled = !e.reachable
-      radio.addEventListener("change", function () {
-        state.pickedEnv = e.mode
-        box.querySelectorAll(".env-option").forEach(function (x) { x.classList.remove("on") })
-        lab.classList.add("on")
-        $("#login-env-note").textContent = ""
-      })
-      const name = document.createElement("span")
-      name.className = "env-name"
-      name.textContent = e.label
-      lab.appendChild(radio)
-      lab.appendChild(name)
-      if (!e.reachable) {
-        const note = document.createElement("span")
-        note.className = "env-note"
-        note.textContent = "不可用：" + (e.note || "未知原因")
-        lab.appendChild(note)
-      }
-      box.appendChild(lab)
+      const opt = document.createElement("option")
+      opt.value = e.mode
+      // ⚠️ 不可用的**标在选项文字里**（下拉里的 option 没有独立的位置放原因）
+      opt.textContent = e.label + (e.reachable ? "" : "（不可用：" + (e.note || "未知原因") + "）")
+      opt.disabled = !e.reachable
+      opt.selected = e.mode === pick
+      sel.appendChild(opt)
     })
+    sel.disabled = false
+
     const dead = data.list.filter(function (e) { return !e.reachable })
-    $("#login-env-note").textContent = dead.length
-      ? dead.length + " 个环境当前不可用（原因见上面）。不可用通常是没部署 / 库没建 —— 跑一次 deploy-cloud.mjs 即可。"
-      : ""
+    note.textContent = dead.length
+      ? dead.length + " 个环境不可用（原因见下拉里那一项）。通常是没部署 —— 跑一次 deploy-cloud.mjs 即可。"
+      : "这次会话写哪个环境（换环境要退出后重新登录）"
   } catch (e) {
-    box.textContent = "读不到环境列表：" + e.message
-    $("#login-env-note").textContent = ""
+    sel.innerHTML = '<option value="">环境列表读不到</option>'
+    note.textContent = "读不到环境列表：" + e.message
   }
 }
+
+/**
+ * ⚠️ 下拉框的选中要同步进 `state.pickedEnv`（提交时读的是它，不是 DOM）。
+ *    原来是三个 radio 各自挂 change，现在只有这一个控件。
+ */
+$("#login-env").addEventListener("change", function (ev) {
+  state.pickedEnv = ev.target.value
+})
 
 $("#login-form").addEventListener("submit", async function (ev) {
   ev.preventDefault()
