@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, or } from 'drizzle-orm'
+import { and, eq, or, sql } from 'drizzle-orm'
 import type {
   ScoreDimensions,
   ScoreParts,
@@ -240,60 +240,65 @@ submissionsRoutes.post('/', async (c) => {
     )
   }
 
-  // ---- 5. ⭐ 落「打分中」的行，然后**不等它** ----
-  //
-  // ⚠️ 用 insert().ignore()：并发重发时两个请求可能同时到这里，
-  //    先查后插会让其中一个撞唯一键 500。ignore() 让后到者静默失败，
-  //    两边随后都会读同一行、回答同一个 submissionId。
-  const inserted = await db.insert(submissions).ignore().values({
-    id: submissionId,
-    userId,
-    articleId,
-    seq,
-    audioKey,
-    // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
-    //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
-    audioUrl: audioUrl ?? null,
-    engine: env.ENGINE,
-    isPublic,
-    // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
-    attemptId,
-    status: 'scoring',
-    heartbeatAt: new Date(),
-    attempts: 1,
-    scheduleDate,
-    // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
-    energyState: 'held',
-  })
-
+    // ---- 5. ⭐ 落「打分中」的行，然后**不等它** ----
+    //
     /**
-    /**
-     * ⚠️⚠️ `insert().ignore()` 会在**唯一键冲突时静默跳过** —— 而这里原本不管结果、
-     *    照样回 202 + 一个**并不存在的 submissionId**。
+     * ⚠️⚠️ **不能用 `insert().ignore()`** —— 这是个实测出来的陷阱（2026-09）：
+     *    mysql2 + drizzle 下，`insert().ignore()` 返回的 `affectedRows` **永远是 0**，
+     *    无论插入真的成功还是被忽略：
+     *      · 首次插入（成功）   → [{"affectedRows":0,…}]
+     *      · 再次插入（被忽略） → [{"affectedRows":0,…}]   ← 两种情况一模一样
+     *    ⇒ 于是任何"按 affectedRows 判断插入是否生效"的写法都必然误判
+     *      （我上一版就据此把**每一次正常提交**报成了"录音重复"）。
      *
-     *    2026-09 实测到（我自己的复现）：同一个 `audioKey` 配一个新的 `attemptId`
-     *    提交 ⇒ 撞 `submissions_user_audio_idx` ⇒ insert 被跳过 ⇒ 服务端回 202、
-     *    客户端拿着那个 id 轮询 ⇒ 查到的是**上一次**那条记录的结果。
-     *    用户看到的正是「每次都在显示前一次的结果」。
-     *
-     *    ⇒ 插入没成功就**明确报错**（并且要把刚才锁住的能量退回去）。
+     * ⚠️ 改用 `onDuplicateKeyUpdate`（幂等自赋值）：它的 `affectedRows` 可靠 ——
+     *    · 1 = 新插入（正常路径）
+     *    · 2 = 命中了已存在的那一行（并发重发 / 同一 attemptId 已落库）
+     *    ⇒ 两种都算"这一行成立"，只有 **0** 才是真出问题。
+     *    ⚠️ 并发重发时两个请求都走到这里，前者插入、后者命中的是**同一行**
+     *      （同一个 submissionId），所以两边回答一致，不会 500。
      */
-    const affected = (inserted as unknown as { affectedRows?: number })?.affectedRows
-    if (affected !== 1) {
-      console.warn(
-        '[submissions] 落库未生效（唯一键冲突？）id=' + submissionId + ' key=' + audioKey,
-      )
-      // ⚠️ 能量得退回：受理时已经锁了 2 点，而这次提交根本没成立
-      await releaseChallengeEnergy(userId, submissionId).catch(() => {})
-      return c.json(
-        {
-          ok: false,
-          code: 'DUPLICATE_SUBMISSION',
-          error: '这次录音和上一次重复了 —— 请重新录一遍再提交',
-        },
-        409,
-      )
-    }
+    const inserted = await db
+      .insert(submissions)
+        .values({
+          id: submissionId,
+          userId,
+          articleId,
+          seq,
+          audioKey,
+          // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
+          //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
+          audioUrl: audioUrl ?? null,
+          engine: env.ENGINE,
+          isPublic,
+          // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
+          attemptId,
+          status: 'scoring',
+          heartbeatAt: new Date(),
+          attempts: 1,
+          scheduleDate,
+          // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
+          energyState: 'held',
+        })
+        /**
+         * ⚠️ 幂等自赋值（**不改任何业务列**）：只为了拿到**可靠的 affectedRows**。
+         *    写 `id = id` 而不是 `status = status` —— 后者会触发 mysql2 的
+         *    "同值更新算 0 行"行为，让 2 变成 0，又把判据搞坏。
+         */
+        .onDuplicateKeyUpdate({ set: { id: sql`id` } })
+
+      /**
+       * ⚠️ `affectedRows`：**1 = 新插入**，**2 = 命中已存在的那一行**（并发重发）。
+       *    两者都表示"这一行成立"，只有 0 才是真的没写进去。
+       *    ⚠️ 别再退回 `insert().ignore()` —— 它的 affectedRows 恒为 0（见上面的说明）。
+       */
+      const affected = (inserted as unknown as Array<{ affectedRows?: number }>)?.[0]?.affectedRows
+      if (!affected) {
+        console.error('[submissions] 落库失败（affectedRows=0）id=' + submissionId)
+        // ⚠️ 能量得退回：受理时已经锁了 2 点，而这一行没落成
+        await releaseChallengeEnergy(userId, submissionId).catch(() => {})
+        return c.json({ ok: false, error: '提交没能落库，请再试一次' }, 500)
+      }
 
   // ⭐ 立刻开跑，但**不 await** —— 受理必须毫秒级返回，
   //   否则又回到了「一个请求装不下一次打分」的老问题。
