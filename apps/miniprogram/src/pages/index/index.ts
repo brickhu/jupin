@@ -312,7 +312,12 @@ Page({
    *    渲染 = 这两份拼起来（见 render()），所以**参与状态一变就能立刻重画**，
    *    不需要先把整张列表重新拉一遍。
    */
-  cards: null as { today: ScheduleEntry; latest: ScheduleEntry[] } | null,
+  /**
+   * ⚠️ `today` **可空**：公开列表接口（`/api/schedules`）**不再返回它**
+   *    （2026-09 随 `schedules` 表一起删）—— 今日那一句只由鉴权推荐接口
+   *    `/api/user/today` 给。首屏先只画 `latest`，今日卡等推荐回来再填。
+   */
+  cards: null as { today: ScheduleEntry | null; latest: ScheduleEntry[] } | null,
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
@@ -350,7 +355,11 @@ Page({
      */
     const cached = me.cachedSchedules()
     if (cached) {
-      this.cards = { today: cached.today, latest: cached.latest ?? [] }
+      /**
+       * ⚠️ 缓存里**没有** `today`（公开列表接口不再返回它，见 SchedulesResponse 的说明）：
+       *    今日那一张由 `/api/user/today` 填，这里先留空。
+       */
+      this.cards = { today: null, latest: cached.latest ?? [] }
       this.setData({ loading: false })
       this.render()
     }
@@ -543,9 +552,7 @@ Page({
        * ⚠️ 只问**这一屏上的 id**（最多 6 个），不是把我的全量记录拉下来。
        * ⚠️ 不 await：列表先出来；个人那份到了会走 store 广播重画。
        */
-      void fetchArenaRecords([d.today.articleId, ...latest.map((x) => x.articleId)]).then((r) =>
-        me.applyArenaRecords(r.items),
-      )
+      void fetchArenaRecords(latest.map((x) => x.articleId)).then((r) => me.applyArenaRecords(r.items))
       /**
        * ⭐ 顺带刷一次「我是谁」—— 状态卡上那两个累计数（挑战几句 / 一共几回）
        *    只有 /me 有，而它们**刚在朗读页变过**。
@@ -581,7 +588,7 @@ Page({
        * ⚠️ 先按**公开列表**把首页画出来（latest 那一段只有它有），
        *    今日那张卡再被下面的推荐替换掉 —— 推荐接口慢/失败都不能让首屏空着。
        */
-      this.cards = { today: d.today, latest }
+      this.cards = { today: null, latest }
       this.setData({ loading: false })
       this.render()
 
@@ -637,7 +644,14 @@ Page({
      *    （服务端那边剔的是"排期里今天那一句"，与这里的判据不是同一个，
      *      所以这一步必须留在端侧。）
      */
-    const today = this.toView(c.today)
+    /**
+     * ⚠️ `c.today` **可能还没有**（公开列表不返回今日那一句，只有推荐接口给）——
+     *    首屏会先只画 `latest`，推荐回来后 store 广播重画。
+     *    所以下面两处都要按"今日可能缺席"写：
+     *    · `toView` 只对存在的今日卡调用；
+     *    · `latest` 的过滤条件要容忍 `today === null`（否则读 `.articleId` 就抛）。
+     */
+    const today = c.today ? this.toView(c.today) : null
     this.setData({
       stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
       today,
@@ -646,7 +660,9 @@ Page({
        *    而那份缓存是更早的端侧版本写的（那时这个字段还叫 history）——
        *    少了这层兜底，首页会在「读取缓存」这条路上白屏，且毫无线索。
        */
-      latest: (c.latest ?? []).filter((x) => x.articleId !== c.today.articleId).map((x) => this.toView(x)),
+      latest: (c.latest ?? [])
+        .filter((x) => !c.today || x.articleId !== c.today.articleId)
+        .map((x) => this.toView(x)),
     })
   },
 

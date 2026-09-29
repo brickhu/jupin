@@ -50,8 +50,14 @@ function entry(date: string, articleId: string, myBest: number | null = null, my
   }
 }
 
-function listResponse(today = entry('2026-09-21', '3'), latest: unknown[] = []) {
-  return { date: '2026-09-21', streak: STREAK, today, latest } as never
+/**
+ * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/schedules`）自 2026-09 起
+ *    **不返回 `today`**（今日那一句由鉴权接口 `/api/user/today` 给，见 SchedulesResponse）。
+ *    这里曾经塞过 `today`，而 `as never` 把类型检查绕过去了 ——
+ *    夹具"模仿了一个不存在的契约"，最容易误导后来人。
+ */
+function listResponse(latest: unknown[] = []) {
+  return { date: '2026-09-21', streak: STREAK, latest } as never
 }
 
 beforeEach(() => {
@@ -85,7 +91,7 @@ describe('applyArenaRecords —— 「我的战绩」由个人接口喂（按句
   })
 
   it('⭐ 公开列表接口（applySchedules）不再碰 arena / streak —— 它只带公开数据', () => {
-    store.applySchedules(listResponse(entry('2026-09-21', '3')))
+      store.applySchedules(listResponse([entry('2026-09-21', '3')]))
     expect(store.getState().arena).toEqual({})
     expect(store.getState().userInfo?.streak ?? null).toBeNull()
   })
@@ -203,13 +209,13 @@ describe('订阅', () => {
 
 describe('cachedSchedules —— 冷启动首屏的缓存（跨天必须丢掉）', () => {
   it('同一天能把上次那一屏取回来', () => {
-    const res = { date: today(), today: entry(today(), '3'), latest: [] } as never
+    const res = { date: today(), latest: [] } as never
     store.applySchedules(res)
     expect(store.cachedSchedules()).toEqual(res)
   })
 
   it('⚠️ 跨天一律 null —— 拿昨天那句当「今日挑战」画出来，点进去还是昨天那句', () => {
-    store.applySchedules({ date: '2000-01-01', today: entry('2000-01-01', '3'), latest: [] } as never)
+    store.applySchedules({ date: '2000-01-01', latest: [] } as never)
     expect(store.cachedSchedules()).toBeNull()
   })
 
