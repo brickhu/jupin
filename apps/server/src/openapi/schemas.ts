@@ -10,6 +10,8 @@ import type {
   ChallengesResponse,
   EnergyLedgerItem,
   EnergyResponse,
+  Gender,
+  MeResponse,
   ParticipationRecord,
   ParticipationsResponse,
   LatestCardsResponse,
@@ -17,6 +19,7 @@ import type {
   ScoreDimensions,
   ScoreParts,
   StreakDelta,
+  StreakView,
   SubmissionStatusResponse,
   SubmitResponse,
   TodayResponse,
@@ -316,6 +319,53 @@ export const GrowthViewSchema = z
   .object({ self: z.number(), diligence: z.number(), standout: z.number() })
   .openapi('GrowthView')
 
+/* ---------- 我的：连战与个人资料 ---------- */
+
+/** ⭐ 连战展示视图（服务端算好、端侧只显示 —— 不让端侧重算"今天读没读"） */
+export const StreakViewSchema = z
+  .object({
+    streakDays: z.number().int(),
+    streakBest: z.number().int(),
+    readToday: z.boolean(),
+    unfreezeCards: z.number().int(),
+    unfreezePending: z.number().int(),
+    unfreezeExpiresOn: z.string().nullable(),
+  })
+  .openapi('StreakView')
+
+/** 性别（只认两个值；null = 未填） */
+export const GenderSchema = z.enum(['male', 'female']).openapi('Gender')
+
+/** ⭐ 「我是谁」—— 状态卡上那几个累计数与连战都在这儿 */
+export const MeResponseSchema = okEnvelope(
+  z
+    .object({
+      id: z.number().int(),
+      nickname: z.string().nullable(),
+      /** ⚠️ 云存储 fileID（cloud://…），端侧要换址 */
+      avatarUrl: z.string().nullable(),
+      gender: GenderSchema.nullable(),
+      age: z.number().int().nullable(),
+      bio: z.string().nullable(),
+      status: z.string(),
+      energy: z.number(),
+      challengedCount: z.number().int(),
+      challengedRounds: z.number().int(),
+      conqueredCount: z.number().int(),
+      growth: GrowthViewSchema,
+      streak: StreakViewSchema,
+    })
+    .openapi('MeResponse'),
+)
+
+/** 领取解冻卡的结果（`POST /api/user/claim`） */
+export const ClaimRewardsResponseSchema = okEnvelope(
+  z
+    .object({ claimed: z.number().int(), streak: StreakViewSchema })
+    .openapi('ClaimRewardsResponse'),
+)
+
+
 /** 榜单一行（中心 5 条 + 竞技场榜单共用） */
 export const LeaderboardRowSchema = z
   .object({
@@ -443,6 +493,9 @@ type _ArtResParity = Equal<
   z.infer<typeof ArticleRecordsResponseSchema>['data'],
   ArticleRecordsResponse
 >
+type _StreakViewParity = Equal<z.infer<typeof StreakViewSchema>, StreakView>
+type _MeParity = Equal<z.infer<typeof MeResponseSchema>['data'], MeResponse>
+type _GenderParity = Equal<z.infer<typeof GenderSchema>, Gender>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -467,5 +520,8 @@ const _parityChecks: [
   _ArenaResParity,
   _ArtRecParity,
   _ArtResParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+  _StreakViewParity,
+  _MeParity,
+  _GenderParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

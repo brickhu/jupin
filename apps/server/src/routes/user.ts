@@ -27,8 +27,10 @@ import {
   ArticleRecordsResponseSchema,
   ArenaRecordsResponseSchema,
   ChallengeRecordListSchema,
+  ClaimRewardsResponseSchema,
   EnergyResponseSchema,
   errorResponse,
+  MeResponseSchema,
   ParticipationRecordListSchema,
 } from '../openapi/schemas'
 
@@ -461,7 +463,21 @@ userRoutes.openapi(arenaRecordsRoute, async (c) => {
 })
 
 /** 个人主页：Streak（含解冻卡）/ 能量 / 三个成长值 / 战绩计数 */
-userRoutes.get('/me', async (c) => {
+const meRoute = createRoute({
+  method: 'get',
+  path: '/me',
+  tags: ['我的'],
+  summary: '我是谁（昵称/头像/累计数/连战/能量）',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: MeResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(meRoute, async (c) => {
   const user = c.get('user')
   const userId = c.get('userId')
 
@@ -589,11 +605,25 @@ userRoutes.openapi(energyRoute, async (c) => {
  *    否则"没及时来领"变成"白白过期"，而用户根本没机会知道。
  * ⚠️ 幂等：没有待领取的就返回 0，不报错（用户连点两下不该看到红字）。
  */
-userRoutes.post('/claim', async (c) => {
+const claimRoute = createRoute({
+  method: 'post',
+  path: '/claim',
+  tags: ['我的'],
+  summary: '领取待领的解冻卡（幂等：没有就返回 0）',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ClaimRewardsResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(claimRoute, async (c) => {
   const userId = c.get('userId')
   const claimed = await claimUnfreezeCards(userId)
   const streak = await readStreakView(userId)
-  return c.json({ ok: true, data: { claimed, streak } })
+  return c.json({ ok: true, data: { claimed, streak } }, 200)
 })
 
 /**
