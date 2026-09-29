@@ -470,8 +470,12 @@ async function listArticles(mode: Mode, q: string, limit: number) {
       standardAudio: r.standardAudio ?? null,
       text: typeof c?.text === 'string' ? c.text : null,
       translation: typeof c?.translation === 'string' ? c.translation : null,
-      // ⚠️ 从正文取（顺序有意义，不要 .sort() —— 第一个标签最重要）
-      tags: Array.isArray(c?.tags) ? c.tags : [],
+      /**
+       * ⚠️ 标签读 **articles.tags 这一列**（与 difficulty 同一个来源：由 syncArticleIndex
+       *    从正文物化的派生值，见 db/schema.ts）。
+       * ⚠️ 不要 .sort()：顺序有意义（第一个标签最重要），列里存的就是正文那份顺序。
+       */
+      tags: Array.isArray(r.tags) ? r.tags : [],
       words: Array.isArray(c?.words) ? c.words : [],
     })
   }
@@ -1106,11 +1110,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       text: typeof c?.text === 'string' ? c.text : null,
       translation: typeof c?.translation === 'string' ? c.translation : '',
       /**
-       * ⚠️ 标签只有一个来源：**正文**（`article_tags` 表 2026-09 删了）。
-       *    而且**顺序有意义**（第一个最重要），所以这里不做任何排序 ——
-       *    （踩过：以前读索引得到的是排序后的顺序，一保存就把正文里的标签顺序改掉了。）
+       * ⚠️ 标签读 **articles.tags 这一列**（派生值，与 difficulty 同一来源）。
+       *    顺序有意义（第一个最重要），列里存的就是正文那份顺序 ⇒ 这里不排序。
+       *    （踩过：以前读关联表得到的是排序后的顺序，一保存就把正文里的标签顺序改掉了。）
        */
-      tags: Array.isArray(c?.tags) ? c.tags : [],
+      tags: Array.isArray(row.tags) ? row.tags : [],
       words: Array.isArray(c?.words) ? c.words : [],
       /** ⭐ 词间连读标注（与 words 一一对应；空串 = 不连）—— 详情页在两行之间显示它 */
       links: Array.isArray(c?.links) ? c.links : [],

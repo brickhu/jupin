@@ -244,6 +244,20 @@ export const articles = mysqlTable('articles', {
    */
   difficulty: int('difficulty'),
   /**
+   * ⭐ **标签**（`string[]`）—— 与正文里的 `tags` 同一份内容，做成列是为了**可查、可列表展示**。
+   *
+   * ⚠️ 为什么是"articles 上的一列"而不是一张 `article_tags(article_id, tag)` 关联表：
+   *    关联表当初的理由是"独立成表才能按单个标签索引"，而那个用途**从未实现**，
+   *    代价却是实打实的 —— 它 `(article_id, tag)` 的形状**丢掉顺序**（第一个标签最重要），
+   *    admin 详情页因此得专门写一段"优先用正文、索引只兜底"来绕开它；
+   *    而全仓库没有任何"按标签筛选"的查询。⇒ 2026-09 删表，改成这一列。
+   *
+   * ⚠️ 它**仍是派生值**（真相是 `articles.content.tags`）：由 `syncArticleIndex` 幂等物化，
+   *    可随时全量重建。规矩与 `difficulty` 完全一样：**只由那一处写**。
+   * ⚠️ 用 JSON 数组而不是逗号串：标签本身可能含空格/标点，逗号串要靠分隔符猜测边界。
+   */
+  tags: json('tags').$type<string[]>(),
+  /**
    * ⭐⭐ **发布状态 —— 全仓库唯一的那个真相**（列名 is_active，语义是「已发布 / 在线」）。
    *
    * ⚠️⚠️ 这里**曾经有两列**：content_status 与 is_active，注释说它们「是两回事：

@@ -90,7 +90,15 @@ async function applyIndex(
    *      所以难度这一半留着。判断标准是"有没有查询方"，不是"看起来像不像索引"。
    */
   await database.transaction(async (tx) => {
-    await tx.update(articles).set({ difficulty: idx.difficulty }).where(eq(articles.id, articleId))
+    /**
+     * ⚠️ 难度与标签**一起写**（都是正文的派生值，见 db/schema.ts 的说明）。
+     *    标签存成 `articles.tags` 这一列（JSON 数组），不再是那张关联表 ——
+     *    顺序因此得以保留，而"按标签查"将来真要，MySQL 的 JSON 函数或一条生成列都能做。
+     */
+    await tx
+      .update(articles)
+      .set({ difficulty: idx.difficulty, tags: idx.tags })
+      .where(eq(articles.id, articleId))
   })
 
   return { articleId, ...idx }

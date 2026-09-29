@@ -1,4 +1,4 @@
-import { backfillMissingContent, seedArticles } from './seed-articles'
+import { reindexFromContent, seedArticles } from './seed-articles'
 
 /**
  * 命令行灌种子：`pnpm seed`（本地）/ `pnpm seed:cloud`（云上，需临时开数据库外网地址）。
@@ -19,8 +19,8 @@ async function main(): Promise<void> {
    *    服务启动时的 SEED_ON_START（云端走那条）。放在 `seedArticles` 的**调用方**这里，
    *    两条路都覆盖到；只挂在启动那条上，本地就永远不补（实测就是这么漏的）。
    */
-  const b = await backfillMissingContent()
-  console.log(`✅ 正文回填：补上 ${b.filled} 条 · 仍为空 ${b.stillEmpty} 条`)
+  const b = await reindexFromContent()
+  console.log(`✅ 正文回填 + 物化：重算 ${b.reindexed} 条 · 仍为空 ${b.stillEmpty} 条`)
   process.exit(0)
 }
 

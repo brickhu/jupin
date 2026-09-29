@@ -487,11 +487,9 @@ export async function initDatabase(): Promise<void> {
        *    两条初始化路径各自自洽，谁都不依赖另一条先跑过。
        */
       try {
-        const { backfillMissingContent } = await import('./seed-articles')
-        const b = await backfillMissingContent()
-        if (b.filled > 0 || b.stillEmpty > 0) {
-          console.log(`[db] 正文回填：补上 ${b.filled} 条 · 仍为空 ${b.stillEmpty} 条`)
-        }
+        const { reindexFromContent } = await import('./seed-articles')
+        const b = await reindexFromContent()
+        console.log(`[db] 正文回填 + 派生列物化：重算 ${b.reindexed} 条 · 空正文 ${b.stillEmpty} 条`)
       } catch (err) {
         console.error('[db] 正文回填失败（不影响启动）：', (err as Error).message)
       }

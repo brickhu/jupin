@@ -71,6 +71,26 @@ export async function loadSeedArticles(): Promise<SeedArticle[]> {
  * @returns 写入/更新的条数
  */
 /**
+ * ⭐⭐ **把正文补齐，再把派生列（difficulty / tags）物化一遍** —— 顺序不能反。
+ *
+ * ⚠️⚠️ 为什么必须有这个入口（差一点造成静默错误）：
+ *    原先是 `seedArticles()` 灌完种子**立刻**物化索引（`reindexArticles(ids)`），
+ *    而正文是**之后**才回填进 `articles.content` 的 ⇒ 物化那一刻正文还是空
+ *    ⇒ `difficulty` / `tags` 被写成 **null / 空**，而"灌库成功"的日志一切正常。
+ *    这类错误没有报错、没有红字，只有"标签空了、难度没了"。
+ *    ⇒ 把两件事收进一个函数、按正确顺序写死，两条初始化路径都调它。
+ *
+ * ⚠️ 物化走**全表**（不传 ids）：这样"正文早就填了、只是派生列为空"的存量行
+ *    也会被顺手修好，而不是只照顾这次导入的那几篇。
+ */
+export async function reindexFromContent(): Promise<{ reindexed: number; stillEmpty: number }> {
+  const { reindexArticles } = await import('../services/article-index')
+  const backfilled = await backfillMissingContent()
+  const results = await reindexArticles()
+  return { reindexed: results.length, stillEmpty: backfilled.stillEmpty }
+}
+
+/**
  * ⭐⭐ **把已有行缺失的正文补上**（一次性，过渡期自愈用）。
  *
  * ⚠️⚠️ 为什么必须有它（差一点造成事故）：
@@ -174,13 +194,6 @@ export async function seedArticles(): Promise<number> {
         .where(and(eq(articles.id, a.id), isNull(articles.standardAudio)))
     }
   }
-
-  // ⭐ 灌完正文顺手把难度**物化**进索引（articles.difficulty）。
-  //    ⚠️ 标签没有派生索引了（`article_tags` 2026-09 删除，见 db/schema.ts）。
-  //    真相在正文 JSON 里，这两处只是能被 SQL 筛选的副本 —— 见 services/article-index.ts。
-  //    ⚠️ 动态 import：本文件不能静态引 db（见文件头），而 article-index 引了 db。
-  const { reindexArticles } = await import('../services/article-index')
-  await reindexArticles(list.map((a) => a.id))
 
   return list.length
 }
