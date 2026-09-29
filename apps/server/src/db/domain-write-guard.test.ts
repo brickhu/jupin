@@ -68,7 +68,6 @@ const P = {
   rewards: 'apps/server/src/services/rewards.ts',
   recommend: 'apps/server/src/services/recommend.ts',
   unfreeze: 'apps/server/src/services/unfreeze.ts',
-  schedules: 'apps/server/src/services/schedules.ts',
   goods: 'apps/server/src/services/goods.ts',
   order: 'apps/server/src/services/order.ts',
   admin: 'tools/admin/server.ts',
@@ -89,7 +88,6 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   // 收藏：主键 (user_id, article_id)，两个方向都幂等（docs 1.9）
   favorites: { owners: [P.favorites], note: 'setFavorite' },
   // 每日排期：轮转与运营排期都走同一模块（docs 1.7 的两套之一）
-  schedules: { owners: [P.schedules], note: 'services/schedules.ts 的轮转 + setSchedule' },
   goods: { owners: [P.goods], note: 'services/goods.ts' },
   payments: { owners: [P.order], note: 'services/order.ts 下单 / 支付回调' },
   reward_rules: { owners: [P.rewards], note: 'services/rewards.ts' },
@@ -219,12 +217,6 @@ const EXEMPTIONS: Exemption[] = [
   },
   {
     audit: '审计外',
-    file: P.admin,
-    tables: ['schedules'],
-    why: 'admin 排期直接 insert schedules，绕过 services/schedules.ts 的 setSchedule；它走独立 dbOf(mode) 连接，复用服务层要改 admin 的取库方式。',
-  },
-  {
-    audit: '审计外',
     file: 'apps/server/scripts/import-content-files.ts',
     tables: ['articles'],
     why:
@@ -241,8 +233,11 @@ const EXEMPTIONS: Exemption[] = [
   {
     audit: '#8 / #16',
     file: 'tools/backfill-article-theme.ts',
-    tables: ['articles', 'schedules', 'submissions'],
-    why: '一次性把旧内容 id 改写成 hash，四张表必须一起改；跑完即弃，复用服务层反而多出中途失败的风险。submissions.theme 只有这一处写。',
+    tables: ['articles', 'submissions'],
+    why:
+      '一次性把旧内容 id 改写成 hash：articles.id 与 submissions 的引用必须一起改，' +
+      '跑完即弃（schedules / article_tags 两张表 2026-09 已删除，这一步随之去掉）。' +
+      'submissions.theme 只有这一处写。',
   },
   {
     audit: '#9',

@@ -31,7 +31,7 @@ import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
 import type { ArticleWordItem, ArticleWordStress, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
-import { articles, schedules } from '../../apps/server/src/db/schema'
+import { articles } from '../../apps/server/src/db/schema'
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
 import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
@@ -422,7 +422,6 @@ const ADMIN = ensureAdminCredentials()
 const ID_HEX = '[0-9a-f]{' + ARTICLE_ID_LENGTH + '}'
 const RE_ARTICLE = new RegExp('^/api/articles/(' + ID_HEX + ')$')
 const RE_AUDIO = new RegExp('^/api/audio/(' + ID_HEX + ')\\.mp3$')
-const RE_SCHEDULE = new RegExp('^/api/articles/(' + ID_HEX + ')/schedule$')
 
 /* ================================================================
  * HTTP 小工具
@@ -1212,10 +1211,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [row] = await d.select().from(articles).where(eq(articles.id, id)).limit(1)
     if (!row) return fail(res, '句库没有这一条', 404)
     const c = await contentOf(S.env, id)
-    const sched = await d
-      .select({ date: schedules.date })
-      .from(schedules)
-      .where(eq(schedules.articleId, id))
+    /**
+     * ⚠️ 这里原来会查"这一句被排在哪些天"（`schedules` 表）。
+     *    2026-09 排期表整体删除：句子归哪天由 `/api/user/today` 的 24 小时窗口决定，
+     *    所以**没有"排期"这个字段可给了** —— 前端也不再显示它。
+     */
+    const sched: Array<{ date: string }> = []
     return ok(res, {
       id: row.id,
       isActive: row.isActive,
@@ -1250,7 +1251,6 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       /** ⭐ 词间连读标注（与 words 一一对应；空串 = 不连）—— 详情页在两行之间显示它 */
       links: Array.isArray(c?.links) ? c.links : [],
       contentOnDisk: Boolean(c),
-      scheduledDates: sched.map((s) => s.date).sort(),
       /**
        * ⚠️ 常量跟着详情一起下发：**直接打开 / 刷新详情页**时不会先经过列表接口，
        *    没有它们页面会把档位显示成「未定」（前端不硬编码映射与公式，见 app.js）。
@@ -1339,61 +1339,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   /**
-   * ---- 排期：把某一句**钉到某天** ----
+   * ⚠️⚠️ 这里**曾经有「排期」接口**（`POST /api/articles/:id/schedule`，把某一句钉到某天），
+   *    2026-09 删除（用户定：**删掉 schedules 表与接口，统一用 today 接口**）。
    *
-   * ⚠️ 为什么这个动作必须留在这里：旧 CLI（tools/jushuo-admin.ts）被删掉后，
-   *    它是全仓库**唯一**能明确指定「某天读哪句」的入口 ——
-   *    scheduleAhead 只会按天号自动轮转（routes 里顺带跑），
-   *    没有它，运营就没法换某一天的题。
-   *
-   * ⚠️ 两条沿用旧 CLI 的护栏，都不是洁癖：
-   *    ① 草稿不能排期 —— 排上去等于那天用户读到一句没上线的句子（而排期表是硬引用）；
-   *    ② 同一天已排别的句子时，必须显式 force 覆盖 ——
-   *       悄悄改掉别人排好的档期是**用户可见**的事故（那天所有人读到的句子变了）。
+   *    它是那次删除里最"顺手"的一块：句子归哪一天不再需要人指定 ——
+   *    `/api/user/today` **按 24 小时窗口 + 这个用户的难度档**推荐，
+   *    所以"运营排期"这个动作连同它的全部约束（草稿不能排、一天一句、替换要报告）
+   *    一起消失了。admin 现在只做"句子"这一件事。
    */
-  const sched = RE_SCHEDULE.exec(path)
-  if (sched && req.method === 'POST') {
-    const id = sched[1]!
-    const b = await body(req)
-    const date = resolveDate(String(b.date ?? ''))
-    if (!date) return fail(res, '日期要写成 YYYY-MM-DD（或 today / tomorrow / +N）')
-
-    const d = await dbOf(S.env)
-    const [row] = await d
-      .select({ isActive: articles.isActive })
-      .from(articles)
-      .where(eq(articles.id, id))
-      .limit(1)
-    if (!row) return fail(res, '句库没有这一条', 404)
-    /**
-     * ⚠️ 判据是 **isActive** —— 发布状态现在**只有这一列**（content_status 已删，
-     *    迁移 0033）。它以前是 is_active 的同义副本，两列各有互相矛盾的 DB 默认值，
-     *    灌库路径插出来的行据此会判成「草稿」，拒绝一条明明在线的句子。
-     */
-    if (!row.isActive) {
-      return fail(res, '这条还是草稿（未发布），先发布再排期')
-    }
-
-    const [existing] = await d.select().from(schedules).where(eq(schedules.date, date)).limit(1)
-    if (existing && existing.articleId !== id && b.force !== true) {
-      return fail(
-        res,
-        date + ' 已经排了 ' + existing.articleId.slice(0, 12) + '…（' + existing.source + '）。要换请点「覆盖」',
-        409,
-      )
-    }
-
-    await d
-      .insert(schedules)
-      .values({ date, articleId: id, source: 'scheduled' })
-      .onDuplicateKeyUpdate({ set: { articleId: id, source: 'scheduled' } })
-
-    return ok(res, {
-      date,
-      articleId: id,
-      replaced: existing && existing.articleId !== id ? existing.articleId : null,
-    })
-  }
 
   /**
    * ⚠️ 这里**曾经有「重做标准音」接口**（POST /api/articles/:id/audio）——

@@ -482,12 +482,19 @@ Page({
 
   /**
    * 排名卡**整卡可点** → 竞技场（看这一句的完整榜单）。
-   * ⚠️ 竞技场按**日期**取当天的场次（见 pages/arena 的 onLoad），而这一次挑战属于哪一天
-   *    只有服务端知道（scheduleDate）—— 客户端不拿本地时钟凑，拿不到就退回今天。
+   *
+   * ⚠️ 改成**按句子**寻址（2026-09：删掉 schedules 表之后，竞技场不再按日期取场次）——
+   *    竞技场本来就是"这一句的榜"（见 shared/types/api.ts 里 ArenaDetail 的说明），
+   *    日期只是它当初的展示容器。按句子寻址的两个好处：
+   *    · 不需要服务端告诉我们"这次挑战算哪一天"（那件事只有服务端知道，客户端得猜）；
+   *    · 同一句在不同天的成绩本来就该在同一张榜上。
    */
   onOpenArena() {
     // ⚠️ 竞技场是**公开页**（陌生人也能看榜），走 goPublic
-    goPublic(ROUTES.arena.url + '?date=' + encodeURIComponent(this.scheduleDate || today()))
+    // ⚠️ 句子 id 在 `this.data.result` 上（这一页是"某一次提交的结果"，不是某一句）
+    const articleId = this.data.result?.articleId
+    if (!articleId) return
+    goPublic(ROUTES.arena.url + '?article=' + encodeURIComponent(articleId))
   },
 
   /**

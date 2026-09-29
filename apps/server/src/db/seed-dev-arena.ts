@@ -116,18 +116,22 @@ async function main(): Promise<void> {
   const { db } = await import('./index')
   const { articles, submissions, users } = await import('./schema')
   const { attemptIdOf, makeAudioKey, makeSubmissionId } = await import('../services/audio-key')
-  const { ensureSchedules } = await import('../services/schedules')
 
   const start = today()
   const dates: string[] = []
   for (let i = LOOKBACK_DAYS - 1; i >= 0; i--) dates.push(addDays(start, -i))
 
-  // ⭐ 排期交给服务端自己补：没有排期的日子按天号取模自动补一行，与线上同一个函数。
-  const sched = await ensureSchedules(dates)
-  const articleOf = new Map<string, string>()
-  for (const [date, row] of sched) articleOf.set(date, row.article.id)
-
+  /**
+   * ⚠️ 这里原来调 `ensureSchedules(dates)` 让**服务端的排期逻辑**决定"哪一天读哪一句"。
+   *    排期表已删（2026-09）⇒ 造数据脚本自己按天号取模选句子即可 ——
+   *    它只是"造点历史成绩"，不需要和线上推荐口径一致（那由 /api/user/today 负责）。
+   */
   const allArticles = await db.select({ id: articles.id }).from(articles)
+  const articleOf = new Map<string, string>()
+  dates.forEach((date, i) => {
+    const a = allArticles[i % Math.max(1, allArticles.length)]
+    if (a) articleOf.set(date, a.id)
+  })
   if (allArticles.length === 0) throw new Error('句库是空的 —— 先跑 pnpm seed 灌种子文章')
 
   console.log('铺 ' + dates.length + ' 天（' + dates[0] + ' … ' + dates[dates.length - 1] + '）')

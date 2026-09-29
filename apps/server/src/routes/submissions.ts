@@ -18,7 +18,6 @@ import { getBestExcluding, getLeaderboardAround, getRank } from '../services/lea
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { describe } from '../services/submission-view'
 import { resolveScheduleDate } from '../services/schedule-date'
-import { ensureSchedules } from '../services/schedules'
 import type { Variables } from '../middleware/auth'
 
 export const submissionsRoutes = new Hono<{ Variables: Variables }>()
@@ -174,10 +173,14 @@ submissionsRoutes.post('/', async (c) => {
     .limit(1)
   if (!article) return c.json({ ok: false, error: '文章不存在' }, 404)
 
-  // ⭐ 确保这一天的挑战确实存在 —— 提交是「针对某一天的挑战」的一次参与，
-  //    那一天的挑战行不能在数据上缺席（否则这一天只有成绩、没有题目）。
-  //    ⚠️ 幂等（INSERT IGNORE），代价是一条按主键的插入。
-  await ensureSchedules([scheduleDate])
+  /**
+   * ⚠️ 这里原来会 `ensureSchedules([scheduleDate])` —— 给这一天补一行**排期**
+   *    （"哪一天读哪一句"是提前排好的数据）。2026-09 排期表整体删除：
+   *    句子的归属由 `/api/user/today` 的 24 小时窗口决定，
+   *    不再需要"这一天必须先有一条排期行"。
+   * ⚠️ `scheduleDate` 本身**留着**：它是"这次提交算哪一天"的归属信息
+   *    （历史挑战要归到那一天，否则昨天那张卡的数字会变）。
+   */
 
   // ---- 4. 分配序列号 ----
   const seq = await nextSeq(userId, articleId)

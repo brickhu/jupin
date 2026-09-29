@@ -350,59 +350,21 @@ export const articles = mysqlTable('articles', {
 })
 
 /**
- * ⭐⭐ 每日排期 —— 「哪一天展示哪一句」。
+ * ⚠️⚠️ 这里**曾经有一张 `schedules` 表**（date / article_id / source / created_at），
+ *    2026-09 删除（用户定：**删掉 schedules 表与接口，统一用 today 接口**）。
  *
- * ⚠️⚠️ **它不是竞技单位，只是一个按日组织的展示层 / 推荐层。**
+ *    它编码的是"**哪一天读哪一句是提前排好的数据**"：按天号轮转 + 运营指定 + 预排两周。
+ *    替代它的是 `/api/user/today`：
+ *      · **以 24 小时为单位**（`users.today_article_id` + `users.today_assigned_at`）
+ *        —— 一个用户在一个窗口里固定读同一句；
+ *      · **按这个用户的难度档**推荐（services/recommend.ts）。
+ *    ⇒ "日期"因此不再是内容的一部分，只是**归属信息**（这次提交算哪一天，
+ *      见 services/schedule-date.ts）—— 所以 `submissions.schedule_date` 那一列留着。
  *
- *    竞技数据的单位永远是**句子**（见 services/leaderboard.ts）：
- *    排名、参与人数、最高分、我的最好成绩，全部按 article_id 查。
- *    这一张表只回答「今天首页上该出现哪一句」，答完就没它的事了。
- *
- *    ⚠️ 所以它**不能叫 challenges**。叫 challenges 会让人以为
- *       「某一天的挑战」是个带成绩、带名次的东西 —— 于是统计很自然就会
- *       被挂到日期上，而这个产品里那件事从来没有成立过。
- *       名字会引导实现，起错了名字，错的就是设计。
- *
- * ⚠️⚠️ 为什么它必须和 articles 分开，而不是在句子上挂一个 publish_date：
- *
- *   ① **句子是可复用的内容，挑战是一次排期。** 两者是不同生命周期的东西：
- *      句子会被反复读到（池子只有几句，按天轮转），
- *      排期则是「2026-11-24 这天用哪一句」这一次决定。
- *      把日期写在句子上，等于让内容本身携带了一个只能有一次的排期 ——
- *      公开库里 publish_date 上加 UNIQUE 就是这个矛盾的直接证据：
- *      同一句排第二次就会撞唯一键。
- *
- *   ② **历史那几天的题目必须钉死**。没有这张表，「今天用哪一句」只能靠
- *      「拿天号对池子取模」在每次查询时现算 —— 而池子一旦增删句子，
- *      **历史那几天的题目会一起变**，昨天读过的句子今天就变成另一句了。
- *      落成行之后，历史是钉死的。
- *
- *      ⚠️ 这里的措辞**曾经写成「统计和排行是按天算的」** —— 那是旧址：
- *      竞技口径后来整体改成了**按句子**（排名 / 参与人数 / 最高分 / 我的名次
- *      一律 article_id，见 services/leaderboard.ts），
- *      这张表只负责「那天首页展示哪一句」。
- *
- *   ③ 将来要给挑战加东西（运营标题、是否开放、结束时间），
- *      有地方可加，不用往句子上堆。
- *
- * ⚠️ 没有排期的日子**按天号轮转自动补一行**（source='rotation'），
- *    所以「今天没题」这件事在数据上不可能发生。
+ *    ⚠️ 被这张表一起带走的分支（别在别处再长回来）：
+ *      预排两周（scheduleAhead）· 运营排期（admin 的排期面板）·
+ *      "回到那一天看那一场"（GET /api/schedules/:date）· `isScheduled` 字段。
  */
-export const schedules = mysqlTable('schedules', {
-  /** 展期 'YYYY-MM-DD'（北京时间）—— 一天一条，所以直接做主键 */
-  date: varchar('date', { length: 10 }).primaryKey(),
-  /** 那天展示哪一句 */
-  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
-  /**
-   * scheduled = 运营明确排的；rotation = 按天号自动轮的。
-   * ⚠️ 存下来是为了**能区分**：运营漏排和自动补上，排查时要一眼看出来。
-   */
-  source: varchar('source', { length: 16 }).notNull().default('rotation'),
-  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-}, (t) => [
-  // 「这个句子被排在哪些天」—— 排期去重、内容下线前的引用检查都要走它
-  index('schedules_article_idx').on(t.articleId),
-])
 
 /**
  * ⚠️⚠️ 这里**曾经有一张 `article_tags` 表**（(article_id, tag) 两列），2026-09 删除。
