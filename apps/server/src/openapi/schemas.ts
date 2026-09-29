@@ -2,6 +2,12 @@ import { z } from '@hono/zod-openapi'
 
 import type {
   ArticleCard,
+  ChallengeRecord,
+  ChallengesResponse,
+  EnergyLedgerItem,
+  EnergyResponse,
+  ParticipationRecord,
+  ParticipationsResponse,
   LatestCardsResponse,
   LeaderboardRow,
   ScoreDimensions,
@@ -132,6 +138,84 @@ export const TodayResponseSchema = okEnvelope(
       myAttempts: z.number().int(),
     })
     .openapi('TodayResponse'),
+)
+
+/* ---------- 我的：挑战记录 / 参与场次 / 能量 ---------- */
+
+/** 挑战记录里的逐词结果（⚠️ `dp` 在 shared 里是 string，不是五值联合） */
+export const ChallengeWordScoreSchema = z
+  .object({ word: z.string(), score: z.number(), dp: z.string() })
+  .openapi('ChallengeWordScore')
+
+/** 用户录音的可播地址（与 AudioRef 同构，字段名叫 src） */
+export const SubmissionAudioRefSchema = z
+  .object({ kind: z.enum(['cloud', 'http']), src: z.string() })
+  .openapi('SubmissionAudioRef')
+
+/** ⭐ 「我的挑战」一条（一次提交一行） */
+export const ChallengeRecordSchema = z
+  .object({
+    submissionId: z.string(),
+    articleId: z.string(),
+    scheduleDate: z.string().nullable(),
+    score: z.number().nullable(),
+    isConquered: z.boolean(),
+    status: z.string(),
+    aiComment: z.string().nullable(),
+    text: z.string(),
+    wordScores: z.array(ChallengeWordScoreSchema).nullable(),
+    theme: ArticleThemeSchema.nullable(),
+    at: z.string(),
+  })
+  .openapi('ChallengeRecord')
+
+/** ⭐ 「参与场次」一条（一句一行 = 一个竞技场） */
+export const ParticipationRecordSchema = z
+  .object({
+    articleId: z.string(),
+    text: z.string(),
+    words: z.number().int(),
+    attempts: z.number().int(),
+    bestScore: z.number(),
+    worstScore: z.number(),
+    rank: z.number().int(),
+    participantCount: z.number().int(),
+    lastAt: z.string(),
+    lastScheduleDate: z.string(),
+    theme: ArticleThemeSchema.nullable(),
+  })
+  .openapi('ParticipationRecord')
+
+export const ChallengeRecordListSchema = okEnvelope(
+  z.object({ items: z.array(ChallengeRecordSchema) }).openapi('ChallengesResponse'),
+)
+
+export const ParticipationRecordListSchema = okEnvelope(
+  z.object({ items: z.array(ParticipationRecordSchema) }).openapi('ParticipationsResponse'),
+)
+
+/** 能量流水一条 */
+export const EnergyLedgerItemSchema = z
+  .object({
+    id: z.number().int(),
+    delta: z.number().int(),
+    reason: z.string(),
+    refType: z.string(),
+    refId: z.string(),
+    createdAt: z.string(),
+  })
+  .openapi('EnergyLedgerItem')
+
+export const EnergyResponseSchema = okEnvelope(
+  z
+    .object({
+      energy: z.number(),
+      perChallenge: z.number(),
+      dailyFloor: z.number(),
+      items: z.array(EnergyLedgerItemSchema),
+      nextBefore: z.number().nullable(),
+    })
+    .openapi('EnergyResponse'),
 )
 
 /* ---------- 提交检测（核心链路） ---------- */
@@ -290,6 +374,18 @@ type _DimsParity = Equal<z.infer<typeof ScoreDimensionsSchema>, ScoreDimensions>
 type _PartsParity = Equal<z.infer<typeof ScorePartsSchema>, ScoreParts>
 type _StreakParity = Equal<z.infer<typeof StreakDeltaSchema>, StreakDelta>
 type _RowParity = Equal<z.infer<typeof LeaderboardRowSchema>, LeaderboardRow>
+type _ChallengeParity = Equal<z.infer<typeof ChallengeRecordSchema>, ChallengeRecord>
+type _ChallengesParity = Equal<
+  z.infer<typeof ChallengeRecordListSchema>['data'],
+  ChallengesResponse
+>
+type _ParticipationParity = Equal<z.infer<typeof ParticipationRecordSchema>, ParticipationRecord>
+type _ParticipationsParity = Equal<
+  z.infer<typeof ParticipationRecordListSchema>['data'],
+  ParticipationsResponse
+>
+type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
+type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -304,5 +400,11 @@ const _parityChecks: [
   _PartsParity,
   _StreakParity,
   _RowParity,
-] = [true, true, true, true, true, true, true, true, true, true]
+  _ChallengeParity,
+  _ChallengesParity,
+  _ParticipationParity,
+  _ParticipationsParity,
+  _LedgerParity,
+  _EnergyParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

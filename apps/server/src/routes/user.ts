@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, participations, submissions, users } from '../db/schema'
@@ -22,8 +22,15 @@ import type {
   EnergyLedgerItem,
 } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import {
+  ChallengeRecordListSchema,
+  EnergyResponseSchema,
+  errorResponse,
+  ParticipationRecordListSchema,
+} from '../openapi/schemas'
 
-export const userRoutes = new Hono<{ Variables: Variables }>()
+export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
 /**
  * ⭐ 「我的挑战」—— 这个用户**所有的挑战记录**，按时间倒序。
@@ -35,7 +42,21 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
  * ⚠️ 句子原文要一起返回：列表里只说「第 3 号文章 87.3 分」用户认不出是哪句，
  *    而客户端逐条去拉正文会是 N 次请求。
  */
-userRoutes.get('/challenges', async (c) => {
+const challengesRoute = createRoute({
+  method: 'get',
+  path: '/challenges',
+  tags: ['我的'],
+  summary: '我的挑战记录（一次提交一行，倒序）',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ChallengeRecordListSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(challengesRoute, async (c) => {
   const userId = c.get('userId')
 
   const rows = await db
@@ -86,7 +107,7 @@ userRoutes.get('/challenges', async (c) => {
     }),
   )
 
-  return c.json({ ok: true, data: { items } })
+  return c.json({ ok: true, data: { items } }, 200)
 })
 
 /**
@@ -234,7 +255,21 @@ userRoutes.get('/article-records', async (c) => {
  *    不值得为它写一条复杂的窗口函数 SQL。
  * ⚠️ score 是 DECIMAL，max/min 读回来是**字符串**，出去一律 Number（见 schema）。
  */
-userRoutes.get('/participations', async (c) => {
+const participationsRoute = createRoute({
+  method: 'get',
+  path: '/participations',
+  tags: ['我的'],
+  summary: '我参与过的场次（一句一行 = 一个竞技场）',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ParticipationRecordListSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(participationsRoute, async (c) => {
   const userId = c.get('userId')
 
   /**
@@ -303,7 +338,7 @@ userRoutes.get('/participations', async (c) => {
       }),
   )
 
-  return c.json({ ok: true, data: { items } })
+  return c.json({ ok: true, data: { items } }, 200)
 })
 
 /**
@@ -460,7 +495,22 @@ userRoutes.get('/streak-record', async (c) => {
  *    流水只会往前长，offset 分页在「一边翻页一边有新记录」时会漏条/重条。
  * ⚠️ limit 不信任端侧：夹在 5–100。
  */
-userRoutes.get('/energy', async (c) => {
+const energyRoute = createRoute({
+  method: 'get',
+  path: '/energy',
+  tags: ['我的'],
+  summary: '我的能量余额与流水（分页）',
+  security: [{ userToken: [] }],
+  request: { query: z.object({ limit: z.string().optional(), before: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: EnergyResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(energyRoute, async (c) => {
   const userId = c.get('userId')
 
   const limitRaw = Number(c.req.query('limit'))
@@ -496,7 +546,7 @@ userRoutes.get('/energy', async (c) => {
       /** ⭐ 只有「刚好取满一页」时才可能还有下一页 —— 少取一条就说明到底了 */
       nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
     },
-  })
+    }, 200)
 })
 
 /**
