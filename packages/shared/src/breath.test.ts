@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { breathGroupCount, breathGroupsOf, syllableCount, syllablesPerBreathGroup } from './breath'
+import {
+  LENGTH_CHAR_STEPS,
+  breathGroupCount,
+  breathGroupsOf,
+  lengthLevelOf,
+  syllableCount,
+  syllablesPerBreathGroup,
+} from './breath'
 
 /**
  * ⚠️ 这个文件守的是**"句子长度"那条判据的口径**（用户 2026-09 的意见：
@@ -77,5 +84,47 @@ describe('音节数（有词表时用词表，没有就粗估）', () => {
 
   it('大小写与标点不影响查表', () => {
     expect(syllableCount('EVERYTHING, should', words)).toBe(3)
+  })
+})
+
+/**
+ * ⚠️ "句子长度"这一维**由代码定档**（用户 2026-09："直接按照句子长度算最好"）。
+ *    这里把分界点钉死 —— 改了阈值就等于改了判据，必须是有意为之。
+ */
+describe('句子长度定档（字符数）', () => {
+  it('分界点：50 / 90 / 140 / 190 的下界与上界', () => {
+    expect(LENGTH_CHAR_STEPS).toEqual([50, 90, 140, 190])
+    const at = (n: number) => lengthLevelOf('x'.repeat(n))
+    expect(at(1)).toBe(1)
+    expect(at(50)).toBe(1)
+    expect(at(51)).toBe(2)
+    expect(at(90)).toBe(2)
+    expect(at(91)).toBe(3)
+    expect(at(140)).toBe(3)
+    expect(at(141)).toBe(4)
+    expect(at(190)).toBe(4)
+    expect(at(191)).toBe(5)
+    expect(at(210)).toBe(5)
+  })
+
+  it('空文本是 L1（不报错）', () => {
+    expect(lengthLevelOf('')).toBe(1)
+  })
+
+  it('用库里真实句子对一眼（长度 → 档）', () => {
+    expect(lengthLevelOf('Simplicity is the ultimate sophistication.')).toBe(1) // 42
+    expect(lengthLevelOf('Everything should be made as simple as possible, but not simpler.')).toBe(2) // 65
+    expect(lengthLevelOf('The only thing we have to fear is fear itself, nameless, unreasoning, unjustified terror which paralyzes needed efforts.')).toBe(3) // 120
+    // ⚠️ 这两句都是**库里真实存在**的句子（照抄，别手写近似句 —— 长度敏感）
+    expect(
+      lengthLevelOf(
+        'The phenomenology of perception suggests that consciousness is not a passive registry of stimuli but an anticipatory construction of the world.',
+      ),
+    ).toBe(4) // 143
+    expect(
+      lengthLevelOf(
+        "Whether a judiciary's interpretive latitude constitutes a legitimate exercise of discretion or a surreptitious usurpation of legislative authority remains theoretically contested.",
+      ),
+    ).toBe(4) // 179
   })
 })

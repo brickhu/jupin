@@ -27,14 +27,12 @@
  */
 
 import {
-  breathGroupCount,
   difficultyFromScores,
+  lengthLevelOf,
   normalizeLevel,
   normalizeScores,
   normalizeTags,
   splitParagraphs,
-  syllableCount,
-  syllablesPerBreathGroup,
 } from '@jushuo/shared'
 import type { ArticleLevel, ArticleWordItem, DifficultyScores } from '@jushuo/shared'
 import { buildWordInfo } from './word-info'
@@ -157,15 +155,13 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
    ⚠️ **不算难点**：功能词 the / this / that 的 /ð/（英语句句都有，是基本功）、句子短、
      主题是名言哲理、单个的 /r/ 或 /l/（只有两者对立时才按 C 算）。
 
-  ③ 句子长度（权重 2）——按**呼吸群**判（不是数词数）
-     ⚠️ **呼吸群 = 一口气能读完的一段**（按停顿标点切：, ; : . ! ? … — –）。
-        我给你每一段时**已经把「音节数 / 呼吸群数 / 各群拍数」算好了**（就在段号后面），直接用。
-     L1 音节 ≤10　　L2 11–20　　L3 21–35　　L4 36–55　　L5 >55
-     ⚠️ **两个修正**（这才是"朗读难度"，不是"总量"）：
-        · **某一个呼吸群超过 ~15 拍** ⇒ 至少 L3（一口气读不完，比"总量大但能分口气"更难受）
-        · **呼吸群数 ≥3 且音节 >20** ⇒ 至少 L4（反复起停，节奏压力大）
-     ⚠️ 反面例子（别被词数骗了）：16 词 / 48 音节 / **1 个呼吸群** 的句子，
-        词数看着"中长"、其实是最难的那种（一口气 48 拍）—— 这正是不再按词数的理由。
+  ③ 句子长度（权重 2）——**按字符串长度判**（不是词数、也不用数呼吸群）
+     ⚠️ 我给你每一段时**已经把长度算好写在段号后面**（「长度 N 字符」），直接用那个数。
+     ⚠️ 字符串长度 = 这段正文的字符数（含空格与标点）—— 它是**可数的事实**，不是估计。
+        L1 ≤50　　L2 51–90　　L3 91–140　　L4 141–190　　L5 >190
+     ⚠️ 为什么不再按词数（用户 2026-09 的意见）：朗读的难不在"几个词"，而在"多长"。
+        真实对照：16 词 / 153 字符 / 1 个呼吸群的句子，一口气要读 48 拍，
+        按词数却落在"短句"档 —— 而按长度它是 L4。
 
 【定档锚点】⭐ 判完之后把你的结果和下面这几句**比一比** —— 它们是**基准**：
 如果三个分算出来的档位和这张表不一致，就**回头调三个分**（**以这张表为准**，
@@ -328,21 +324,17 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
 
   // 带上段号再交给模型 —— 回来的 index 是「对回哪一段」的唯一依据
   /**
-   * ⚠️ 段号后**附带算好的三个数**（音节数 / 呼吸群数 / 各群拍数）——
-   *    它们是"句子长度"那条判据的**输入**，也是回来的 index 之外唯一的事实。
-   *
-   * ⚠️⚠️ 为什么要喂给它（用户 2026-09 的意见："用单词数量不合理"）：
-   *    音节来自 CMU 词典的逐词音节（`word-info.ts`），是**可数的事实**；
-   *    让模型自己数会数错，而且它看不到音节。喂给它 ⇒ 它变成"照表定档"，
-   *    我这边还能用同一份函数复核（`packages/shared/src/breath.ts`，同一口径）。
+   * ⚠️ 段号后附上**长度**（字符数）与它按同一映射对应的档 ——
+   *    这是"句子长度"那条判据的输入：长度是**可数的事实**（`text.length`），
+   *    但**档位仍由模型输出**（用户 2026-09："统一由模型判，输出"）。
+   *    ⚠️ 模型给的值若与长度不符（判错/漏填），由 `normalizeScores` 那侧兜住 ——
+   *       判据的**唯一实现**在 `packages/shared/src/breath.ts` 的 `lengthLevelOf`。
    */
   const numbered = paragraphs
     .map((p, i) => {
-      const info = buildWordInfo({ text: p })
-      const per = syllablesPerBreathGroup(p, info.words)
+      const n = p.length
       return (
-        '【第 ' + (i + 1) + ' 段】（音节 ' + syllableCount(p, info.words) +
-        ' · 呼吸群 ' + breathGroupCount(p) + ' · 各群拍数 ' + per.join('/') + '）' + p
+        '【第 ' + (i + 1) + ' 段】（长度 ' + n + ' 字符 · 对应 L' + lengthLevelOf(p) + '）' + p
       )
     })
     .join('\n\n')
