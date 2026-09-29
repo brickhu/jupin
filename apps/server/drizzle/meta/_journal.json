@@ -309,6 +309,13 @@
       "when": 1790649600183,
       "tag": "0044_true_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1790650672481,
+      "tag": "0045_curious_logan",
+      "breakpoints": true
     }
   ]
 }

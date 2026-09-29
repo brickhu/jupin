@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { addDays, dayNumber, today } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, schedules } from '../db/schema'
+import { hasContent } from './content'
 
 /**
  * ⭐ 每日挑战 —— 「哪一天读哪一句」。
@@ -118,7 +119,7 @@ export async function scheduleAhead(days = 14, from: string = today()): Promise<
    *       这一行的正文是不是空的（可能是 admin 建了草稿还没填正文）。
    * ⚠️ 判据用**手上这一行**（`active` 就是刚查出来的），不为每条再查一次库。
    */
-  const pool = active.filter((a) => a.content !== null)
+  const pool = active.filter((a) => hasContent(a))
   if (pool.length !== active.length) {
     console.warn(
       '[schedules] ' + (active.length - pool.length) + ' 条句子已上线但正文为空，' +

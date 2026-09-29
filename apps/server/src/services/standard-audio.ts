@@ -6,7 +6,7 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
 import { getStorage } from '../storage'
-import { contentPathOf, readStaticFile, resolveStaticRoot } from './content'
+import { hasContent, readStaticFile, resolveStaticRoot } from './content'
 
 /**
  * ⭐ 标准音进对象存储 —— 内容侧唯一的「写」。
@@ -176,7 +176,7 @@ export async function seedStandardAudio(
      * ⚠️ 2026-09：判据从"仓库里有没有那个 json 文件"改成"库里这一行有没有正文"
      *    （正文已经搬进 `articles.content`，见 services/content.ts）。
      */
-    if (row.content === null) continue
+    if (!hasContent(row)) continue
 
     const localFull = resolve(root, KEY_PREFIX, `${row.id}.mp3`)
     if (!existsSync(localFull)) {

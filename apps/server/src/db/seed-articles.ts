@@ -4,7 +4,15 @@ import { join, resolve } from 'node:path'
 
 import { and, eq, isNull } from 'drizzle-orm'
 import { themeFromHash } from '@jushuo/shared'
-import type { ArticleContent } from '@jushuo/shared'
+import {
+  difficultyFromScores,
+  normalizeScores,
+  normalizeTags,
+  type ArticleContent,
+  type ArticleLevel,
+  type ArticleWordItem,
+  type DifficultyScores,
+} from '@jushuo/shared'
 
 import { resolveStaticRoot } from '../services/content'
 
@@ -105,6 +113,39 @@ export async function reindexFromContent(): Promise<{ reindexed: number; stillEm
  *    等所有环境的库都填满之后，这个函数和那些文件一起删
  *    （见 plan C12 的 C3/C4）。
  */
+/**
+ * ⭐ **正文 → 各列**的映射，只有这一处。
+ *
+ * ⚠️ 为什么要把这件事收成函数：写入点有俩（灌库与回填），而它们必须写**同一组列** ——
+ *    两份映射一旦分叉，就会出现"灌库进来的句子有译文、回填进来的没有"这类静默缺失。
+ * ⚠️ 刻意**不写 `id`**：行主键就是它（这也是这次拆列要消掉的重复）。
+ */
+export function contentColumnsOf(c: ArticleContent): {
+  text: string
+  translation: string
+  words: ArticleWordItem[]
+  links: string[]
+  scores: DifficultyScores | null
+  challenge: string | null
+  advice: string | null
+  tags: string[]
+  difficulty: ArticleLevel | null
+} {
+  const scores = normalizeScores(c.scores) ?? null
+  return {
+    text: c.text,
+    translation: c.translation ?? '',
+    words: c.words ?? [],
+    links: c.links ?? [],
+    scores,
+    challenge: c.challenge ?? null,
+    advice: c.advice ?? null,
+    tags: normalizeTags(c.tags),
+    // ⚠️ 难度**由 scores 算**，不取内容里那个字段（注释与实现曾经相反的那一处）
+    difficulty: scores ? difficultyFromScores(scores) : null,
+  }
+}
+
 export async function backfillMissingContent(): Promise<{ filled: number; stillEmpty: number }> {
   const { db } = await import('./index')
   const { articles } = await import('./schema')
@@ -114,15 +155,15 @@ export async function backfillMissingContent(): Promise<{ filled: number; stillE
   let filled = 0
   for (const a of list) {
     const [row] = await db
-      .select({ content: articles.content })
+      .select({ text: articles.text })
       .from(articles)
       .where(eq(articles.id, a.id))
       .limit(1)
-    if (!row || row.content !== null) continue
-    await db.update(articles).set({ content: a.content as never }).where(eq(articles.id, a.id))
+    if (!row || row.text !== null) continue
+    await db.update(articles).set(contentColumnsOf(a.content)).where(eq(articles.id, a.id))
     filled++
   }
-  const empty = await db.select({ id: articles.id }).from(articles).where(isNull(articles.content))
+  const empty = await db.select({ id: articles.id }).from(articles).where(isNull(articles.text))
   return { filled, stillEmpty: empty.length }
 }
 
@@ -155,7 +196,10 @@ export async function seedArticles(): Promise<number> {
       // ⚠️ ignore() 必须挂在 insert(table) 之后、values() 之前 —— 这是 drizzle 的链式位置
       .ignore()
       .values({
-        ...a,
+        // ⚠️ 显式列出来（不再 `...a`）—— 正文拆成列之后，"文件里的形状"与
+        //    "表里的形状"不再相同（文件里还有 id / difficulty，库里不存这两个副本）
+        id: a.id,
+        ...contentColumnsOf(a.content),
         theme: themeFromHash(a.id),
         isActive: true,
         publishedAt: new Date(),

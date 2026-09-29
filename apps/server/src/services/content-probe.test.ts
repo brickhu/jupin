@@ -91,17 +91,21 @@ describe('probeContentFiles —— 正文自检的盘上那一层', () => {
  */
 describe('hasContent —— 「这一行有正文吗」', () => {
   it('有正文 → true', () => {
-    expect(hasContent({ content: { id: 'a', text: 'hi' } })).toBe(true)
+    expect(hasContent({ text: 'hi' })).toBe(true)
   })
 
   it('⚠️ null / undefined 都是"没有"（NULL 与"这份内容不存在"同义）', () => {
-    expect(hasContent({ content: null })).toBe(false)
-    expect(hasContent({ content: undefined })).toBe(false)
+    expect(hasContent({ text: null })).toBe(false)
+    expect(hasContent({ text: undefined })).toBe(false)
   })
 
-  it('⚠️ 合法的空对象也算"有"：判据是"这一列填过没有"，不是"里面字段齐不齐"', () => {
-    // 起因：如果这里写 `Boolean(row.content)`，一个 `{}`（admin 建了草稿、正文还没填内容）
-    // 会被判成"没有"而被踢出池子 —— 而真正该拦它的是内容校验，不是这条判据。
-    expect(hasContent({ content: {} })).toBe(true)
+  it('⚠️ 只有原文就算"有"：判据是"这道题有没有题面"，不是"字段齐不齐"', () => {
+    // 起因：拆列之后判据是 `text`（原文是这道题的根）。译文/词表/判据分可以后补，
+    // 但没有原文这一条就没法出题 —— 所以只有 text 也必须算"有"。
+    expect(hasContent({ text: 'Everything should be made…' })).toBe(true)
+  })
+
+  it('⚠️ 空串不算"有"（admin 建了草稿但还没写句子）', () => {
+    expect(hasContent({ text: '' })).toBe(false)
   })
 })

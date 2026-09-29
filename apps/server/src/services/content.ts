@@ -7,6 +7,8 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { eq } from 'drizzle-orm'
 
+import { normalizeLevel } from '@jushuo/shared'
+
 import { env } from '../env'
 
 /**
@@ -68,24 +70,52 @@ export function contentPathOf(articleId: string): string {
 /** 读取正文；任何失败都返回 null（调用方决定是 404 还是空参考文本） */
 export async function loadArticleContent(articleId: string): Promise<ArticleContent | null> {
   /**
-   * ⭐⭐ **正文住在库里**（`articles.content`）—— 2026-09 用户定的方向：内容只走 admin。
+   * ⭐⭐ **正文是 articles 表上的列**（2026-09 用户定：内容只走 admin，一列 = 一个事实）。
    *
-   * ⚠️ 这里以前是"按 id 推导出一个文件路径再读盘"（`content/articles/<id>.json`）。
-   *    那套的病是**同一份内容两个住址**：正文在 git 里、`is_active` 在库里，
-   *    于是"改不改得动"取决于本机仓库里那个文件在不在（admin 详情页会直接报
-   *    「正文不在本机仓库里，改不了」），而部署包里还得永远带着 content/。
-   *    ⇒ 现在库是唯一真相；`content/articles/*.json` 只剩"一次性导入"
-   *      （`pnpm --filter @jushuo/server content:import`，见 scripts/import-content-files.ts）。
+   * ⚠️ 这一列以前是**一整份 JSON**（`articles.content`，更早是仓库里的
+   *    `content/articles/<id>.json` 文件）。拆成列的理由：
+   *    · 一份 JSON 里混着"根数据"（text）、"派生值"（difficulty/tags）、
+   *      甚至"完全重复"（id）—— 谁是源说不清；
+   *    · 数据库看不见里面的字段（想按难度筛、给译文建索引都做不到）；
+   *    · 改一个字段要整份读改写 —— 并发下这是丢更新的经典形态。
    *
-   * ⚠️ `content` 为 NULL 与"文件不存在"同义：这份内容在这个环境里没有。
-   *    调用方按 null 处理（列表接口跳过、详情接口 404、轮转池剔除）。
+   * ⚠️ `id` **不在库里重复存**（行主键就是它）：这里的返回值要带上 `id`，
+   *    是因为 `ArticleContent` 是**组装后的形状**、下游（评分 / 客户端）要用它对齐。
+   *    判断"有没有正文"看的是 `text`（原文是这道题的根）。
    */
   const [row] = await db
-    .select({ content: articles.content })
+    .select({
+      id: articles.id,
+      text: articles.text,
+      translation: articles.translation,
+      words: articles.words,
+      links: articles.links,
+      difficulty: articles.difficulty,
+      scores: articles.scores,
+      challenge: articles.challenge,
+      advice: articles.advice,
+      tags: articles.tags,
+    })
     .from(articles)
     .where(eq(articles.id, articleId))
     .limit(1)
-  return row?.content ?? null
+
+  // ⚠️ 没有正文 = 没有原文。`text` 为空的行与"这份内容不存在"同义
+  //    （admin 建了草稿但还没写句子的情况）。
+  if (!row || row.text === null) return null
+
+  return {
+    id: row.id,
+    text: row.text,
+    translation: row.translation ?? '',
+    words: row.words ?? [],
+    ...(row.links ? { links: row.links } : {}),
+    ...(row.difficulty !== null ? { difficulty: normalizeLevel(row.difficulty) ?? undefined } : {}),
+    ...(row.scores ? { scores: row.scores } : {}),
+    ...(row.challenge ? { challenge: row.challenge } : {}),
+    ...(row.advice ? { advice: row.advice } : {}),
+    ...(row.tags ? { tags: row.tags } : {}),
+  }
 }
 
 /**
@@ -115,8 +145,9 @@ function resolveStaticPath(relPath: string): string | null {
  *    轮转池那里本来就把 articles 全查出来了，再为每条查一次库是白花往返。
  *    这个函数留给"只有 id、没有行"的调用方。
  */
-export function hasContent(row: { content: unknown }): boolean {
-  return row.content !== null && row.content !== undefined
+export function hasContent(row: { text: unknown }): boolean {
+  // ⚠️ 判据是 `text`（原文）：它是这道题的根 —— 没有原文，其余字段都没有意义
+  return row.text !== null && row.text !== undefined && row.text !== ''
 }
 
 /** 读一个静态资源文件；拿不到就是 null */

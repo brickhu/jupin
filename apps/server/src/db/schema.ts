@@ -5,8 +5,9 @@ import {
 import {
   ARTICLE_ID_LENGTH,
   SUBMISSION_ID_LENGTH,
-  type ArticleContent,
   type ArticleTheme,
+  type ArticleWordItem,
+  type DifficultyScores,
 } from '@jushuo/shared'
 
 /**
@@ -206,24 +207,57 @@ export const articles = mysqlTable('articles', {
    *    ⇒ 与其留一列等人去猜「它是不是有用」，不如删掉；要用时按 id 推导即可。
    */
   /**
-   * ⭐⭐⭐ **正文 —— 全站唯一的那份真相**（2026-09 用户定的方向：内容只走 admin）。
+   * ⭐⭐⭐ **正文 —— 拆成列存在 articles 上**（2026-09 用户定：内容只走 admin，且一列 = 一个事实）。
    *
-   * ⚠️⚠️ 这里以前是**文件**：`content/articles/<id>.json`（正文）+ 库里只有外框列。
-   *    那是**两个住址**：正文改不改得到取决于"本机仓库里那个文件在不在"
-   *    （admin 的详情页就会报「正文不在本机仓库里，改不了」），
-   *    而 `is_active`（上线状态）从第一天起就只在库里 —— 同一份内容一半在 git、一半在库。
-   *    ⇒ 现在正文整份进库，`content/articles/*.json` **只保留"一次性导入"这一条路**
-   *      （首次部署 / 换环境 / 备份），不再被运行时读取。
+   * ⚠️⚠️ 这里**曾经是一整列 JSON `content`**，已拆散（迁移 0045）。为什么不继续用 JSON：
+   *    · 一份 JSON 里混着"根数据"（text）与"派生值"（difficulty / tags）与"完全重复"（id）；
+   *    · 数据库看不见里面的字段 —— 想按难度筛、想给译文建全文索引都做不到；
+   *    · 改一个字段要整份读改写（并发下是丢更新的经典形态）。
+   *    ⇒ 现在一列一个事实，下面每一列都标了"它是源还是派生"。
    *
-   * ⚠️ 为什么是**一整列 JSON** 而不是拆成 text / translation / words… 各一列：
-   *    `ArticleContent` 的形状是**内容自己的形状**（words 带音标/音节/重音、links 是词间连读），
-   *    拆列等于把"内容长什么样"这件事再抄一遍到 schema 里 —— 加一个内容字段就要一次迁移。
-   *    真正需要走 SQL 筛选的两个字段（difficulty / tags）本来就已经有各自的派生索引。
-   *
-   * ⚠️ 可空：老行在回填之前是 NULL；`loadArticleContent()` 对 NULL 的处理是
-   *    "这份内容不存在"（与原来找不到文件同义）。
+   * ⚠️ 只把**结构化的列表**留成 JSON 列（words / links / scores / tags）：
+   *    它们是与这一行**一对多、按顺序**的东西，拆成表要么丢掉下标语义、
+   *    要么每次读都多一次 join，而实际查询从来只按 article_id 整取。
    */
-  content: json('content').$type<ArticleContent>(),
+  /**
+   * ⭐ **句子原文** —— 这道题的根，评分时的参考文本。
+   * ⚠️ 它是**一切派生值的源头**：词表由它切出、字数/判据由它算。
+   */
+  text: text('text'),
+  /** 译文（运营可改；与原文一样属于"内容本身"） */
+  translation: text('translation'),
+  /**
+   * ⭐ **三个判据分 [词汇, 发音, 长度]**（`DifficultyScores`）——
+   * ⚠️⚠️ **它才是难度的源**：`articles.difficulty` 由它算出来（`difficultyFromScores`）。
+   *    以前 schema 的注释把这件事写反了（说"真相在正文的 difficulty 里"），
+   *    而代码一直是"从 scores 算 difficulty" —— 注释与实现相反正是数据模型说不清的根源。
+   * ⚠️ 可空：老内容可能没评过分。缺就是缺，**不补默认分**。
+   */
+  scores: json('scores').$type<DifficultyScores>(),
+  /**
+   * ⭐ **挑战宣言**（给用户看的第一句，≤18 字，不带末尾标点）。
+   * ⚠️ 分享卡标题要用它（客户端拼「朗读挑战:」+ 它），所以字数上限是硬的。
+   */
+  challenge: varchar('challenge', { length: 64 }),
+  /** ⭐ **朗读建议**（给用户看的第二句，接在 challenge 后面） */
+  advice: text('advice'),
+  /**
+   * ⭐ **词表**（`ArticleWordItem[]`，朗读页逐词显示与点按的全部数据）——
+   * 结构与顺序都属于内容：`words[i]` 与正文里第 i 个词对齐。
+   */
+  words: json('words').$type<ArticleWordItem[]>(),
+  /**
+   * ⭐ **词间连读标注**，与 words 一一对应（`links[i]` 描述 words[i] 与 words[i+1] 之间；
+   * 空串 = 这里不连）。长度必须是 `words.length - 1`。
+   */
+  links: json('links').$type<string[]>(),
+  /**
+   * ⚠️ **过渡列，即将删除**：这里曾经是整份正文 JSON（`ArticleContent`）。
+   *    上面那 7 列就是把它拆散的产物（2026-09 用户定：一列 = 一个事实）。
+   *    分两步发：① 先加那 7 列（旧代码照跑）；② 下一次部署再删这一列。
+   *    ⇒ 现在这一列**没有任何读写方**，留着只是为了让第一个迁移别顺手把它删掉。
+   */
+  content: json('content'),
   /** 标准发音 MP3 地址 */
   standardAudio: varchar('standard_audio', { length: 512 }),
   /**
