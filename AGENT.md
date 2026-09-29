@@ -831,7 +831,7 @@ dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在
 读取统一走 `services/content.ts` 的 `loadArticleContent()`（4 条路由都只经过它）。
 
 > 演进经历（读老注释时会遇到这三个名字，别被绕）：
-> ① `content/articles/<id>.json`（仓库文件，路径由 id 推导）→
+> ① 仓库里的 `content/articles/*.json`（文件名 = id，路径由 id 推导）→
 > ② `articles.content` 一整列 JSON → ③ **拆成列**（现在）。
 > `contentPathOf()` 现在只用于**音频**路径推导，与正文无关。
 > `content/articles/*.json` 只剩"历史内容的导入源"这一个角色，待清理。
