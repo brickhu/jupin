@@ -44,7 +44,7 @@
     <!-- ⚠️ 有内容、但这次刷新失败：一行细提示 + 重试，**保留**已有记录 ——
          拉不到新数据不该把已经看到的内容也清掉（见 challenges.ts 的 load）。 -->
     <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mb-2.5" wx:if="{{error}}">
-      <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+      <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
       <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
     </view>
 

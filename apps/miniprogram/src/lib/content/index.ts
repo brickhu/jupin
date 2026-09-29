@@ -46,7 +46,3 @@ export async function fetchArticleContent(id: string): Promise<ArticleDetail> {
   return content
 }
 
-/** 编辑器 / 调试用：内容变了要能刷新 */
-export function clearContentCache(): void {
-  contentCache.clear()
-}

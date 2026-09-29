@@ -188,10 +188,6 @@ export function hasJoined(): boolean {
   return state.userInfo !== null
 }
 
-/** 服务端的「今天」还没拿到时，退回本机时区的今天（只用于首屏占位） */
-export function bestKnownDate(): string {
-  return state.serverDate ?? today()
-}
 
 /**
  * 订阅变更，返回取消订阅的函数。
@@ -490,8 +486,3 @@ export function reset(): void {
   commit(emptyState())
 }
 
-/** 缓存里的「今天」是否已经落后于真实今天（切后台过夜） */
-export function isStale(now = today()): boolean {
-  if (!state.serverDate) return true
-  return daysBetween(state.serverDate, now) > 0
-}

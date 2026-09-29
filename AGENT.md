@@ -161,6 +161,9 @@ fix(plan C3): prod 建库后迁移 0031 才跑得通
 ### 合并与发布
 
 `dev` / `main` 是 **push 即部署**（带 `AUTO_MIGRATE`，dev 还有 `SEED_ON_START`）—— 所以**合并即发布**。
+> ⚠️ 2026-09 实况：**CI 那条路当时产不出版本**（push 到 dev 没有新版本），
+> 期间一直用 `pnpm deploy:dev` 手动发布；这条待查（见 plan C9）。
+> ⚠️ 另外 `pnpm deploy:prod --reset` 已被**硬拦**（它会 DROP 生产库，而部署带 `--noConfirm`）。
 多个任务并行完成时：
 
 1. 先合「碰公共面」的那条（`shared` / 迁移）。
@@ -231,7 +234,7 @@ jupin/
 ├── AGENT.md  plan.md  prd.md  spec.md
 ├── package.json  pnpm-workspace.yaml  tsconfig.base.json
 ├── docker-compose.yml        # ⭐ 本地 MySQL + API
-├── .dockerignore             # ⚠️ 云托管按它裁剪上传；绝不能写 ! 否定规则
+├── .dockerignore             # ⚠️ 云托管按它裁剪上传；目录要写 dir/**（带点目录不会被自动展开）、绝不写 ! 否定规则
 ├── content/                  # 静态内容：articles/<id>.json · audio/<id>.mp3 + <id>/wN.mp3 · misc/
 ├── packages/shared/          # 唯一共享包：类型 / 常量 / 纯函数（含端侧音频算法）
 ├── apps/{miniprogram,server}/
@@ -507,7 +510,22 @@ node tools/dev-unlock.mjs --user <id>   # 只解锁某一个
 
 **④ `tsc` 产物在 Node 跑不起来**：`tsconfig.base.json` 是 `moduleResolution: bundler`，相对导入不带 `.js`（`ERR_MODULE_NOT_FOUND`）；`@jushuo/shared` 的 `main` 指向 `./src/index.ts`，Node 无法加载 `.ts`。→ 服务端用 **esbuild 打成单文件**（`apps/server/build.mjs`），两个问题一并解决，运行镜像也不需要 `node_modules`。
 
-**⑤ `.dockerignore` 绝对不要写 `!` 否定规则**：`@wxcloud/cli` 用 `gitignore-globs` + `minimatchWithList`，只要有一条未命中的 `!` 规则就整体返回「不忽略」—— 一条 `!.env.example` 能让 `node_modules/.pnpm-home` 全部被打包（本仓库曾达 318MB）。**打包后务必核对文件数。**
+**⑤ `.dockerignore` 的两条硬规矩（2026-09 实测 + 读 CLI 源码重写）**：
+
+**(a) 凡是目录，一律连 `/**` 一起写**（`.git` **和** `.git/**` 都要有）。
+`@wxcloud/cli` 打上传包走 `archiver.glob('**/*', {ignore})` → `readdir-glob`，
+而 ignore 数组由 `getDockerIgnore()`（gitignore-globs）生成：它把**含 `.` 的模式当文件**、
+**不会**补 `/**`（`node_modules` 这种无点的才会被展开成 `**/node_modules/**`），
+而 readdir-glob **只过滤条目、不剪枝目录** ⇒ 只写 `.git` 时 `.git/config` 匹配不到，
+**目录里的东西全都会被传上去**。实测差距：`.git` 4263 项 → 0、`.uploads` 332 → 0。
+**(b) 通配不会自动补**：`.tmp` 匹配不到 `.tmp-ecdict`（`.tmp-*` 这种要显式写）。
+**(c) 仍然不要写 `!` 否定规则**（结论保留；但要知道真正让"加了还照样传"的是 (a)，
+       不是 `minimatchWithList` —— 那个只在云函数上传路径里用）。
+
+⚠️ 后果不是"包大一点"：上传包撑到 ~100MB 时云端会以 **`create_failed` 静默失败**
+（构建日志里连一行报错都没有，排查时极易被带偏到 CI / 镜像 / 配置上）。
+⇒ `tools/deploy-cloud.mjs` 现在部署前会按 CLI 真函数量一遍并打印
+「文件数 / 体积 / 最大的几块」，>40MB 警告、**>80MB 直接拦下**。健康值是 **~9MB / 540 个文件**。
 
 **⑥ 不要用 `execFileSync` 直接跑 wxcloud 并抛异常**：`error.message` 会拼进完整命令行，其中有 `MYSQL_PASSWORD` 与 `TOKEN_SECRET`，原样打印就把密钥落到终端和日志。`tools/deploy-cloud.mjs` 自己 catch 并只输出脱敏尾部。
 
@@ -580,6 +598,10 @@ wxcloud run:deploy --libraryImage ${IMAGE_TAG} --containerPort=3000 --envId=${WX
 不用手抄，一条命令搬上去：`node tools/gh-secrets.mjs dev`（只列，不打印值）· `… dev --apply` · `… prod --apply`（需先 `gh auth login`）。
 环境级建议用 GitHub **Environment**（建 `dev` / `prod`）承载；可给 `prod` 配 **Required reviewers**，让「合并到 main」变成点一下确认。
 另有一个 **Variable**（不是 Secret）`SEED_ON_START`：`true` 时云端启动灌种子；**prod 首次部署必须开一次**，否则句库是空的。
+
+> ⚠️ 2026-09 修：这个 Variable 原来**从来没被读过** —— `tools/deploy-cloud.mjs` 里硬编码
+> `target === 'dev' ? 'true' : 'false'`，于是"prod 首灌"这条路其实是假的（会带空句库上线）。
+> 现在改成 `process.env.SEED_ON_START ?? (dev 开 / prod 关)`：缺省行为不变，显式设置才生效。
 
 ## 4.3 四条流水线
 

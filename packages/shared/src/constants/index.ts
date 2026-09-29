@@ -156,9 +156,6 @@ export const STORED_AUDIO_FALLBACK = {
   bitrateKbps: 32,
 } as const
 
-/** 单词发音时间估算（毫秒/词） */
-export const MS_PER_WORD = 60_000 / PREFLIGHT.wpm
-
 /** 单次评测的音频格式要求（讯飞 ISE 硬要求，不符会被判「乱读」） */
 export const AUDIO_SPEC = {
   sampleRate: 16_000,
@@ -187,11 +184,13 @@ export const AUDIO_SPEC = {
   frameSizeKb: 2,
 } as const
 
-/** 计费与定价 */
-export const PRICING = {
-  monthly: 19.9,
-  yearly: 199.9,
-} as const
+/**
+ * ⚠️ 这里原来有一个 `PRICING = { monthly, yearly }`（包月/包年价目表）——
+ *    2026-09 删除：包月模型已经被「能量点 + goods 表」取代
+ *    （价目表的真相在 db 的 goods 表，见 /api/user/shop/goods），
+ *    而这个常量全仓库连测试都没有引用过。
+ *    ⇒ 留着的唯一后果是让人以为"价格还在这里定义"。
+ */
 
 /* ------------------------------------------------------------------ */
 /* ⭐ 成长体系 —— 阈值与档位只在这里定义一处                              */
@@ -377,5 +376,8 @@ export const UNFREEZE_VALID_DAYS = 365
 /** 奖励规则 B 的绝对分门槛：得分必须 > max(全场最高分, 75) */
 export const TOP_RECORD_FLOOR = 75
 
-/** 奖励规则 B 每次发的能量点数 —— 正好补齐免费用户手里那 1 点 */
-export const ENERGY_REWARD_TOP_RECORD = 1
+/**
+ * ⚠️ 这里原来有一个 `ENERGY_REWARD_TOP_RECORD = 1`（奖励规则 B 的能量点数）——
+ *    2026-09 删除：全仓库零引用（规则 B 的点数真相在 db 的 reward_rules 表，
+ *    见 services/rewards.ts）。常量与配置表两份并存时，改一处不生效是最难查的那类问题。
+ */

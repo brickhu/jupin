@@ -74,7 +74,7 @@
 
   <!-- ── 连不上 ────────────────────────────────────────────── -->
   <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
-    <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
     <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
   </view>
 </view>

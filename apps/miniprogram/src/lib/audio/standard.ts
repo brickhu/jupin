@@ -176,7 +176,3 @@ export function prefetchAudio(
   for (let i = 0; i < Math.min(concurrency, queue.length); i++) void worker()
 }
 
-/** 只给自检/排查用：当前会话缓存了多少段 */
-export function audioCacheStats(): { urls: number; locals: number } {
-  return { urls: urlCache.size, locals: localCache.size }
-}

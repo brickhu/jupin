@@ -367,7 +367,3 @@ export function clearAllRecordings(): void {
   }
 }
 
-/** 只给自检/排查用：磁盘上留了几个槽位 */
-export function recordingSlots(): number {
-  return Object.keys(readMetaMap()).length
-}

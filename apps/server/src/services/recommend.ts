@@ -52,10 +52,15 @@ export interface MyLevel {
   basis: string
 }
 
+/**
+ * ⚠️ 档位文案（"初级/中级/高级/专家"）—— **本文件内部在用**（下面拼推荐理由）。
+ *    ⚠️ 它和 `@jushuo/shared` 的 `LEVEL_LABEL` 是**同值两份**，但这里删不掉：
+ *       本文件是纯逻辑（服务端算完给一句话），而那份是给界面用的。
+ *       两者要一起改 —— 或者今后把这里也换成 import 那份。
+ * ⚠️ 这里原来还有一个 `levelLabelOf()`（把档位转文案）—— 2026-09 删除：
+ *    全仓库零调用（是个多余的 export）。
+ */
 const LABEL: Record<ArticleLevel, string> = { 0: '初级', 1: '中级', 2: '高级', 3: '专家' }
-export function levelLabelOf(lv: ArticleLevel): string {
-  return LABEL[lv]
-}
 
 /** 高 → 低，找"最高的那一档"时用 */
 const DESC_LEVELS: ArticleLevel[] = [3, 2, 1, 0]

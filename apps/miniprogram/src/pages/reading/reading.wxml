@@ -186,7 +186,7 @@
        ⚠️ 句子还没拉到时的错误已经在上面那张卡里了，别重复显示。 -->
   <view class="mb-3 bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5"
         wx:if="{{error && phase !== 'loading'}}">
-    <text class="text-24rpx text-red-800 leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
   </view>
 
   <!-- ══ 下方「历史挑战」——我在**这一句**上还读过哪几次 ═══════════

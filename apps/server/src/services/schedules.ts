@@ -144,31 +144,5 @@ export async function scheduleAhead(days = 14, from: string = today()): Promise<
     )
   return missing.length
 }
-/**
- * 给某一天**明确**排一句（运营用）。
- * ⚠️ 用 upsert：同一天重排是正常操作（换题），不该报主键冲突。
- */
-export async function setSchedule(date: string, articleId: string): Promise<void> {
-  await db
-    .insert(schedules)
-    .values({ date, articleId, source: 'scheduled' })
-    .onDuplicateKeyUpdate({ set: { articleId, source: 'scheduled' } })
-}
 
-/** 这个句子被排在了哪些天（内容下线前的引用检查用） */
-export async function datesOfArticle(articleId: string): Promise<string[]> {
-  const rows = await db
-    .select({ date: schedules.date })
-    .from(schedules)
-    .where(eq(schedules.articleId, articleId))
-  return rows.map((r) => r.date)
-}
 
-/** 只保留「启用中」的句子进轮转池的辅助（供测试与排查用） */
-export async function activeArticleIds(): Promise<string[]> {
-  const rows = await db
-    .select({ id: articles.id })
-    .from(articles)
-    .where(and(eq(articles.isActive, true)))
-  return rows.map((r) => r.id)
-}
