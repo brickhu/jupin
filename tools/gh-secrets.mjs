@@ -57,6 +57,13 @@ const ENV_LEVEL = [
   'MYSQL_PASSWORD',
   'MYSQL_DATABASE',
   'TOKEN_SECRET',
+  /**
+   * ⭐ 内容管理接口（`/api/admin/*`）的口令 —— dev 与 prod **各一份**（环境级）。
+   * ⚠️ 漏掉它的症状：CI 部署时服务环境变量是**整份覆盖**的，
+   *    没进这个清单的键会被**清掉** ⇒ 云上那组接口变成 503，
+   *    而"本机明明能连"会让人完全找不到方向（与 SEED_ON_START 同一个坑）。
+   */
+  'ADMIN_TOKEN',
 ]
 
 const base = parseEnvFile(resolve(ROOT, '.env'))
