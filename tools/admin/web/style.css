@@ -79,10 +79,13 @@ button.primary:hover { background: var(--brand-2); border-color: var(--brand-2);
  *    它不该长得跟「详情」一样：点错一次是不可逆的。
  */
 /**
- * ⚠️ 危险区（详情页底部的「删除这一句」）：用一条分隔线把它与日常按钮**物理隔开** ——
- *    它挨着「更新」的话，手快点错就是不可逆的事。
+ * ⭐ 详情页底部：**删除在左、更新在右**（`.spacer` 把两侧顶开）。
+ *
+ * ⚠️ 为什么删除不跟「更新」挨着：删除不可逆，挨着的话手快点错就没了。
+ *    隔开整行、颜色也区分（`ghost danger`），扫一眼就知道哪个是危险动作。
  */
-.danger-zone { border-top: 1px solid #3a2626; margin-top: 14px; padding-top: 12px; }
+.detail-foot { display: flex; align-items: center; gap: 10px; }
+.detail-foot .spacer { flex: 1 1 auto; }
 button.ghost.danger { color: #f0a0a0; border-color: #4a2b2b; }
 button.ghost.danger:hover { background: #2a1b1b; border-color: #7a3b3b; }
 button.ghost { background: transparent; }
