@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { Hono } from 'hono'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
@@ -54,22 +54,61 @@ adminRoutes.use('*', async (c, next) => {
 
 /** 列表：给 admin 的表格用（只给必要字段，正文不整篇回传） */
 adminRoutes.get('/articles', async (c) => {
+  /**
+   * ⭐ 参数都是**可选**的，因为这个接口现在同时服务两件事：
+   *    · admin 的列表（带搜索 / 只看上线）；
+   *    · admin 拆句时的"这句库里有没有"（一次问一批 id，见 `ids` 参数）。
+   * ⚠️ 一次最多回 200 条：这是管理台，不是数据导出接口。
+   */
+  const q = (c.req.query('q') ?? '').trim()
+  const activeOnly = c.req.query('active') === '1'
+  const idsParam = (c.req.query('ids') ?? '').trim()
+
+  const where = []
+  if (activeOnly) where.push(eq(articles.isActive, true))
+  if (idsParam) {
+    const ids = idsParam.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200)
+    if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
+    where.push(inArray(articles.id, ids))
+  }
+
   const rows = await db
     .select({
       id: articles.id,
       text: articles.text,
       translation: articles.translation,
       difficulty: articles.difficulty,
+      scores: articles.scores,
+      challenge: articles.challenge,
+      advice: articles.advice,
       tags: articles.tags,
+      words: articles.words,
+      links: articles.links,
       isActive: articles.isActive,
       publishedAt: articles.publishedAt,
       standardAudio: articles.standardAudio,
+      theme: articles.theme,
       createdAt: articles.createdAt,
     })
     .from(articles)
+    .where(where.length ? and(...where) : undefined)
     .orderBy(desc(articles.createdAt))
     .limit(200)
-  return c.json({ ok: true, data: { items: rows } })
+
+  /**
+   * ⚠️ 搜索在**服务端**做（而不是让 admin 自己筛）：admin 只拿到最近 200 条，
+   *    前端筛的话就会"搜不到明明存在的老句子"，而那种错看起来像"数据丢了"。
+   */
+  const items = q
+    ? rows.filter(
+        (r) =>
+          (r.text ?? '').toLowerCase().includes(q.toLowerCase()) ||
+          (r.translation ?? '').includes(q) ||
+          (r.tags ?? []).some((t) => t.includes(q)),
+      )
+    : rows
+
+  return c.json({ ok: true, data: { items } })
 })
 
 /** 详情：整条（admin 的编辑表单要全部字段） */
@@ -77,7 +116,12 @@ adminRoutes.get('/articles/:id', async (c) => {
   const id = c.req.param('id')
   const [row] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
   if (!row) return c.json({ ok: false, error: '句子不存在' }, 404)
-  return c.json({ ok: true, data: row })
+  /**
+   * ⚠️ 刻意**抹掉 `content`**：那是拆列之前的过渡列（即将删除），
+   *    任何客户端去读它都会把"真相在哪"重新搞混。响应里只给拆开之后的列。
+   */
+  const { content: _legacyContent, ...rest } = row
+  return c.json({ ok: true, data: rest })
 })
 
 /**

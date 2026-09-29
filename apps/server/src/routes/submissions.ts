@@ -76,16 +76,23 @@ submissionsRoutes.post('/', async (c) => {
     return c.json({ ok: false, error: '缺少 articleId 或 audioKey' }, 400)
   }
   /**
-   * ⭐⭐ 幂等键（见 db/schema.ts 的 attemptId）：**必填**，格式固定 32 位十六进制。
+   * ⭐⭐ 幂等键（见 db/schema.ts 的 attemptId）：格式固定 32 位十六进制。
    *
-   * ⚠️ 为什么必填而不是可选：它是"同一次录音只算一次"的唯一判据。
-   *    可选的话就退回到"靠 audioKey（上传时间戳）判重"——那条路正是出过事的路
-   *    （用户重试 → 新时间戳 → 多扣一次能量）。
-   * ⚠️ 校验格式是为了让它能安全地进对象存储路径（不能有 `/`、不能穿越）。
-   *    老客户端（没有这个字段）会拿到 400：这是**故意的**，宁可报错也不要静默多扣费。
+   * ⚠️⚠️ **没带时不再 400，而是退回按 audioKey 判重**（2026-09 改，部署前发现的真实风险）：
+   *    线上可能还有**已发布的旧小程序**，它提交时不带这个字段 ——
+   *    硬要 400 的话，那些客户端会在**没有任何预告**的情况下"提交不了"，
+   *    而用户看到的是"提交失败"，服务端日志里只有一条 400，谁也不知道是协议变了。
+   *    ⇒ 兼容策略：带 `attemptId` 走新判据（重试换 key 也不会重复扣费）；
+   *      没带就退回 `(userId, audioKey)` —— 与**旧行为的幂等能力持平**（不比以前差），
+   *      并打一条日志方便观察旧客户端还剩多少。
+   * ⚠️ 格式**非法**（带了但不是 32 hex）仍然 400：那是客户端有 bug，不能静默放过
+   *    （否则它会进对象存储路径，可能带 `/` 或穿越）。
    */
-  if (!attemptId || !/^[a-f0-9]{32}$/.test(attemptId)) {
+  if (attemptId !== undefined && attemptId !== '' && !/^[a-f0-9]{32}$/.test(attemptId)) {
     return c.json({ ok: false, error: 'attemptId 不合法（需要 32 位十六进制）' }, 400)
+  }
+  if (!attemptId) {
+    console.warn('[submissions] 这次提交没带 attemptId（旧客户端？）—— 按 audioKey 判重 user=' + userId)
   }
 
   // ---- 0. 挑战日期 ----
@@ -149,7 +156,14 @@ submissionsRoutes.post('/', async (c) => {
     .where(
       and(
         eq(submissions.userId, userId),
-        or(eq(submissions.attemptId, attemptId), eq(submissions.audioKey, audioKey)),
+        /**
+         * ⚠️ 判据二选一：**带了 attemptId 就只认它**（那是这一次尝试的稳定 id），
+         *    没带（旧客户端）才退回 audioKey。
+         * ⚠️ 不能写成"or(…, attemptId) "：`attemptId` 为 undefined 时那个条件会退化成
+         *    `attempt_id = NULL`（在 SQL 里恒不成立），看起来无害；
+         *    但用 `or` 把两条并起来，一旦以后有人给 audioKey 换了语义就会误命中 —— 分开写更清楚。
+         */
+        attemptId ? eq(submissions.attemptId, attemptId) : eq(submissions.audioKey, audioKey),
       ),
     )
     .limit(1)
