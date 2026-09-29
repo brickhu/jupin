@@ -32,6 +32,9 @@ import {
   errorResponse,
   MeResponseSchema,
   ParticipationRecordListSchema,
+  ProfileUpdateResponseSchema,
+  StreakRecordResponseSchema,
+  UnfreezeResponseSchema,
 } from '../openapi/schemas'
 
 export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -528,10 +531,25 @@ userRoutes.openapi(meRoute, async (c) => {
  * ⚠️ month 只接受 'YYYY-MM'，缺省 = 服务端的这个月；非法值直接按缺省处理
  *    （这是只读接口，报错没有意义，给用户一屏正常的内容更好）。
  */
-userRoutes.get('/streak-record', async (c) => {
+const streakRecordRoute = createRoute({
+  method: 'get',
+  path: '/streak-record',
+  tags: ['我的'],
+  summary: '连战日历（一个月：哪天读了 / 哪天用卡补的）',
+  security: [{ userToken: [] }],
+  request: { query: z.object({ month: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: StreakRecordResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(streakRecordRoute, async (c) => {
   const userId = c.get('userId')
   const data = await readStreakRecord(userId, c.req.query('month'))
-  return c.json({ ok: true, data })
+  return c.json({ ok: true, data }, 200)
 })
 
 /**
@@ -636,7 +654,22 @@ userRoutes.openapi(claimRoute, async (c) => {
  *     **用户当天还得读一句才会 +1**。所以客户端拿到成功之后要立刻引导他读今天这一句，
  *     文案说「补上之后，今天读一句就接上了」，而不是「已恢复连战」。
  */
-userRoutes.post('/unfreeze', async (c) => {
+const unfreezeRoute = createRoute({
+  method: 'post',
+  path: '/unfreeze',
+  tags: ['我的'],
+  summary: '补签（用解冻卡填断档）—— 卡不够时整单拒绝、一张不扣',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UnfreezeResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('补不了（今天已读 / 卡不够 / 没有断档），code=UNFREEZE_FAILED'),
+  },
+})
+
+userRoutes.openapi(unfreezeRoute, async (c) => {
   const userId = c.get('userId')
   const result = await useUnfreezeCards(userId)
 
@@ -651,7 +684,7 @@ userRoutes.post('/unfreeze', async (c) => {
   }
 
   const [streak, cards] = await Promise.all([readStreakView(userId), unfreezeStatus(userId)])
-  return c.json({ ok: true, data: { used: result.used, streak, unfreezeCards: cards.count } })
+  return c.json({ ok: true, data: { used: result.used, streak, unfreezeCards: cards.count } }, 200)
 })
 
 /**
@@ -670,7 +703,34 @@ userRoutes.post('/unfreeze', async (c) => {
  *    所以「有没有加入」与这里填不填名字**毫无关系**（见客户端 store 的 hasJoined）。
  *    昵称只决定**榜单上显示成什么**，头像则纯属装饰。
  */
-userRoutes.post('/profile', async (c) => {
+const profileRoute = createRoute({
+  method: 'post',
+  path: '/profile',
+  tags: ['我的'],
+  summary: '保存我的资料（昵称/头像/性别/年龄/简介）',
+  security: [{ userToken: [] }],
+  request: {
+    body: { content: { 'application/json': { schema: /** ⚠️ `nickname` **刻意不标必填**：标了之后空昵称会被框架先拦下，
+             错误文案变成「nickname：Required」，而 handler 里那句
+             「昵称不能为空（1–32 个字符）」才是给人看的（也才是原来的行为）。 */
+        z.object({
+          nickname: z.string().nullish(),
+          avatarUrl: z.string().nullish(),
+          gender: z.enum(['male', 'female']).nullish(),
+          age: z.number().nullish(),
+          bio: z.string().nullish(),
+        }) } } },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ProfileUpdateResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('昵称不能为空（1–32 个字符）'),
+  },
+})
+
+userRoutes.openapi(profileRoute, async (c) => {
   const userId = c.get('userId')
   const body = await c.req.json<{
     nickname?: string
@@ -737,7 +797,7 @@ userRoutes.post('/profile', async (c) => {
       age: row?.age ?? null,
       bio: row?.bio ?? null,
     },
-  })
+  }, 200)
 })
 
 /**

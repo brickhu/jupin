@@ -12,6 +12,7 @@ import type {
   EnergyResponse,
   Gender,
   MeResponse,
+  ProfileUpdateResponse,
   ParticipationRecord,
   ParticipationsResponse,
   LatestCardsResponse,
@@ -19,6 +20,8 @@ import type {
   ScoreDimensions,
   ScoreParts,
   StreakDelta,
+  StreakRecordDay,
+  StreakRecordResponse,
   StreakView,
   SubmissionStatusResponse,
   SubmitResponse,
@@ -115,6 +118,11 @@ export const ErrorSchema = z
      *    端侧直接显示「还差几点」而不是自己减一遍（见 reading.ts 的提示语）。
      */
     energy: z.number().int().optional(),
+    /**
+     * ⚠️ 业务分支的原因码（如 `UNFREEZE_FAILED` 的 `already-read-today` / `not-enough`）——
+     *    端侧据此说更具体的话，而不是把原始错误码摆给用户。
+     */
+    reason: z.string().optional(),
   })
   .openapi('Error')
 
@@ -446,6 +454,57 @@ export const UploadResponseSchema = okEnvelope(
     .openapi('UploadResponse'),
 )
 
+/** 连战日历里的一天（read = 那天读了；unfreeze = 缺口是用解冻卡补的） */
+export const StreakRecordDaySchema = z
+  .object({ date: z.string(), kind: z.enum(['read', 'unfreeze']) })
+  .openapi('StreakRecordDay')
+
+/** ⭐ 连战日历（一个月）—— 端侧只负责画格子 */
+export const StreakRecordResponseSchema = okEnvelope(
+  z
+    .object({
+      month: z.string(),
+      firstDay: z.string(),
+      daysInMonth: z.number().int(),
+      /** 1 号是周几（0 = 周日） */
+      weekdayOfFirst: z.number().int(),
+      today: z.string(),
+      streakDays: z.number().int(),
+      streakBest: z.number().int(),
+      days: z.array(StreakRecordDaySchema),
+      unfreezeCards: z.number().int(),
+      unfreezePending: z.number().int(),
+      unfreezeExpiresOn: z.string().nullable(),
+    })
+    .openapi('StreakRecordResponse'),
+)
+
+/** 补签的结果（`POST /api/user/unfreeze`）—— 卡不够时是 400 + Error(reason) */
+export const UnfreezeResponseSchema = okEnvelope(
+  z
+    .object({
+      /** 这次用掉几张解冻卡 */
+      used: z.number().int(),
+      streak: StreakViewSchema,
+      /** 补完之后手上还剩几张 */
+      unfreezeCards: z.number().int(),
+    })
+    .openapi('UnfreezeResponse'),
+)
+
+/** 保存资料之后回传的权威值（`POST /api/user/profile`） */
+export const ProfileUpdateResponseSchema = okEnvelope(
+  z
+    .object({
+      nickname: z.string().nullable(),
+      avatarUrl: z.string().nullable(),
+      gender: GenderSchema.nullable(),
+      age: z.number().int().nullable(),
+      bio: z.string().nullable(),
+    })
+    .openapi('ProfileUpdateResponse'),
+)
+
 /* ---------- ⭐ 与共享 TS 类型的双向比对（漂移在这里报错） ---------- */
 
 /**
@@ -496,6 +555,15 @@ type _ArtResParity = Equal<
 type _StreakViewParity = Equal<z.infer<typeof StreakViewSchema>, StreakView>
 type _MeParity = Equal<z.infer<typeof MeResponseSchema>['data'], MeResponse>
 type _GenderParity = Equal<z.infer<typeof GenderSchema>, Gender>
+type _StreakDayParity = Equal<z.infer<typeof StreakRecordDaySchema>, StreakRecordDay>
+type _StreakRecParity = Equal<
+  z.infer<typeof StreakRecordResponseSchema>['data'],
+  StreakRecordResponse
+>
+type _ProfileParity = Equal<
+  z.infer<typeof ProfileUpdateResponseSchema>['data'],
+  ProfileUpdateResponse
+>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -523,5 +591,8 @@ const _parityChecks: [
   _StreakViewParity,
   _MeParity,
   _GenderParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+  _StreakDayParity,
+  _StreakRecParity,
+  _ProfileParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks
