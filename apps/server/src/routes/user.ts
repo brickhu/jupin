@@ -24,6 +24,8 @@ import type {
 import type { Variables } from '../middleware/auth'
 import { defaultHook } from '../openapi'
 import {
+  ArticleRecordsResponseSchema,
+  ArenaRecordsResponseSchema,
   ChallengeRecordListSchema,
   EnergyResponseSchema,
   errorResponse,
@@ -147,7 +149,23 @@ function parseWordScores(raw: string | null, wordCount: number): ChallengeWordSc
  * ⚠️ 顺序按**提交时间倒序**（最近一次在最上面）。
  * ⚠️ score 是 DECIMAL，读回来是字符串 —— 出去一律 Number（见 schema 的说明）。
  */
-userRoutes.get('/article-records', async (c) => {
+const articleRecordsRoute = createRoute({
+  method: 'get',
+  path: '/article-records',
+  tags: ['我的'],
+  summary: '我在某一句上的历史挑战（逐次）',
+  security: [{ userToken: [] }],
+  request: { query: z.object({ article: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ArticleRecordsResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('缺 article 参数'),
+  },
+})
+
+userRoutes.openapi(articleRecordsRoute, async (c) => {
   const userId = c.get('userId')
   const articleId = (c.req.query('article') ?? '').trim()
   if (!articleId) return c.json({ ok: false, error: '缺 article 参数' }, 400)
@@ -240,7 +258,7 @@ userRoutes.get('/article-records', async (c) => {
     participantCount: stats?.participantCount ?? 0,
     lowestScore: stats?.lowestScore ?? null,
   }
-  return c.json({ ok: true, data })
+  return c.json({ ok: true, data }, 200)
 })
 
 /**
@@ -356,7 +374,22 @@ userRoutes.openapi(participationsRoute, async (c) => {
  * @param ranks '1' 时额外算名次 —— 名次是**跨用户**的（公开榜单只给前 20，
  *              客户端自己算不出第 500 名），所以只能服务端算，也只在这一场算一次。
  */
-userRoutes.get('/arena-records', async (c) => {
+const arenaRecordsRoute = createRoute({
+  method: 'get',
+  path: '/arena-records',
+  tags: ['我的'],
+  summary: '我在这几句上的战绩（可带名次）',
+  security: [{ userToken: [] }],
+  request: { query: z.object({ ids: z.string().optional(), ranks: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ArenaRecordsResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(arenaRecordsRoute, async (c) => {
   const userId = c.get('userId')
   // ⚠️ articleId 是内容 hash（字符串）—— 按原样解析，**不再转数字**
   const ids = (c.req.query('ids') ?? '')
@@ -364,7 +397,7 @@ userRoutes.get('/arena-records', async (c) => {
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
     .slice(0, 20)
-  if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
+  if (ids.length === 0) return c.json({ ok: true, data: { items: [] } }, 200)
   const wantRanks = c.req.query('ranks') === '1'
 
   /**
@@ -424,7 +457,7 @@ userRoutes.get('/arena-records', async (c) => {
     })
   }
 
-  return c.json({ ok: true, data: { items } })
+  return c.json({ ok: true, data: { items } }, 200)
 })
 
 /** 个人主页：Streak（含解冻卡）/ 能量 / 三个成长值 / 战绩计数 */

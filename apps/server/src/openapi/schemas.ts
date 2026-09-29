@@ -1,7 +1,11 @@
 import { z } from '@hono/zod-openapi'
 
 import type {
+  ArenaRecord,
+  ArenaRecordsResponse,
   ArticleCard,
+  ArticleRecordItem,
+  ArticleRecordsResponse,
   ChallengeRecord,
   ChallengesResponse,
   EnergyLedgerItem,
@@ -192,6 +196,49 @@ export const ChallengeRecordListSchema = okEnvelope(
 
 export const ParticipationRecordListSchema = okEnvelope(
   z.object({ items: z.array(ParticipationRecordSchema) }).openapi('ParticipationsResponse'),
+)
+
+/** ⭐ 竞技场一条（按句子）—— `ranks=1` 时才带名次/击败人数 */
+export const ArenaRecordSchema = z
+  .object({
+    articleId: z.string(),
+    bestScore: z.number().nullable(),
+    attempts: z.number().int(),
+    rank: z.number().int().nullable(),
+    beatenCount: z.number().int().nullable(),
+    isFavorite: z.boolean(),
+  })
+  .openapi('ArenaRecord')
+
+export const ArenaRecordsResponseSchema = okEnvelope(
+  z.object({ items: z.array(ArenaRecordSchema) }).openapi('ArenaRecordsResponse'),
+)
+
+/** ⭐ 「我在某一句上的历史挑战」一条（逐次；`score` 为 null = 那次没出分） */
+export const ArticleRecordItemSchema = z
+  .object({
+    submissionId: z.string(),
+    status: z.enum(['scored', 'failed']),
+    score: z.number().nullable(),
+    /** 第几次（**服务端现算**，不是库里的列 —— 见 services/submission.ts 的 attemptNoOf） */
+    seq: z.number().int(),
+    createdAt: z.string(),
+    scheduleDate: z.string().nullable(),
+    isPublic: z.boolean(),
+  })
+  .openapi('ArticleRecordItem')
+
+export const ArticleRecordsResponseSchema = okEnvelope(
+  z
+    .object({
+      items: z.array(ArticleRecordItemSchema),
+      bestScore: z.number().nullable(),
+      attempts: z.number().int(),
+      rank: z.number().int().nullable(),
+      participantCount: z.number().int(),
+      lowestScore: z.number().nullable(),
+    })
+    .openapi('ArticleRecordsResponse'),
 )
 
 /** 能量流水一条 */
@@ -386,6 +433,16 @@ type _ParticipationsParity = Equal<
 >
 type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
+type _ArenaRecParity = Equal<z.infer<typeof ArenaRecordSchema>, ArenaRecord>
+type _ArenaResParity = Equal<
+  z.infer<typeof ArenaRecordsResponseSchema>['data'],
+  ArenaRecordsResponse
+>
+type _ArtRecParity = Equal<z.infer<typeof ArticleRecordItemSchema>, ArticleRecordItem>
+type _ArtResParity = Equal<
+  z.infer<typeof ArticleRecordsResponseSchema>['data'],
+  ArticleRecordsResponse
+>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -406,5 +463,9 @@ const _parityChecks: [
   _ParticipationsParity,
   _LedgerParity,
   _EnergyParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+  _ArenaRecParity,
+  _ArenaResParity,
+  _ArtRecParity,
+  _ArtResParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks
