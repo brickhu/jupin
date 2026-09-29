@@ -1117,6 +1117,17 @@ Page({
     this.frameFails = 0
     this.waveWarned = false
 
+    /**
+     * ⚠️⚠️ **开始录新音 = 上一次那次结果作废**：把本地的「上次结果」缓存也清掉。
+     *
+     *    不清的后果（用户报的"每次都在显示前一次的结果"）：这一页重新 load 时，
+     *    `loadContent` 会先查这份缓存、命中就**直接恢复成 s5 并 return** ——
+     *    于是"重录 → 提交"根本没机会发生，屏幕上永远是上一次那个分。
+     *    （缓存本身是必需的：出分那一刻用户被叫走，回来要能看到分。
+     *      所以只在"用户明确开始新一次录音"时清。）
+     */
+    if (this.recordingKey) clearLastResult(this.recordingKey)
+
     this.setData(
       {
         phase: 's2',

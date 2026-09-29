@@ -13,7 +13,7 @@ import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } from '../services/audio-key'
 import { nextSeq } from '../services/submission'
-import { holdChallengeEnergy, readEnergy } from '../services/energy'
+import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { describe } from '../services/submission-view'
@@ -229,7 +229,7 @@ submissionsRoutes.post('/', async (c) => {
   // ⚠️ 用 insert().ignore()：并发重发时两个请求可能同时到这里，
   //    先查后插会让其中一个撞唯一键 500。ignore() 让后到者静默失败，
   //    两边随后都会读同一行、回答同一个 submissionId。
-  await db.insert(submissions).ignore().values({
+  const inserted = await db.insert(submissions).ignore().values({
     id: submissionId,
     userId,
     articleId,
@@ -249,6 +249,35 @@ submissionsRoutes.post('/', async (c) => {
     // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
     energyState: 'held',
   })
+
+    /**
+    /**
+     * ⚠️⚠️ `insert().ignore()` 会在**唯一键冲突时静默跳过** —— 而这里原本不管结果、
+     *    照样回 202 + 一个**并不存在的 submissionId**。
+     *
+     *    2026-09 实测到（我自己的复现）：同一个 `audioKey` 配一个新的 `attemptId`
+     *    提交 ⇒ 撞 `submissions_user_audio_idx` ⇒ insert 被跳过 ⇒ 服务端回 202、
+     *    客户端拿着那个 id 轮询 ⇒ 查到的是**上一次**那条记录的结果。
+     *    用户看到的正是「每次都在显示前一次的结果」。
+     *
+     *    ⇒ 插入没成功就**明确报错**（并且要把刚才锁住的能量退回去）。
+     */
+    const affected = (inserted as unknown as { affectedRows?: number })?.affectedRows
+    if (affected !== 1) {
+      console.warn(
+        '[submissions] 落库未生效（唯一键冲突？）id=' + submissionId + ' key=' + audioKey,
+      )
+      // ⚠️ 能量得退回：受理时已经锁了 2 点，而这次提交根本没成立
+      await releaseChallengeEnergy(userId, submissionId).catch(() => {})
+      return c.json(
+        {
+          ok: false,
+          code: 'DUPLICATE_SUBMISSION',
+          error: '这次录音和上一次重复了 —— 请重新录一遍再提交',
+        },
+        409,
+      )
+    }
 
   // ⭐ 立刻开跑，但**不 await** —— 受理必须毫秒级返回，
   //   否则又回到了「一个请求装不下一次打分」的老问题。
