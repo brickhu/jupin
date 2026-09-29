@@ -439,7 +439,23 @@ export const submissions = mysqlTable('submissions', {
    *    ⇒ 攻克的口径只有一条：**submissions.status = 'scored'**。
    */
 
-  /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts}.{aac|mp3|pcm}（永久保留）。失败时对象会删，但这里仍记 key 留痕 */
+  /**
+   * ⭐⭐ **一次"提交尝试"的稳定 id**（客户端在录音落地那一刻生成，重试复用）。
+   *
+   * ⚠️⚠️ 为什么幂等键不能是 audioKey（2026-09 修的真实缺陷）：
+   *    audioKey = `audio/{articleId}/{userId}/{Date.now()}.{ext}` —— 它是**上传时刻**的
+   *    时间戳，而客户端每次重试都会**重新上传一次**（reading 页的退回 s3 → 用户再点 ✓）。
+   *    ⇒ 同一次录音、两个不同的 key ⇒ 幂等查库必然落空
+   *      ⇒ 第二条 submissions 行、**第二次扣 2 点能量**、第二次调引擎。
+   *    而界面上明写着"再点一次即可…**不会重复计费**" —— 承诺与实现相反。
+   *    更糟的是打分成功后会把这个列改写成 mp3 存档路径，**幂等键自己被改掉**。
+   *    ⇒ 幂等键必须**与物理存储无关、且在一次尝试的整个生命周期里不变**。
+   *
+   * ⚠️ 可空是留给历史行的（那时还没有这个字段）；新写入一律由代码保证非空。
+   */
+  attemptId: varchar('attempt_id', { length: 32 }),
+
+  /** 音频在对象存储里的 key：audio/{articleId}/{userId}/{ts|attemptId}.{aac|mp3|pcm}（永久保留）。失败时对象会删，但这里仍记 key 留痕 */
   audioKey: varchar('audio_key', { length: 255 }),
 
   /**
@@ -574,6 +590,12 @@ export const submissions = mysqlTable('submissions', {
    *    而且同一段好录音可以被反复提交刷分。
    */
   uniqueIndex('submissions_user_audio_idx').on(t.userId, t.audioKey),
+  /**
+   * ⭐⭐ 真正的幂等键（见 attemptId 的说明）。
+   * ⚠️ 与 audioKey 那个索引并存：audioKey 挡的是"同一次上传被并发提交两次"，
+   *    这个挡的是"同一次录音被用户重试"——后者才是真实发生过的那条路径。
+   */
+  uniqueIndex('submissions_user_attempt_idx').on(t.userId, t.attemptId),
   index('submissions_user_time_idx').on(t.userId, t.createdAt),
   /**
    * ⭐ **按句子的聚合仍然要它** —— 读者是「参与记录的生产者」和「成长值快照」，

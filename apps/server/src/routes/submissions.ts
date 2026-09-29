@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, or } from 'drizzle-orm'
 import type {
   ScoreDimensions,
   ScoreParts,
@@ -64,15 +64,29 @@ submissionsRoutes.post('/', async (c) => {
     audioUrl?: string
     isPublic?: boolean
     scheduleDate?: string
+    attemptId?: string
   }>()
   const articleId = body.articleId
   const audioKey = body.audioKey
   const audioUrl = body.audioUrl
+  const attemptId = body.attemptId
   // ⚠️ 缺省必须是 false（与 DB 默认值一致）—— 公开是用户**自己打开开关**的结果，
   //    不是默认。没传就是私密，由结果页那个「允许公众收听」开关改成 true。
   const isPublic = body.isPublic === true
   if (!articleId || !audioKey) {
     return c.json({ ok: false, error: '缺少 articleId 或 audioKey' }, 400)
+  }
+  /**
+   * ⭐⭐ 幂等键（见 db/schema.ts 的 attemptId）：**必填**，格式固定 32 位十六进制。
+   *
+   * ⚠️ 为什么必填而不是可选：它是"同一次录音只算一次"的唯一判据。
+   *    可选的话就退回到"靠 audioKey（上传时间戳）判重"——那条路正是出过事的路
+   *    （用户重试 → 新时间戳 → 多扣一次能量）。
+   * ⚠️ 校验格式是为了让它能安全地进对象存储路径（不能有 `/`、不能穿越）。
+   *    老客户端（没有这个字段）会拿到 400：这是**故意的**，宁可报错也不要静默多扣费。
+   */
+  if (!attemptId || !/^[a-f0-9]{32}$/.test(attemptId)) {
+    return c.json({ ok: false, error: 'attemptId 不合法（需要 32 位十六进制）' }, 400)
   }
 
   // ---- 0. 挑战日期 ----
@@ -121,10 +135,24 @@ submissionsRoutes.post('/', async (c) => {
   //
   // ⭐ 幂等命中时返回的是**同一个 submissionId** —— 客户端接着轮询就行，
   //    完全不需要知道「这是重发」。
+  /**
+   * ⚠️⚠️ 判据是 **(userId, attemptId)** —— 不是 audioKey。
+   *
+   * audioKey 里含上传时间戳，而客户端每次重试都会重新上传一次 ⇒ 换了 key，
+   * 按它判重必然落空（真实事故：用户按提示重试 → 第二条成绩 + 第二次扣能量）。
+   * ⚠️ 同时保留一条 audioKey 兜底：同一次上传被**并发**提交两次时（两个请求同一个 key、
+   * 但 attemptId 也相同 —— 那时 attemptId 那条已经能挡），以及理论上"客户端换了
+   * attemptId 但复用了同一个音频对象"的异常路径。
+   */
   const [dupe] = await db
     .select({ id: submissions.id })
     .from(submissions)
-    .where(and(eq(submissions.userId, userId), eq(submissions.audioKey, audioKey)))
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        or(eq(submissions.attemptId, attemptId), eq(submissions.audioKey, audioKey)),
+      ),
+    )
     .limit(1)
   if (dupe) {
     const status = await describe(userId, dupe.id)
@@ -195,6 +223,8 @@ submissionsRoutes.post('/', async (c) => {
     audioUrl: audioUrl ?? null,
     engine: env.ENGINE,
     isPublic,
+    // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
+    attemptId,
     status: 'scoring',
     heartbeatAt: new Date(),
     attempts: 1,

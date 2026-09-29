@@ -41,16 +41,15 @@ describe('makeSubmissionId', () => {
 })
 
 describe('makeAudioKey', () => {
-  it('按 句子/用户/时间戳 三段组织', () => {
+  it('按 句子/用户/attemptId 三段组织', () => {
     /**
      * ⚠️ 后缀跟着**录音格式**走（RECORD_SPEC）：现在是 mp3（压缩 + 有帧回调的交集）。
      * ⚠️ 断言里刻意**引用常量而不是写死扩展名** —— 写死的话，
      *    哪天换格式（aac / pcm）这条测试就会以「莫名其妙地红」的方式报警，
      *    而它想守的其实是「三段结构」，不是某个具体后缀。
      */
-    expect(makeAudioKey('5', 12, 1757890123456)).toBe(
-      'audio/5/12/1757890123456.' + RECORD_SPEC.extension,
-    )
+    const attemptId = 'a'.repeat(32)
+    expect(makeAudioKey('5', 12, attemptId)).toBe('audio/5/12/' + attemptId + '.' + RECORD_SPEC.extension)
   })
 })
 

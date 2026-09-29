@@ -21,7 +21,7 @@ import {
   submitReading,
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
-import { uploadAudio } from '../../lib/api/upload'
+import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
@@ -378,6 +378,18 @@ Page({
 
     /** 录音落地的原始文件 —— **上传用**（试听也用它） */
     audioPath: '',
+    /**
+     * ⭐⭐ 这一次提交尝试的**稳定 id**（32 hex）——**重试必须复用**，重录才换新的。
+     *
+     * ⚠️⚠️ 它是服务端的幂等键（见 db/schema.ts 的 attemptId，也是上传路径的第三段）。
+     *    没有它的时候：用户按界面提示"再点一次"重试 → 客户端重新上传（路径含时间戳、变了）
+     *    → 服务端按 audioKey 判重落空 → **第二条成绩 + 第二次扣 2 点能量**，
+     *    而界面写着"不会重复计费"。
+     *    ⇒ 所以它**只在录音落地那一刻生成一次**（onStopRecord），开始重录与整页重来
+     *      （onStartRecord / onRestart）以及提交成功后才清空；
+     *      **千万别在 startSubmit 里生成** —— 那正好退回到出事的行为。
+     */
+    attemptId: '',
     /** 老版本留下的「帧拼 WAV」副本 —— **试听兜底用**（新录音恒为空串） */
     playPath: '',
     durationMs: 0,
@@ -1113,6 +1125,9 @@ Page({
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
         audioPath: '',
+        // ⚠️ 开始重录 = 上一次尝试作废（旧 attemptId 不能带到新录音上，
+        //    否则新音频会顶着旧键提交，命中的是上一次的行）
+        attemptId: '',
         playPath: '',
         durationMs: 0,
         recordDurationText: '',
@@ -1210,6 +1225,8 @@ Page({
     this.setData({
       phase: 's3',
       restored: false,
+      // ⭐ 新录音 = 新的一次尝试（幂等键在这里诞生，之后重试一直用它）
+      attemptId: newAttemptId(),
       // ⚠️ 两个路径是两个用途，别混：
       //    audioPath → 录音落地文件：**上传**给对象存储 + **试听**都是它
       //    playPath  → 老版本留下的「帧拼 WAV」副本，新录音恒为空串
@@ -1598,8 +1615,21 @@ Page({
     this.syncEnergyNote()
 
     try {
+      /**
+       * ⚠️⚠️ 用 `this.data.attemptId`（录音时生成的那个），**不要在这里 newAttemptId()**。
+       *    重试路径（轮询失败 / 受理失败退回 s3，用户再点 ✓）会再次执行到这里 ——
+       *    复用同一个键，服务端才能认出"这是刚才那一次"并返回同一个 submissionId。
+       */
+      const attemptId = this.data.attemptId || newAttemptId()
+      if (!this.data.attemptId) {
+        // ⚠️ 理论上不该发生（录音成功就生成了）。真发生了也必须**记住**这个补的值，
+        //    否则这次提交后一重试又会换键 —— 静默多扣一次能量。
+        console.warn('[reading] attemptId 缺失（录音恢复路径？），已临时补一个并记住')
+        this.setData({ attemptId })
+      }
       const { audioKey, audioUrl } = await uploadAudio(audioPath, {
         articleId,
+        attemptId,
         onProgress: (p) => this.setData({ uploadPercent: p }),
       })
       // ⚠️ 上传完了就换「AI评测中」：不换的话进度条会停在 100%，而后面还有十几秒打分
@@ -1610,7 +1640,7 @@ Page({
       //    历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变。
       // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值（false）落库，
       //    结果页（pages/challenge）再给那个开关。
-      const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl)
+      const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl, false, attemptId)
       // ⭐ 记住它：弹窗里「评测详情」要靠它去 pages/challenge
       this.submissionId = task.submissionId
       // ⚠️ 受理阶段就被判失败（音频不合规 / 文章不存在）→ 直接进 s6
@@ -2011,6 +2041,8 @@ Page({
       error: '',
       restored: false,
       audioPath: '',
+      // ⚠️ 整页重来 = 上一次尝试作废（完整说明见构造函数里 attemptId 那段）
+      attemptId: '',
       playPath: '',
       durationMs: 0,
       recordDurationText: '',

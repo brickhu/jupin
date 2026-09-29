@@ -39,14 +39,22 @@ export interface UploadResult {
 export interface UploadOptions {
   /** 本段录音属于哪篇文章 —— 会编进存储路径 */
   articleId: string
+  /**
+   * ⭐ 一次提交尝试的稳定 id（32 hex）—— **重试必须复用同一个值**（见 newAttemptId）。
+   * 它同时是存储路径的第三段与服务端的幂等键（见 db/schema.ts 的 attemptId）。
+   */
+  attemptId: string
   /** 上传进度回调 0–100 */
   onProgress?: (percent: number) => void
 }
 
 /**
- * ⭐ 存储路径规范：**句子 / 用户 / 时间戳** 三段。
+ * ⭐ 存储路径规范：**句子 / 用户 / 尝试 id** 三段。
  *
- *   audio/{articleId}/{userId}/{timestamp}.{后缀}
+ *   audio/{articleId}/{userId}/{attemptId}.{后缀}
+ *
+ * ⚠️ 第三段原来是上传时间戳，2026-09 改成 attemptId：路径必须"同一段录音重试时不变"，
+ *    否则服务端按路径判重的兜底会跟着失效（真实事故：重试多扣一次能量）。
  *
  * ⚠️ 必须与服务端 `services/audio-key.ts` 的 `makeAudioKey()` 完全一致。
  *    服务端会校验这个路径：段数、前缀、文件名格式（后缀在允许集合里），
@@ -63,10 +71,43 @@ export interface UploadOptions {
  *   路径要在**上传那一刻**就定下来，而 submissionId 含序列号，
  *   序列号要等提交时数库才知道 —— 所以两者是独立的（见服务端注释）。
  */
-function makeAudioKey(articleId: string, userId: number, filePath: string): string {
+function makeAudioKey(articleId: string, userId: number, attemptId: string, filePath: string): string {
   const m = /\.([A-Za-z0-9]{1,5})$/.exec(filePath)
   const ext = (m?.[1] ?? RECORD_SPEC.extension).toLowerCase()
-  return 'audio/' + articleId + '/' + userId + '/' + Date.now() + '.' + ext
+  /**
+   * ⚠️⚠️ 第三段是 **attemptId**（一次提交尝试的稳定 id），**不再是 Date.now()**。
+   *
+   * 用时间戳的后果（真实事故）：客户端每次重试都会重新上传一次 ⇒ 路径变了
+   * ⇒ 服务端按 audioKey 判重必然落空 ⇒ 多加一条成绩、**多扣一次能量**、
+   * 多调一次引擎 —— 而界面上写着"不会重复计费"。
+   * 现在路径与幂等键同源：重试（同一个 attemptId）会覆盖同一个对象、命中同一行。
+   */
+  return 'audio/' + articleId + '/' + userId + '/' + attemptId + '.' + ext
+}
+
+/**
+ * ⭐ 生成一次提交尝试的 id（32 位十六进制，与服务端正则一致）。
+ *
+ * ⚠️ 调用方**必须**在"录音落地那一刻"生成一次、然后在整个重试链里复用
+ *    （见 pages/reading 的 attemptId 字段）。这里只负责生成，不负责复用 ——
+ *    每次调用都会得到**不同**的值，那正是"重录一次 = 新的一次尝试"。
+ */
+export function newAttemptId(): string {
+  const bytes = new Uint8Array(16)
+  /**
+   * ⚠️ 优先用平台提供的密码学随机（`wx.getRandomValues`，基础库 2.15+）。
+   * ⚠️ 退回 Math.random 是可以接受的：这是**幂等键**不是密钥 —— 可预测不会造成越权，
+   *    最坏是极小概率的撞键，而服务端的唯一索引会挡住（用户重录一次即可）。
+   * ⚠️ 刻意**不写 `globalThis`**：它是 ES2020，而小程序产物必须停在 es2017
+   *    （build.mjs 的 assertNoModernSyntax 会当场拦下 —— 这一版就先被它拦过一次）。
+   */
+  const wxCrypto = (wx as unknown as { getRandomValues?: (a: Uint8Array) => void }).getRandomValues
+  if (typeof wxCrypto === 'function') {
+    wxCrypto(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 export function uploadAudio(filePath: string, opts: UploadOptions): Promise<UploadResult> {
@@ -75,8 +116,12 @@ export function uploadAudio(filePath: string, opts: UploadOptions): Promise<Uplo
     // 上传路径必须带 uid，拿不到就早失败 —— 否则会传到错误路径被服务端拒掉
     return Promise.reject(new Error('还没拿到用户 id，请稍后重试'))
   }
+  if (!/^[a-f0-9]{32}$/.test(opts.attemptId)) {
+    // ⚠️ 早失败：拿不到合法 attemptId 就上传，会传到一个"判不了重"的路径上
+    return Promise.reject(new Error('本次提交的 attemptId 不合法，请重录一次'))
+  }
 
-  const audioKey = makeAudioKey(opts.articleId, userId, filePath)
+  const audioKey = makeAudioKey(opts.articleId, userId, opts.attemptId, filePath)
   return TRANSPORT === 'http'
     ? uploadToLocalServer(filePath, audioKey, opts)
     : uploadToCloudStorage(filePath, audioKey, opts)

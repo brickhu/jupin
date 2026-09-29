@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   // ⚠️ 动态 import：本文件与 db/index.ts 之间会成环，静态 import 解析不了（同 seed-articles）
   const { db } = await import('./index')
   const { articles, submissions, users } = await import('./schema')
-  const { makeAudioKey, makeSubmissionId } = await import('../services/audio-key')
+  const { attemptIdOf, makeAudioKey, makeSubmissionId } = await import('../services/audio-key')
   const { ensureSchedules } = await import('../services/schedules')
 
   const start = today()
@@ -227,7 +227,9 @@ async function main(): Promise<void> {
         score: Number(score).toFixed(1),
         // ⚠️ 攻克 = 出分即可（85 分线已废除）—— 它由 status='scored' 表达，
         //    不再单独写一列（is_conquered 已删，迁移 0034）
-        audioKey: makeAudioKey(articleId, userId, at.getTime()),
+        // ⚠️ 第三个参数是幂等键（attemptId）不是时间戳，见 services/audio-key.ts
+        attemptId: attemptIdOf(userId, articleId, at),
+        audioKey: makeAudioKey(articleId, userId, attemptIdOf(userId, articleId, at)),
         audioBytes: 40000 + Math.round(rnd() * 60000),
         audioDurationMs: 3200 + Math.round(rnd() * 4200),
         // 绝大多数公开，留一部分关掉 —— 隐私开关那条路也要有数据可查

@@ -288,6 +288,13 @@
       "when": 1790530674157,
       "tag": "0040_quick_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1790645561021,
+      "tag": "0041_goofy_night_nurse",
+      "breakpoints": true
     }
   ]
 }

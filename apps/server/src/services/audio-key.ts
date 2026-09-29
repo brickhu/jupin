@@ -27,8 +27,29 @@ export function makeSubmissionId(userId: number, articleId: string, seq: number)
     .slice(0, SUBMISSION_ID_LENGTH)
 }
 
-export function makeAudioKey(articleId: string, userId: number, timestampMs: number): string {
-  return `${AUDIO_PREFIX}/${articleId}/${userId}/${timestampMs}.${RECORD_SPEC.extension}`
+/**
+ * ⭐ 上传路径。
+ * ⚠️ 第三个参数现在是 **attemptId**（一次尝试的稳定 id），不再是上传时间戳：
+ *    路径必须"同一段录音重试时不变"，否则服务端按路径判重的兜底也会跟着失效
+ *    （主判据是 (userId, attemptId)，见 db/schema.ts）。
+ * ⚠️ 名字保留 `makeAudioKey`：它在其它地方表示"音频对象的名字"，改名的收益不如噪声大。
+ */
+/**
+ * ⭐ 由 (用户, 句子, 时刻) 派生一个**稳定**的 attemptId —— 只给**造数据**用
+ * （种子脚本 / 测试）。真实客户端用的是随机 32 hex（一次录音一个，重试复用）。
+ *
+ * ⚠️ 为什么这里可以确定性派生：种子要**可重放**（同一份种子跑两次，行的 id 不变），
+ *    而真实提交没有这个需求，反而必须随机（否则两台设备同一秒录音会撞键）。
+ */
+export function attemptIdOf(userId: number, articleId: string, at: Date): string {
+  return createHash('sha256')
+    .update(`attempt:${userId}:${articleId}:${at.toISOString()}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function makeAudioKey(articleId: string, userId: number, attemptId: string): string {
+  return `${AUDIO_PREFIX}/${articleId}/${userId}/${attemptId}.${RECORD_SPEC.extension}`
 }
 
 /**
@@ -138,7 +159,13 @@ export function assertAudioKeyOwnedBy(audioKey: string, userId: number, articleI
    *      内容是什么一律由服务端按文件头 sniff（services/audio.ts），
    *      所以后缀本来就不能被用来骗过什么。
    */
-  if (!/^\d{10,}\.[a-z0-9]{1,5}$/.test(filePart)) throw new Error('音频文件名不对')
+  /**
+   * ⚠️ 文件名现在有两种合法形状（2026-09 起）：
+   *    · **新**：attemptId（32 位十六进制）= 一次提交尝试的稳定 id（见 db/schema.ts）
+   *    · **旧**：13 位上传时间戳 —— 老客户端、以及本机联调时代留下的音频
+   *    两种都放行：只按新格式校验会让"用户手里的旧录音重试提交"直接 400。
+   */
+  if (!/^(?:[a-f0-9]{32}|\d{10,})\.[a-z0-9]{1,5}$/.test(filePart)) throw new Error('音频文件名不对')
 
   if (articlePart !== articleId) throw new Error('音频路径里的文章与提交的不一致')
   if (Number(userPart) !== userId) throw new Error('音频路径不属于当前用户')

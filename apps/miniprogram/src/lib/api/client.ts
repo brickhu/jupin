@@ -960,6 +960,7 @@ export function submitReading(
    *    开关再改成 true（见 pages/challenge 的 onTogglePublic）。
    */
   isPublic = false,
+  attemptId = '',
 ): Promise<SubmissionStatusResponse> {
   return request<SubmissionStatusResponse>('/api/user/submissions', {
     method: 'POST',
@@ -967,7 +968,13 @@ export function submitReading(
     //    而它在 dev 环境实测没生效 —— 给了签名地址就不必依赖它。
     //    服务端会严格校验（桶必须是我们的、对象必须等于 audioKey）。
     //    ⚠️ 服务端会把它**存进库里**：打分在后台跑，那时已经没有请求上下文了。
-    data: { articleId, audioKey, audioUrl, isPublic, scheduleDate },
+    /**
+     * ⚠️⚠️ `attemptId` 是**幂等键**（服务端必填，见 db/schema.ts）：
+     *    同一次录音重试提交时必须传**同一个值** —— 这样服务端能认出"这是刚才那一次"，
+     *    返回同一个 submissionId，既不多扣能量也不重复计分。
+     *    这里给它一个缺省空串只是为了让调用方显式想起它；服务端会拒绝空值（400）。
+     */
+    data: { articleId, audioKey, audioUrl, isPublic, scheduleDate, attemptId },
   })
 }
 
