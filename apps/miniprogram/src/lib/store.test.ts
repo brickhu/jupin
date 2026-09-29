@@ -34,15 +34,19 @@ const STREAK = {
   readToday: true,
 }
 
-/** 造一天的排期卡片 */
-function entry(date: string, articleId: string, myBest: number | null = null, myAttempts = 0) {
+/**
+ * 造一张句库卡片。
+ * ⚠️ 卡片是**纯句子数据**（见 ArticleCard 的头注释）：日期/今天这类上下文
+ *    已经移到响应信封上，所以这里**没有** date / isToday。
+ * ⚠️ `myBest` / `myAttempts` 是**故意留下的诱饵**：它们不在 ArticleCard 契约里，
+ *    下面那条测试正是要证明 applyLatestCards **不会**拿它们去填"我的战绩"
+ *    （那一格现在只由 /api/user/participation/{articleId} 写，见 lib/participation.ts）。
+ */
+function entry(articleId: string, myBest: number | null = null, myAttempts = 0) {
   return {
-    date,
     articleId,
     text: 'x',
     translation: 'x',
-    isScheduled: false,
-    isToday: false,
     participantCount: 5,
     topScore: 80,
     myBest,
@@ -51,15 +55,16 @@ function entry(date: string, articleId: string, myBest: number | null = null, my
 }
 
 /**
- * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/articles?latest=N`）
+ * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/articles/latest`）
  *    **不含「今日」那一句**（它由公开接口 `/api/articles/today` 给，见 LatestCardsResponse）。
  *    这里曾经塞过 `today`，而 `as never` 把类型检查绕过去了 ——
  *    夹具"模仿了一个不存在的契约"，最容易误导后来人。
+ * ⚠️ 带 `date`（服务端的今天）—— 端侧拿它判"这份缓存是不是今天的"。
  */
 function listResponse(items: unknown[] = []) {
-  // ⚠️ 形状跟着接口走：`GET /api/articles?latest=N` → `{ date, items }`
+  // ⚠️ 形状跟着接口走：`GET /api/articles/latest` → `{ date, items }`
   //    （原来是 `/api/schedules` 的 `{ date, streak, latest }`，那条接口已删除）
-  return { date: '2026-09-21', items } as never
+  return { date: today(), items } as never
 }
 
 beforeEach(() => {
@@ -67,57 +72,27 @@ beforeEach(() => {
   store.reset()
 })
 
-describe('applyArenaRecords —— 「我的战绩」由个人接口喂（按句子落，不按日期）', () => {
-  it('把服务端给的战绩写进对应句子', () => {
-    store.applyArenaRecords([{ articleId: '3', bestScore: 72, attempts: 2 }])
-    expect(store.arenaOf('3')).toEqual({ myBest: 72, myAttempts: 2 })
-  })
-
-  it('没参与过的句子返回「没参与」，而不是 undefined', () => {
-    expect(store.arenaOf('999')).toEqual({ myBest: null, myAttempts: 0 })
-  })
-
-  it('⭐ 同一句给多次 → 只落一个键（按 articleId，不按日期）', () => {
-    store.applyArenaRecords([
-      { articleId: '1', bestScore: 85, attempts: 2 },
-      { articleId: '1', bestScore: 60, attempts: 1 },
-    ])
-    expect(Object.keys(store.getState().arena)).toEqual(['1'])
-    expect(store.arenaOf('1')).toEqual({ myBest: 85, myAttempts: 2 })
-  })
-
-  it('⚠️ 保守合并：旧快照不能把更高的分盖回去', () => {
-    store.applyArenaRecords([{ articleId: '3', bestScore: 80, attempts: 1 }])
-    store.applyArenaRecords([{ articleId: '3', bestScore: 60, attempts: 1 }])
-    expect(store.arenaOf('3')).toEqual({ myBest: 80, myAttempts: 1 })
-  })
-
-  it('⭐ 公开列表接口（applyLatestCards）不再碰 arena / streak —— 它只带公开数据', () => {
-      store.applyLatestCards(listResponse([entry('2026-09-21', '3')]))
-    expect(store.getState().arena).toEqual({})
+/**
+ * ⚠️⚠️ 这里原来是 applyArenaRecords 那一组（批量「我在这几句上的战绩」）。
+ *    那条接口（`/api/user/arena-records`）2026-09 已删 —— 战绩改由
+ *    `/api/user/participation/{articleId}` 按句子单独取（见上面「参与状态」那一组）。
+ */
+describe('公开接口不碰「我的」那一格', () => {
+  it('⭐ 公开列表接口（applyLatestCards）不再碰 participation / streak —— 它只带公开数据', () => {
+      store.applyLatestCards(listResponse([entry('3')]))
+    expect(store.getState().participation).toEqual({})
     expect(store.getState().userInfo?.streak ?? null).toBeNull()
   })
 })
 
-describe('applySubmissionResult —— 这条就是那个 bug 的解药', () => {
-  it('⭐ 打分成功后，不经过任何网络请求，战绩立刻就是新的', () => {
-    expect(store.arenaOf('3').myBest).toBeNull()
-    store.applySubmissionResult({ articleId: '3', score: 74 })
-    expect(store.arenaOf('3')).toEqual({ myBest: 74, myAttempts: 1 })
-  })
-
-  it('同一句再提交一次：次数累加，最好成绩取较大值', () => {
-    store.applyArenaRecords([{ articleId: '3', bestScore: 80, attempts: 1 }])
-    store.applySubmissionResult({ articleId: '3', score: 60 })
-    expect(store.arenaOf('3')).toEqual({ myBest: 80, myAttempts: 2 })
-  })
-
-  it('⚠️ 提交到别的句子时，不能动这一句的战绩', () => {
-    store.applySubmissionResult({ articleId: '1', score: 91 })
-    expect(store.arenaOf('1').myBest).toBe(91)
-    expect(store.arenaOf('3').myBest).toBeNull()
-  })
-
+/**
+ * ⚠️⚠️ 这一组现在**只测 streak 那一半**（2026-09 改）。
+ *    原来这里还断言"打完分端侧自己把 myBest/myAttempts 加起来"——那套（store.arena）
+ *    连同 arena-records 接口一起删了：战绩是**参与记录**的事，由服务端说了算，
+ *    端侧只在提交后把那一句标成"未知"、下次页面读它时重新拉
+ *    （见上面「参与状态」那一组的最后两条用例）。
+ */
+describe('applySubmissionResult —— streak 那一半（战绩不再由端侧累加）', () => {
   it('streak 用服务端给的，端侧一个数都不算', () => {
     store.applySubmissionResult({
       articleId: '3',
@@ -178,11 +153,11 @@ describe('hasJoined —— 「加入」的判据是账号，不是昵称', () =>
 describe('订阅', () => {
   it('写入时通知订阅者', () => {
     const seen: number[] = []
-    const off = store.subscribe((s) => seen.push(s.arena['3']?.myAttempts ?? -1))
-    // ⚠️ 战绩的写入方是 applyArenaRecords（公开列表不再带「我的」字段）
-    store.applyArenaRecords([{ articleId: '3', bestScore: 1, attempts: 1 }])
+    const off = store.subscribe((s) => seen.push(s.latestCards ? 1 : 0))
+    // ⚠️ 公开列表的写入方是 applyLatestCards（它不再碰「我的」那一格）
+    store.applyLatestCards(listResponse([entry('3')]))
     store.applySubmissionResult({ articleId: '3', score: 2 })
-    expect(seen).toEqual([1, 2])
+    expect(seen).toEqual([1, 1])
     off()
   })
 
@@ -226,9 +201,79 @@ describe('cachedLatestCards —— 冷启动首屏的缓存（跨天必须丢掉
   })
 })
 
+describe('cachedToday —— 今日挑战卡的首屏缓存（同样按 date 判过期）', () => {
+  it('同一天能把上次那张卡取回来', () => {
+    const res = { date: today(), item: { articleId: '3' } } as never
+    store.applyToday(res)
+    expect(store.cachedToday()).toEqual(res)
+  })
+
+  it('⚠️ 跨天一律 null —— 昨天那句不能当今天的「今日挑战」', () => {
+    store.applyToday({ date: '2000-01-01', item: { articleId: '3' } } as never)
+    expect(store.cachedToday()).toBeNull()
+  })
+
+  it('从没拿到过也是 null', () => {
+    expect(store.cachedToday()).toBeNull()
+  })
+})
+
+describe('参与状态（participation）—— 按句子存 /api/user/participation 的返回', () => {
+  /** 造一条参与记录（只填这组用例关心的字段） */
+  const record = (attempts = 2, bestScore: number | null = 88) =>
+    ({
+      articleId: '3',
+      attempts,
+      bestScore,
+      worstScore: 60,
+      rank: 2,
+      participantCount: 9,
+      lastAt: '2026-09-29T00:00:00.000Z',
+      words: [],
+      links: [],
+      theme: null,
+    }) as never
+
+  it('⭐ 写入一条参与记录，读回来就是它', () => {
+    store.applyParticipation('3', record())
+    const got = store.participationOf('3')
+    expect(got.loaded).toBe(true)
+    expect(got.record?.bestScore).toBe(88)
+  })
+
+  it('⭐⭐ 三态必须分得开：没拉过 / 明确没参与 / 有记录', () => {
+    // ① 没拉过 —— loaded=false（未知，界面不该下"你没参与过"的结论）
+    expect(store.participationOf('3')).toEqual({ loaded: false, record: null })
+    // ② 拉到了、服务端说没参与 —— loaded=true + null（这才是结论）
+    store.applyParticipation('3', null)
+    expect(store.participationOf('3')).toEqual({ loaded: true, record: null })
+    // ③ 有记录
+    store.applyParticipation('3', record())
+    expect(store.participationOf('3').record?.attempts).toBe(2)
+  })
+
+  it('⚠️ 打分成功后把这一句标回"未知"（删键）—— 旧快照会让按钮停在旧状态', () => {
+    store.applyParticipation('3', record(1, 70))
+    store.applySubmissionResult({ articleId: '3', score: 90 })
+    expect(store.participationOf('3').loaded).toBe(false)
+  })
+
+  it('⚠️ 身份被清掉时参与记录跟着清 —— 它是"我的"数据', () => {
+    store.applyParticipation('3', record())
+    store.clearIdentity()
+    expect(store.participationOf('3').loaded).toBe(false)
+  })
+
+  it('⚠️ 参与记录落 storage：冷启动 hydrate 能读回来（首帧就有参与状态）', () => {
+    store.applyParticipation('3', record())
+    // ⚠️ 不能 reset()（它会 persist 一份空状态把刚写的覆盖掉）——见 hydrate 那组用例
+    expect(memory.get('me_state_v3')).toBeTruthy()
+  })
+})
+
 describe('hydrate —— 冷启动读回上次的战绩', () => {
   it('读回后订阅者立刻拿到数据，首帧不必等网络', async () => {
-    store.applySubmissionResult({ articleId: '3', score: 88 })
+    store.applyLatestCards(listResponse([entry('3')]))
     // ⚠️ 不能在这里调 store.reset() —— 它会 persist 一份空状态，把刚写的覆盖掉
     vi.resetModules()
     const fresh = await import('./store')
@@ -236,6 +281,6 @@ describe('hydrate —— 冷启动读回上次的战绩', () => {
     fresh.subscribe(fn)
     fresh.hydrate()
     expect(fn).toHaveBeenCalled()
-    expect(fresh.arenaOf('3').myBest).toBe(88)
+    expect(fresh.getState().latestCards?.items.length).toBe(1)
   })
 })

@@ -29,6 +29,8 @@ const shopGoodsRoute = createRoute({
   path: '/goods',
   tags: ['我的'],
   summary: '商品列表（价格从服务端来）',
+  // ⚠️ 与 /api/user/* 下其它接口统一：文档必须写明要带身份（运行时有 authMiddleware 兜底）
+  security: [{ userToken: [] }],
   responses: {
     200: {
       content: { 'application/json': { schema: ShopGoodsResponseSchema } },
@@ -72,6 +74,8 @@ const shopOrderRoute = createRoute({
   path: '/order',
   tags: ['我的'],
   summary: '下单（返回虚拟支付签名数据）',
+  // ⚠️ 与 /api/user/* 下其它接口统一：文档必须写明要带身份（409 那些分支都建立在"这是我"上）
+  security: [{ userToken: [] }],
   request: { body: { content: { 'application/json': { schema: z.object({ code: z.string() }) } } } },
   responses: {
     200: {

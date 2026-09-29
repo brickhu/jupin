@@ -1,5 +1,6 @@
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
-import { refreshMe } from '../../lib/join'
+import { refreshMe, retryAuth } from '../../lib/auth'
+import { openJoinPage } from '../../lib/join'
 import { getNavMetrics, navSolidFrom } from '../../lib/nav'
 import * as me from '../../lib/store'
 
@@ -180,47 +181,22 @@ Component({
         // ⚠️ 身份还在解析中：这一格是 spinner，不接受点击（也避免误触重试）
         if (this.data.sessionPending) return
         /**
-         * ⭐ 还没加入时这一格是「加入」按钮。
+         * ⭐⭐ 这一格是「加入 / 重新连接」—— 两种状态的去处**不同**，别混：
          *
-         * ⚠️⚠️ 「还没加入」= **服务端还不认识我**（大多是后端没起来），
-         *    而不是「还没起昵称」—— 判据见 store 的 hasJoined。
-         * ⚠️ 判据是 `hasJoined()`（= `userInfo !== null`）= **服务端那一行有我的记录**，
-         *    与 `lib/auth` 的 `isAuthed()` 是**同一个判据**（两处必须一致，否则界面说"没记录"、
-         *    按钮却说"能动手"）。
-         * ⚠️ 而**问不到**（session === 'unknown'，断网）既不是"有记录"也不是"没记录"：
-         *    这时画的是「重新连接」（见上面渲染那一段），点一下重试。
+         *   · 「加入」（session ready + 库里没我）—— 用户明确要加入 ⇒ 去加入页。
+         *     **注册就发生在那一页按下「确认加入」的那一下**（2026-09 定：
+         *     注册不能是自动的）。这里绝不替他建号。
+         *   · 「重新连接」（session unknown，问不到）—— 他想的是**再试一次**，
+         *     不是"加入"：只重新问一次；问到"未加入"才去加入页，
+         *     仍然问不到就提示一句，**不乱跳**（跳到加入页也提交不了，那一页同样要连服务端）。
          *
-         * ⚠️ 点它**不跳加入页**：加入页是补头像和昵称的地方，
-         *    而「补资料」要求先有账号 —— 没账号时跳过去也存不下来。
-         *    所以点它的唯一意义是**再确认一次身份**（那一步顺带完成注册）。
+         * ⚠️ 判据 `hasJoined()`（= `userInfo !== null`）与 `lib/auth` 的 `isAuthed()`
+         *    是**同一个**（两处必须一致，否则界面说"没记录"、按钮却说"能动手"）。
          */
         if (!this.data.joined) {
           if (this.data.joinBusy) return
           this.setData({ joinBusy: true })
-          /**
-           * ⚠️ 「问不到」与「库里没我」都走这一下重试，但**后续处置不同**：
-           *    · 这次问到了、且库里没我 → 下面按 named 分流（去加入页/面板）；
-           *    · 这次仍问不到 → 只提示"连不上"，**不把人推去加入页**（见 lib/auth）。
-           */
-          void refreshMe()
-            .then((known) => {
-              // null = 没问到。不说一声的话，用户只会以为这个按钮坏了
-              if (known === null) {
-                wx.showToast({ title: '连不上服务，稍后再试', icon: 'none' })
-                return
-              }
-              /**
-               * ⭐ 这次问到了（true / false 都算「服务端认识我」）⇒ **顺手把面板拉开**。
-               *
-               * ⚠️ 不这么做的话，用户要点**两下**才看得到面板：
-               *    第一下只是"重试身份确认"，成功了却什么都不发生 ——
-               *    而他的感受是"点了没反应"，只会再点一次（或者以为坏了）。
-               *    这个 bug 真实发生过：本地服务端跑着旧代码、/me 一直 500，
-               *    于是 joined 恒为 false，面板**永远**打不开。
-               */
-              this.setData({ sheetOpen: true })
-            })
-            .finally(() => this.setData({ joinBusy: false }))
+          void this.onRetryIdentity().finally(() => this.setData({ joinBusy: false }))
           return
         }
         this.setData({ sheetOpen: true })
@@ -233,6 +209,32 @@ Component({
         return
       }
       wx.reLaunch({ url: HOME_URL })
+    },
+
+    /**
+     * ⭐ 左上一格是「加入 / 重新连接」时的处置（见 onLeftTap 的说明）。
+     *
+     * ⚠️ 两条路**不能合并**：`retryAuth()` 的语义是"用户明确要加入"——
+     *    它在问不到时也会把人带去加入页。而「重新连接」那一格**不是**要加入，
+     *    只是要再连一次；连不上就提示，别把人推进一个同样连不上的表单。
+     */
+    async onRetryIdentity() {
+      if (!this.data.sessionUnknown) {
+        // 已知"库里没我" + 用户点了「加入」⇒ 去加入页（注册发生在那一页）
+        await retryAuth()
+        return
+      }
+      const r = await refreshMe()
+      if (r === 'unknown') {
+        // 仍然连不上：说一句能做什么，别乱跳
+        wx.showToast({ title: '连不上服务，稍后再试', icon: 'none' })
+        return
+      }
+      if (r === 'unregistered') {
+        openJoinPage()
+        return
+      }
+      // r === 'joined'：store 广播已经让这一格画成头像，什么都不用做
     },
 
     /**

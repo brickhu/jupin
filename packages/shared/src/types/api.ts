@@ -175,7 +175,7 @@ export interface SubmitResponse {
    * ⭐ 这一把是**这句**的第几次提交（从 1 开始）—— s5 副标题「第 K 次挑战」用的就是它。
    *
    * ⚠️⚠️ **可空**（2026-09 改）：序号**只在"有结论"时才分配**（见 db/schema.ts），
-   *    与「我在这句打过几次分」（ArenaRecord.attempts）不是同一个数 —— 后者只数 scored。
+   *    与「我在这句打过几次分」（参与记录的 attempts）不是同一个数 —— 后者只数 scored。
    *    端侧原来拿 store 的缓存猜、还夹了下限 2：缓存里没有这句的旧战绩时会猜成
    *    「第 2 次」，而 previousBest 又是 null（首次）—— 两个字段自相矛盾。
    * ⚠️ 「是不是首次」仍由 previousBest === null 判，不用它：首次失败过的用户
@@ -386,11 +386,63 @@ export interface GrowthRankRow {
   isMe: boolean
 }
 
-/** 首页那三块成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10） */
+/**
+ * ⭐ 成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10）—— **按需返回**。
+ *
+ * ⚠️ `GET /api/leaderboards/growth` 支持点名要哪几块：
+ *    · **不带参数** ⇒ 三块都查、都给（首页一次拿全，别为省两次查询多发两个请求）；
+ *    · **带 `?self` / `?diligence` / `?standout`**（可多选，带上即算，值忽略）
+ *      ⇒ **只查、只回点名的那几块**（各是一条独立 SQL）。
+ *
+ * ⚠️⚠️ 没点名的键**直接不出现**，而不是给空数组 ——
+ *    `[]` 的含义是"这块榜上没人（都还没攒下成长值）"，与"我没问"是两件事。
+ */
 export interface GrowthRankResponse {
-  self: GrowthRankRow[]
-  diligence: GrowthRankRow[]
-  standout: GrowthRankRow[]
+  self?: GrowthRankRow[]
+  diligence?: GrowthRankRow[]
+  standout?: GrowthRankRow[]
+}
+
+/**
+ * ⭐ **用户目录**里的一行（`GET /api/users`）。
+ *
+ * ⚠️⚠️ **这条接口是公开的，而且含 `energy`** —— 这是 2026-09 用户**明确要求**的口径
+ *    （"这个公开，含 energy"）。
+ *    ⚠️ 它**不等于**"能量可以公开"成为通则：`/api/profile/:id`（个人主页）与
+ *      `/api/user/me` 那条边界**没变** —— 能量是账号余额，主页仍然只给本人。
+ *      ⇒ 别拿这里当先例往别的公开接口上加 energy。
+ */
+export interface UserSummary {
+  /** 用户 id（本库自增主键，业务处处用它） */
+  id: number
+  /** 昵称；null = 还没起过名字（端侧显示占位，不在服务端编） */
+  nickname: string | null
+  /** 头像 —— 云存储 fileID（cloud://…），端侧先换址才能进 <image src> */
+  avatarUrl: string | null
+  /** ⭐ 能量余额（公开，见上面的说明） */
+  energy: number
+  /** 加入时间（ISO） */
+  createdAt: string
+  /**
+   * ⭐ **参与次数** = 参与场次（**一句 = 一场**，只数拿到分的）。
+   * ⚠️ 与 `/api/profile/:id` 的 `conqueredCount`、`challengeStats.challengedCount`
+   *    是**同一个数**（三条口径都是"有分的句子数"），所以共用这个名字。
+   */
+  conqueredCount: number
+  /** ⭐ **挑战回合** —— 出过分的提交次数（同一句重读 N 次算 N 回）。 */
+  challengedRounds: number
+  /** ⭐ **连战天数** —— 取自 `users.streak_days`（与 `readStreakView().streakDays` 同一个值）。 */
+  streakDays: number
+  /**
+   * ⭐ **成长值** —— 三个指标各自给，**不合成总分**（见 GrowthView 的说明）。
+   * ⚠️ 直接来自 `users.growth_*` 这三列，与成长榜、用户面板同源。
+   */
+  growth: GrowthView
+}
+
+/** `GET /api/users` 的响应 */
+export interface UserListResponse {
+  items: UserSummary[]
 }
 
 /** 一次提交给 streak 带来的具体变化 —— 结果页要逐条讲清楚 */
@@ -488,37 +540,8 @@ export interface ArticleDetail {
 }
 
 /**
- * ⭐ 「我在这句上的战绩」—— GET /api/user/arena-records（**鉴权接口**）。
- *
- * ⚠️⚠️ 公开接口（句子列表 / 竞技场）**不含任何「我的」字段**；
- *    端侧把这一份按 articleId 融进公开列表 —— 卡片描边、「已参与 N 次 · 最高 X 分」、
- *    按钮文案、竞技场里的「我的战绩」都从它来。这样公开响应人人一样（可缓存），
- *    而「我的」永远只有一个来源。
- *
- * ⚠️ rank / beatenCount 只在请求时带 `ranks=1` 才有：名次是**跨用户**算出来的
- *    （公开榜单只给前 20，客户端自己算不出第 500 名），所以只在该算的那一屏算。
- */
-export interface ArenaRecord {
-  articleId: string
-  /** 我的最好成绩；没参与过为 null */
-  bestScore: number | null
-  /** 我在这句打过几次分（只数打分成功的，与「参与人数」同口径） */
-  attempts: number
-  /** 我的名次；没参与过、或没要 ranks 时为 null */
-  rank: number | null
-  /** 我击败了多少人；同上为 null */
-  beatenCount: number | null
-  /**
-   * ⭐ 我收藏了这一句吗 —— 竞技场页那个收藏按钮的状态。
-   * ⚠️ 它跟"我参与过没有"**无关**：没读过也能收藏（"以后来读"），
-   *    所以有它的条目不一定有参与记录（bestScore 会是 null）。
-   */
-  isFavorite: boolean
-}
-
-/**
  * ⭐ 收藏列表里的一条 —— GET /api/user/favorites（**鉴权**）。
- * ⚠️ 与 ArenaRecord 分开：那个回答"我在这句上打得怎么样"，这个回答
+ * ⚠️ 与参与记录分开：那个回答"我在这句上打得怎么样"，这个回答
  *    "我收了哪几句话"（正文 + 难度/标签 + 收藏时间 + 顺带带上我的战绩）。
  */
 export interface FavoriteItem {
@@ -542,14 +565,28 @@ export interface FavoritesResponse {
 }
 
 /**
- * ⭐ 我在**某一句**上的历史挑战（逐次）—— GET /api/user/article-records?article=（鉴权）。
+ * ⭐ **"这一句我收藏了吗"** —— `GET /api/user/is-favorite?articleId=`（鉴权）。
  *
+ * ⚠️ 独立的一条查询（用户 2026-09 定）：**不掺进** participation 的响应，也不依附
+ *    已删的 `arena-records`。收藏与"参与"是两件事 —— **没读过也能收藏**，
+ *    混在一起就会出现"只收藏没读过 ⇒ 按钮变空心"那种 bug。
+ */
+export interface IsFavoriteResponse {
+  favorited: boolean
+}
+
+/**
+ * ⭐ 我在**某一句**上的历史挑战（逐次）—— `GET /api/user/participation/{articleId}/submissions`。
+ *
+ * ⚠️ 路径就是「参与」这个资源本身：一次参与 = (我, 这一句)，它的**子资源**才是逐次提交。
+ *    （2026-09 改：原来挂在 `/api/user/article-records?article=` 上 —— 那是"按句子查提交"，
+ *    与"我的参与记录"是两个入口，现在统一从 participation 进去。）
  * ⚠️ 粒度是**一次提交**，与「参与场次」不同：那边一句一行（一人一句一行的派生索引），
  *    这边要的是"我在这一句上读过几次、每次多少分" —— 朗读页下方那一段历史用它。
- * ⚠️ 只给**有得分的**（status = scored）：失败/进行中的那次没有分数，
- *    混进来会让列表出现一条"没有分数的历史"。
+ * ⚠️ 只给**有结论的**（status = scored / failed）：检测中的那次没有结论，
+ *    混进来会让列表出现一条"没有结论的历史"。
  */
-export interface ArticleRecordItem {
+export interface ParticipationSubmissionItem {
   submissionId: string
   /**
    * ⚠️ `scored` = 有分；`failed` = **检测跑到了但没出分**（未检测到有效语音）。
@@ -569,16 +606,16 @@ export interface ArticleRecordItem {
   isPublic: boolean
 }
 
-/** GET /api/user/article-records 的响应 */
-export interface ArticleRecordsResponse {
-  items: ArticleRecordItem[]
+/** `GET /api/user/participation/{articleId}/submissions` 的响应 */
+export interface ParticipationSubmissionsResponse {
+  items: ParticipationSubmissionItem[]
   /** 我在这句上的最好成绩；一次都没读过为 null */
   bestScore: number | null
   /** 我在这句上出过分几次 */
   attempts: number
   /**
    * ⭐ 我在这句上的**名次**（跨用户算）；没出过分是 null。
-   * ⚠️ 端侧算不出这个数（要别人的成绩）⇒ 必须服务端给（同 arena-records 的 ranks 口径）。
+   * ⚠️ 端侧算不出这个数（要别人的成绩）⇒ 必须服务端给（与竞技场榜单同一处实现）。
    */
   rank: number | null
   /** 这一句的参与人数；没人参与是 0 */
@@ -590,33 +627,24 @@ export interface ArticleRecordsResponse {
   lowestScore: number | null
 }
 
-/** GET /api/user/arena-records 的响应 */
-export interface ArenaRecordsResponse {
-  items: ArenaRecord[]
-}
-
 /**
- * ⭐ 首页/列表上的一张竞技场卡片。
+ * ⭐ 首页/列表上的一张竞技场卡片 —— **纯句子数据**。
  *
- * ⚠️⚠️ `date` **只有今日那一张有** ——
- *    因为「日期只是一个编辑精选的容器，和竞技场无关」（db/schema.ts）。
- *    历史卡片来自**句库**：它回答的是「还有哪些竞技场」，不是「过去哪几天」，
- *    所以这个字段对整个历史列表都没有意义。
- *    ⇒ 点进竞技场一律按 **articleId** 寻址（/api/arenas/:articleId），不再用日期。
+ * ⚠️⚠️ 它**不含任何"哪一天 / 是不是今天"**（2026-09 清掉）：
+ *    · `date` / `isScheduled` / `isToday` 曾经都在这里，但它们回答的是
+ *      「这次挑战记哪一天 / 是不是今天 / 是不是运营排的」——那是**请求上下文**，
+ *      不是句子的属性（同一句在谁眼里、哪一天，都是另一回事）。
+ *    · 现在日期只在**"今天的"那两条接口的信封**上（`LatestCardsResponse` /
+ *      `TodayArticleResponse` 的 `date`），而且**只用于端侧按天做缓存失效**；
+ *      成绩归属由服务端在受理提交时决定（`POST /api/user/submissions`）。
+ *    ⇒ 点进竞技场一律按 **articleId** 寻址，不用日期。
  *
- * ⚠️ 这里原来还有 `isScheduled` / `isToday` 两个可选布尔（2026-09 删）：
- *    · `isScheduled` 随 schedules 表/接口一起废弃，**全仓库没有任何地方再写它**；
- *    · `isToday` 只有 today 接口写 `true`，**没有任何客户端读它** ——
- *      端侧把今日那张卡放在 `cards.today` 这个槽里，本来就不需要卡片自报身份。
- *    ⇒ 两个都是"只写不读"的死字段，只会让文档示例多出两个恒为 true 的键。
+ * ⚠️⚠️ **参与统计（人数 / 最高 / 最低）不在卡片上**（用户 2026-09 定：L1 解耦）：
+ *    卡片是"句子内容"，统计是 `participations` 的**聚合派生值**，两者生命周期不同
+ *    （内容稳定可缓存、统计每次现算）。要显示"N 人参与"，端侧拿这一屏的 id 去调
+ *    **批量统计接口** `GET /api/participations/stats?ids=a,b,c` 合并。
  */
 export interface ArticleCard {
-  /**
-   * 这一条**排给哪一天** 'YYYY-MM-DD'（北京时间）。
-   * ⚠️ 只有今日那一张有（历史卡片来自句库，与日期无关）。
-   * ⚠️ 它**不是**竞技场的地址 —— 那个是 articleId。
-   */
-  date?: string
   articleId: string
   /** 句子原文 */
   text: string
@@ -638,100 +666,140 @@ export interface ArticleCard {
    *    （渲染一个点了 404 的按钮比不渲染更糟）。
    */
   audio: StandardAudio | null
-  /**
-   * 这条句子是不是**运营专门排给那一天**的（false = 从池子按天轮转来的）。
-   * ⚠️ 只有今日那一张有。
-   */
-  isScheduled?: boolean
-  /** ⚠️ 只有今日那一张有（历史卡片与「今天」无关） */
-  isToday?: boolean
-  /** 参与人数（按句子去重的用户数） */
-  participantCount: number
-  /** 最高分；无人参与为 null */
-  topScore: number | null
-  /** ⭐ 全场最低分（同一人只算最好那次）；无人参与为 null（**不是 0**） */
-  lowestScore: number | null
   /** ⭐ 视觉主题（背景/前景/配图）；老内容为 null ⇒ 端侧用品牌色兜底 */
   theme: ArticleTheme | null
 }
 
 /**
- * ⭐⭐ **今日推荐** —— 「你今天适合读哪一句」。
+ * ⭐⭐ **今日推荐**（`GET /api/articles/today?uid=<id>`）—— 「今天适合读哪一句」。
  *
- * ⚠️⚠️ **2026-09 改口径**：它不再是 `/api/user/today` 那个专用信封，而是
- *    `GET /api/articles/today?uid=<id>` 直接返回的一张 **ArticleCard**
- *    （与 `/api/articles?latest=N` 的 items **同一个形状** ⇒ 端侧一套渲染）。
+ * ⚠️⚠️ **它带 `date`**（服务端的今天）：这条是"今天的"接口，端侧拿它**做缓存失效**
+ *    （跨天就不能再拿上次那张卡当"今日挑战"画出来）。
+ *    ⚠️ 与**通用查询** `GET /api/articles` 的区别就在这里：那条与"今天"无关，所以没有 date。
+ *    ⚠️ 但 `date` **不是**"这次挑战记哪一天"的依据 —— 归属由服务端在受理提交时决定
+ *    （`POST /api/user/submissions`，见 `scheduleDate`）。
  *
- * 为什么这么改（用户定的）：
- *   · 这条接口**只收 0 个或 1 个 uid**，公开可读（`/api/articles/*` 本来就是公开前缀）；
+ * 接口口径（用户 2026-09 定）：
+ *   · **只收 0 个或 1 个 uid**，公开可读（`/api/articles/*` 本来就是公开前缀）；
  *   · **uid 可省略（匿名 / 未登录）**：**默认初级档**，在该档句子里**随机**挑一条、
  *     **参与人数多的更容易被抽中**，且**不写任何用户行** —— 首页对游客也要画得出那张卡；
+ *   · 带 uid 时选句口径见 services/recommend.ts：以 uid 为单位、每 24 小时换一次，
+ *     分配落在 users.today_article_id / today_assigned_at 上，窗口内**原样返回**；
  *   · 「我今天在这句上的战绩」是**另一件事**，拆到鉴权接口
  *     `GET /api/user/participation/{articleId}`（返回 ParticipationRecord，没参与过为 null）。
- *
- * ⚠️ 选句口径没变（见 services/recommend.ts）：以 uid 为单位、每 24 小时换一次，
- *    分配落在 users.today_article_id / today_assigned_at 上，窗口内**原样返回**。
- *    卡片上的 `date` 是**服务端的今天**（这次提交记到哪一天），与 24 小时窗口不是一回事。
  *
  * ⚠️ 别再加回 `myLevel` / `level` / `levelBasis` / `myBest` / `myAttempts`：
  *    前三项是**工程备注**（用户明确不要），后两项已经在 participation 接口里。
  */
+export interface TodayArticleResponse {
+  /** 服务端认定的「今天」—— **只用于端侧按天缓存失效** */
+  date: string
+  /** 那一句（**纯句子数据**，见 ArticleCard 的头注释） */
+  item: ArticleCard
+}
 
 /**
- * ⭐⭐ 竞技场详情 —— **按句子**寻址（`/api/arenas/:articleId`）。
+ * ⭐⭐ **一句的参与统计**（`GET /api/participations/stats?ids=a,b,c`，公开）。
  *
- * ⚠️⚠️ 这才是竞技场的正经地址。db/schema.ts 里写着：排期「不是竞技单位，
- *    只是一个按日组织的展示层」，**日期只是编辑精选的容器，和竞技场无关** ——
- *    排名 / 参与人数 / 最高分 / 我的最好成绩，全部按 article_id 查。
+ * ⚠️⚠️ 用户 2026-09 定的结构（L1 解耦）：统计是 `participations` 的**聚合派生值**，
+ *    **不挂在 article / ArticleCard / ArticleDetail 上** —— 那三个是"句子内容"
+ *    （稳定、可缓存），而这三个数每次现算（有人提交就变）。
+ *    挂在内容结构上会出现两种坏结果：缓存把人数冻住；以及"内容一删，统计跟着没"。
  *
- * ⚠️ 它原来还有一个"按日期寻址"的兄弟（`GET /api/schedules/:date`），随排期一起删了：
- *    按句子进来的挑战**算今天**（submissionDate = 服务端的今天），
- *    页面也据此显示「今天读一句，连战就接上了」。
- *    而按日期进来的是「回到那一天再挑战一次」，submissionDate 就是那一天。
+ * ⚠️ 于是它与句子的**生命周期无关**：`articleId` 只是个 key，句子行不在了
+ *    （下架 / 内容换版）这一条照样能查到 —— 参与记录自带 words/links 快照。
+ *
+ * ⚠️ 没人参与时 `topScore` / `lowestScore` 是 **null**（不是 0：0 会被读成"有人拿了 0 分"），
+ *    且两者一定同时有值或同时为 null（服务端同一条 SQL 取出来的）。
  */
-export interface ArenaDetail {
+export interface ArticleStats {
   articleId: string
-  text: string
-  translation: string
-  /** ⭐ 朗读难度（三个判据按权重合成的一个档位，见 shared/level.ts） */
-  difficulty: ArticleLevel | null
-  /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
-  tags: string[]
-  /** ⭐ 这次挑战该记到哪一天 —— 按句子寻址时是服务端的**今天** */
-  submissionDate: string
-  /** submissionDate 是不是今天（页面据此显示连战提示） */
-  isToday: boolean
+  /** 参与人数（按句子去重的用户数） */
   participantCount: number
+  /** 全场最高分；无人参与为 null */
   topScore: number | null
-  /**
-   * ⭐ 全场**最低分**（同一人只算最好那次）—— 「这个场子现在什么水平」的下限。
-   * ⚠️ 没人参与时是 **null**，不是 0（0 会被读成"有人拿了 0 分"）。
-   * ⚠️ 与 topScore 一定同时有值或同时为 null（服务端同一条 SQL 取出来的）。
-   */
+  /** 全场最低分（同一人只算最好那次）；无人参与为 null */
   lowestScore: number | null
-  /**
-   * ⭐ 标准音（参考音频）—— 句子卡左上那颗播放钮要它。
-   * ⚠️ 为 null = 这句没灌标准音 ⇒ 端侧**整颗播放钮都不渲染**
-   *    （渲染一个点了 404 的按钮比不渲染更糟，同 ArticleDetail.audio 的约定）。
-   */
-  audio: StandardAudio | null
-  /** ⭐ 视觉主题（背景/前景/配图） */
-  theme: ArticleTheme | null
-  /** 完整榜单（从头往下数，最多 20 条） */
-  leaderboard: LeaderboardRow[]
+}
+
+/** `GET /api/participations/stats?ids=…` 的响应（**按请求的 ids 零值补齐**） */
+export interface ArticleStatsResponse {
+  items: ArticleStats[]
+}
+
+/**
+ * ⭐⭐ 这一句的**参与记录**（`GET /api/participations?articleId=…`，公开）。
+ *
+ * 用户 2026-09 定：竞技场那一条"大而全"的接口（`/api/arenas/{articleId}`）拆掉，
+ * 句子数据、参与者/榜单、参与统计各自一条 —— 这个类型是"参与者"那一条的行。
+ *
+ * ⚠️⚠️ 它挂在**参与资源**下（`/api/participations`），**不要求句子还在**：
+ *    参与数据是用户资产，不能因为内容被下架/换版就查不到。
+ *
+ * 参数口径（服务端实现见 services/article-participations.ts）：
+ *   · `sort=time`（默认，按最新参与时间倒序）| `sort=score`（按最高分倒序 = 榜单）
+ *   · `limit`（1..100，默认 20）、`offset`（默认 0）
+ *
+ * ⚠️ `rank` **与 sort 无关**：它永远是按最高分算的全局名次 ——
+ *    按时间排的时候，"他是第几名"依然是有用的信息。
+ * ⚠️ 没有 `isMe`：这一条是公开接口，认不出看的人是谁；
+ *    端侧拿 `userId` 跟自己的 id 比即可（见 store 的 userInfo.id）。
+ */
+export interface ArticleParticipationRow {
+  /** ⭐ 名次（按最高分全序算；同分按"谁先拿到"再按 uid，与榜单口径一致） */
+  rank: number
+  /** ⭐ 用户 id（本库自增主键）—— 端侧拿它跟自己的 id 比，也是个人主页的地址 */
+  userId: number
+  nickname: string
+  /** 头像 —— ⚠️ 云存储 fileID（cloud://…），端侧要先换址（见 lib/cloud-file.ts） */
+  avatarUrl: string | null
+  /** ⭐ 这个人在这一句上**出过分**几次 */
+  attempts: number
+  /** ⭐ 最高分 —— 排名的依据 */
+  bestScore: number
+  /** ⭐ 最新一次参与时间（ISO） */
+  lastAt: string
+}
+
+/** `GET /api/articles/{id}/participations` 的响应 */
+export interface ArticleParticipationsResponse {
+  items: ArticleParticipationRow[]
+  /** 该句参与者总数（分页判据：`offset + items.length < total` 就还有下一页） */
+  total: number
 }
 
 
 /* ---------- 其他 ---------- */
 
-/** ⭐ **最新上线**（`GET /api/articles?latest=N`）—— 公开接口，对所有人一样。
+/**
+ * ⭐ **句库通用查询的信封**（`GET /api/articles`）—— **没有 `date`**。
  *
- * ⚠️⚠️ 它与「今天挑战」（`GET /api/articles/today?uid=<id>`）是**两个接口**：
- *    一个对所有人一样（按 `articles.published_at` 倒序），一个按 uid（24 小时窗口 + 那个人的难度档）。
- *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除。
+ * 参数口径：`tags` / `difficulty` 逗号分隔**任一命中**，`sort=date|participants`，
+ * `limit` 默认 50（1..100）。
+ *
+ * ⚠️⚠️ 它**不带 date**：这条回答的是「句库里有哪些句子」，与"今天"无关。
+ *    带 date 的是另外两条 **"今天的"** 接口：
+ *    · `GET /api/articles/latest` → `LatestCardsResponse`（`{ date, items }`）
+ *    · `GET /api/articles/today?uid=<id>` → `TodayArticleResponse`（`{ date, item }`）
+ *    它们的 `date` 是服务端的今天，**只用于端侧按天做缓存失效**。
+ *    ⚠️ 「这次挑战记哪一天」不靠这些 date —— 归属由服务端在受理提交时决定
+ *    （`POST /api/user/submissions` 的 `scheduleDate`，缺省就是它的今天）。
+ */
+export interface ArticleListResponse {
+  /** 命中的句子（正文读不到的已剔除；顺序由请求的 `sort` 决定） */
+  items: ArticleCard[]
+}
+
+/**
+ * ⭐ **最新上线**（`GET /api/articles/latest`）—— 首页下半段那一段。
+ *
+ * ⚠️ 与通用查询（`ArticleListResponse`）的**唯一区别**：这里多一个 `date`
+ *    （服务端的今天），端侧拿它判断"这份首屏缓存是不是今天的"（见 store 的
+ *    `cachedLatestCards`）——跨天的列表不能拿来当今天的画。
+ * ⚠️ 同理 `date` **不参与成绩归属**（归属由服务端在受理提交时决定）。
  */
 export interface LatestCardsResponse {
-  /** 服务端认定的「今天」（端侧用它对齐自然日，见 store 的 serverDate） */
+  /** 服务端认定的「今天」—— **只用于端侧按天缓存失效** */
   date: string
   /** 按上线时间倒序的最新 N 句（正文读不到的已剔除） */
   items: ArticleCard[]
@@ -739,7 +807,11 @@ export interface LatestCardsResponse {
 
 export interface TokenResponse {
   token: string
-  user: { id: number; nickname: string | null }
+  /**
+   * ⚠️⚠️ **登录 ≠ 注册**（2026-09 定）：还没加入句拼的人也能拿到 token，
+   *    但那时 `user` 是 **null** —— 端侧据此画「加入」，不是当成登录失败。
+   */
+  user: { id: number; nickname: string | null } | null
 }
 
 export interface MyStats {
@@ -961,10 +1033,18 @@ export interface SubmissionAudioResponse {
  */
 export interface ParticipationRecord {
   articleId: string
-  /** 句子原文 —— 列表里靠它认出是哪一句 */
-  text: string
-  /** 这句有多少个词（句子本身的长度，不是我能控制的） */
-  words: number
+  /**
+   * ⭐⭐ **词表快照**（与 `ArticleDetail.words` 同形：原词含标点 + 音标 / 重音 / 音节 / 释义 / 技巧）。
+   *
+   * ⚠️⚠️ 它**同时就是原文**：`words[].text` 含标点，用空格拼起来就是那句话 ——
+   *    所以这里**没有 `text` 字段**（2026-09 改）：原文是派生值，
+   *    端侧要显示句子就 `words.map(w => w.text).join(' ')`。
+   *    服务端也不再存 `text` 列（同一件事两份数据，还闹出过"空数组 ⇒ 词数显示 0"的 bug）。
+   * ⚠️ 这是**当时那一份**的快照：句子改过 / 下线，历史卡片照样自足。
+   */
+  words: ArticleWordItem[]
+  /** ⭐ **连读标注快照**：`links[i]` 描述 `words[i]` 与 `words[i+1]` 之间；空串 = 不连。 */
+  links: string[]
   /** 我在这一句上挑战了几次（只数拿到分的） */
   attempts: number
   /** 最高分 / 最低分（都是拿到分的那些提交） */
@@ -976,13 +1056,15 @@ export interface ParticipationRecord {
   /** 最近一次挑战的时间（ISO）—— 列表按它倒序 */
   lastAt: string
   /**
-  /**
-   * ⭐ **最近这次挑战属于哪一天**（YYYY-MM-DD）—— 点卡片跳**竞技场**要用它。
-   * ⚠️ 竞技场是按「哪一天」取场次的（pages/arena 的 onLoad），
-   *    所以这里给的必须是**你参与的那一场**的日期，而不是端侧的今天。
-   * ⚠️ 老数据可能没有（schedule_date 为空）→ 空串，端侧那时不给跳。
+   * ⭐ **兜底原文** —— **只在词表快照为空时才有这个字段**（内容缺口）。
+   *
+   * ⚠️⚠️ 正常行**没有它**：句子由端侧从 `words` 拼
+   *    （`words.map(w => w.text).join(' ')`），服务端**不再存 text 列**。
+   *    但确实有内容的 `articles.words` 是空数组 —— 那种行端侧拼不出任何字，
+   *    于是读取时现取一次 `articles.text` 带上（**不落库**）。
+   * ⚠️ 端侧判据：`text ?? words.map(...).join(' ')`。
    */
-  lastScheduleDate: string
+  text?: string
   /** ⭐ 视觉主题（保留字段，本页暂不消费） */
   theme: ArticleTheme | null
 }

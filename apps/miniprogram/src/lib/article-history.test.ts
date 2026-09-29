@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ArticleRecordsResponse } from '@jushuo/shared'
+import type { ParticipationSubmissionsResponse } from '@jushuo/shared'
 
 import { historyRowsOf, historySummaryOf } from './article-history'
 
@@ -19,7 +19,7 @@ const NOW = new Date('2026-09-21T12:00:00+08:00').getTime()
  * ⚠️ 这一组用例盯的是**行**（免掉当前这一次、最高现算），与摘要卡那三个数无关 ⇒
  *    名次/人数/最低分给一组无关紧要的缺省值即可（摘要卡自己有单独一组用例）。
  */
-function resOf(items: ArticleRecordsResponse['items'], bestScore: number | null): ArticleRecordsResponse {
+function resOf(items: ParticipationSubmissionsResponse['items'], bestScore: number | null): ParticipationSubmissionsResponse {
   return { items, bestScore, attempts: items.length, rank: null, participantCount: 0, lowestScore: null }
 }
 
@@ -29,7 +29,7 @@ const item = (
   seq: number,
   createdAt: string,
   scheduleDate: string | null = '2026-09-21',
-): ArticleRecordsResponse['items'][number] => ({
+): ParticipationSubmissionsResponse['items'][number] => ({
   submissionId,
     // ⚠️ 夹具跟着契约走：status 必填（未出分那次也会出现在列表里）
     status: 'scored' as const,
@@ -61,7 +61,6 @@ describe('historyRowsOf —— 朗读页的历史挑战列表', () => {
     // 相对时间按北京时间算：昨天 10:00（NOW 是 09-21 12:00）
     expect(rows[0]?.ago).toBe('昨天 10:00')
     expect(rows[1]?.ago).toBe('09-18 12:00')
-    expect(rows[1]?.scheduleDate).toBe('2026-09-21')
   })
 
   it('「最高」在免掉当前这一次之后现算 —— 当前这条最高时，最高要换人', () => {
@@ -109,7 +108,7 @@ describe('historyRowsOf —— 朗读页的历史挑战列表', () => {
  */
 describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位列 / 最低）', () => {
   it('四个数各就各位（位列带参与人数，同 participations 的口径）', () => {
-    const res: ArticleRecordsResponse = {
+    const res: ParticipationSubmissionsResponse = {
       /**
        * ⚠️⚠️ **我自己的三次**（81 / 41 / 62）。
        *    注意 `lowestScore: 55` 是**全场**最低分，与"我的最低"（41）**故意不同** ——
@@ -137,7 +136,7 @@ describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位�
   })
 
   it('⚠️ 一次都没读过 → 0 次 + 三个破折号（不写 0 分 / 第 0 名）', () => {
-    const res: ArticleRecordsResponse = {
+    const res: ParticipationSubmissionsResponse = {
       items: [],
       attempts: 0,
       bestScore: null,
@@ -154,7 +153,7 @@ describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位�
   })
 
   it('⚠️ 名次 0（服务端对"没参与过"会给 0）必须显示成 —，不能出现「0 / 5」', () => {
-    const res: ArticleRecordsResponse = {
+    const res: ParticipationSubmissionsResponse = {
       items: [],
       attempts: 0,
       bestScore: null,

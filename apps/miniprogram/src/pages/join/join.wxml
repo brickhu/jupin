@@ -14,6 +14,8 @@
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
   <!-- left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
   <nav-bar id="nav" title="加入句拼" />
 
   <!-- -- 给改代码的人 --
@@ -23,12 +25,15 @@
           账号下了。」，用户 2026-09 要求删掉（解释性文案不上界面）。 -->
   <text class="text-32rpx font-semibold text-ink block px-1 mb-2 leading-[1.5] text-center">{{brand.pitch}}</text>
 
-  <!-- autoFocus：新人进来就把微信昵称摆到键盘上方（见组件里的说明） -->
-  <profile-form submit-label="确认加入" auto-focus="{{true}}" bind:saved="onSaved" />
+  <!-- autoFocus：新人进来就把微信昵称摆到键盘上方（见组件里的说明）
+       ⭐ registerMode：这一页的「确认加入」就是**注册**（唯一建 users 行的地方）——
+          提交时会调 POST /api/auth/register，见 profile-form 的说明 -->
+  <profile-form submit-label="确认加入" auto-focus="{{true}}" register-mode="{{true}}" bind:saved="onSaved" />
 
   <!-- ⭐ 可以略过。
-       ⚠️ 这一页**不是**登录，也不是任何功能的前置条件：账号（openid）是静默拿到的，
-          成绩照样入库。这里补的只是「榜上显示成什么」。
+       ⚠️⚠️ 但"略过"的含义 2026-09 变了：不加入就只有**只读浏览** ——
+          账号（users 那一行）不会自己建出来（用户定：注册不能做成自动的），
+          所以挑战 / 能量 / 参与记录 / 收藏这些功能都用不了。
           没这个入口，用户只能靠系统返回键去猜自己能不能走。 -->
   <view class="mt-3 py-2" bindtap="onSkip" hover-class="active__opacity-60">
     <text class="text-24rpx text-faint block text-center">以后再说</text>

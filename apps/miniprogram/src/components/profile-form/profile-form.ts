@@ -1,7 +1,7 @@
 import type { Gender } from '@jushuo/shared'
 
 import { CLOUD_ENV_ID } from '../../config'
-import { getUserId, saveProfile } from '../../lib/api/client'
+import { getUserId, register, saveProfile } from '../../lib/api/client'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import { refreshMe } from '../../lib/join'
 import { requireIdentity } from '../../lib/auth'
@@ -62,6 +62,17 @@ Component({
      *   加入页只要昵称+头像（false），资料页要全字段（true）。
      */
     full: { type: Boolean, value: false },
+    /**
+     * ⭐⭐ 这一份表单是**加入（注册）**还是**修改资料**。
+     *
+     * ⚠️⚠️ 它是这两个页面**唯一真正要紧的差别**（2026-09 定：注册不能自动）：
+     *    · true （加入页）—— 提交时调 `register()`：**这是全站唯一会建 users 行的地方**。
+     *      建行和保存昵称在同一个请求里完成（服务端 /api/auth/register）；
+     *      头像因为上传路径要 uid，只能**注册成功后**再传再补。
+     *    · false（修改资料页）—— 人已经在库里，走 `saveProfile()` 更新资料。
+     *      那时如果还没身份，说明这一页被绕开了（它本来是受保护页），报一句人话即可。
+     */
+    registerMode: { type: Boolean, value: false },
   },
 
   data: {
@@ -177,40 +188,74 @@ Component({
 
       this.setData({ saving: true, error: '' })
       try {
-        /**
-         * ⭐⭐ ⓪ 先要一个身份（见 lib/auth 的 `requireIdentity`）。
-         *
-         * ⚠️⚠️ 保存昵称头像前必须先把服务端那条 `users` 行建出来：否则
-         *    `POST /api/user/profile` 没有 user_id 可挂，再漂亮的昵称也存不下来。
-         *    而这一页**可能在没有身份时被打开**（它正是 auth 拦下之后的去处），
-         *    所以这里不能"跳页"，只能把失败说给用户（`requireIdentity` 抛一句人话）。
-         */
-        await requireIdentity()
-        // ① 头像先上传（只有**重新选过**才传 —— 否则保持库里那张）
-        let fileId = ''
         let avatarFailed = false
+
+        if (this.data.registerMode) {
+          /**
+           * ⭐⭐⭐ **这一步就是注册** —— 全站唯一会创建 `users` 行的地方
+           *     （用户 2026-09 定：注册不能做成自动的）。
+           *
+           * ⚠️⚠️ 顺序不能反：**先注册、再传头像**。头像在云存储里的路径是
+           *    `avatars/{uid}/…`，而 uid 只有注册成功那一刻才存在 ——
+           *    先传头像只能落到 `avatars/0/…` 那种没有主人的目录里。
+           * ⚠️ `register()` 内部已经 `setUserId`，并回**完整的「我是谁」**，
+           *    这里直接落 store（导航栏 / 用户面板当场就是新账号）。
+           */
+          me.applyProfile(
+            await register({
+              nickname,
+              ...(this.data.full ? { gender, age, bio } : {}),
+            }),
+          )
+        } else {
+          /**
+           * ⭐ 修改资料页：人已经在库里，这里**不注册**（注册只发生在加入页那一下）。
+           * ⚠️ 没身份就抛一句人话 —— 这一页本来是受保护页，走到这里说明入口被绕开了。
+           */
+          await requireIdentity()
+        }
+
+        /**
+         * ⭐ ① 头像上传（只有**重新选过**才传 —— 否则保持库里那张）。
+         * ⚠️⚠️ 传不上去**不该拖住"加入/保存"**：它是个装饰，昵称才是主角。
+         *    但也**不能一声不吭** —— 用户明明选了张图，结果是"没有头像"，
+         *    他会以为是这个功能坏了（本项目真踩过：本地少配了云存储，
+         *    服务端把头像全拒了，客户端却一点提示都没有）。所以记下 `avatarFailed`。
+         */
+        let fileId = ''
         if (this.data.avatarPath) {
           try {
             fileId = await this.uploadAvatar(this.data.avatarPath)
             avatarFailed = !fileId
           } catch (err) {
-            /**
-             * ⚠️⚠️ 头像传不上去**不该拖住保存**：它是个装饰，昵称才是主角。
-             *    但也**不能一声不吭** —— 用户明明选了张图，结果是"没有头像"，
-             *    他会以为是这个功能坏了（本项目真踩过：本地少配了云存储，
-             *    服务端把头像全拒了，客户端却一点提示都没有）。
-             */
             avatarFailed = true
             console.warn('[profile-form] 头像上传失败，本次不带头像：' + (err as Error).message)
           }
         }
-        // ② 落库，并**用它的返回值**更新全局 state（见 store 的 applyProfilePatch）
-        const saved = await saveProfile({
-          nickname,
-          ...(fileId ? { avatarUrl: fileId } : {}),
-          ...(this.data.full ? { gender, age, bio } : {}),
-        })
-        me.applyProfilePatch(saved)
+
+        /**
+         * ⭐ ② 落库，并**用它的返回值**更新全局 state（见 store 的 applyProfilePatch）。
+         *    · 修改资料页：永远走这里（昵称 + 可选头像 + 全字段）；
+         *    · 加入页：注册那一步已经把昵称写进去了，只有真的传了新头像才补这一下。
+         *
+         * ⚠️⚠️ 加入页里这一次失败**不算失败**：账号在上一行 `register()` 返回时
+         *    就已经建好了（那是不可回退的提交点）。把头像那一步的网络抖动报成
+         *    「保存失败」，用户会以为没加入成功、反复重试 —— 而其实他已经是会员了。
+         */
+        if (fileId || !this.data.registerMode) {
+          try {
+            const saved = await saveProfile({
+              nickname,
+              ...(fileId ? { avatarUrl: fileId } : {}),
+              ...(this.data.full ? { gender, age, bio } : {}),
+            })
+            me.applyProfilePatch(saved)
+          } catch (err) {
+            if (!this.data.registerMode) throw err
+            avatarFailed = true
+            console.warn('[profile-form] 加入已成功，但这次资料没补上：' + (err as Error).message)
+          }
+        }
         /**
          * ③ 再顺手拉一次完整的 /me（已征服数 / streak 在保存接口的返回值里没有）。
          * ⚠️ 不 await、也不管失败：**"已保存"这件事在第 ② 步就已经定死了**，

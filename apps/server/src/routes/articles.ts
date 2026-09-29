@@ -1,12 +1,17 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import { desc, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { normalizeLevel, normalizeTags, plainWordsOf, today } from '@jushuo/shared'
 import type { ArticleCard, ArticleDetail, StandardAudio } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { loadArticleContent } from '../services/content'
-import { latestArticleCards } from '../services/article-list'
-import { getArenaStatsBatch } from '../services/leaderboard'
+import {
+  clampLimit,
+  MAX_ARTICLE_LIMIT,
+  parseLevels,
+  parseList,
+  queryArticleCards,
+} from '../services/article-list'
 import { pickAnonymousArticle, recommendToday } from '../services/recommend'
 import { fileIdOf } from '../services/standard-audio'
 import { standardAudioOf } from '../services/standard-audio-meta'
@@ -15,15 +20,74 @@ import { defaultHook } from '../openapi'
 import {
   ArticleDetailSchema,
   errorResponse,
+  ArticleListResponseSchema,
   LatestCardsResponseSchema,
   TodayArticleResponseSchema,
 } from '../openapi/schemas'
 
 export const articlesRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
+/** 通用句库查询的默认条数（用户 2026-09 定） */
+const DEFAULT_ARTICLE_LIMIT = 50
 /** 首页「最新上线」默认给几句、最多给几句 */
 const DEFAULT_LATEST = 6
 const MAX_LATEST = 50
+
+
+/**
+ * ⭐⭐ **句库查询**（通用）—— 按标签 / 难度筛选，按日期 / 参与人数排序。
+ *
+ * ⚠️ 公开接口，对所有人一样；「今天读哪一句」是**另一条**（`/api/articles/today`）。
+ *
+ * 参数口径（写进 OpenAPI，端侧照它拼）：
+ *   · `tags`       逗号分隔，**任一命中**（OR）；空 = 不筛。例：`?tags=励志,旅行`
+ *   · `difficulty` 逗号分隔的档位（0 初级 / 1 中级 / 2 高级 / 3 专家），**任一命中**；空 = 不筛
+ *   · `sort`       `date`（默认，上线时间倒序）| `participants`（参与人数倒序）
+ *   · `limit`      1..100，默认 **50**
+ *
+ * ⚠️ 与 `GET /api/articles/latest` 的关系：这条是**通用查询**，
+ *    那条是首页那一段的**固定口径**（默认 6、只按上线时间）——
+ *    两者共用 services/article-list.ts 的同一个实现，参数默认值不同而已。
+ */
+const listArticlesRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['句库'],
+  summary: '句库查询（标签 / 难度筛选，日期 / 参与人数排序）',
+  description:
+    '公开接口。筛选与排序口径：\n\n' +
+    '· `tags`：逗号分隔，**任一命中**（OR）；不传 = 不筛。例 `?tags=励志,旅行`\n' +
+    '· `difficulty`：逗号分隔的档位 0/1/2/3，**任一命中**；不传 = 不筛\n' +
+    '· `sort`：`date`（默认，按上线时间倒序）或 `participants`（按参与人数倒序）\n' +
+    '· `limit`：1..100，默认 50\n\n' +
+    '⚠️ 内容读不到的句子会被剔除（宁可少一张卡，也不给一张点进去空白的）。',
+  request: {
+    query: z.object({
+      tags: z.string().optional(),
+      difficulty: z.string().optional(),
+      sort: z.enum(['date', 'participants']).optional(),
+      limit: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ArticleListResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+articlesRoutes.openapi(listArticlesRoute, async (c) => {
+  const q = c.req.valid('query')
+  const items = await queryArticleCards({
+    tags: parseList(q.tags),
+    levels: parseLevels(q.difficulty),
+    sort: q.sort ?? 'date',
+    limit: clampLimit(q.limit, DEFAULT_ARTICLE_LIMIT, MAX_ARTICLE_LIMIT),
+  })
+  // ⚠️ 不带 date（2026-09 统一「句子类响应不带日期」）—— 句库列表与"今天"无关
+  return c.json({ ok: true, data: { items } }, 200)
+})
 
 /**
  * ⭐ **最新上线** —— 句库里按上线时间倒序的最新 N 句（首页下半段那一段）。
@@ -35,32 +99,35 @@ const MAX_LATEST = 50
  *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除
  *    （schedules 表/接口都不再有，别让那个名字回来）。
  *
+ * ⚠️ 2026-09 从 `GET /api/articles?latest=N` **独立出来**：通用查询占用了
+ *    `/api/articles` 这个地址，首页那一段有自己的语义（默认 6 条、只按上线时间），
+ *    所以给它一个**自己的地址**，别再用查询参数在通用接口上开一扇后门。
+ *    ⚠️ 注册顺序：它必须排在下面 `/{id}` **之前**（Hono 同前缀按注册顺序匹配）。
+ *
  * ⚠️ 与 `GET /api/articles/:id` 的分工：这条**瘦**，只够画一张卡片；
  *    词级数据（音标 / 释义 / 逐词音频）只在详情里给。
+ *
+ * ⚠️ **带 `date`**（与通用 `/api/articles` 的唯一区别）：它是"今天的列表"，
+ *    端侧拿这个日期判"首屏缓存是不是今天的"（跨天不能再画）。
  */
 const latestCardsRoute = createRoute({
   method: 'get',
-  path: '/',
+  path: '/latest',
   tags: ['句库'],
-  summary: '最新上线（句库按上线时间倒序的最新 N 句）',
-  request: { query: z.object({ latest: z.string().optional() }) },
+  summary: '最新上线（句库按上线时间倒序的最新 N 句；带 date 供端侧按天缓存）',
+  request: { query: z.object({ limit: z.string().optional() }) },
   responses: {
     200: {
       content: { 'application/json': { schema: LatestCardsResponseSchema } },
-      description: '成功',
+      description: '成功（含服务端的今天，供端侧按天缓存）',
     },
   },
 })
 
 articlesRoutes.openapi(latestCardsRoute, async (c) => {
-  const requested = Number(c.req.query('latest'))
-  // ⚠️ NaN 也要兜住：`?latest=abc` 会让 Math.min 返回 NaN，随后一条都不返回，
-  //    表现出来是「最新空空」，而真正的原因是一个畸形参数。
-  const limit = Number.isFinite(requested)
-    ? Math.min(MAX_LATEST, Math.max(1, Math.trunc(requested)))
-    : DEFAULT_LATEST
-
-  return c.json({ ok: true, data: { date: today(), items: await latestArticleCards(limit) } }, 200)
+  const limit = clampLimit(c.req.valid('query').limit, DEFAULT_LATEST, MAX_LATEST)
+  const items = await queryArticleCards({ sort: 'date', limit })
+  return c.json({ ok: true, data: { date: today(), items } }, 200)
 })
 
 /**
@@ -77,8 +144,10 @@ articlesRoutes.openapi(latestCardsRoute, async (c) => {
  *    用户 2026-09 定的口径：句子归谁由 uid 决定；「这个 uid 在这句上的战绩」是**另一件事**，
  *    拆到鉴权接口 `GET /api/user/participation/{articleId}`。
  *
- * ⚠️ 返回的是**标准 ArticleCard**（与 `GET /api/articles?latest=N` 的 items **同形**），
- *    不是专用信封 —— 端侧一套类型、一套渲染。
+ * ⚠️ 返回 `{ date, item }`：`item` 是**纯句子数据**（标准 ArticleCard）；`date` 是
+ *    服务端的今天，**只用于端侧按天做缓存失效**（这张卡跨天就不能再当"今日挑战"画）。
+ *    ⚠️ 它**不是**"这次挑战记哪一天"的依据 —— 归属由服务端在受理提交时决定
+ *    （`POST /api/user/submissions`，缺省 = 它的今天）。
  *
  * ⚠️⚠️ **注册顺序要害**：它必须排在下面的 `/{id}` **之前**。Hono 对同前缀是**按注册顺序**
  *    匹配的（实测：先注册 `/{id}` 的话，`/today` 会被当成 id="today" 的详情请求）。
@@ -96,7 +165,7 @@ const todayArticleRoute = createRoute({
   description:
     '⚠️ 可以不传 uid（匿名/未登录）：**默认初级档**，在该档句子里**随机**挑一条，' +
     '参与人数多的更容易被抽中；**不写任何用户行**。\n\n' +
-    '返回标准 ArticleCard（与 GET /api/articles?latest=N 同形）。\n\n' +
+    '返回 `{ date, item }`：`item` 是标准 ArticleCard（纯句子数据），`date` 是服务端的今天（供端侧按天缓存）。\n\n' +
     '⚠️ 与「最新上线」是两个接口：这条按 uid（或匿名随机）、有 uid 时 24 小时换一次；' +
     '那条对所有人一样、按上线时间倒序。\n\n' +
     '⚠️ 「我今天在这句上的战绩」不在这里，走 GET /api/user/participation/{articleId}。',
@@ -150,16 +219,10 @@ articlesRoutes.openapi(todayArticleRoute, async (c) => {
   }
 
   const content = await loadArticleContent(pickedId)
-  /**
-   * ⚠️ 统计按这个 uid 算（匿名是 0）—— 卡片上要显示"这场有多少人/最高/最低"。
-   *    myBest / myAttempts 不在这里给（已拆到 /api/user/participation/{articleId}）。
-   */
-  const stats = (await getArenaStatsBatch([pickedId], uid)).get(pickedId)
   const audio = await standardAudioOf(article)
 
+  /** ⚠️ **纯句子数据** —— date / isToday 这类上下文不在卡片上（见 ArticleCard 的头注释） */
   const card: ArticleCard = {
-    // ⭐ date 仍然带今天：朗读页要用它把这次提交记到哪一天
-    date,
     articleId: article.id,
     text: content?.text ?? '',
     translation: content?.translation ?? '',
@@ -167,14 +230,15 @@ articlesRoutes.openapi(todayArticleRoute, async (c) => {
     difficulty: normalizeLevel(content?.difficulty),
     tags: normalizeTags(content?.tags),
     audio,
-    isToday: true,
-    participantCount: stats?.participantCount ?? 0,
-    topScore: stats?.topScore ?? null,
-    lowestScore: stats?.lowestScore ?? null,
     theme: article.theme,
   }
 
-  return c.json({ ok: true, data: card }, 200)
+  /**
+   * ⚠️ 带 `date`（服务端的今天）—— 与 `/latest` 同一条口径：**只供端侧按天做缓存失效**。
+   *    ⚠️ 它不是"这次挑战记哪一天"的依据：那个由服务端在**受理提交时**决定
+   *    （`POST /api/user/submissions`，缺省就是它的今天）。
+   */
+  return c.json({ ok: true, data: { date, item: card } }, 200)
 })
 
 

@@ -3,7 +3,6 @@ import {
   formatScore,
   plainWordsOf,
   resolveTheme,
-  today,
   wordLevel,
   WORD_GREEN_LINE,
   WORD_RED_LINE,
@@ -155,8 +154,6 @@ Page({
    *    本人和访客同一条路，不再分「本人现取 / 访客用分享包」。
    */
   audioRef: null as SubmissionAudioRef | null,
-  /** 这次挑战属于哪一天 —— 排名卡点进竞技场时带上（见 onOpenArena） */
-  scheduleDate: '',
   /** ⭐ 这一页是不是从「挑战详情分享卡片」进来的（入口 scene / shareTicket） */
   fromShareCard: false,
   /**
@@ -289,7 +286,8 @@ Page({
 
   /** 两种视角**共用**的渲染 —— 同一份结果，两屏长得一样 */
   renderResult(result: SubmitResponse, opts: { isOwner: boolean }) {
-    this.scheduleDate = result.scheduleDate ?? ''
+    // ⚠️ 这里原来把 `result.scheduleDate` 抄进 data，但**全页面没有一处读它**
+    //    （「再次挑战」也不再用日期）⇒ 2026-09 删掉这个死字段。
     // ⭐ theme 缺失时按 articleId 复算（见 shared/theme.ts 的 resolveTheme）——
     //    与后台详情页同一个结论，不再各自兜一个品牌色
     const card = resolveTheme(result.theme, result.articleId)
@@ -509,7 +507,7 @@ Page({
      *    ⚠️ 从**分享链接**进来的人可能没有账号：auth 会先静默登录一次，
      *      仍不行就把他送到加入页 —— 而不是让他在朗读页读完才发现存不下来。
      */
-    void replace(ROUTES.reading.url + '?id=' + articleId + '&date=' + today())
+    void replace(ROUTES.reading.url + '?id=' + articleId)
   },
 
   onRetry() {

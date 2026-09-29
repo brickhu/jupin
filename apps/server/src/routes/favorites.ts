@@ -6,7 +6,7 @@ import { db } from '../db'
 import { articles, participations } from '../db/schema'
 import type { Variables } from '../middleware/auth'
 import { loadArticleContent } from '../services/content'
-import { listFavorites, setFavorite } from '../services/favorites'
+import { favoriteIdsOf, listFavorites, setFavorite } from '../services/favorites'
 
 /**
  * ⭐⭐ **我的收藏** —— 收/取消一个句子 + 列出收藏。
@@ -17,12 +17,20 @@ import { listFavorites, setFavorite } from '../services/favorites'
  *    用户想的是「以后还能找到这句话」，与他当时读了几分无关。
  * ⚠️ 开关的两头都**幂等**（重复收 / 取消没收藏过的都算成功），
  *    所以端侧可以乐观更新。
+ *
+ * ⚠️⚠️ **OpenAPI 分组与鉴权声明**（2026-09 修）：
+ *    · `tags` 是「我的」——它是**我的私有数据**，不是句库的公开内容
+ *      （原来挂在「句库」下，文档上看起来像公开接口）；
+ *    · 每条都写 `security: [{ userToken: [] }]` —— 与 /api/user/* 下其它接口**统一**。
+ *      运行时鉴权由 index.ts 的 authMiddleware 兜住，但**文档必须自己说清楚**：
+ *      漏写会让 Swagger UI 把"要带身份"的接口标成公开的（`api-contract-guard` 在钉这条）。
  */
 export const favoritesRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 import { defaultHook } from '../openapi'
 import {
   FavoriteListResponseSchema,
   FavoriteToggleResponseSchema,
+  IsFavoriteResponseSchema,
   errorResponse,
 } from '../openapi/schemas'
 
@@ -31,8 +39,9 @@ import {
 const favoriteAddRoute = createRoute({
   method: 'put',
   path: '/:articleId',
-  tags: ['句库'],
+  tags: ['我的'],
   summary: '收藏这一句',
+  security: [{ userToken: [] }],
   request: { params: z.object({ articleId: z.string() }) },
   responses: {
     200: {
@@ -61,8 +70,9 @@ favoritesRoutes.openapi(favoriteAddRoute, async (c) => {
 const favoriteRemoveRoute = createRoute({
   method: 'delete',
   path: '/:articleId',
-  tags: ['句库'],
+  tags: ['我的'],
   summary: '取消收藏',
+  security: [{ userToken: [] }],
   request: { params: z.object({ articleId: z.string() }) },
   responses: {
     200: {
@@ -91,8 +101,9 @@ favoritesRoutes.openapi(favoriteRemoveRoute, async (c) => {
 const favoriteListRoute = createRoute({
   method: 'get',
   path: '/',
-  tags: ['句库'],
+  tags: ['我的'],
   summary: '我收藏的句子（只给 id）',
+  security: [{ userToken: [] }],
   responses: {
     200: {
       content: { 'application/json': { schema: FavoriteListResponseSchema } },
@@ -153,4 +164,52 @@ favoritesRoutes.openapi(favoriteListRoute, async (c) => {
 
   const data: FavoritesResponse = { items }
   return c.json({ ok: true, data }, 200)
+})
+
+/**
+ * ⭐⭐ **"这一句我收藏了吗"** —— `GET /api/user/is-favorite?articleId=`。
+ *
+ * ⚠️⚠️ 它**只回答这一个问题**（用户 2026-09 定），刻意**不掺进别的响应**：
+ *    · 塞进 `/api/user/participation/{articleId}` 不行 —— 收藏与"参与"是两件事：
+ *      **没读过也能收藏**，那时那个接口回 `data: null`，端侧只能当"没收藏"，
+ *      竞技场页的按钮就会变空心（用户以为收藏丢了 —— 这是修过的 bug）；
+ *    · 依附 `/api/user/arena-records` 也不行 —— 那条接口 2026-09 已经删掉，
+ *      而且"我的战绩"与"收藏开关"本来就不是一份数据。
+ *    ⇒ 独立一条、独立一个模块导出，谁也不欠谁。
+ *
+ * ⚠️ 路径为什么不是 `/api/user/favorites/{articleId}`：那是 PUT/DELETE 的**设开关**，
+ *    而这里是一次**查询**；两者语义不同，混在一条路径上会让"GET 回什么"变得含糊。
+ */
+export const isFavoriteRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+
+const isFavoriteRoute = createRoute({
+  method: 'get',
+  path: '/is-favorite',
+  tags: ['我的'],
+  summary: '这一句我收藏了吗',
+  security: [{ userToken: [] }],
+  request: {
+    query: z.object({ articleId: z.string().openapi({ description: '句子 id' }) }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: IsFavoriteResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('缺 articleId 参数'),
+  },
+})
+
+isFavoriteRoutes.openapi(isFavoriteRoute, async (c) => {
+  const userId = c.get('userId')
+  const articleId = (c.req.query('articleId') ?? '').trim()
+  if (!articleId) return c.json({ ok: false, error: '缺 articleId 参数' }, 400)
+
+  /**
+   * ⚠️ 复用 `favoriteIdsOf`（收藏列表也用它）—— 判据只有一处：
+   *    别在这里另写一条 `select from favorites`，那种"看起来一样"的第二份实现
+   *    迟早和列表口径分叉。
+   */
+  const ids = await favoriteIdsOf(userId, [articleId])
+  return c.json({ ok: true, data: { favorited: ids.has(articleId) } }, 200)
 })

@@ -11,6 +11,8 @@
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
   <nav-bar id="nav" title="修改资料" />
 
   <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">改完之后，榜单上显示的就是新的名字和头像。</text>

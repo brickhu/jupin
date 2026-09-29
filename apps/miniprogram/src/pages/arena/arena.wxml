@@ -1,106 +1,122 @@
 <!-- ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），这里不要再写 pt-3 —— 见 lib/nav.ts -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
-  <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：由**页面栈深度**决定画「返回」还是「回首页」 -->
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
+  <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：由页面栈深度决定画「返回」还是「回首页」 -->
   <nav-bar id="nav" title="朗读挑战" />
 
-  <!-- ── 加载中 ────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
-    <text class="text-28rpx text-muted">正在加载挑战…</text>
+  <!-- ══ 块 ① 句子卡 ═══════════════════════════════════════════
+       ⚠️ 数据来自 GET /api/articles/{id}（**纯句子内容**，全局会话缓存，见 lib/content）。
+       ⚠️⚠️ 这一块打不开**不影响**下面三块 —— 参与数据挂在 /api/participations 上，
+          与句子这一行在不在无关（用户 2026-09 定的 L1 解耦）。
+       ⚠️ 卡片头开着（header=true）：播放（参考音频）在左上、收藏在右上。
+          卡片**不带 CTA**（action 传空）—— 这一页的动作区在「我的参与」那张卡里。 -->
+  <skeleton wx:if="{{articleLoading}}" variant="card" />
+
+  <view wx:elif="{{articleError}}" class="bg-white rounded-2.5 p-5">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{articleError}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
+          bindtap="onRetryArticle">重试</view>
   </view>
 
-  <!-- ── 加载失败 ──────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error}}">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  <arena-card wx:elif="{{sentence}}" mode="featured" entry="{{sentence}}"
+              playing="{{playingArticle === articleId}}"
+              loading="{{loadingArticle === articleId}}"
+              showFavorite="{{!favLoading}}" favorite="{{isFavorite}}"
+              bind:play="onPlayAudio" bind:favorite="onToggleFavorite" />
+
+  <!-- ══ 块 ② 这个句子的参与概要 ═══════════════════════════════
+       ⚠️⚠️ 三个数**不在句子上**（用户 2026-09：统计是 participations 的聚合派生值，
+          挂在内容上会出现"缓存把人数冻住"与"句子一删统计跟着没"）。
+          它来自 GET /api/participations/stats?ids= —— 见 lib/article-stats。
+       ⚠️ 没人参与时**不写 0**（"0 人参与，最高 0 分"读起来像这题凉了），
+          写一句实话：你是第一个。 -->
+  <skeleton wx:if="{{statsLoading}}" variant="stats" />
+
+  <view wx:elif="{{statsError}}" class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-24rpx text-faint block mb-2">参与概要</text>
+    <text class="text-26rpx text-bad block">{{statsError}}</text>
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-brand text-white text-26rpx"
+          bindtap="onRetryStats">重试</view>
   </view>
 
-  <block wx:else>
-    <!-- ══ ① 句子卡 ══════════════════════════════════════════
-         ⚠️ 卡片头开着（header=true）：**播放（参考音频）在左上、收藏在右上**（用户 2026-09 要求）。
-            · 播放走 arena-card 自带的 audio-button（时长也归它统一成 00:05）；
-            · 收藏是这一句的收藏（与"我读没读过"无关），状态从鉴权接口来。
-         ⚠️ 卡片**不带 CTA**（action 传空）—— 这一页的动作区在下面两张卡里，
-            卡片上再放一颗按钮会和它们打架。 -->
-    <arena-card mode="featured" entry="{{sentence}}"
-                playing="{{playingArticle === articleId}}"
-                loading="{{loadingArticle === articleId}}"
-                showFavorite="{{true}}" favorite="{{isFavorite}}"
-                bind:play="onPlayAudio" bind:favorite="onToggleFavorite" />
+  <view wx:else class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-24rpx text-faint block mb-3">参与概要</text>
 
-    <!-- ══ ② 这个句子的参与概要 ═══════════════════════════════
-         ⚠️ 三个数回答的是「这个场子现在什么水平」：
-            多少人参与过、天花板在哪（最高分）、入场门槛在哪（最低分）。
-         ⚠️ 没人参与时**不写 0**（"0 人参与，最高 0 分"读起来像这题凉了），
-            写一句实话：你是第一个。 -->
-    <view class="bg-white rounded-2.5 p-4 mt-3">
-      <text class="text-24rpx text-faint block mb-3">参与概要</text>
-
-      <view class="flex" wx:if="{{participantCount > 0}}">
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">参与人数</text>
-          <text class="text-40rpx font-bold text-ink">{{participantCount}}</text>
-        </view>
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">全场最高分</text>
-          <text class="text-40rpx font-bold text-ok">{{topScoreText}}</text>
-        </view>
-        <view class="flex-1">
-          <text class="text-22rpx text-faint block">全场最低分</text>
-          <text class="text-40rpx font-bold text-ink">{{lowestScoreText}}</text>
-        </view>
+    <view class="flex" wx:if="{{participantCount > 0}}">
+      <view class="flex-1">
+        <text class="text-22rpx text-faint block">参与人数</text>
+        <text class="text-40rpx font-bold text-ink">{{participantCount}}</text>
       </view>
-
-      <text class="text-24rpx text-faint" wx:else>还没有人参与 —— 第一个成绩就是第一名</text>
+      <view class="flex-1">
+        <text class="text-22rpx text-faint block">全场最高分</text>
+        <text class="text-40rpx font-bold text-ok">{{topScoreText}}</text>
+      </view>
+      <view class="flex-1">
+        <text class="text-22rpx text-faint block">全场最低分</text>
+        <text class="text-40rpx font-bold text-ink">{{lowestScoreText}}</text>
+      </view>
     </view>
 
-    <!-- ══ ③ 我的参与概要 + 入口 ═════════════════════════════
-         ⚠️ 没参与过的人看到的是一句邀请（不是三个 0）：
-            "挑战 0 回合、位列第 —" 对一个新人毫无意义。 -->
-    <view class="bg-white rounded-2.5 p-4 mt-3">
-      <!-- ⚠️ 一行话（用户 2026-09：三块数字太散，收成一句）。
-           ⚠️ 没挑战过的人**照样显示这句**（都是 0 / —）：不要换成另一句话 ——
-              "已挑战 0 回合"本身就是"你还没挑战过"的最短说法。
-           ⚠️ 数字在 TS 里拼好（WXML 不做计算），见 mySummary。 -->
-      <text class="text-28rpx text-body leading-[1.7] block mb-4">{{mySummary}}</text>
+    <text class="text-24rpx text-faint" wx:else>还没有人参与 —— 第一个成绩就是第一名</text>
+  </view>
 
-      <ui-button variant="fill" color="brand" size="xl" width="full" bind:press="onStart">
-        <text class="text-32rpx">{{action}}</text>
-      </ui-button>
+  <!-- ══ 块 ③ 我的参与概要 + 入口 ═════════════════════════════
+       ⚠️ 数据来自 GET /api/user/participation/{articleId}，写全局 store
+          （lib/participation），这里只读 store —— 与首页那张卡读的是同一份。
+       ⚠️ 没参与过的人看到的是一句邀请（不是三个 0）："挑战 0 回合、位列第 —" 对新人没有意义。 -->
+  <skeleton wx:if="{{mineLoading}}" variant="card" />
+
+  <view wx:else class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-28rpx text-body leading-[1.7] block mb-4">{{mySummary}}</text>
+    <ui-button variant="fill" color="brand" size="xl" width="full" bind:press="onStart">
+      <text class="text-32rpx">{{action}}</text>
+    </ui-button>
+  </view>
+
+  <!-- ══ 块 ④ 排行榜 ═════════════════════════════════════════
+       ⚠️ 数据来自 GET /api/participations?articleId=&sort=score&limit=20（公开）。
+          每行带服务端算的**全局名次** rank；"是不是我"由端侧拿 userId 比出来
+          （公开接口认不出看的人是谁）。 -->
+  <skeleton wx:if="{{lbLoading}}" variant="rank" rows="5" />
+
+  <view wx:elif="{{lbError}}" class="bg-white rounded-2.5 p-4 mt-3">
+    <text class="text-24rpx text-faint block mb-2">排行榜</text>
+    <text class="text-26rpx text-bad block">{{lbError}}</text>
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-brand text-white text-26rpx"
+          bindtap="onRetryLeaderboard">重试</view>
+  </view>
+
+  <view wx:else class="bg-white rounded-2.5 p-4 mt-3">
+    <view class="flex items-baseline mb-2">
+      <text class="text-24rpx text-faint">排行榜</text>
+      <text class="text-22rpx text-faint ml-auto" wx:if="{{lbTotal > 0}}">共 {{lbTotal}} 人参与</text>
     </view>
 
-    <!-- ══ ④ 排行榜 ═════════════════════════════════════════ -->
-    <view class="bg-white rounded-2.5 p-4 mt-3">
-      <view class="flex items-baseline mb-2">
-        <text class="text-24rpx text-faint">排行榜</text>
-        <text class="text-22rpx text-faint ml-auto" wx:if="{{participantCount > 0}}">共 {{participantCount}} 人参与</text>
-      </view>
-
-      <view class="py-[22rpx]" wx:if="{{leaderboard.length === 0}}">
-        <text class="text-24rpx text-faint">还没有人上榜 —— 第一个成绩就是第一名</text>
-      </view>
-
-      <view class="flex items-center py-[18rpx] border-t-[1rpx] border-t-solid border-t-line"
-            wx:for="{{leaderboard}}" wx:key="rank">
-        <text class="text-26rpx w-[64rpx] text-faint">{{item.rank}}</text>
-        <!-- ⭐ 头像 + 昵称：fileID 已在 arena.ts 里换过址，这里只管画。
-             ⚠️ 没头像/换址失败时退回本地占位图（不留空圈，也不塌行高） -->
-        <image class="w-[48rpx] h-[48rpx] rounded-full shrink-0 mr-2" src="{{item.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-        <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
-        <text class="text-28rpx font-semibold text-ink">{{item.scoreText}}</text>
-      </view>
-
-      <!-- ⚠️ 只列前 20。名次靠后的人在这里看不到自己，得明说 ——
-           否则会被理解成「我的成绩没了」。我的名次在上面那张卡里。 -->
-      <text class="text-22rpx text-faint block mt-2" wx:if="{{participantCount > leaderboard.length}}">只展示前 {{leaderboard.length}} 名 · 共 {{participantCount}} 人参与</text>
+    <view class="py-[22rpx]" wx:if="{{leaderboard.length === 0}}">
+      <text class="text-24rpx text-faint">还没有人上榜 —— 第一个成绩就是第一名</text>
     </view>
 
-    <!-- ══ ⑤ 邀请好友 ═══════════════════════════════════════
-         ⚠️⚠️ 必须是 button[open-type=share]：小程序里**只有**它能让用户主动拉起转发
-            （普通 view 的 bindtap 调不起转发面板 —— 见 pages/profile 的同一处说明）。
-         ⚠️ 分享内容由本页的 onShareAppMessage 决定（路径 = 这一句的竞技场）。 -->
-    <button class="ar-invite mt-4" open-type="share">
-      <text class="text-32rpx">邀请好友参与挑战</text>
-    </button>
-  </block>
+    <view class="flex items-center py-[18rpx] border-t-[1rpx] border-t-solid border-t-line"
+          wx:for="{{leaderboard}}" wx:key="rank">
+      <text class="text-26rpx w-[64rpx] text-faint">{{item.rank}}</text>
+      <!-- ⭐ 头像 + 昵称：fileID 已在 arena.ts 里换过址，这里只管画。
+           ⚠️ 没头像 / 换址失败时退回本地占位图（不留空圈，也不塌行高） -->
+      <image class="w-[48rpx] h-[48rpx] rounded-full shrink-0 mr-2" src="{{item.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+      <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
+      <text class="text-28rpx font-semibold text-ink">{{item.scoreText}}</text>
+    </view>
+
+    <!-- ⚠️ 只列前 20。名次靠后的人在这里看不到自己，得明说 ——
+         否则会被理解成「我的成绩没了」。我的名次在上面那张卡里。 -->
+    <text class="text-22rpx text-faint block mt-2" wx:if="{{lbTotal > leaderboard.length}}">只展示前 {{leaderboard.length}} 名 · 共 {{lbTotal}} 人参与</text>
+  </view>
+
+  <!-- ══ ⑤ 邀请好友 ═══════════════════════════════════════════
+       ⚠️⚠️ 必须是 button[open-type=share]：小程序里**只有**它能让用户主动拉起转发
+          （普通 view 的 bindtap 调不起转发面板 —— 见 pages/profile 的同一处说明）。 -->
+  <button class="ar-invite mt-4" open-type="share">
+    <text class="text-32rpx">邀请好友参与挑战</text>
+  </button>
 </view>

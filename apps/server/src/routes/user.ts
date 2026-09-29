@@ -1,32 +1,27 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, participations, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { loadArticleRefText } from '../services/content'
-import { getTotalConquered } from '../services/conquest'
-import { favoriteIdsOf } from '../services/favorites'
 import { getArenaStatsBatch, getRank } from '../services/leaderboard'
+import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
-import { challengeStats } from '../services/submission'
 import { readEnergy } from '../services/energy'
 import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
 import { readStreakRecord } from '../services/streak-record'
-import { readGrowth } from '../services/growth'
 import { readStreakView } from '../services/streak'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
 import type {
-  ArenaRecord,
-  ArticleRecordItem,
-  ArticleRecordsResponse,
+  ParticipationSubmissionItem,
+  ParticipationSubmissionsResponse,
   ChallengeWordScore,
   EnergyLedgerItem,
 } from '@jushuo/shared'
 import type { Variables } from '../middleware/auth'
 import { defaultHook } from '../openapi'
 import {
-  ArticleRecordsResponseSchema,
-  ArenaRecordsResponseSchema,
+  ParticipationSubmissionsResponseSchema,
   ChallengeRecordListSchema,
   ClaimRewardsResponseSchema,
   EnergyResponseSchema,
@@ -149,33 +144,40 @@ function parseWordScores(raw: string | null, wordCount: number): ChallengeWordSc
 /**
  * ⭐ 我在**某一句**上的历史挑战（逐次）—— 朗读页「历史挑战」那一段用它。
  *
+ * ⚠️⚠️ **路径挂在"参与"这个资源下面**（2026-09 改）：
+ *    一次参与 = (我, 这一句) —— 它的**子资源**才是逐次提交。
+ *    原来这条叫 `/api/user/article-records?article=`（按句子查提交），
+ *    与 `/api/user/participation/{articleId}` 是两个入口、两套说法；
+ *    现在统一成"从 participation 进去看它的 submissions"。
+ *    ⇒ 判据 **`(userId, articleId)`**，与 participations 的主键同一个身份。
+ *
  * ⚠️ 粒度是**一次提交**（与「参与场次」不同：那边一人一句一行）：
  *    这一页要回答的是"我在这一句上读过几次、每次多少分"。
- * ⚠️ 只给 status = 'scored'：失败 / 进行中那次没有分数，
- *    混进来列表里就会出现一条"没有分数的历史"。
+ * ⚠️ 只给**有结论的**（scored / failed）：进行中那次没有结论，
+ *    混进来列表里就会出现一条"没有结论的历史"。
  * ⚠️ 顺序按**提交时间倒序**（最近一次在最上面）。
  * ⚠️ score 是 DECIMAL，读回来是字符串 —— 出去一律 Number（见 schema 的说明）。
+ * ⚠️ 没参与过（这一句一次都没提交）不是错误：回**空数组**，不 404 ——
+ *    朗读页对任何句子都会调它，首次进来本来就该是空的。
  */
-const articleRecordsRoute = createRoute({
+const participationSubmissionsRoute = createRoute({
   method: 'get',
-  path: '/article-records',
+  path: '/participation/{articleId}/submissions',
   tags: ['我的'],
-  summary: '我在某一句上的历史挑战（逐次）',
+  summary: '我在某一句上的逐次提交（朗读页的历史挑战）',
   security: [{ userToken: [] }],
-  request: { query: z.object({ article: z.string() }) },
+  request: { params: z.object({ articleId: z.string() }) },
   responses: {
     200: {
-      content: { 'application/json': { schema: ArticleRecordsResponseSchema } },
-      description: '成功',
+      content: { 'application/json': { schema: ParticipationSubmissionsResponseSchema } },
+      description: '成功（没参与过就是空数组）',
     },
-    400: errorResponse('缺 article 参数'),
   },
 })
 
-userRoutes.openapi(articleRecordsRoute, async (c) => {
+userRoutes.openapi(participationSubmissionsRoute, async (c) => {
   const userId = c.get('userId')
-  const articleId = (c.req.query('article') ?? '').trim()
-  if (!articleId) return c.json({ ok: false, error: '缺 article 参数' }, 400)
+  const articleId = c.req.param('articleId')
 
   const rows = await db
     .select({
@@ -205,7 +207,7 @@ userRoutes.openapi(articleRecordsRoute, async (c) => {
     )
     .orderBy(desc(submissions.createdAt))
 
-    const items: ArticleRecordItem[] = rows.map((r, i) => ({
+    const items: ParticipationSubmissionItem[] = rows.map((r, i) => ({
       submissionId: r.submissionId,
       /**
        * ⭐ 第几次 —— **按行序现算**（列表是最新在前 ⇒ 最后一行是最旧的 = 第 1 次）。
@@ -245,7 +247,7 @@ userRoutes.openapi(articleRecordsRoute, async (c) => {
     getRank(articleId, userId).then((r) => (r.rank > 0 ? r.rank : null)),
   ])
 
-  const data: ArticleRecordsResponse = {
+  const data: ParticipationSubmissionsResponse = {
     items,
       /**
        * ⚠️ `score` 可能是 null（未出分那次）⇒ 先滤掉再取最高：
@@ -310,16 +312,21 @@ userRoutes.openapi(participationsRoute, async (c) => {
       best: participations.bestScore,
       worst: participations.worstScore,
       lastAt: participations.lastAt,
-      lastScheduleDate: participations.lastScheduleDate,
         /**
-        * ⭐ **这一句的原文快照**（participations.text，用户 2026-09 要求）——
-        *    历史必须自足：句子没上线 / 内容改过，列表照样显示「我当时读的是哪句」。
-        * ⚠️ 这也让下面那个 `loadArticleRefText()` 回查变得不必要（原来那一步在句子
-        *    关联不上时会拿到空串 ⇒ 卡片上是一片空白）。
+        * ⭐⭐⭐ **两个快照列**（用户 2026-09 定）：
+        *    · `words` —— 词表（含标点，**端侧拼出原文**）+ 逐词音标/释义/技巧；
+        *    · `links` —— 词间连读标注。
+        * ⚠️ 原来还有一个 `text` 快照列，**已删**：原文是 `words[].text` 的派生值，
+        *    再存一份就是第二份真相（还闹出过"空数组 ⇒ 词数显示 0"的 bug）。
+        * ⚠️ 有了它们，历史才自足：句子没上线 / 内容改过，列表照样显示当时那一份。
         */
-        text: participations.text,
-        /** ⚠️ 词表快照：词数用它，不再拿 text 现算（见下面 words 那行的说明） */
         words: participations.words,
+        links: participations.links,
+        /**
+        * ⚠️ 只用于**快照为空时**的兜底原文（内容缺口：3 篇的 articles.words 是空的）。
+        *    正常行用不到它 —— 端侧自己从 words 拼（见 toParticipationRecord）。
+        */
+        articleText: articles.text,
         theme: articles.theme,
     })
     .from(participations)
@@ -370,107 +377,6 @@ userRoutes.openapi(participationRoute, async (c) => {
   return c.json({ ok: true, data: await participationRecordOf(userId, articleId) }, 200)
 })
 
-/**
- * ⭐ 「我在这几句上的战绩」—— **鉴权接口**（/api/user/*）。
- *
- * ⚠️⚠️ 公开的句子列表 / 竞技场**不含任何「我的」字段**；端侧把这份数据按
- *    articleId 融合进去：卡片上的描边、「已参与 N 次 · 最高 X 分」、按钮文案，
- *    以及竞技场里「我的战绩」那一卡，全部由它来。
- *    这样公开接口对所有人返回同一份（可缓存），而「我的」永远只有一个来源。
- *
- * ⚠️ 只查**被问到的那几个 id**（首页一次最多 6 个），不是「把我的全量记录拉下来」：
- *    读了几百次的人，全量会有几千行，而首屏只用到那几张卡片。
- *
- * @param ids   逗号分隔的 articleId（端侧把当前屏上的 id 一起带过来）
- * @param ranks '1' 时额外算名次 —— 名次是**跨用户**的（公开榜单只给前 20，
- *              客户端自己算不出第 500 名），所以只能服务端算，也只在这一场算一次。
- */
-const arenaRecordsRoute = createRoute({
-  method: 'get',
-  path: '/arena-records',
-  tags: ['我的'],
-  summary: '我在这几句上的战绩（可带名次）',
-  security: [{ userToken: [] }],
-  request: { query: z.object({ ids: z.string().optional(), ranks: z.string().optional() }) },
-  responses: {
-    200: {
-      content: { 'application/json': { schema: ArenaRecordsResponseSchema } },
-      description: '成功',
-    },
-  },
-})
-
-userRoutes.openapi(arenaRecordsRoute, async (c) => {
-  const userId = c.get('userId')
-  // ⚠️ articleId 是内容 hash（字符串）—— 按原样解析，**不再转数字**
-  const ids = (c.req.query('ids') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .slice(0, 20)
-  if (ids.length === 0) return c.json({ ok: true, data: { items: [] } }, 200)
-  const wantRanks = c.req.query('ranks') === '1'
-
-  /**
-   * ⚠️ 读**参与记录**而不是聚合 submissions：一人一句一行，
-   *    「已参与 N 次 · 最高 X 分」两个数直接取，不再 GROUP BY
-   *    （口径见 services/participations.ts：只算打分成功的那几次）。
-   */
-  const [rows, favIds] = await Promise.all([
-    db
-      .select({
-        articleId: participations.articleId,
-        attempts: participations.attempts,
-        best: participations.bestScore,
-      })
-      .from(participations)
-      .where(
-        and(eq(participations.userId, userId), inArray(participations.articleId, ids)),
-      ),
-    favoriteIdsOf(userId, ids),
-  ])
-
-  // ⚠️ 显式标类型：下面那条"只收藏、没参与"的补充项有 null 字段，
-  //    靠推断会把它推成 number（TS 报错，顺便也把契约写清楚了）
-  const items: ArenaRecord[] = await Promise.all(
-    rows.map(async (r) => {
-      const rankInfo = wantRanks ? await getRank(r.articleId, userId) : null
-      // getRank 在「没参与过」时返回 rank 0 —— 转成 null，让「没读」和「第 0 名」不混为一谈
-      const ranked = rankInfo && rankInfo.rank > 0 ? rankInfo : null
-      return {
-        articleId: r.articleId,
-        // ⚠️ best_score 是 NOT NULL（参与记录只在出分时才写），不是"没参与"那种 null
-        bestScore: Number(r.best),
-        attempts: Number(r.attempts ?? 0),
-        rank: ranked ? ranked.rank : null,
-        beatenCount: ranked ? ranked.beatenCount : null,
-        isFavorite: favIds.has(r.articleId),
-      }
-    }),
-  )
-
-  /**
-   * ⚠️⚠️ **只收藏、没参与过的句子也要返回一条**。
-   *    这一份的数据源是参与记录，而"收藏"与"参与"是两件事 ——
-   *    漏掉这条的话，用户在竞技场页把一句没读过的句子收藏了，
-   *    下次进来按钮又变回空心（他以为收藏丢了）。
-   */
-  const seen = new Set(rows.map((r) => r.articleId))
-  for (const id of favIds) {
-    if (seen.has(id)) continue
-    items.push({
-      articleId: id,
-      bestScore: null,
-      attempts: 0,
-      rank: null,
-      beatenCount: null,
-      isFavorite: true,
-    })
-  }
-
-  return c.json({ ok: true, data: { items } }, 200)
-})
-
 /** 个人主页：Streak（含解冻卡）/ 能量 / 三个成长值 / 战绩计数 */
 const meRoute = createRoute({
   method: 'get',
@@ -488,45 +394,14 @@ const meRoute = createRoute({
 
 userRoutes.openapi(meRoute, async (c) => {
   const user = c.get('user')
-  const userId = c.get('userId')
 
-  // ⚠️ Streak 视图一律现算（它由库里字段 + 解冻卡表推导），不缓存：
-  //    跨过零点之后「今天读没读」会翻面，缓存会让它停在昨天。
-  const [streak, conqueredCount, stats, energy, growth] = await Promise.all([
-    readStreakView(userId),
-    getTotalConquered(userId),
-    // ⭐ 首页状态卡上的「挑战过几句 / 一共几回」—— 服务端数，
-    //    端侧那份缓存只覆盖最近 7 天的排期，数出来必然偏小。
-    challengeStats(userId),
-    // ⭐ 能量先**补足**再读（惰性 + 幂等，见 services/energy.ts）
-    readEnergy(userId),
-    // ⭐ 三个成长值（**分开展示、不合成总分** —— 见 growth-and-energy.md）
-    readGrowth(userId),
-  ])
-
-  return c.json({
-    ok: true,
-    data: {
-      id: user.id,
-      nickname: user.nickname,
-      avatarUrl: user.avatarUrl,
-      gender: (user.gender ?? null) as 'male' | 'female' | null,
-      age: user.age ?? null,
-      bio: user.bio ?? null,
-      status: user.status,
-      // ⭐ **能量点数**（替代旧的「每天 N 次挑战机会」）。
-      //    每次挑战消耗 2 点、每日补足到 3 点；端侧只管展示，不自己算余额。
-      energy,
-      // ⭐ 三个成长值 —— **分开给，不合成总分**（三个数各自回答一个问题，
-      //    相加之后没人解释得清那个数是怎么来的）
-      growth,
-      // ⭐ 首页状态卡：挑战过几句 / 一共挑战了几回（全时段累计，只数打分成功的）
-      challengedCount: stats.challengedCount,
-      challengedRounds: stats.challengedRounds,
-      conqueredCount,
-      streak,
-    },
-  })
+  /**
+   * ⚠️⚠️ 能走到这里就说明**已经注册过**：`/api/user/*` 上的 authMiddleware
+   *    只按 openid **查**行（不再建行），查不到直接 403 `NOT_REGISTERED`。
+   *    ⇒ 这个接口不再是「打开小程序就顺带建号」的落点（那件事 2026-09 取消）。
+   *    构造逻辑抽在 services/me-view.ts，与 `POST /api/auth/register` 共用。
+   */
+  return c.json({ ok: true, data: await buildMeView(user) }, 200)
 })
 
 /**

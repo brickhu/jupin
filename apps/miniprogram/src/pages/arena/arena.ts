@@ -1,9 +1,16 @@
-import { startButtonLabel } from '@jushuo/shared'
-import type { ArenaDetail, ArticleTheme, LeaderboardRow, StandardAudio } from '@jushuo/shared'
-import { fetchArenaDetail, fetchArenaRecords, setFavorite } from '../../lib/api/client'
-import { formatScore } from '@jushuo/shared'
+import { formatScore, startButtonLabel } from '@jushuo/shared'
+import type { ArticleTheme, StandardAudio } from '@jushuo/shared'
 
+import {
+  fetchArticleParticipations,
+  fetchIsFavorite,
+  setFavorite,
+} from '../../lib/api/client'
 import { attachAvatarSrc } from '../../lib/cloud-file'
+import { ensureArticleStats } from '../../lib/article-stats'
+import { isUnregistered } from '../../lib/auth'
+import { loadParticipation } from '../../lib/participation'
+import { fetchArticleContent } from '../../lib/content'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -11,49 +18,38 @@ import { ROUTES, go } from '../../lib/route'
 import * as me from '../../lib/store'
 
 /**
- * 朗读挑战页 —— 从首页卡片点进来。
- *
- * ⭐ 与首页卡片的分工：卡片是「一眼扫过去」，本页是「看进去」：
- *    这一句的参与概要（人数 / 最高 / 最低）、我的参与概要（回合 / 最好成绩 / 名次）、
- *    完整排行榜，以及从这里进入朗读。
+ * 朗读挑战页（竞技场）—— 从首页卡片 / 参与场次点进来。
  *
  * ⚠️ 页面构成（用户 2026-09 定的五条，别随手动）：
- *    ① 标题「朗读挑战」；② 句子卡左上播放（参考音频）、右上收藏；
- *    ③ 单独一张卡放**这个句子的参与概要**；④ 我的参与概要 + 「重新朗读，再次挑战」；
- *    ⑤ 底部「邀请好友参与挑战」（button open-type=share）。
+ *    ① 句子卡（播放 + 收藏）；② 这个句子的**参与概要**；③ **我的参与** + 再读一次；
+ *    ④ **排行榜**；⑤ 邀请好友。
  *
- * ⚠️⚠️ **两种进法，两个地址**：
- *    · `?article=<articleId>` —— ⭐ 正路：**按句子**看一个竞技场（首页卡片点进来）
- *      日期只是「编辑精选的容器」，和竞技场无关；挑战它算**今天**
- *    · `?date=2026-09-21` —— 「回到那一天再读一次」（参与场次 / 挑战结果页点进来），
- *      挑战它算**那一天**（否则昨天那张卡片的数字会变）
+ * ⚠️⚠️ **数据分四块、各自异步、各自骨架**（用户 2026-09 定）：
+ *    · 句子卡   ← `GET /api/articles/{id}`（**纯句子内容**，全局会话缓存，见 lib/content）
+ *    · 参与概要 ← `GET /api/participations/stats?ids=`（**统计不在句子上**，见 lib/article-stats）
+ *    · 排行榜   ← `GET /api/participations?articleId=&sort=score&limit=20`
+ *    · 我的参与 ← `GET /api/user/participation/{articleId}`（写全局 store，见 lib/participation）
+ *    · 收藏     ← `GET /api/user/is-favorite?articleId=`
  *
- * ⚠️⚠️ 页面必须记住**是从哪条路进来的**（见 this.entry）：
- *    比如按日期进来的，重新加载时必须仍然按日期 —— 只按「已经拿到的 articleId」
- *    重新请求的话，submissionDate 会被服务端算成**今天**，
- *    于是「回到那一天的挑战」被悄悄记成了今天，而昨天那张卡的数字跟着变。
- *    这种错在界面上完全看不出来（分数、榜单都对），所以只能靠这条约定守住。
+ * ⚠️⚠️ 为什么不再是一条 `/api/arenas/{articleId}`（2026-09 拆掉）：
+ *    那条把"句子内容 + 参与统计 + 榜单 + 我的"揉成一个响应 —— 生命周期完全不同
+ *    （内容可缓存、统计每次现算、我的按用户），揉在一起后**任何一块慢/坏都拖住整页**，
+ *    而且"句子一删，统计跟着没"。现在拆开之后：**句子打不开也不影响统计与榜单**
+ *    （参与数据挂在 `/api/participations` 上，与句子行无关）。
+ *
+ * ⚠️ 只按句子寻址：`?article=<articleId>`；日期不属于竞技场（见文件头历史注释）。
  */
 Page({
   data: {
     /** 根节点要让开的上边距（px）—— 自定义导航栏是浮层，不占文档流（见 lib/nav.ts） */
     navTop: 0,
 
-    loading: true,
-    error: '',
-
     /** ⭐ 这一句的 id —— 竞技场的**地址** */
     articleId: '',
-    /** ⭐ 从这里发起的挑战该记到哪一天（服务端给的，端侧不自己算） */
-    submissionDate: '',
-    text: '',
-    translation: '',
-    isToday: false,
-    /**
-     * ⭐ 句子卡的展示对象（arena-card 的 entry）。
-     * ⚠️ header=true（要卡片头：左上播放、右上收藏）、action 不给（本页 CTA 在下面两张卡里）。
-     * ⚠️ audio 为 null = 这句没灌标准音 ⇒ 卡片头那颗播放钮**整颗不渲染**。
-     */
+
+    // ── 块 ① 句子卡（纯内容，会话缓存） ──────────────────────
+    articleLoading: true,
+    articleError: '',
     sentence: null as {
       articleId: string
       header: boolean
@@ -61,167 +57,244 @@ Page({
       translation: string
       theme: ArticleTheme | null
       audio: StandardAudio | null
-      /** ⚠️ 卡片头的播放钮要用它把时长格式化成 00:05（见 arena-card 的 Entry） */
       durationMs: number | null
     } | null,
 
-    topScore: null as number | null,
-    /** ⭐ 全场最低分（与最高分同一口径：一人只算最好那次）；没人参与是 null */
-    lowestScore: null as number | null,
-    /** 上面三个数的成品文本（WXML 里不做 toFixed） */
+    // ── 块 ② 参与概要（全场统计，现算） ──────────────────────
+    statsLoading: true,
+    statsError: '',
+    participantCount: 0,
     topScoreText: '—',
     lowestScoreText: '—',
-    participantCount: 0,
-    /** ⭐ 标准音是不是正在播 / 正在取音（句子卡左上那颗播放钮的状态） */
-    playingArticle: '',
-    loadingArticle: '',
+
+    // ── 块 ③ 我的参与（全局 store） ─────────────────────────
+    mineLoading: true,
     myBest: null as number | null,
-    /** myBest 的展示形态（一位小数）—— WXML 里没法调 toFixed */
     myBestText: '—',
     myRank: null as number | null,
-    myBeatenCount: null as number | null,
-    /**
-     * ⭐ 我的参与那一行（成品文本，WXML 不做计算）：
-     *    `已挑战 3 回合，最高得分 74.6，位列 2`
-     * ⚠️ 「最高得分」用的是**我的最好成绩**（不是全场最高分）——
-     *    全场那三个数在上面那张「参与概要」卡里，别混。
-     */
+    /** 成品文本：`已挑战 3 回合，最高得分 74.6，位列 2`（WXML 不做计算） */
     mySummary: '',
-    /**
-     * ⭐ 我在这句上**出过分**几次（= participations.attempts，只数 status='scored'）。
-     * ⚠️ 用它而不是那一把的「第几次」：后者只数**有结论**的行，
-     *    会出现「挑战 3 回合」却只有一条成绩（两个口径，别混）。
-     */
     myAttempts: 0,
-    /**
-     * ⭐ 我收藏了这一句吗 —— 竞技场页那个收藏按钮的状态。
-     * ⚠️ 它来自**鉴权接口** /api/user/arena-records（公开的竞技场详情不含"我的"字段），
-     *    而且**与"我参与过没有"无关**：没读过也能收藏。
-     */
-    isFavorite: false,
     /** '立即朗读，参与挑战' / '重新朗读，再次冲榜' —— 来自 startButtonLabel，与首页共用 */
     action: '',
 
-    leaderboard: [] as LeaderboardRow[],
+    // ── 块 ④ 排行榜（参与资源，公开） ───────────────────────
+    lbLoading: true,
+    lbError: '',
+    leaderboard: [] as {
+      rank: number
+      nickname: string
+      avatarSrc: string
+      scoreText: string
+      isMe: boolean
+    }[],
+    /** 参与者总数（来自参与资源，用来显示"共 N 人参与"与分页提示） */
+    lbTotal: 0,
+
+    // ── 收藏（句子卡右上那颗星，不是一块数据区） ─────────────
+    favLoading: true,
+    isFavorite: false,
+
+    /** ⭐ 标准音是不是正在播 / 正在取音（句子卡左上那颗播放钮的状态） */
+    playingArticle: '',
+    loadingArticle: '',
     /** 榜上没有头像时用它（与 nav-bar / user-sheet 同一张本地占位图） */
     avatarPlaceholder: '/assets/avatar-placeholder.png',
   },
 
-  /** 服务端给的详情；「我」的部分渲染时从 store 取 */
-  detail: null as ArenaDetail | null,
-
-  /**
-   * ⭐ 页面是**从哪条路进来的**（见文件头那段）：
-   *    重新加载必须沿同一条路，否则 submissionDate 会被算错。
-   */
+  /** 这一页看的是哪一句（竞技场的地址） */
   entry: { articleId: '' },
+
+  /** 整页并发挡板：onLoad 与 onShow 在启动时会前后脚触发，不挡就会把五块各打两遍 */
+  requesting: false,
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
 
   onLoad(query: Record<string, string | undefined>) {
-    /** ⭐ 优先按句子（正路）；没有 article 才退回按日期（老入口） */
     // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**
-    const articleId = query.article ?? ''
-
-      this.entry = { articleId }
-    this.setData({ navTop: navPadTop() })
-    // ⭐ 订阅全局「我的记录」：在朗读页打完分，回到这里名次与成绩立刻是新的
+    this.entry = { articleId: query.article ?? '' }
+    this.setData({ navTop: navPadTop(), articleId: this.entry.articleId })
+    // ⭐ 订阅全局「我的记录」：朗读页打完分回来，我的成绩与按钮文案立刻是新的
     this.unsubStore = me.subscribe(() => this.render())
     void this.load()
   },
 
-  /** 从朗读页返回时刷新 —— 刚打完的分与名次必须立刻出现在榜单上 */
+  /** 从朗读页返回时刷新 —— 刚打完的分必须立刻出现在「我的参与」与榜单上 */
   onShow() {
-    if (!this.data.loading) void this.load()
+    if (!this.requesting) void this.load()
   },
-
-  /**
-   * 页面滚动 → 导航栏（白底什么时候出现，见 lib/nav.ts 的 navSolidFrom）。
-   *
-   * ⚠️ 必须由页面来转这一手：小程序里**只有页面**有 onPageScroll，
-   *    组件没有这个生命周期，而 fixed 的导航栏自己不动、也观察不到页面在滚。
-   */
-  onPageScroll(e: WechatMiniprogram.Page.IPageScrollOption) {
-    notifyNavScroll(this, e.scrollTop)
-  },
-
 
   onUnload() {
-    // ⚠️ 必须退订，否则页面销毁后回调还在跑，setData 会报错
+    // ⚠️ 必须退订，否则页面销毁后回调还在跑，里面一句 setData 会报错
     this.unsubStore?.()
     this.unsubStore = null
   },
 
+  onPageScroll(e: WechatMiniprogram.Page.IPageScrollOption) {
+    notifyNavScroll(this, e.scrollTop)
+  },
+
   /**
-   * 拉详情。⚠️ 用 `this.entry` 决定走哪条路 —— 不传参，免得调用方漏掉（见文件头）。
+   * ⭐⭐ 五块**并发**加载、互不 await：谁先回来谁先画（各自 setData + 骨架）。
+   * ⚠️ 任何一块失败**只影响自己那一块**。
    */
   async load() {
-      const { articleId } = this.entry
-      if (!articleId) {
-      this.setData({ loading: false, error: '缺少竞技场地址' })
+    const { articleId } = this.entry
+    if (!articleId) {
+      this.setData({ articleLoading: false, articleError: '缺少竞技场地址' })
       return
     }
-    this.setData({ loading: true, error: '' })
+    if (this.requesting) return
+    this.requesting = true
     try {
-        const d = await fetchArenaDetail(articleId)
-      /**
-       * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
-       *    公开详情里**不含**我的成绩与名次。
-       * ⚠️ ranks=1 —— 名次是**跨用户**算的，只有服务端算得出来（公开榜单只给前 20）。
-       * ⚠️ 同一次响应既喂 store（首页卡片跟着更新），也喂本页「我的战绩」那一卡。
-       */
-      const recs = await fetchArenaRecords([d.articleId], true)
-      me.applyArenaRecords(recs.items)
-      const mine = recs.items.find((r) => r.articleId === d.articleId)
-      this.detail = d
+      await Promise.all([
+        this.loadArticle(),
+        this.loadStats(),
+        this.loadMine(),
+        this.loadLeaderboard(),
+        this.loadFavorite(),
+      ])
+    } finally {
+      this.requesting = false
+    }
+  },
+
+  /** 块 ①：句子内容（全局会话缓存；同一句在朗读页拉过就直接命中） */
+  async loadArticle() {
+    this.setData({ articleError: '' })
+    if (!this.data.sentence) this.setData({ articleLoading: true })
+    try {
+      const d = await fetchArticleContent(this.entry.articleId)
       this.setData({
-        loading: false,
-        articleId: d.articleId,
-        submissionDate: d.submissionDate,
-        text: d.text,
-        translation: d.translation,
-        isToday: d.isToday,
-        /**
-         * ⚠️ 卡片头开着（header: true）：播放（参考音频）在左上、收藏在右上。
-         *    audio 必须带过来 —— 那句话没灌标准音时它是 null，
-         *    arena-card 会**整颗播放钮都不渲染**（而不是给个点了 404 的按钮）。
-         */
+        articleLoading: false,
+        articleId: d.id,
         sentence: {
-          articleId: d.articleId,
+          articleId: d.id,
           header: true,
           text: d.text,
           translation: d.translation,
           theme: d.theme,
           audio: d.audio,
           // ⚠️ durationMs 必须**单独**给：arena-card 的 audio-button 读的是 entry.durationMs
-          //    （不是 entry.audio.durationMs）——见 arena-card.ts 的 Entry
           durationMs: d.audio ? d.audio.durationMs : null,
         },
-        topScore: d.topScore,
-        lowestScore: d.lowestScore,
-        topScoreText: formatScore(d.topScore),
-        lowestScoreText: formatScore(d.lowestScore),
-        participantCount: d.participantCount,
-        // ⚠️ 名次/击败来自**个人接口**（见上面），不是公开详情
-        myRank: mine?.rank ?? null,
-        myBeatenCount: mine?.beatenCount ?? null,
-        myAttempts: mine?.attempts ?? 0,
-        // ⚠️ 收藏与"参与过没有"无关，所以取的是 isFavorite 本身，不看 myBest
-        isFavorite: mine?.isFavorite ?? false,
-        /**
-         * ⚠️ 分值统一一位小数（formatScore）—— 与结果页、首页同一口径。
-         * ⚠️ 头像：服务端给的是**云存储 fileID**，这里先换成可渲染的临时地址再画
-         *    （榜单只有前 20，换址并发去重后最多 20 个；见 lib/cloud-file.ts）。
-         */
-        leaderboard: await attachAvatarSrc(
-          d.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
-        ),
       })
-      this.render()
     } catch (err) {
-      this.setData({ loading: false, error: (err as Error).message || String(err) })
+      // ⚠️ 句子打不开**不代表统计/榜单也打不开**（它们挂在参与资源上，见文件头）
+      this.setData({ articleLoading: false, articleError: (err as Error).message || String(err) })
     }
+  },
+
+  /** 块 ②：参与概要（公开聚合，**不在句子上**、每次现算） */
+  async loadStats() {
+    this.setData({ statsError: '' })
+    setIfChanged(this, 'statsLoading', true)
+    const ok = await ensureArticleStats([this.entry.articleId])
+    const st = me.getArticleStats(this.entry.articleId)
+    if (!ok) {
+      this.setData({ statsLoading: false, statsError: '取不到参与概要' })
+      return
+    }
+    this.setData({
+      statsLoading: false,
+      participantCount: st?.participantCount ?? 0,
+      topScoreText: formatScore(st?.topScore ?? null),
+      lowestScoreText: formatScore(st?.lowestScore ?? null),
+    })
+  },
+
+  /** 块 ③：我的参与 —— 写全局 store，再按 store 重画 */
+  async loadMine() {
+    await loadParticipation(this.entry.articleId)
+    this.render()
+    this.setData({ mineLoading: false })
+  },
+
+  /** 块 ④：排行榜 —— `sort=score` 就是榜单（前 20 名），`rank` 由服务端给 */
+  async loadLeaderboard() {
+    this.setData({ lbError: '' })
+    setIfChanged(this, 'lbLoading', true)
+    try {
+      const res = await fetchArticleParticipations(this.entry.articleId, {
+        sort: 'score',
+        limit: 20,
+      })
+      const myId = me.getState().userInfo?.id ?? 0
+      const rows = await attachAvatarSrc(
+        res.items.map((r) => ({
+          ...r,
+          // ⚠️ 端侧自己比"是不是我"：公开接口认不出看的人是谁（见 ArticleParticipationRow）
+          isMe: myId > 0 && r.userId === myId,
+          scoreText: formatScore(r.bestScore),
+        })),
+      )
+      this.setData({ lbLoading: false, leaderboard: rows, lbTotal: res.total })
+    } catch (err) {
+      this.setData({ lbLoading: false, lbError: (err as Error).message || '排行榜取不到' })
+    }
+  },
+
+  /** 收藏状态（与"我读没读过"无关：没读过也能收藏） */
+  async loadFavorite() {
+    setIfChanged(this, 'favLoading', true)
+    try {
+      const favorited = await fetchIsFavorite(this.entry.articleId)
+      this.setData({ favLoading: false, isFavorite: favorited })
+    } catch (err) {
+      // ⚠️ 未注册是正常情况（没有账号自然没有收藏）——静默按"未收藏"画
+      if (!isUnregistered(err)) {
+        console.warn('[arena] 收藏状态拉取失败（按未收藏画）：' + (err as Error).message)
+      }
+      this.setData({ favLoading: false, isFavorite: false })
+    }
+  },
+
+  /**
+   * 重画「我」的那几个数字 —— **只从全局 store 取**。
+   * ⚠️ 详情响应里没有"我的"字段；store 是"我的"数据唯一的汇集处，
+   *    所以朗读页刚打完的分能立刻反映到这里（不需要重新拉接口）。
+   * ⚠️ `participationOf().loaded === false` 表示**还没拉到**（不是"没参与"）——
+   *    这时按空画，拉到之后 store 广播会重画。
+   */
+  render() {
+    const id = this.data.articleId || this.entry.articleId
+    if (!id) return
+    const p = me.participationOf(id)
+    const record = p.record
+    const attempts = record?.attempts ?? 0
+    const best = record?.bestScore ?? null
+    const rank = record?.rank ?? null
+
+    /**
+     * ⚠️ 「击败了多少人」= 参与人数 − 名次（名次从 1 开始）——端侧现推，
+     *    服务端不再为它单独留字段。
+     */
+    this.setData({
+      myBest: best,
+      myBestText: formatScore(best),
+      myAttempts: attempts,
+      myRank: rank,
+      mySummary:
+        '已挑战 ' + attempts + ' 回合，最高得分 ' + formatScore(best) +
+        '，位列 ' + (rank === null ? '—' : rank),
+      // ⚠️ 与首页共用同一份实现（@jushuo/shared 的 startButtonLabel）
+      action: startButtonLabel(best !== null),
+    })
+  },
+
+  // ── 各块自己的重试（失败只影响本块） ──────────────────────
+  onRetry() {
+    void this.load()
+  },
+  onRetryArticle() {
+    void this.loadArticle()
+  },
+  onRetryStats() {
+    void this.loadStats()
+  },
+  onRetryLeaderboard() {
+    void this.loadLeaderboard()
   },
 
   /**
@@ -229,8 +302,7 @@ Page({
    *
    * ⚠️ **乐观更新**：先翻界面再发请求 —— 服务端两头都幂等（见 routes/favorites.ts），
    *    所以最坏情况只是"翻错了再翻回来"，而用户不会看到按钮卡住。
-   * ⚠️ 失败必须**翻回来**并说出来：静默失败会让用户以为收藏成功了，
-   *    等他在收藏列表里找不到时，问题已经查不出来了。
+   * ⚠️ 失败必须**翻回来**并说出来：静默失败会让用户以为收藏成功了。
    */
   async onToggleFavorite() {
     const articleId = this.data.articleId
@@ -249,50 +321,10 @@ Page({
   },
 
   /**
-   * 重画「我」的那几个数字。
-   * ⚠️ 只从 store 取 —— 详情响应里也有 myBest，但那是**拉取那一刻**的快照，
-   *    朗读页刚打完的分不会出现在里面。两个来源留一个，取 store。
-   */
-  render() {
-    if (!this.detail) return
-    const mine = me.arenaOf(this.data.articleId)
-    this.setData({
-      myBest: mine.myBest,
-      myBestText: formatScore(mine.myBest),
-      /**
-       * ⚠️ 「最高得分」取的是 `mine.myBest`（**我**的最好成绩，来自 store）——
-       *    不是详情里那个全场最高分。两个数在这一页同时存在，别拿错。
-       * ⚠️ 名次用 this.data.myRank（来自个人接口那次响应，见 load）——
-       *    store 里没有名次（那是跨用户算的）。
-       */
-      mySummary:
-        '已挑战 ' + this.data.myAttempts + ' 回合，最高得分 ' + formatScore(mine.myBest) +
-        '，位列 ' + (this.data.myRank === null ? '—' : this.data.myRank),
-      // ⚠️ myRank / myBeatenCount 不在这里：它们来自个人接口那次响应（见 load），
-      //    这里只管「刚打完分」后跟着 store 变的那两个数（成绩与按钮文案）
-      // ⚠️ 与首页共用同一份实现（@jushuo/shared 的 startButtonLabel）——
-    //    同一个状态在两个页面上必须长成同一句话
-    action: startButtonLabel(mine.myBest !== null),
-    })
-  },
-
-  onRetry() {
-    void this.load()
-  },
-
-  /**
-   * ⚠️ 这里原来有一个 statText（拼「23 人参与，最高得分 74」给卡片头显示）——
-   *    2026-09 按用户要求改成**下方单独一张「参与概要」卡**（人数 / 最高 / 最低），
-   *    所以那行字与这个函数一起删了。别只删卡片上的引用、把它留成死代码。
-   */
-
-  /**
    * ⭐ 句子卡左上那颗播放钮 —— 听**参考音频**（标准音）。
    *
-   * ⚠️ 与首页 onPlayAudio 同一套手感（那里也走 ensureLocalAudio + 全局播放器）：
-   *    · 再点一次 = 停；取音途中再点 = 取消那次的 loading（还没出声，停不下来）
-   *    · 先点亮 loading 再取音：弱网下取音要等一下，没有反馈用户会以为没点上
-   *    · 播完把标记清掉（onEnded 回调），否则会永远亮着
+   * ⚠️ 与首页 onPlayAudio 同一套手感：再点=停、取音中再点=取消 loading、
+   *    先点亮 loading 再取音、播完清标记。
    */
   async onPlayAudio(e: WechatMiniprogram.CustomEvent<{
     articleId: string
@@ -321,7 +353,6 @@ Page({
       if (this.data.loadingArticle !== articleId) return
       this.setData({ loadingArticle: '', playingArticle: articleId })
       await playAudioUrl(src, '标准音', () => {
-        // ⚠️ 播完只清"还是这一句"的标记，别把新点的那一句带掉
         if (this.data.playingArticle === articleId) this.setData({ playingArticle: '' })
       })
     } catch (err) {
@@ -332,10 +363,7 @@ Page({
 
   /**
    * ⭐ 邀请好友 —— 分享内容在这里决定（`<button open-type="share">` 只负责拉起面板）。
-   *
-   * ⚠️ 路径 = **这一句的朗读挑战页**（按句子寻址）：对方点开看到的是同一句、
-   *    同一个榜单，可以直接挑战 —— 这才叫"邀请参与挑战"。
-   *    ⚠️ 不要带 date：那是"回到那一天再读一次"的口径，与邀请无关（见文件头两种进法）。
+   * ⚠️ 路径 = **这一句的朗读挑战页**：对方点开看到的是同一句、同一个榜单。
    */
   onShareAppMessage() {
     return {
@@ -347,25 +375,19 @@ Page({
   /** ⭐ 分享到朋友圈 —— 朋友圈只能带 query（不能带 path） */
   onShareTimeline() {
     return {
-      title: '这句金句，你能读多少分？',
       query: 'article=' + this.data.articleId,
     }
   },
 
-  /**
-   * 去朗读。
-   * ⚠️ `date` 传的是 **submissionDate**（服务端给的「这次挑战算哪天」）——
-   *    按句子进来就是今天、按日期进来就是那一天。端侧**不自己算**：
-   *    手机时钟可以随便改，而这个日期决定成绩归到哪一天。
-   */
+  /** 去朗读（受保护页：由 lib/route 统一过 auth，这里不自己判断身份） */
   onStart() {
-    const { articleId, submissionDate } = this.data
-    if (!articleId || !submissionDate) return
-    /**
-     * ⚠️⚠️ 去**朗读页**= 去花能量做一件要归属的事 —— 必须过统一的 auth
-     *    （见 lib/route：受保护页的守卫只在那一个地方）。
-     *    不认得身份时 auth 会把用户送到加入页，这里**不再自己判断**。
-     */
-    void go(ROUTES.reading.url + '?id=' + articleId + '&date=' + submissionDate)
+    const { articleId } = this.data
+    if (!articleId) return
+    void go(ROUTES.reading.url + '?id=' + articleId)
   },
 })
+
+/** 只在真正变化时写 —— onShow 会重拉，避免同样的布尔值反复触发渲染 */
+function setIfChanged(ctx: { data: Record<string, unknown>; setData: (d: Record<string, unknown>) => void }, key: string, value: unknown): void {
+  if (ctx.data[key] !== value) ctx.setData({ [key]: value })
+}

@@ -1,7 +1,6 @@
 import { and, asc, count, desc, eq, max, min, or } from 'drizzle-orm'
 
 import { db } from '../db'
-import { plainWordsOf } from '@jushuo/shared'
 import type { ArticleTheme, ArticleWordItem, ParticipationRecord } from '@jushuo/shared'
 import { getRank } from './leaderboard'
 
@@ -40,22 +39,17 @@ export interface ParticipationRow {
   worstScore: string
   firstAt: Date
   lastAt: Date
-  lastScheduleDate: string | null
   bestSubmissionId: string
   reachedAt: Date
   /**
-   * ⭐ 这一句的**原文快照**（用户 2026-09 要求）—— 参与列表靠它自足：
-   *    句子没上线 / 内容改过 / 被删，列表照样显示「我当时读的是哪句」。
-   *    ⚠️ 只在重算时刷新；句子查不到时退回表里已有的值（见 computeParticipation）。
-   */
-  text: string | null
-  /**
    * ⭐ 这一句的**词表快照**（用户 2026-09 要求：「participation 应该快照的（是）words」）。
-   * ⚠️ 参与列表的「多少个词」原来靠 `plainWordsOf(text).length` 回查 ——
-   *    切词规则一改、或内容改了，历史卡片的词数就跟着变，而用户当时读的是旧那一份。
-   * ⚠️ 与 text 同源：重算时读一次 articles.words 落下来（形状同 articles.words）。
+   * ⚠️ 它同时承载**原文**：`words[].text` 含标点，拼起来就是原句 ——
+   *    所以 2026-09 把 `text` 列删了（原文是派生值，不再存第二份）。
+   * ⚠️ 只在重算时刷新；句子查不到时退回表里已有的值（见 computeParticipation）。
    */
   words: ArticleWordItem[] | null
+  /** ⭐ 与 words 同源同一次读取的**连读标注快照**（`links[i]` 描述 words[i]→words[i+1]） */
+  links: string[] | null
 }
 
 /** 只算这一句上「已出分」的那批挑战 —— 全文件共用，别在别处各写一遍口径 */
@@ -136,13 +130,8 @@ async function computeParticipation(
     .orderBy(desc(submissions.score), asc(submissions.createdAt), asc(submissions.id))
     .limit(1)
 
-  /** 最近一次挑战是从哪一天的排期进来的（显示用） */
-  const [last] = await database
-    .select({ scheduleDate: submissions.scheduleDate })
-    .from(submissions)
-    .where(scoredOf(userId, articleId))
-    .orderBy(desc(submissions.createdAt), desc(submissions.id))
-    .limit(1)
+  /** ⚠️ 这里原来还会查一次"最近那次挑战的 schedule_date"（last_schedule_date 那一列）——
+   *  该列 2026-09 删除（没有任何读它的地方），这条查询也随之去掉。 */
 
   if (
     !best ||
@@ -161,29 +150,24 @@ async function computeParticipation(
   }
 
     /**
-     * ⭐ 取这一句的原文（快照的**取数来源**）。
+     * ⭐ 取这一句的**快照来源**：词表 + 连读标注。
      * ⚠️ 句子查不到（只有"没有任何用户数据"时才允许被删）时**不报错**，
-     *    这一次给 null —— `upsertOne` 走的是 upsert，但为了不把历史快照抹成 NULL，
-     *    这里沿用表里已有的值（见下面的 existingText）。
+     *    这一次给 null；`upsertOne` 走的是 upsert，真查不到就记 null ——
+     *    记 null 比编一份快照诚实。
      */
     const [art] = await database
-      .select({ text: articles.text, words: articles.words })
+      .select({ words: articles.words, links: articles.links })
       .from(articles)
       .where(eq(articles.id, articleId))
       .limit(1)
 
-    /**
-     * ⚠️ 句子查不到时**就写 null**（不报错）：这种行不该出现 ——
-     *    有用户数据的句子**不允许被删**（见 services/article-delete.ts），
-     *    所以 `articles` 那行一定在。真查不到时记 null 比编一个快照诚实。
-     */
-    const text = art?.text ?? null
-    /** ⚠️ 与 text 同源、同一次读取：词表快照 */
+    /** ⚠️ 与 words 同源、同一次读取：连读标注快照 */
     const words = art?.words ?? null
+    const links = art?.links ?? null
 
   return {
-      text,
       words,
+      links,
     userId,
     articleId,
     attempts: Number(agg.attempts),
@@ -192,7 +176,6 @@ async function computeParticipation(
     worstScore: String(agg.worst),
     firstAt: agg.firstAt,
     lastAt: agg.lastAt,
-    lastScheduleDate: last?.scheduleDate ?? null,
     bestSubmissionId: best.id,
     // ⚠️ 不变量：reachedAt = 对比标准那一条的 created_at
     reachedAt: best.createdAt,
@@ -211,11 +194,10 @@ async function upsertOne(row: ParticipationRow, database: Database): Promise<voi
         worstScore: row.worstScore,
         firstAt: row.firstAt,
         lastAt: row.lastAt,
-        lastScheduleDate: row.lastScheduleDate,
         bestSubmissionId: row.bestSubmissionId,
         reachedAt: row.reachedAt,
-        text: row.text,
         words: row.words,
+        links: row.links,
       },
     })
 }
@@ -262,12 +244,11 @@ function flat(row: ParticipationRow | null): Record<string, string> | null {
     worstScore: String(row.worstScore),
     firstAt: row.firstAt.toISOString(),
     lastAt: row.lastAt.toISOString(),
-    lastScheduleDate: String(row.lastScheduleDate),
     bestSubmissionId: String(row.bestSubmissionId),
     reachedAt: row.reachedAt.toISOString(),
     // ⚠️ 两个快照列也进对账：重建前后不一致要报出来（"派生索引"的验收判据）
-    text: String(row.text ?? ''),
     words: JSON.stringify(row.words ?? null),
+    links: JSON.stringify(row.links ?? null),
   }
 }
 
@@ -301,13 +282,12 @@ export async function rebuildParticipations(
       worstScore: participations.worstScore,
       firstAt: participations.firstAt,
       lastAt: participations.lastAt,
-      lastScheduleDate: participations.lastScheduleDate,
       bestSubmissionId: participations.bestSubmissionId,
       reachedAt: participations.reachedAt,
       // ⚠️ 两个快照列必须在这里也选出来：漏了的话对账会拿 undefined 去比，
       //    报出"expected 有值 / actual 空"的假不一致（我第一次就漏了）
-      text: participations.text,
       words: participations.words,
+      links: participations.links,
     })
     .from(participations)
 
@@ -319,11 +299,10 @@ export async function rebuildParticipations(
       worstScore: String(r.worstScore),
       firstAt: r.firstAt.toISOString(),
       lastAt: r.lastAt.toISOString(),
-      lastScheduleDate: String(r.lastScheduleDate),
       bestSubmissionId: String(r.bestSubmissionId),
       reachedAt: r.reachedAt.toISOString(),
-      text: String(r.text ?? ''),
       words: JSON.stringify(r.words ?? null),
+      links: JSON.stringify(r.links ?? null),
     })
   }
 
@@ -396,11 +375,16 @@ export interface ParticipationRecordSource {
   /** 同上 */
   worst: string | number | null
   lastAt: Date | string
-  lastScheduleDate: string | null
-  /** 这一句的原文**快照**（历史自足：句子下线/改过也要认得出当时读的是哪句） */
-  text: string | null
-  /** 词表**快照**；老记录没有 ⇒ 退回用 text 现算 */
+  /** 词表**快照**（同时是原文的来源：`words[].text` 拼起来就是原句） */
   words: unknown
+  /** 连读标注**快照**（与 words 一一对应；老记录没有 ⇒ 空数组） */
+  links: unknown
+  /**
+   * ⭐ `articles.text`（**不是快照**）—— 只用于"词表快照为空"时的**兜底原文**。
+   * ⚠️ 有 3 篇内容的 `articles.words` 是空的（内容缺口），那种句子拼不出原文，
+   *    只能现取一次 articles.text（路由本来就 join 了 articles）。
+   */
+  articleText?: string | null
   theme: ArticleTheme | null
 }
 
@@ -409,28 +393,34 @@ export function toParticipationRecord(
   row: ParticipationRecordSource,
   rankInfo: { rank: number; participantCount: number },
 ): ParticipationRecord {
-  const text = row.text ?? ''
+  /**
+   * ⚠️ **直接给快照本身**（2026-09 改）：以前这里只给一个词数（`words.length`），
+   *    而原文又要靠另一个 `text` 列 —— 于是同一件事有两份数据，还闹出过
+   *    「快照是空数组 ⇒ 词数显示 0」的 bug（`Array.isArray([])` 为真，兜底走不到）。
+   *    现在：`words`（含标点，**端侧拼出原文**）+ `links`（连读标注）。
+   */
+  const words = Array.isArray(row.words) ? (row.words as ArticleWordItem[]) : []
+  const links = Array.isArray(row.links) ? (row.links as string[]) : []
+  /**
+   * ⚠️⚠️ **兜底**：词表快照为空（内容缺口，`articles.words = []`）时，
+   *    端侧拼不出任何字 ⇒ 这时才把 `articles.text` 现取一次带上（**不落库**）。
+   *    ⚠️ 只有这一种情况会给 `text` —— 正常行**没有**这个字段，
+   *      免得它变成第二份原文（那正是这轮删掉的东西）。
+   */
+  const fallbackText =
+    words.length === 0 && row.articleText ? { text: row.articleText } : {}
+
   return {
     articleId: row.articleId,
-    text,
-    /**
-     * ⚠️ 词数用**快照**，不再拿 text 现算 —— 现算的话切词规则一改，
-     *    历史卡片的词数就跟着变（而用户当时读的是旧那一份）。
-     *    没有快照的老记录退回现算，别让卡片显示 0。
-     */
-    words: Array.isArray(row.words) ? row.words.length : plainWordsOf(text).length,
+    words,
+    links,
+    ...fallbackText,
     attempts: Number(row.attempts ?? 0),
     bestScore: Number(row.best ?? 0),
     worstScore: Number(row.worst ?? 0),
     rank: rankInfo.rank,
     participantCount: rankInfo.participantCount,
     lastAt: new Date(row.lastAt as unknown as string).toISOString(),
-    /**
-     * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
-     * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
-     *    而不是端侧算今天：用户参与的可能是几天前那一场。
-     */
-    lastScheduleDate: row.lastScheduleDate ?? '',
     theme: row.theme,
   }
 }
@@ -454,9 +444,10 @@ export async function participationRecordOf(
       best: participations.bestScore,
       worst: participations.worstScore,
       lastAt: participations.lastAt,
-      lastScheduleDate: participations.lastScheduleDate,
-      text: participations.text,
       words: participations.words,
+      links: participations.links,
+      /** ⚠️ 只用于"词表快照为空"时的兜底原文（不落库，见 toParticipationRecord） */
+      articleText: articles.text,
       theme: articles.theme,
     })
     .from(participations)

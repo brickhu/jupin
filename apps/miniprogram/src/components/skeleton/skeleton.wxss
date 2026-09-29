@@ -1,0 +1,124 @@
+/*
+ * ⭐ 骨架占位区的样式。
+ *
+ * ⚠️ 全部写在这里、**不用 UnoCSS 工具类**：自定义组件默认样式隔离，
+ *    app.wxss 里的工具类进不来（见 profile-form.json 那段说明）——
+ *    写了 bg-white 这类类名会一条都不生效，而且不报错。
+ *
+ * ⚠️ 动画只动 background-position（合成层友好）：小程序里
+ *    改 width/height 的骨架动画会明显掉帧，滚动时尤其明显。
+ */
+
+.sk {
+  width: 100%;
+}
+
+.sk-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  box-sizing: border-box;
+}
+
+/* ── 灰块本体 + 流光 ─────────────────────────────────────── */
+.sk-bar {
+  background: linear-gradient(90deg, #ededf1 25%, #f7f7f9 37%, #ededf1 63%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease infinite;
+  border-radius: 8rpx;
+}
+
+@keyframes sk-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* ── 状态卡：三格 ────────────────────────────────────────── */
+.sk-stats {
+  display: flex;
+  align-items: center;
+  min-height: 144rpx;
+  padding: 28rpx 32rpx;
+}
+
+.sk-stats-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sk-num {
+  width: 64rpx;
+  height: 40rpx;
+}
+
+.sk-label {
+  width: 96rpx;
+  height: 22rpx;
+  margin-top: 16rpx;
+}
+
+/* ── 单卡 / 列表 ─────────────────────────────────────────── */
+.sk-line {
+  height: 28rpx;
+  width: 100%;
+}
+
+.sk-line + .sk-line {
+  margin-top: 20rpx;
+}
+
+.sk-short {
+  width: 62%;
+}
+
+.sk-btn {
+  height: 72rpx;
+  width: 320rpx;
+  margin: 32rpx auto 0;
+  border-radius: 36rpx;
+}
+
+/* ── 排行榜 ─────────────────────────────────────────────── */
+.sk-tabs {
+  display: flex;
+  gap: 16rpx;
+}
+
+.sk-tab {
+  flex: 1;
+  height: 56rpx;
+  border-radius: 28rpx;
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  margin-top: 32rpx;
+}
+
+.sk-dot {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-name {
+  flex: 1;
+  height: 26rpx;
+  margin-left: 16rpx;
+}
+
+.sk-value {
+  width: 72rpx;
+  height: 26rpx;
+  flex-shrink: 0;
+  margin-left: 24rpx;
+}

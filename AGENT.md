@@ -42,6 +42,61 @@
 3. **两端由机器对齐**：schema 与 `@jushuo/shared` 的 TS 类型做 `Equal<>` 双向比对（改歪则 `tsc` 报），
    客户端调用的路径由 `api-contract-guard.test.ts` 断言必须存在于 spec（删路由不再静默打断端侧）。
 
+**身份与注册——注册不能做成自动的**（用户 2026-09 定）：
+1. **唯一建行点**是 `POST /api/auth/register` —— 用户在「加入句拼」页按下「确认加入」那一次
+   （端侧 `lib/api/client.ts` 的 `register()`）。`services/user.ts` 的 `getOrCreateUserByOpenid`
+   **已删除**，只剩 `findUserByOpenid`（只查）/ `createUserByOpenid`（只建，仅注册接口调用）；
+2. `authMiddleware` 认得出凭据、但 `users` 里没有行时回 **403 `NOT_REGISTERED`**（**不是 401**：
+   凭据是好的，只是还没加入）。端侧据此画「加入」，而不是走"重新登录"那条死路；
+3. 未注册 = **只读**：公开内容（首页 / 句库 / 榜单 / 竞技场 / 成绩墙）照常看；
+   挑战 / 能量 / 参与记录 / 收藏一律先过 `ensureAuthed()` → 跳加入页。
+   ⚠️ 端侧 `login()` **不再取 uid、更不建号**；uid 只可能来自一次成功的 `/me` 或注册响应。
+
+**小程序首屏数据流**（用户 2026-09 定）：
+1. `app.onLaunch`：`hydrate()` 读缓存 → `login()`（wx.login → code → 服务端换 openid；
+   云托管通道由网关注入）→ `refreshMe()` 查回用户信息并写进全局 store（`lib/store.ts`）；
+2. 身份解析出结果之前，`components/boot-overlay` 在**每个页面**整页盖住
+   （判据是 `store.session === 'pending'`）。有本机缓存时 session 一开始就是 ready ⇒ 不出现遮罩；
+3. 首页四块**各自异步、各自骨架**（`components/skeleton`）：
+   ① 状态卡（读 store 的 userInfo，不单独发请求）② 今日卡 `GET /api/articles/today`
+   ③ 最新卡片 `GET /api/articles/latest` ④ 荣誉榜 `GET /api/leaderboards/growth`。
+   失败**只影响自己那一块**（不再有整页 loading / 整页错误页）；
+4. 状态卡四态：`data` / `unjoined`（服务端说库里没有我）/ `unknown`（问不到 ⇒「重新连接」）/
+   `loading`（骨架）。⚠️ `unknown` 与 `unjoined` 绝不能画成同一个样子；
+5. 「一句的参与状态」**所有句子列表 / 详情都走同一条**：
+   `lib/participation.ts` 的 `ensureParticipation(ids)`（列表批量，并发上限 4、同 id 去重、
+   一次 commit 写完整批）与 `loadParticipation(id)`（详情单句），
+   取数接口是 `GET /api/user/participation/{articleId}`，结果写进 store 的 `participation` 分片
+   （三态：没拉过 / null=明确没参与 / 记录）。已接入：首页今日卡 + 最新上线列表、
+   竞技场详情、收藏列表、朗读页详情；「参与场次」列表本身就是参与记录，直接批量回填 store。
+   ⚠️ 未加入句拼时**不发请求**、整批按"没参与过"落库；"问不到"保持未知（**绝不写成 null**）。
+
+**竞技场 / 参与数据的分层**（用户 2026-09 定，替代了原来那条 `/api/arenas/{articleId}`）：
+- **句子内容** `GET /api/articles/{id}` —— 纯内容（正文 / 词表 / 难度 / 标签 / 主题 / 标准音），
+  端侧做**会话级缓存**（`store.articleDetail`，不落 storage）；
+- **参与统计** `GET /api/participations/stats?ids=a,b,c` —— 人数 / 最高 / 最低（批量、零值补齐），
+  客户端 `lib/article-stats.ts` 取数、写 `store.articleStats`。⚠️ 统计是 `participations` 的
+  **聚合派生值**，**不挂在 article / ArticleCard / ArticleDetail 上**：挂上去会出现
+  "会话缓存把人数冻住"与"句子一删统计跟着没"；
+- **参与者 / 榜单** `GET /api/participations?articleId=&sort=time|score&limit=&offset=` ——
+  每行带 `rank`（按最高分算的**全局**名次，与 sort 无关）、`userId`、昵称、头像、次数、
+  最高分、最新参与时间；`total` 用于分页与"共 N 人参与"；
+- **我的** `GET /api/user/participation/{articleId}`、`GET /api/user/is-favorite` —— 保留不变。
+- ⚠️⚠️ 参与资源**自立根路径**（`/api/participations`）、**不挂在 article 下**、也**不要求句子还在**：
+  句子下架 / 内容换版之后，参与记录与统计照样读得到（记录自带 words/links 快照）。
+- 竞技场页五块**各自异步 + 各自骨架**：句子卡 / 参与概要 / 我的参与 / 排行榜 / 收藏。
+
+**句子不可修改**（用户 2026-09 定）：
+`articleId = sha256(正文) 前 16 位` ⇒ **改文案就是另一句**（新 id、新成绩、新历史），
+所以"原地改正文"不是"不允许"，而是**没有意义**。写入层已经把这条钉死：
+`services/article-content.ts` 的 `saveArticleContent()` 在**更新分支**比较正文，
+变了就抛 `ArticleTextImmutableError` → admin 写接口回 400（提示"请新建新句子，把旧的下架或删除"）。
+✅ 允许原地更新的只有**派生 / 附属列**：译文 / 判据分 / 标签 / 挑战语 / 建议 / 标准音 / 发布状态。
+⚠️ 别把这条判据只写在路由里：admin 那条 id 校验只对**规范 id** 生效，历史脏 id 的行会绕过；
+判据必须待在**唯一写入函数**里。
+⚠️ 推论：内容"换版" = 新句子，它的参与统计**从零开始**（这是对的，不是缺陷）；
+旧的那条有用户数据时删不掉（409），用**下架**。
+
 
 docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · 端侧能力 · 内容生产 · 平台选型 · 样式选型）·
 [design/](docs/design/growth-and-energy.md)（成长与能量 · 奖励/解冻卡 · 支付）·
@@ -313,7 +368,7 @@ UnoCSS 走「构建期扫源码 → 静态 WXSS」，运行时零开销。`uno.c
 apps/server/
 ├── src/
 │   ├── index.ts  env.ts
-│   ├── routes/              # auth · articles · schedules · submissions · uploads · leaderboards · arenas · user · pay · shop · media · public
+│   ├── routes/              # auth · articles · submissions · uploads · leaderboards · participations · user · pay · shop · media · public
 │   ├── engines/             # ⭐ ScoreEngine 薄适配层（types · xfyun · mock）
 │   ├── services/            # submission · scoring · streak · growth · energy · schedules · content … 的业务逻辑
 │   ├── storage/             # local / wxcloud（可替换接口）
@@ -438,13 +493,52 @@ admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准
 
 - **"今天读哪一句"** → `GET /api/articles/today?uid=<id>`（**公开**，uid **可省略 = 匿名**）：
   以 **24 小时**为单位（`users.today_article_id` + `users.today_assigned_at`）、
-  **按这个用户的难度档**推荐一句（`services/recommend.ts`），返回**标准 ArticleCard**。
-  ⚠️ 匿名（不带 uid / uid=0）按初级档 + 当天给一句，且**不写任何用户行**。
+  **按这个用户的难度档**推荐一句（`services/recommend.ts`），返回 `{ date, item }` ——
+  `item` 是**纯句子数据**（标准 ArticleCard）；`date` 是服务端的今天，**只用于端侧按天缓存**。
+  ⚠️ 匿名（不带 uid / uid=0）：**初级档里随机 + 按参与人数加权**挑一条，且**不写任何用户行**。
   ⚠️ 它**不在 `/api/user/*` 下**（2026-09 改）：公开可读，所以游客首页也有今日卡。
   ⭐ 「我今天在这句上的战绩」是**另一件事** → `GET /api/user/participation/{articleId}`
   （鉴权，返回 ParticipationRecord；**没参与过 data 为 null**）。
-- **"最近上线了哪几句"** → `GET /api/articles?latest=N`（**公开**，数据源一直是 `articles` 句库，
-  与排期无关）。⚠️ 它原来就叫 `/api/schedules` —— 名字与内容不符，已随排期一起改名。
+- **"最近上线了哪几句"** → `GET /api/articles/latest?limit=N`（**公开**，数据源一直是 `articles` 句库，
+  与排期无关）。返回 `{ date, items }`（date 同样只用于端侧按天缓存）。
+  ⚠️ 2026-09 从 `/api/articles?latest=N` **独立成一条地址**。
+- **"句库里有哪些句子 / 按标签难度筛"** → `GET /api/articles`（**公开**，通用查询）：
+  `tags` / `difficulty` 逗号分隔**任一命中**、`sort=date|participants`、`limit` 默认 50（1..100）。
+  返回 `{ items }` —— **不带 date**（这条与"今天"无关，没有按天缓存的需求）。
+  ⚠️ 它原来就是「最新上线」，改名独立后 `/api/articles` 空出来做通用查询。
+  ⚠️ 它原来就叫 `/api/schedules` —— 名字与内容不符，已随排期一起改名。
+- ⭐⭐ **成绩归属不由这些 `date` 决定**：那由服务端在 **`POST /api/user/submissions`** 受理时算
+  —— 它**只收它自己的今天**（2026-09 删掉了客户端声明的 `scheduleDate`；
+  连战天数本来也不看它，用的是 `dayKey(createdAt)`）。
+  ⇒ 端侧不再需要、也不允许拿手机时钟算日期；`today` / `latest` 的 `date` 只喂缓存。
+- **"有哪些用户"** → `GET /api/users`（**公开**，用户目录）：
+  `sort=joined`（默认，加入时间倒序）| `energy`（能量倒序）、`limit` 1..100 默认 50；
+  返回 `{ items: [{ id, nickname, avatarUrl, energy, createdAt, conqueredCount, challengedRounds, streakDays, growth }] }`，
+  只列 `status='normal'`。
+  ⚠️ **两查一页**：主查询从 `users` 一行拿齐身份 + 能量 + 成长值 + 连战天数，
+  再用**一条** `GROUP BY user_id` 的聚合拿这一页所有人的参与次数 / 挑战回合 ——
+  别退化成每行调一次 `challengeStats` / `readGrowth`（50 行就是 100+ 次查询）。
+  ⚠️⚠️ 前缀是**复数** `/api/users`，与鉴权的 `/api/user/*`（单数）**不是一回事**
+  （Hono 的 `/api/user/*` 不会兜住它 ⇒ 它在 auth.test.ts 里显式登记为公开）。
+  ⚠️⚠️ 它是**唯一一个公开返回 `energy` 的接口**（2026-09 用户明确要求）——
+  `/api/profile/{id}` 与 `/api/user/me`「能量只给本人」的边界**没变**，别当先例。
+- **"我在哪些句子上参与过"** → `GET /api/user/participations`（一人一句一行）：
+  每行带 **`words` + `links` 两个快照**（`ArticleWordItem[]` / `string[]`，见 `participations` 表）——
+  ⚠️ **没有 `text` 字段**：句子由端侧 `words.map(w => w.text).join(' ')` 拼出来
+  （`words[].text` 含标点，拼起来就是原句）。原文不再是单独一列（2026-09 删掉 `participations.text`）。
+  ⚠️ 例外：快照为空（内容缺口，有几篇 `articles.words` 是空的）时才会多一个 `text` 兜底字段，
+  端侧判据是 `text ?? 拼 words`。
+- ⭐⭐ **「我的」这一族接口 2026-09 收敛成"从 participation 进去"**（别再加并行的入口）：
+  · `GET /api/user/participations` —— 我参与过的句子（列表，一人一句一行）；
+  · `GET /api/user/participation/{articleId}` —— **这一句**的参与记录（没参与过 = `data: null`）；
+  · `GET /api/user/participation/{articleId}/submissions` —— 这一句的**逐次提交**
+    （原 `/api/user/article-records?article=`，已删/改名）；
+  · `GET /api/user/is-favorite?articleId=` —— **这一句我收藏了吗**，独立一条。
+  ⚠️⚠️ **收藏刻意不掺进参与记录**：收藏与"参与"是两件事（**没读过也能收藏**，
+    那时 participation 是 null）；混在一起就会出现"按钮变空心、用户以为收藏丢了"。
+  ⚠️ 已删 `/api/user/arena-records`（批量「我在这几句上的战绩」）：战绩按句子走
+    `participation/{articleId}`，端侧存 store（`lib/participation.ts`），**不再端侧累加**
+    （`store.arena` 那套影子已删）。`beatenCount` 端侧现推 = `participantCount − rank`。
 
 ⚠️ `submissions.schedule_date` 那一列**留着**：它记的是"这次提交**归到哪一天**"
 （历史挑战必须归到那一天，否则昨天那张卡的数字会变）—— 归属信息 ≠ 排期。

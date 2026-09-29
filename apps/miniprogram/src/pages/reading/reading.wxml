@@ -2,6 +2,8 @@
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
   <!-- ⭐ 统一的自定义导航栏。left 不填 = auto：栈深度 ≥ 1 时画「返回」 -->
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
   <nav-bar id="nav" title="参与挑战" />
 
   <!-- ── 句子加载中 ────────────────────────────────────────── -->

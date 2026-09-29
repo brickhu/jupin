@@ -1,7 +1,7 @@
 import type {
   ApiResult,
-  ArenaDetail,
-  ArticleCard,
+  ArticleParticipationsResponse,
+  ArticleStatsResponse,
   ChallengesResponse,
   EnergyResponse,
   GrowthRankResponse,
@@ -11,17 +11,20 @@ import type {
   ProfileUpdate,
   ProfileUpdateResponse,
   UserProfileResponse,
-  ArenaRecordsResponse,
+  IsFavoriteResponse,
   ChallengeShareResponse,
+  ArticleListResponse,
   LatestCardsResponse,
+  UserListResponse,
   FavoritesResponse,
-  ArticleRecordsResponse,
+  ParticipationSubmissionsResponse,
   ShopGoodsResponse,
   ShopOrderResponse,
   StreakRecordResponse,
   StreakView,
   SubmissionAudioResponse,
   SubmissionStatusResponse,
+  TodayArticleResponse,
 } from '@jushuo/shared'
 
 import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, ENV_VERSION, PLATFORM, SDK_VERSION, TARGET, TRANSPORT } from '../../config'
@@ -117,6 +120,20 @@ function restoreToken(): string {
 export function authHeader(): Record<string, string> {
   const t = restoreToken()
   return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+/**
+ * ⭐ 服务端回「你还没加入句拼」（403 `NOT_REGISTERED`）时的回调 —— 由 lib/auth 注册。
+ *
+ * ⚠️ 为什么是回调而不是直接 import store：这一层只管**传输**（拼路径 / 分类错误），
+ *    不该认识全局状态；而"把本机过期的身份快照清掉"是 auth 的事。
+ * ⚠️ 有了它，账号在服务端被删（清库 / 换环境）之后本机不会一直卡在"我加入过"：
+ *    任意一次鉴权请求收到这个码，导航栏当场翻回「加入」。
+ */
+let onNotRegistered: (() => void) | null = null
+
+export function setNotRegisteredHandler(fn: () => void): void {
+  onNotRegistered = fn
 }
 
 interface RawResponse {
@@ -497,6 +514,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       await relogin()
       return requestWithRetries<T>(path, { ...options, noRelogin: true })
     }
+    /**
+     * ⭐ 服务端说「库里没有我这一行」—— 本机那份"已加入"的快照已经过期
+     *    （清库 / 换环境 / 账号被删）。交给 auth 清身份，界面翻回「加入」。
+     *    ⚠️ 这里**不重试**：重试也不会凭空多出一行来 —— 建行只发生在加入页那一次。
+     */
+    if (err instanceof ApiError && err.code === 'NOT_REGISTERED') onNotRegistered?.()
     throw err
   }
 }
@@ -679,22 +702,23 @@ export function wxLoginCode(): Promise<string> {
 
 async function doLogin(): Promise<void> {
   if (TRANSPORT === 'container') {
-    // ⚠️⚠️ 这里**必须**带 noRelogin。
-    //    容器通道下身份由微信网关注入，login() 就是「取一次自己是谁」，
-    //    所以它本身就是一个会被 401 的请求。不禁止重登的话：
-    //      request(/api/user/me) 401 → relogin() → login() → request(/api/user/me) → …
-    //    而 relogin() 会复用同一个 Promise，第二次等的是**自己** —— 死锁，不是报错。
-    // ⭐ 启动请求：给冷启动留够时间（见 LAUNCH_BUDGET_MS）
-    const me = await request<{ id: number }>('/api/user/me', {
-      noRelogin: true,
-      budgetMs: LAUNCH_BUDGET_MS,
-    })
-    setUserId(me.id)
+    /**
+     * ⚠️⚠️ 云托管通道下**没有"登录"这个动作**：openid 由微信网关在每一个请求上注入，
+     *    所以这里不需要、也不该打任何请求。
+     *
+     *    ✗ 它以前 GET `/api/user/me`，而那一刻服务端会**顺手建号** ——
+     *      等于「打开小程序即注册」，用户没有任何选择的机会。
+     *      注册现在必须由用户显式发起（加入页 → `register()`），
+     *      服务端的 authMiddleware 也改成**只查不建**了（见 middleware/auth.ts）。
+     *
+     *    ⚠️ uid 也不再由这里设置：它只可能来自一次**成功的** `/me` 或注册响应 ——
+     *      未注册的人根本没有 uid（上传路径那块本来也走不到）。
+     */
     return
   }
 
   const code = await wxLoginCode()
-  const data = await request<{ token: string; user: { id: number } }>('/api/auth/login', {
+  const data = await request<{ token: string; user: { id: number } | null }>('/api/auth/login', {
     method: 'POST',
     data: { code },
     // ⚠️ 必须带：不然登录失败会递归地再触发一次登录，直到栈溢出
@@ -703,24 +727,64 @@ async function doLogin(): Promise<void> {
     budgetMs: LAUNCH_BUDGET_MS,
   })
   setToken(data.token)
-  setUserId(data.user.id)
+  // ⚠️⚠️ `user` 可为 **null**：登录 ≠ 注册（2026-09 定）。
+  //    还没加入句拼的人也能拿到 token（里面带的是凭据），但没有账号可回 ——
+  //    这里**绝不能**再去 /me 或建号，那是回到"自动注册"。
+  if (data.user) setUserId(data.user.id)
 }
 
 /**
- * ⭐ **最新上线** —— 句库里按上线时间倒序的最新 N 句（首页下半段那一段）。
+ * ⭐ **最新上线**（`GET /api/articles/latest`）—— 句库里按上线时间倒序的最新 N 句
+ *    （首页下半段那一段）。2026-09 从 `/api/articles?latest=N` **独立成一条地址**。
  *
  * ⚠️⚠️ 它与「今天挑战」（`fetchToday`）是**两个接口**（用户 2026-09 明确）：
  *    · 这条：**公开**、对所有人一样，按 `articles.published_at` 倒序；
- *    · today：**按人**，答「你今天适合读哪一句」（24 小时窗口 + 我的难度档）。
+ *    · today：**按 uid（或匿名随机）**，答「今天适合读哪一句」。
  *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口**整体删除**了，
  *    `schedules` 这个名字（表 / 接口 / 概念）都不该再出现。
  *
- * ⚠️ 首页是**公开页面**：这一份不含任何「我的」字段（我的成绩走
- *    `/api/user/arena-records`，端侧按 articleId 融合）。
+ * ⚠️ 首页是**公开页面**：这一份不含任何「我的」字段（我的战绩按句子走
+ *    `/api/user/participation/{articleId}`，见 lib/participation.ts）。
+ *
+ * ⚠️ **带 `date`**（服务端的今天）：端侧拿它判"首屏缓存是不是今天的"（见 store）。
  */
 export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
-  return request<LatestCardsResponse>('/api/articles?latest=' + limit, { budgetMs: LAUNCH_BUDGET_MS })
+  return request<LatestCardsResponse>('/api/articles/latest?limit=' + limit, {
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
+/** 通用句库查询的参数（对应 `GET /api/articles` 的 querystring） */
+export interface ArticleLibraryQuery {
+  /** 逗号分隔也行；数组会被拼成 `a,b`。**任一命中**（OR） */
+  tags?: string | string[]
+  /** 难度档 0-3，逗号分隔也行；**任一命中** */
+  difficulty?: string | number[]
+  /** `date`（默认，上线时间倒序）| `participants`（参与人数倒序） */
+  sort?: 'date' | 'participants'
+  /** 1..100，默认 50 */
+  limit?: number
+}
+
+/**
+ * ⭐ **句库查询**（`GET /api/articles`）—— 按标签 / 难度筛选，按日期 / 参与人数排序。
+ *
+ * ⚠️ 与 `fetchLatestCards` 的分工：这个是**通用查询**（筛选 + 排序 + 数量），
+ *    那个是首页那一段的固定口径（最新上线、默认 6 条）。
+ * ⚠️ 公开接口：不需要鉴权，返回的也是纯句子数据。
+ */
+export function fetchArticleLibrary(q: ArticleLibraryQuery = {}): Promise<ArticleListResponse> {
+  const params: string[] = []
+  const tags = Array.isArray(q.tags) ? q.tags.join(',') : q.tags
+  const difficulty = Array.isArray(q.difficulty) ? q.difficulty.join(',') : q.difficulty
+  if (tags) params.push('tags=' + encodeURIComponent(tags))
+  if (difficulty !== undefined && difficulty !== '') {
+    params.push('difficulty=' + encodeURIComponent(String(difficulty)))
+  }
+  if (q.sort) params.push('sort=' + q.sort)
+  if (q.limit !== undefined) params.push('limit=' + q.limit)
+  return request<ArticleListResponse>('/api/articles' + (params.length ? '?' + params.join('&') : ''))
 }
 
 /**
@@ -732,12 +796,14 @@ export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
  * ⚠️⚠️ **uid 可省略**：本地有 uid 就带上（按我的难度档选句，窗口内固定）；
  *    没有就**不带** —— 服务端按匿名给：**初级档**里**随机 + 按参与人数加权**挑一条。
  *    游客的首页也要有这张卡（老接口 `/api/user/today` 是鉴权的，未登录直接 401、卡片永远空着）。
+ * ⚠️ 返回 `{ item }`：`item` 是**纯句子数据**（**不带日期** —— 句子类响应一律不带日期，
+ *    归哪一天由服务端在受理提交时决定，见 submitReading 的说明）。
  * ⚠️ 首页**不 await 它**（拿不到就少一张今日卡，其余照常画 —— 卡片不能空着整页）。
  */
-export function fetchToday(): Promise<ArticleCard> {
+export function fetchToday(): Promise<TodayArticleResponse> {
   const uid = getUserId()
   const q = uid > 0 ? '?uid=' + uid : ''
-  return request<ArticleCard>('/api/articles/today' + q, { budgetMs: LAUNCH_BUDGET_MS })
+  return request<TodayArticleResponse>('/api/articles/today' + q, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
@@ -850,46 +916,74 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
   })
 }
 
-/**
- * ⭐ 竞技场详情 —— **按句子**寻址（/api/arenas/:articleId，公开页面）。
- *
- * ⚠️⚠️ 这才是竞技场的正经地址：日期只是「编辑精选的容器」，和竞技场无关
- *    （排名 / 人数 / 最高分 / 我的最好成绩全部按 article_id 查）。
- * ⚠️ 与首页同理：竞技场也是**公开页面**，登录与否只影响「我的名次」那几格。
- * ⚠️ 竞技场**只按句子寻址**（`/api/arenas/:articleId`）：`GET /api/schedules/:date`
- *    已随 schedules 一起删除 —— 两次挑战同一句，看的是**同一个场子**。
- *    「这次挑战记到哪一天」由响应里的 `submissionDate` 说了算（按句子寻址时是今天）。
- */
+/** 成长榜的三块（与接口的 `?self` / `?diligence` / `?standout` 一一对应） */
+export type GrowthBoard = 'self' | 'diligence' | 'standout'
+
 /**
  * ⭐ 成长榜 —— 三个成长指标各 TOP10（首页最下面那三块）。
  *
  * ⚠️ 它**不在**首页那个包里：那是「今天读哪一句」，这是全站累计的排行，
  *    两件事共用一个响应只会让两边都变重。首页本来就是并发拉的，多一个请求不多一次往返。
+ *
+ * ⚠️ **按需取**：不传 `boards` ⇒ 三块全给（首页就这一种用法）；
+ *    传了 ⇒ 只查、只回点名的那几块（服务端每块一条独立 SQL）。
+ *    没点名的键**不会出现**在返回里，读的时候用 `?? []` 兜底。
  */
-export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
-  return request<GrowthRankResponse>('/api/leaderboards/growth', { budgetMs: LAUNCH_BUDGET_MS })
+export function fetchGrowthBoards(boards?: GrowthBoard[]): Promise<GrowthRankResponse> {
+  const q = boards && boards.length > 0 ? '?' + boards.join('&') : ''
+  return request<GrowthRankResponse>('/api/leaderboards/growth' + q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/** 用户目录的查询参数（对应 `GET /api/users` 的 querystring） */
+export interface UserDirectoryQuery {
+  /** `joined`（默认，加入时间倒序）| `energy`（能量倒序） */
+  sort?: 'joined' | 'energy'
+  /** 1..100，默认 50 */
+  limit?: number
 }
 
 /**
- * ⭐ 「我在这几句上的战绩」—— **鉴权接口**（/api/user/*）。
+ * ⭐ **用户目录**（`GET /api/users`，公开）。
  *
- * ⚠️ 公开的句子列表 / 竞技场不带「我的」字段，端侧把这一份按 articleId 融进去
- *    （见 store 的 applyArenaRecords）。⚠️ 只传当前屏上的 id：不是把我的全量记录拉下来。
- * ⚠️ ranks 只在需要「我的名次」的那一屏传 true（名次要服务端跨用户算）。
+ * ⚠️ 前缀是**复数** `/api/users`，与鉴权的 `/api/user/*`（单数）不是一回事。
+ * ⚠️ 它**含 energy**（用户 2026-09 明确要求公开）—— 别当"能量可以随便给"的先例。
  */
-export function fetchArenaRecords(ids: string[], ranks = false): Promise<ArenaRecordsResponse> {
-  if (ids.length === 0) return Promise.resolve({ items: [] })
-  const q = '/api/user/arena-records?ids=' + ids.join(',') + (ranks ? '&ranks=1' : '')
-  return request<ArenaRecordsResponse>(q, { budgetMs: LAUNCH_BUDGET_MS })
+export function fetchUsers(q: UserDirectoryQuery = {}): Promise<UserListResponse> {
+  const params: string[] = []
+  if (q.sort) params.push('sort=' + q.sort)
+  if (q.limit !== undefined) params.push('limit=' + q.limit)
+  return request<UserListResponse>('/api/users' + (params.length ? '?' + params.join('&') : ''))
+}
+
+/**
+ * ⭐ **这一句我收藏了吗** —— `GET /api/user/is-favorite?articleId=`（鉴权）。
+ *
+ * ⚠️⚠️ 它与「我在这句上的战绩」**是两条互不相干的查询**（用户 2026-09 定）：
+ *    收藏与参与无关 —— **没读过也能收藏**。所以它既不在
+ *    `/api/user/participation/{articleId}` 的响应里（那条对"没读过"回 null），
+ *    也不该由"战绩"接口顺带回答。
+ * ⚠️ 于是一次只问一句（竞技场页的一次性状态，不进 store、不需要缓存）。
+ */
+export function fetchIsFavorite(articleId: string): Promise<boolean> {
+  return request<IsFavoriteResponse>(
+    '/api/user/is-favorite?articleId=' + encodeURIComponent(articleId),
+    { budgetMs: LAUNCH_BUDGET_MS },
+  ).then((r) => r.favorited)
 }
 
 /**
  * ⭐ 我在**某一句**上的历史挑战（逐次，最近在前）—— 朗读页下方那一段历史。
- * ⚠️ 只回有得分的那几次（见 shared 的 ArticleRecordItem）。
+ *
+ * ⚠️⚠️ **路径挂在"参与"这个资源下面**（2026-09 改）：
+ *    一次参与 = (我, 这一句)，它的**子资源**才是逐次提交。
+ *    原来这条叫 `/api/user/article-records?article=` —— 那个路径服务端**已经删了**，
+ *    改名前端侧漏改过一次，症状是朗读页历史区永远「请求失败」
+ *    （契约守门测试 api-contract-guard 专门盯这件事）。
+ * ⚠️ 只回**有结论的**那几次（scored / failed，见 shared 的 ParticipationSubmissionItem）。
  */
-export function fetchArticleRecords(articleId: string): Promise<ArticleRecordsResponse> {
-  return request<ArticleRecordsResponse>(
-    '/api/user/article-records?article=' + encodeURIComponent(articleId),
+export function fetchParticipationSubmissions(articleId: string): Promise<ParticipationSubmissionsResponse> {
+  return request<ParticipationSubmissionsResponse>(
+    '/api/user/participation/' + encodeURIComponent(articleId) + '/submissions',
     { budgetMs: LAUNCH_BUDGET_MS },
   )
 }
@@ -912,8 +1006,61 @@ export function listFavorites(): Promise<FavoritesResponse> {
   return request<FavoritesResponse>('/api/user/favorites', { budgetMs: LAUNCH_BUDGET_MS })
 }
 
-export function fetchArenaDetail(articleId: string): Promise<ArenaDetail> {
-  return request<ArenaDetail>('/api/arenas/' + articleId, { budgetMs: LAUNCH_BUDGET_MS })
+/** 「这一句的参与记录」查询参数（对应 `GET /api/articles/{id}/participations`） */
+export interface ArticleParticipationsQuery {
+  /** `time`（默认，最新参与时间倒序）| `score`（最高分倒序 = **榜单**） */
+  sort?: 'time' | 'score'
+  /** 1..100，默认 20 */
+  limit?: number
+  /** 非负整数，默认 0；下一页 = `offset + 本页条数`（响应里的 total 是总数） */
+  offset?: number
+}
+
+/**
+ * ⭐⭐ **某一句的参与记录**（`GET /api/participations?articleId=…`，公开）。
+ *
+ * 用户 2026-09：原来那条"大而全"的 `/api/arenas/:articleId` **已删除**，拆成四条：
+ *   · 句子数据 → [fetchArticleContent]（`/api/articles/{id}`，端侧做会话级缓存）
+ *   · **参与者 / 榜单 → 就是这一条**（`sort=score` 是榜单，`sort=time` 是"最近谁来过"）
+ *   · 参与统计 → [fetchArticleStats]（`/api/participations/stats`）
+ *   · 我的参与 → [fetchParticipation]（`/api/user/participation/{articleId}`）
+ *   · 我的收藏 → [fetchIsFavorite]（`/api/user/is-favorite`）
+ *
+ * ⚠️⚠️ 它挂在**参与资源**下（`/api/participations`），**不挂在 article 下面**：
+ *    参与数据是用户资产，句子下架 / 内容换版之后照样要读得到。
+ * ⚠️ 每一行都带 `rank`：按最高分算的**全局**名次，**与 sort 无关**。
+ *    `total` 是参与者总数（分页判据）。
+ */
+export function fetchArticleParticipations(
+  articleId: string,
+  q: ArticleParticipationsQuery = {},
+): Promise<ArticleParticipationsResponse> {
+  const params: string[] = ['articleId=' + encodeURIComponent(articleId)]
+  if (q.sort) params.push('sort=' + q.sort)
+  if (q.limit !== undefined) params.push('limit=' + q.limit)
+  if (q.offset !== undefined) params.push('offset=' + q.offset)
+  return request<ArticleParticipationsResponse>('/api/participations?' + params.join('&'), {
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
+/**
+ * ⭐⭐ **参与统计**（`GET /api/participations/stats?ids=a,b,c`，公开）—— 批量。
+ *
+ * 用户 2026-09 定的结构（L1 解耦）：人数 / 最高 / 最低**不挂在句子卡片上** ——
+ * 它是 `participations` 的聚合派生值，每次现算。列表页拿这一屏的 id 调**一次**
+ * 这个接口，再按 articleId 合并（见 lib/article-stats.ts 与 store 的 articleStats）。
+ *
+ * ⚠️ 服务端按请求的 ids **零值补齐**（没人参与 ⇒ `participantCount: 0`），
+ *    所以调用方可以直接按 id 取。
+ */
+export function fetchArticleStats(ids: string[]): Promise<ArticleStatsResponse> {
+  const list = [...new Set(ids.filter((id) => !!id))]
+  if (list.length === 0) return Promise.resolve({ items: [] })
+  return request<ArticleStatsResponse>(
+    '/api/participations/stats?ids=' + encodeURIComponent(list.join(',')),
+    { budgetMs: LAUNCH_BUDGET_MS },
+  )
 }
 
 export function fetchMe(): Promise<MeResponse> {
@@ -935,6 +1082,32 @@ export function saveProfile(input: ProfileUpdate): Promise<ProfileUpdateResponse
     method: 'POST',
     data: input,
   })
+}
+
+/**
+ * ⭐⭐⭐ **注册**（`POST /api/auth/register`）—— 全站**唯一**会创建账号的调用。
+ *
+ * ⚠️⚠️ 它只能出现在一个地方：用户在「加入句拼」页按下「确认加入」那一下
+ *    （见 components/profile-form）。**任何"顺手调一下确保有账号"的用法都是错的** ——
+ *    那正是 2026-09 取消掉的「自动注册」（用户原话：注册不能做成自动的）。
+ *
+ * ⚠️ 它挂在公开前缀 `/api/auth/*` 下（不能挂 `/api/user/*`：那条路上的
+ *    authMiddleware 会因为"还没注册"直接 403，注册请求根本到不了）。
+ *    所以 http 通道要自带 token：这里先确保登录过一次（容器通道不需要）。
+ *
+ * ⚠️ 返回**完整的「我是谁」**（与 /me 同一个形状）—— 端侧当场 setUserId + 落 store，
+ *    不必"存完再查一次"（那会把"加入成功"又赌一次网络）。
+ */
+export async function register(input: ProfileUpdate): Promise<MeResponse> {
+  if (TRANSPORT !== 'container' && !restoreToken()) await login()
+  const me = await request<MeResponse>('/api/auth/register', {
+    method: 'POST',
+    data: input,
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+  // ⭐ uid 是上传路径的必需段（audio/{句子}/{uid}/…）—— 注册成功这一刻才第一次有了它
+  setUserId(me.id)
+  return me
 }
 
 
@@ -964,13 +1137,6 @@ export function saveProfile(input: ProfileUpdate): Promise<ProfileUpdateResponse
 export function submitReading(
   articleId: string,
   audioKey: string,
-  /**
-   * ⭐ 这次挑战的日期（'YYYY-MM-DD'）。
-   * ⚠️ 必须由页面把**当初点进来的那一天**原样回传：
-   *    历史挑战的「再次挑战」要归到那一天，不能算到今天头上 ——
-   *    否则昨天那张卡片的参与人数和最高分会莫名其妙地变。
-   */
-  scheduleDate: string,
   audioUrl?: string,
   /**
    * ⭐ 是否公开这次录音（「卡片之外的入口」能不能听到）—— 默认 **false**。
@@ -992,7 +1158,8 @@ export function submitReading(
      *    返回同一个 submissionId，既不多扣能量也不重复计分。
      *    这里给它一个缺省空串只是为了让调用方显式想起它；服务端会拒绝空值（400）。
      */
-    data: { articleId, audioKey, audioUrl, isPublic, scheduleDate, attemptId },
+    // ⚠️ **不再传 scheduleDate**（2026-09 删）：这次挑战归哪一天由服务端受理时取它的今天。
+    data: { articleId, audioKey, audioUrl, isPublic, attemptId },
   })
 }
 

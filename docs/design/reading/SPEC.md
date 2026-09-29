@@ -101,6 +101,8 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
 
 1. ✅ **服务端 GET /api/user/article-records?article=** —— 逐次历史（只回有得分的，最近在前），
    加端侧 fetchArticleRecords()。已本地验证：failed 不算 / 最近在前 / best 现算 / 清理干净。
+   ⚠️ 2026-09 这条接口**改名并挪到参与资源下**：`GET /api/user/participation/{articleId}/submissions`
+   （端侧 `fetchParticipationSubmissions()`）—— 本文档只记录当时那一步，路径以代码为准。
 2. ✅ **reading 页状态机 s1–s3**（设计稿的核心；s4–s6 已按用户口径搬进弹窗，见第 8 步）：
    s1 待录 → s2 录音中 → s3 预览。保留：标准音试听、录音、上传、提交受理、轮询、
    失败处理、本地缓存录音（有缓存自动进 s3）。

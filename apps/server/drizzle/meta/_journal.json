@@ -358,6 +358,41 @@
       "when": 1790684464889,
       "tag": "0051_faulty_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "5",
+      "when": 1790694099056,
+      "tag": "0052_little_bushwacker",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "5",
+      "when": 1790694852381,
+      "tag": "0053_colossal_dragon_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "5",
+      "when": 1790697907244,
+      "tag": "0054_sad_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1790697914712,
+      "tag": "0055_abandoned_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1790699353089,
+      "tag": "0056_heavy_mindworm",
+      "breakpoints": true
     }
   ]
 }

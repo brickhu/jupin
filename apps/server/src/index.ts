@@ -17,10 +17,11 @@ import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
-import { favoritesRoutes } from './routes/favorites'
+import { favoritesRoutes, isFavoriteRoutes } from './routes/favorites'
 import { shopRoutes } from './routes/shop'
-import { arenasRoutes } from './routes/arenas'
 import { leaderboardsRoutes } from './routes/leaderboards'
+import { participationsRoutes } from './routes/participations'
+import { usersRoutes } from './routes/users'
 import { payRoutes } from './routes/pay'
 
 const app = createApp()
@@ -146,8 +147,13 @@ app.route('/media', mediaRoutes)
  *    那会让没登录的人打不开首页。
  */
 // ⭐ 首页那一次请求：最新上线（**纯公开**）—— 今日那张卡是端侧兜底，随后被推荐替换
-// ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
-app.route('/api/arenas', arenasRoutes)
+// ⚠️ 2026-09：`/api/arenas/:articleId` 那条"大而全"的接口**已删除**，拆成四条：
+//    `/api/articles/:id`（**纯句子内容**，可会话缓存）、
+//    `/api/participations?articleId=`（参与者/榜单）、
+//    `/api/participations/stats?ids=`（参与统计，批量），
+//    以及鉴权侧的 `/api/user/participation/:articleId`、`/api/user/is-favorite`。
+//    ⚠️ 参与数据自立根路径：句子下架/换版之后，参与记录与统计照样读得到。
+app.route('/api/participations', participationsRoutes)
 // ⭐ 公开页面：个人主页 /api/profile/:id、挑战详情 /api/challenge/:sid
 app.route('/api/challenge', challengeRoutes)
 app.route('/api/profile', profileRoutes)
@@ -201,6 +207,16 @@ app.route('/api/admin', adminRoutes)
 
 app.route('/api/articles', articlesRoutes)
 /**
+ * ⭐⭐ **用户目录**（`/api/users`，复数）—— 公开接口。
+ *
+ * ⚠️⚠️ 与 `/api/user/*`（单数、鉴权命名空间）**不是同一个前缀**：
+ *    实测 Hono 的 `/api/user/*` **不会**兜住 `/api/users`，所以它必须
+ *    自己在 auth.test.ts 的公开清单里登记（不是"忘了挂鉴权"）。
+ * ⚠️ 它**含 energy**（用户 2026-09 明确要求公开）——
+ *    `/api/profile/:id`「能量只给本人」那条边界没变，别当先例。
+ */
+app.route('/api/users', usersRoutes)
+/**
  * ⭐⭐ 今日推荐 —— 首页那张"今日挑战"卡（`GET /api/articles/today?uid=<id>`）。
  * ⚠️ 2026-09 改口径：它**不再挂在 /api/user/* 下**，而是并入 `/api/articles` 前缀，
  *    只收一个 uid（公开可读）。「我今天在这句上的战绩」在
@@ -209,6 +225,14 @@ app.route('/api/articles', articlesRoutes)
  */
 // ⭐ 我的收藏：收/取消一个句子 + 列表（挂在 /api/user/* 下 ⇒ 自动受鉴权保护）
 app.route('/api/user/favorites', favoritesRoutes)
+/**
+ * ⭐ **"这一句我收藏了吗"**（`GET /api/user/is-favorite?articleId=`）—— 独立一条查询。
+ *
+ * ⚠️ 为什么单独挂：它与 `/api/user/favorites/{id}`（PUT/DELETE 设开关）语义不同，
+ *    也刻意不掺进 participation 的响应 —— 收藏与"参与"是两件事
+ *    （没读过也能收藏，那时 participation 回 null，端侧判不出收藏状态）。
+ */
+app.route('/api/user', isFavoriteRoutes)
 app.route('/api/user', userRoutes)
 app.route('/api/user/submissions', submissionsRoutes)
 app.route('/api/user/uploads', uploadsRoutes)

@@ -1,26 +1,40 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authMiddleware, type Variables } from './auth'
 
 /**
  * ⭐⭐ 「用户在使用任何业务数据之前，必须已经在我们库里有一行」这条不变量，
- *     由这个中间件保证 —— 它是**全站唯一的注册点**。
+ *     由这个中间件保证 —— 但**它自己不再建行**（2026-09 定：注册不能自动）。
+ *
+ *     · 认不出凭据            → 401（进不到路由）
+ *     · 认得出、库里没有这一行 → 403 `NOT_REGISTERED`（进不到路由，用户去加入页）
+ *     · 认得出、行也在         → 放行
  *
  * ⚠️ 这条不变量最容易在一件很平常的事上破掉：**加一个新路由，忘了挂鉴权**。
  *    那一刻没有任何东西会报错 —— 接口能用、数据能出，只是谁都能读别人的。
  *    所以这里用两把锁把它钉住：
- *      ① 行为：没有身份 → 401，根本进不到路由（下面三个用例）
+ *      ① 行为：没有身份 → 401 / 未注册 → 403，根本进不到路由（下面几个用例）
  *      ② 结构：/api 下每一个业务前缀都必须挂上它（扫 index.ts 源码）
  *
  * ⚠️ 刻意**不 import ../index.ts** —— 那个模块在导入时就 serve() 了。
  */
 
+/** 只 mock 查库那一步：鉴权路径**只许查、不许建**，所以只需要 findUserByOpenid */
+const findUserByOpenid = vi.fn()
+vi.mock('../services/user', () => ({
+  findUserByOpenid: (openid: string) => findUserByOpenid(openid),
+}))
+
 describe('authMiddleware —— 没有身份就没有业务数据', () => {
   const app = new Hono<{ Variables: Variables }>()
   app.use('/api/thing/*', authMiddleware)
   app.get('/api/thing/x', (c) => c.json({ ok: true, data: c.get('userId') }))
+
+  beforeEach(() => {
+    findUserByOpenid.mockReset()
+  })
 
   it('⭐ 完全不带凭据 → 401（不存在"匿名但拿到 userId"的路径）', async () => {
     const res = await app.request('/api/thing/x')
@@ -38,6 +52,28 @@ describe('authMiddleware —— 没有身份就没有业务数据', () => {
     const res = await app.request('/api/thing/x', { headers: { Authorization: 'Bearer nonsense' } })
     expect(res.status).toBe(401)
     expect(((await res.json()) as { error: string }).error).toBe('登录已过期')
+  })
+
+  it('⭐⭐ 认得出身份、但库里没有这一行 → 403 NOT_REGISTERED，且**一次都不建**', async () => {
+    findUserByOpenid.mockResolvedValue(null)
+    const res = await app.request('/api/thing/x', {
+      headers: { 'x-wx-source': 'wx', 'x-wx-openid': 'o_new' },
+    })
+    // ⚠️ 403 而不是 401：凭据是好的、人也是同一个人，只是还没加入句拼 ——
+    //    端侧要据此画「加入」，而不是走"重新登录"那条路（那条路转一圈还是未注册）
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as { code?: string; error?: string }
+    expect(body.code).toBe('NOT_REGISTERED')
+    expect(findUserByOpenid).toHaveBeenCalledWith('o_new')
+  })
+
+  it('⭐ 认得出身份、行也在 → 放行，userId 是库里的那个', async () => {
+    findUserByOpenid.mockResolvedValue({ id: 9, openid: 'o_old' })
+    const res = await app.request('/api/thing/x', {
+      headers: { 'x-wx-source': 'wx', 'x-wx-openid': 'o_old' },
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { data: number }).data).toBe(9)
   })
 })
 
@@ -77,10 +113,17 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  *                           鉴权只能做在路由自己那一层（单号存在 + 金额相等 + 归属匹配 + 幂等）
  *    · /api/articles     —— 句库：正文 / 译文 / 难度标签 / 标准音（静态内容，无用户数据）
  *    · /api/leaderboards —— 成长榜 TOP10（榜上的昵称与分数本来就是公开的）
+ *    · /api/users        —— 用户目录（昵称 / 头像 / 加入时间 / 能量）。
+ *      ⚠️⚠️ 这是**唯一一个违反 ①（含仅本人可见字段）的例外**：`energy` 是账号余额，
+ *          `/api/profile/:id` 与 `/api/user/me` 一直只给本人。这里是 **2026-09 用户
+ *          明确要求**公开的（"这个公开，含 energy"）。
+ *          ⇒ 别把它当先例：往别的公开前缀加"我的"字段之前，先问一句"用户真的要公开它吗"。
  *
  * ⚠️ 往 /api/pay 下加业务接口 = 直接开一个免鉴权的洞，要加就另开前缀。
  */
-const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/leaderboards', '/api/arenas', '/api/profile', '/api/challenge', '/api/admin'])
+// ⚠️ 2026-09 删掉 `/api/arenas`（那条"大而全"的竞技场接口拆成了
+//    /api/articles/{id} + /api/participations + /api/participations/stats + 两条鉴权接口）
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/leaderboards', '/api/participations', '/api/profile', '/api/challenge', '/api/admin', '/api/users'])
 const EXPECTED_PUBLIC = [...PUBLIC_PREFIXES].sort()
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {

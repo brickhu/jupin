@@ -7,6 +7,8 @@
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
   <nav-bar id="nav" title="能量" />
 
   <!-- ⚠️ 沙箱环境要在页面上**说出来**：测试期最容易犯的错觉是「我在花钱」。 -->

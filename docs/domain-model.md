@@ -15,19 +15,20 @@
 
 | # | 业务概念 | 真相在哪 | 唯一写入方 | 派生物 / 对账 | 主要读者 |
 |---|---|---|---|---|---|
-| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles?latest=N`、`/api/articles/:id`、`/api/articles/today`、`/api/arenas` |
+| 0 | 一个用户（账号） | `users` 一行；**凭据是 openid，身份是 `users.id`** | ⭐⭐ **唯一建行点**：`POST /api/auth/register`（用户在「加入句拼」页按下「确认加入」）→ `createUserByOpenid`（`services/user.ts`）。⚠️ 2026-09 起**注册不能自动**：`authMiddleware` 与 `/api/auth/login` **只查不建**（`findUserByOpenid`），未注册回 403 `NOT_REGISTERED`；`getOrCreateUserByOpenid` 已删除 | 无 | `/api/user/me` 及所有 `/api/user/*` |
+| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles`（通用查询）、`/api/articles/latest`、`/api/articles/:id`、`/api/articles/today`、`/api/participations`、`/api/participations/stats` |
 | 2 | 一次朗读（录音） | 对象存储里的音频；索引在 `submissions`（`audio_key` / `audio_url` / `bytes` / `duration_ms` / `is_public`） | **无** —— 3 个写点（受理 insert、评测 update、可见性 update） | 失败时对象被删；成功时归档成 mp3 并改 `audio_key` | `GET /api/challenge/:sid/audio`、`/api/user/challenges` |
 | 3 | 一次评测（分数 / 逐词 / 点评） | `submissions` 的 `score` / `word_scores` / `dimensions` / `score_parts` / `ai_comment` / `ai_advice` | 唯一模块 `services/scoring.ts`；**函数级不唯一**（`runScoring` / `fail`） | `participations`（比分）；`users.growth_*`（结算） | `GET /api/user/submissions/:id`、`GET /api/challenge/:sid`、`/api/user/challenges` |
 | 4 | 一次奖励结算（成长值 / 连战 / 能量） | `submissions`（快照）+ `users`（累计/连战/能量）+ `energy_ledger` + `unfreeze_cards` + `reward_grants` | 唯一入口 `services/settle.ts:47`；**但内部跨 4+ 个独立事务** | `submissions.growth_*` / `streak_delta` 是快照 | 结果页 `SubmitResponse.growth` / `.streak`、`/api/user/me` |
-| 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/arena-records`、首页卡片 |
-| 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/arenas/:articleId`、`/api/user/submissions/:id` |
+| 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/participation/{articleId}`（+ 子资源 `/submissions`）、首页卡片 |
+| 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/participations?articleId=&sort=score`、`/api/user/submissions/:id` |
 | 7 | 今日挑战（24 小时窗口） | `users.today_article_id` + `today_assigned_at` | `recommendToday`（`services/recommend.ts:330`） | 无 | `GET /api/articles/today?uid=`（uid 可省略 = 匿名，走 `pickAnonymousArticle`） |
 | 8 | 难度档位 | **`articles.scores`**（三个判据分才是源）；`articles.difficulty` 由它算出 | `services/article-content.ts`（写 scores 时一并算 difficulty） | `articles.difficulty`（派生列，供 SQL 筛选） | 端侧展示读 `difficulty`；SQL 筛选读同一列 |
-| 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/arena-records` |
+| 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/is-favorite`（只回答"这句收藏了吗"） |
 | 10 | 连战 | `users.streak_days` / `streak_best` / `last_read_date` | `recordRead`（`services/streak.ts:83`）——**但被 `unfreeze.ts:183` 绕过一处** | 连战日历现算（`services/streak-record.ts`） | `/api/user/me`、`/api/user/streak-record` |
 | 10b | 解冻卡 | `unfreeze_cards`（一张卡一行，有效期/领取/使用都在行上） | 发放 `grantUnfreezeCard`（`unfreeze.ts:98`）、领取 `claimUnfreezeCards`（`unfreeze.ts:75`）、使用 `useUnfreezeCards`（`unfreeze.ts:131`）——三个动作各有唯一函数 | 无 | `/api/user/me`、`/api/user/claim`、`/api/user/unfreeze` |
 | 11 | 能量 | `energy_ledger`（流水=真相），`users.energy` 是缓存 | `services/energy.ts`（`topUp/hold/release/addEnergy`）——**但 `services/user.ts:53/75` 直接写缓存** | 缓存 + 流水**同事务**写；**无对账命令** | `/api/user/me`、`/api/user/energy`、提交接口 429 |
-| 12 | 内容上线状态 | `articles.is_active`（唯一列） | **无** —— admin 2 处 + 灌库 1 处（见 1.1） | `articles.published_at` 记录上线时刻 | `/api/articles?latest=N`、推荐选句 |
+| 12 | 内容上线状态 | `articles.is_active`（唯一列） | **无** —— admin 2 处 + 灌库 1 处（见 1.1） | `articles.published_at` 记录上线时刻 | `/api/articles`、`/api/articles/latest`、推荐选句 |
 
 ### 1.1 金句 / 内容属性 / 上线状态
 
@@ -45,13 +46,16 @@
 
 **② 真相在哪。** 正文的真相**就是 `articles` 表上的列**（2026-09 拆列，见 AGENT.md 1.5）：`text` / `translation` / `scores` / `challenge` / `advice` / `words` / `links` 是**源**；`difficulty` / `tags` / `theme` / `standard_audio` 是**派生**（由 `scores` / `text` / `id` 算出）；`is_active` 是**源**。⚠️ 仓库里的 `content/articles/` 下那些 json 只剩「历史内容的导入源」这一个角色，运行时不再读它。
 
+⚠️⚠️ **`articles.text` 不可变**（用户 2026-09 定）：`articleId = sha256(text) 前 16 位` ⇒ 改正文就是另一句。
+判据落在**唯一写入函数** `services/article-content.ts` 的 `saveArticleContent()`：更新分支比较正文，不一致抛 `ArticleTextImmutableError` → admin 写接口回 400。允许原地改的只有派生 / 附属列（translation / scores / tags / challenge / advice / standard_audio / is_active）。`db/seed-articles.ts` 的两处写入要么 `insert().ignore()`（已存在的行一律不动）、要么只在 `text IS NULL` 时补，不违反这条。
+
 **③ 派生物 / 对账。**
 - 难度 / 标签 → `articles.difficulty` + `article_tags`，由 `syncArticleIndex` / `reindexArticles`（`services/article-index.ts:89,109`）幂等重建。
 - 命令：`pnpm content:regrade --apply`（`tools/regrade-content.ts:66` 调 `syncArticleIndex`）。
 - 自洽检查在正文层：`services/content-files.test.ts:54` 验 `difficulty === difficultyFromScores(scores)`（**不查库**）。
 - `is_active` / `published_at`：**没有对账命令**。
 
-**④ 读它的地方。** `GET /api/articles?latest=N`（`routes/articles.ts` 的列表路由）、`GET /api/articles/:id`、`GET /api/articles/today?uid=`（`routes/articles.ts` 的 today 路由）、`GET /api/arenas/:articleId`（`routes/arenas.ts`）。注意 `arenas` **不校验 isActive**（`routes/arenas.ts:25`）。
+**④ 读它的地方。** `GET /api/articles`（通用查询：标签/难度筛选 + 排序）与 `GET /api/articles/latest`（最新上线，共用 `services/article-list.ts`）、`GET /api/articles/:id`、`GET /api/articles/today?uid=`（`routes/articles.ts` 的 today 路由）、`GET /api/participations?articleId=`（**参与者/榜单**）与 `GET /api/participations/stats?ids=`（**统计**，`routes/participations.ts`）。⚠️ 2026-09 起参与资源**自立根路径**、与句子行无关（旧 `/api/arenas/:articleId` 已删）；它不校验 isActive，也**不要求 article 存在**。
 
 ### 1.2 一次朗读（录音）
 
@@ -81,7 +85,7 @@
 
 **③ 派生物 / 对账。** `participations`（比分）由 `syncParticipation` 在评分后更新（`scoring.ts:299`），可 `pnpm db:participations --apply` 重建。**评测列本身没有对账手段**。
 
-**④ 读它的地方。** `GET /api/user/submissions/:id`（`routes/submissions.ts:220`，经 `describe` `services/submission-view.ts:28`）、`GET /api/challenge/:sid`（`routes/public.ts:45`）、`GET /api/user/challenges`（`routes/user.ts:38`）、`GET /api/user/article-records`（`routes/user.ts:129`）。
+**④ 读它的地方。** `GET /api/user/submissions/:id`（`routes/submissions.ts:220`，经 `describe` `services/submission-view.ts:28`）、`GET /api/challenge/:sid`（`routes/public.ts:45`）、`GET /api/user/challenges`、`GET /api/user/participation/{articleId}/submissions`。
 
 ### 1.4 一次奖励结算（成长值 / 连战 / 能量）
 
@@ -112,9 +116,9 @@
 
 **③ 派生物 / 对账。** `participations` 可整表重建，命令 `pnpm db:participations --apply`（`apps/server/scripts/rebuild-participations.ts:22`）——带 `--check` 逐字段对账。`seed-dev-arena.ts:262` 也调同一个 `rebuildParticipations`。
 
-**④ 第二处投影（同一真相）。** `GET /api/user/article-records` **不读** `participations`，直接对 `submissions` 现算 best/attempts（`routes/user.ts:163-171`）。
+**④ 第二处投影（同一真相）。** `GET /api/user/participation/{articleId}/submissions` **不读** `participations`，直接对 `submissions` 现算 best/attempts（`routes/user.ts` 的 `participationSubmissionsRoute`）。
 
-**⑤ 读它的地方。** `GET /api/user/participations`（`routes/user.ts:187`）、`GET /api/user/arena-records`（`routes/user.ts:255`）、`GET /api/user/article-records`（`routes/user.ts:129`）、`GET /api/user/me` 的 `conqueredCount`（`services/conquest.ts:17`）；端侧首页卡片（`apps/miniprogram/src/pages/index/index.ts:630`）、参与场次页、竞技场页。
+**⑤ 读它的地方。** `GET /api/user/participations`（列表）、`GET /api/user/participation/{articleId}`（单条 + 逐次提交子资源）、`GET /api/user/me` 的 `conqueredCount`（`services/conquest.ts:17`）；端侧首页卡片（`apps/miniprogram/src/pages/index/index.ts:630`）、参与场次页、竞技场页。
 
 ### 1.6 金句榜
 
@@ -125,7 +129,7 @@
 **③ 派生物 / 对账。** 同 1.5（`participations` 的重建命令）。
 成长值三榜是另一套：直接读 `users.growth_*`（`services/growth-rank.ts:31-38`），**不**参与 `participations` 重建。
 
-**④ 读它的地方。** `getTopLeaderboard`（`leaderboard.ts:190`）、`getLeaderboardAround`（`:230`）、`getRank`（`:133`）、`getArenaStatsBatch`（`:324`）、`getMyBest`（`:62`）、`getBestExcluding`（`:87`）；接口 `/api/arenas/:articleId`、`/api/user/submissions/:id`、`/api/user/arena-records?ranks=1`；成长榜 `/api/leaderboards/growth`（`routes/leaderboards.ts:16`）。
+**④ 读它的地方。** `getTopLeaderboard`（`leaderboard.ts:190`）、`getLeaderboardAround`（`:230`）、`getRank`（`:133`）、`getArenaStatsBatch`（`:324`）、`getMyBest`（`:62`）、`getBestExcluding`（`:87`）；接口 `/api/participations?articleId=&sort=score`、`/api/user/submissions/:id`、`/api/user/participation/{articleId}`（名次/参与人数）；成长榜 `/api/leaderboards/growth`（`routes/leaderboards.ts`，**按需取**：`?self` / `?diligence` / `?standout`，都不带 = 三块全给；读 `users.growth_*` 的三个降序索引）。
 
 ### 1.7 今日挑战（24 小时窗口）
 
@@ -136,6 +140,7 @@
 **③ 派生物 / 对账。** 无。`recommend` 依赖 `participations`（`recommend.ts:285-296`）判「未读优先」；`participations` 漂移会改变推荐结果。
 
 **④ 读它的地方。** `GET /api/articles/today?uid=<id>`（`routes/articles.ts` 的 today 路由）。
+⚠️ 返回 `{ date, item }`：`item` 是**纯句子数据**（标准 ArticleCard）；`date` 是服务端的今天，**只用于端侧按天缓存**（成绩归属由服务端在受理提交时决定）。
 ⚠️ **uid 可省略 = 匿名**：不走窗口，改走 `pickAnonymousArticle`（`services/recommend.ts`）——
 **初级档**里有正文的句子、按**参与人数加权随机**挑一条，**不写任何用户行**。
 ⚠️ 排期那套（`schedules` 表 + `services/schedules.ts` + `/api/schedules`）**已整体删除** ⇒ "今天读哪一句"只有这一个来源，不存在"两套口径"。
@@ -149,7 +154,7 @@
 
 **③ 派生物 / 对账。** `articles.difficulty` + `article_tags`（`article-index.ts:72-80`），幂等重建 `reindexArticles`（`:109`）。命令 `pnpm content:regrade --apply`（`tools/regrade-content.ts:11,66`）。自洽单测 `services/content-files.test.ts:54`（只验正文，不验库）。
 
-**④ 读它的地方。** SQL 筛选：`recommend.ts`（`pickAnonymousArticle` 按 `articles.difficulty` 取初级档池子；`bandOf` 按该档取池子）。端侧展示：一律读**正文**再 `normalizeLevel`（`routes/articles.ts`、`routes/arenas.ts:55`、`routes/favorites.ts:86`）。
+**④ 读它的地方。** SQL 筛选：`recommend.ts`（`pickAnonymousArticle` 按 `articles.difficulty` 取初级档池子；`bandOf` 按该档取池子）。端侧展示：一律读**正文**再 `normalizeLevel`（`routes/articles.ts`、`routes/favorites.ts:86`）。
 
 ### 1.9 收藏
 
@@ -159,7 +164,7 @@
 
 **③ 派生物 / 对账。** 无。
 
-**④ 读它的地方。** `listFavorites`（`favorites.ts:61`）→ `GET /api/user/favorites`（`routes/favorites.ts:53`）；`favoriteIdsOf`（`favorites.ts:42`）→ `/api/user/arena-records`（`routes/user.ts:282`）。
+**④ 读它的地方。** `listFavorites`（`favorites.ts:61`）→ `GET /api/user/favorites`（`routes/favorites.ts:53`，收藏列表页）；`favoriteIdsOf`（`favorites.ts:42`）→ `GET /api/user/is-favorite`（`routes/favorites.ts` 的 `isFavoriteRoutes`，竞技场页的按钮状态）。
 
 ### 1.10 连战与解冻卡
 
@@ -200,7 +205,7 @@
 
 **③ 派生物 / 对账。** `articles.published_at`（`schema.ts:277`）是「最近一次上线时刻」，只在草稿→已发布那一刻写（admin `:660`、`:880`；灌库 `:93`）。无对账命令。
 
-**④ 读它的地方。** `GET /api/articles?latest=N`、推荐选句 `bandOf`（`recommend.ts:150`）与已分配句校验（`recommend.ts:235`）、admin 列表。`GET /api/arenas/:articleId` **不读**它（`routes/arenas.ts:25`）。
+**④ 读它的地方。** `GET /api/articles`、`GET /api/articles/latest`、推荐选句 `bandOf`（`recommend.ts:150`）与已分配句校验（`recommend.ts:235`）、admin 列表。`GET /api/participations?articleId=` 与 `/api/participations/stats` **不读**它（`routes/participations.ts`）—— 它们只看 `participations`，**句子行不在也照常返回**（2026-09 的 L1 解耦）。
 
 ---
 
@@ -261,7 +266,7 @@
   存下来就要养分配器、`(user, article, seq)` 唯一索引、撞号重试和重编号脚本 ——
   而那个分配器**真的把服务进程搞崩过**（并发撞唯一键 + 异常逃逸）。现在列表按行序现算、
   s5 按 `attemptNoOf()` 统计，两者同一个口径 ⇒ 序号天然连续，不可能有空洞。
-- **业务规则在端侧重算。** `packages/shared` 与端侧确实存在「服务端已给、端侧又算一遍」：`resolveTheme(theme, articleId)` 在有 id 时按 `themeFromHash` 复算主题（`packages/shared/src/theme.ts:98-105`，调用点 `apps/miniprogram/src/pages/challenge/challenge.ts:294`）；首页端侧再按 `articleId !== today.articleId` 过滤一次 latest（`apps/miniprogram/src/pages/index/index.ts:623`，因为服务端剔除的是排期那句、判据不同，见 `:611-617`）；`store.applySubmissionResult` 本地把 `myAttempts + 1`、`myBest = max(...)`（`apps/miniprogram/src/lib/store.ts:386-398`），是服务端口径的影子，随后由 `/api/user/arena-records` 覆盖（`store.ts:360-371`）。
+- **业务规则在端侧重算。** `packages/shared` 与端侧确实存在「服务端已给、端侧又算一遍」：`resolveTheme(theme, articleId)` 在有 id 时按 `themeFromHash` 复算主题（`packages/shared/src/theme.ts:98-105`，调用点 `apps/miniprogram/src/pages/challenge/challenge.ts:294`）；首页端侧再按 `articleId !== today.articleId` 过滤一次 latest（`apps/miniprogram/src/pages/index/index.ts:623`，因为服务端剔除的是排期那句、判据不同，见 `:611-617`）。（2026-09 删掉了最后一处：`store.applySubmissionResult` 原来在端侧把 `myAttempts + 1` / `myBest = max(...)`，那套影子连同 `arena-records` 一起去掉了 —— 战绩只由 `/api/user/participation/{articleId}` 写进 store。）
   而题面点名的三个：`subtitleOf`（`reading.ts:1583`，输入全是服务端字段 `previousBest/isPersonalBest/rank/beatenCount`）、`formatScore`（`packages/shared/src/scoring.ts:190`，纯展示）、`startButtonLabel`（`packages/shared/src/brand.ts:42`，只吃服务端 `myBest !== null`）——**都是展示层/由服务端事实派生，不算把服务端才算得出的东西重算**。真正值得记的是上面三条。
 
 ---

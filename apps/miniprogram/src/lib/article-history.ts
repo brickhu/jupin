@@ -1,5 +1,5 @@
 import { formatScore } from '@jushuo/shared'
-import type { ArticleRecordsResponse } from '@jushuo/shared'
+import type { ParticipationSubmissionsResponse } from '@jushuo/shared'
 
 import { agoText } from './time'
 
@@ -42,8 +42,6 @@ export interface HistoryRow {
   ago: string
   /** 是不是**目前**的最高分 —— 每行最多一个，用来标「最高」 */
   isBest: boolean
-  /** 这次挑战记在哪一天（空串 = 老记录没有）—— 留着给"再挑战一次"用 */
-  scheduleDate: string
 }
 
 /** 一次历史列表的成品：行 + 表头要用的两个数 */
@@ -63,7 +61,7 @@ export interface HistoryRows {
 /**
  * 把接口响应变成列表要的行。
  *
- * @param res           `GET /api/user/article-records` 的 data
+ * @param res           `GET /api/user/participation/{articleId}/submissions` 的 data
  * @param excludeId     当前正看着的那一次提交（免掉它）；空串 = 没有要免的
  * @param now           只给单测用（相对时间要一个固定的"现在"）
  *
@@ -73,7 +71,7 @@ export interface HistoryRows {
  *    拿它去标「最高」会出现"一行都没标，而表头写着最高 89.5"。
  */
 export function historyRowsOf(
-  res: ArticleRecordsResponse,
+  res: ParticipationSubmissionsResponse,
   excludeId: string,
   now: number = Date.now(),
 ): HistoryRows {
@@ -96,7 +94,6 @@ export function historyRowsOf(
       // ⚠️ 并列最高时两行都标：这里要回答的是"哪些次是我的最好水平"，
       //    不是"哪一次是唯一的纪录"。
       isBest: best !== null && i.score === best,
-      scheduleDate: i.scheduleDate ?? '',
     })),
     /**
      * ⚠️ 这是**列表那批**的条数（已免掉当前这一次）—— 与 `rows.length` 同一个口径。
@@ -136,7 +133,7 @@ export interface HistorySummary {
   lowestScoreText: string
 }
 
-export function historySummaryOf(res: ArticleRecordsResponse): HistorySummary {
+export function historySummaryOf(res: ParticipationSubmissionsResponse): HistorySummary {
   return {
     attemptsText: res.attempts + ' 次',
     bestScoreText: formatScore(res.bestScore),

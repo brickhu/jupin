@@ -8,11 +8,13 @@
      点进去的自然动作是**再读一遍这一句**（卡片上的数字就是"我在这一句上的战绩"）。
      ⚠️ 原来点的是竞技场 —— 想看榜，从那句的朗读页/挑战页都能到；
         "再读一遍"在竞技场里还要多点一次。
-     ⚠️ 跳转时必须带上服务端给的 lastScheduleDate（我上次挑战这一句算哪天），
-        见 participations.ts 的 onOpen。
+     ⚠️ 跳转只带 ?id=（2026-09 起）：以前还要带上"上次挑战算哪天"，
+        但日期现在一律由服务端在受理提交时决定，端侧不传日期。
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
   <nav-bar id="nav" title="参与场次" />
 
   <!-- ── 加载中 ────────────────────────────────────────────── -->

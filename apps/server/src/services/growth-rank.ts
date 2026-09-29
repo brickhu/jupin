@@ -47,11 +47,42 @@ async function topOf(column: GrowthColumn, userId: number): Promise<GrowthRankRo
   }))
 }
 
-export async function topGrowthBoards(userId: number): Promise<GrowthRankResponse> {
+/** 要点哪几块榜（`GET /api/leaderboards/growth?self&...`）—— 一个都不点 = 三块都要 */
+export interface GrowthBoardSelection {
+  self?: boolean
+  diligence?: boolean
+  standout?: boolean
+}
+
+/**
+ * 取成长榜。
+ *
+ * ⚠️⚠️ **按需查**：每块榜是一条独立 SQL（各走自己的降序索引，见 db/schema.ts），
+ *    没点名的**不查、也不出现在返回里** —— 空数组的含义是"这块榜上没人"，
+ *    与"我没问"是两件事，别用 `[]` 冒充后者。
+ * ⚠️ 一个都不点名时**默认三块全给**：首页那一次要全拿，不该为省两次查询
+ *    让它发三个请求。
+ */
+export async function topGrowthBoards(
+  userId: number,
+  want?: GrowthBoardSelection,
+): Promise<GrowthRankResponse> {
+  const any = want ? Boolean(want.self || want.diligence || want.standout) : false
+  const w = {
+    self: any ? Boolean(want?.self) : true,
+    diligence: any ? Boolean(want?.diligence) : true,
+    standout: any ? Boolean(want?.standout) : true,
+  }
+
   const [self, diligence, standout] = await Promise.all([
-    topOf(users.growthSelf, userId),
-    topOf(users.growthDiligence, userId),
-    topOf(users.growthStandout, userId),
+    w.self ? topOf(users.growthSelf, userId) : null,
+    w.diligence ? topOf(users.growthDiligence, userId) : null,
+    w.standout ? topOf(users.growthStandout, userId) : null,
   ])
-  return { self, diligence, standout }
+
+  const out: GrowthRankResponse = {}
+  if (self) out.self = self
+  if (diligence) out.diligence = diligence
+  if (standout) out.standout = standout
+  return out
 }

@@ -6,7 +6,7 @@ import { articleIdOf } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
-import { contentColumnsOf, saveArticleContent } from '../services/article-content'
+import { ArticleTextImmutableError, contentColumnsOf, saveArticleContent } from '../services/article-content'
 import { articleRefsOf, deleteArticle } from '../services/article-delete'
 import { storeStandardAudio } from '../services/standard-audio'
 
@@ -199,7 +199,7 @@ const adminWriteRoute = createRoute({
       content: { 'application/json': { schema: AdminArticleWriteResponseSchema } },
       description: '成功',
     },
-    400: errorResponse('参数不合法 / id 与正文哈希不一致'),
+    400: errorResponse('参数不合法 / 新建时 id 与正文哈希不一致 / 更新时想改正文（句子不可修改）'),
   },
 })
 
@@ -224,19 +224,20 @@ adminRoutes.openapi(adminWriteRoute, async (c) => {
   if (!text) return c.json({ ok: false, error: 'text（原文）不能为空' }, 400)
 
   /**
-   * ⚠️⚠️ **id 必须是这个文本的内容哈希** —— 服务端自己算一遍，对不上就 400。
+   * ⚠️⚠️ **新建时 id 必须等于正文的内容哈希** —— 服务端自己算一遍，对不上就 400。
    *
    * 为什么非要在这里拦（2026-09 真实踩到）：id 同时是主键、音频路径、客户端缓存 key，
    * 而**全仓库本该只有一处** `articleIdOf`（见 shared/article-id.ts 的说明）。
    * 服务端原先**根本没有那个式子**、照单全收调用方给的 id ⇒ 接口能建出 `zzdel358045`
    * 这种非哈希 id（同一句文本用不同 id 能建两行、管理台详情页对它报错）。
    *
-   * ⚠️ **只有"新建"或"id 看起来规范"时才校验**：历史脏 id 的老行必须还能改、还能删，
-   *    否则永远清不掉（见 services/article-delete.ts 的说明）。
+   * ⚠️⚠️ **更新时不再做这条 id 校验** —— 因为"正文不可变"已经由写入层保证
+   *    （`saveArticleContent` 的 `ArticleTextImmutableError`，见 services/article-content.ts）：
+   *    改正文会被拒，没改正文则 id 本来就没变。这样**历史脏 id 的老行**终于能改其它列
+   *    （译文 / 标签 / 发布状态）—— 原来那条 canonical 判断会把它们一起挡在门外。
    */
   const expectedId = articleIdOf(text)
-  const idLooksCanonical = /^[0-9a-f]{16}$/.test(id)
-  if ((isCreate || idLooksCanonical) && id !== expectedId) {
+  if (isCreate && id !== expectedId) {
     return c.json(
       {
         ok: false,
@@ -264,9 +265,20 @@ adminRoutes.openapi(adminWriteRoute, async (c) => {
     tags: pick('tags', existing?.tags ?? []),
   })
 
-  const { created } = await saveArticleContent(id, cols, { isActive: body.isActive as boolean | undefined })
-  console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
-  return c.json({ ok: true, data: { id, created } }, 200)
+  /**
+   * ⚠️⚠️ **正文不可变**（句子身份 = 正文哈希，见 services/article-content.ts）：
+   *    改正文会抛 `ArticleTextImmutableError` —— 在这里翻成 400 + 一句能照做的指引。
+   */
+  try {
+    const { created } = await saveArticleContent(id, cols, { isActive: body.isActive as boolean | undefined })
+    console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
+    return c.json({ ok: true, data: { id, created } }, 200)
+  } catch (err) {
+    if (err instanceof ArticleTextImmutableError) {
+      return c.json({ ok: false, error: err.message }, 400)
+    }
+    throw err
+  }
 })
 
 /**

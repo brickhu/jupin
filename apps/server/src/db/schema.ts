@@ -174,7 +174,37 @@ export const users = mysqlTable('users', {
   sessionKeyAt: datetime('session_key_at', { mode: 'date', fsp: 3 }),
 
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-})
+}, (t) => [
+  /**
+   * ⭐⭐ **成长榜的读路径**（`GET /api/leaderboards/growth`，首页那三块 TOP10）。
+   *
+   * ⚠️⚠️ 没有它们时那条查询是 `type=ALL` + `Using filesort`：
+   *    每次请求**全表扫 users 三遍、再各排一次序**（EXPLAIN 实测）。
+   *    榜单只要 TOP10，建了索引就是"沿索引倒着走 10 步就停"。
+   *
+   * ⚠️⚠️ 必须是**降序索引** `(growth_x DESC, id ASC)`：
+   *    查询是 `ORDER BY growth_x DESC, id ASC`，而**升序**索引 `(growth_x, id)`
+   *    只能消掉全表扫、仍要 `Using filesort`（实测）。降序索引才两者都消掉。
+   *    ⚠️ 第二列 `id` 保持 **ASC**：它是并列时的次序（**先来的在前**），别改成 DESC。
+   *
+   * ⚠️ 代价只有写放大：结算时那一次 `users` UPDATE 会多维护 3 个索引，可忽略。
+   */
+  index('users_growth_self_idx').on(sql`${t.growthSelf} DESC`, t.id),
+  index('users_growth_diligence_idx').on(sql`${t.growthDiligence} DESC`, t.id),
+  index('users_growth_standout_idx').on(sql`${t.growthStandout} DESC`, t.id),
+
+  /**
+   * ⭐⭐ **用户目录的两种排序**（`GET /api/users`）—— 与上面三个同理：
+   *    没有索引时 `ORDER BY ... LIMIT 50` 是**全表扫 + filesort**。
+   *
+   *  · `sort=joined`（默认）：`ORDER BY created_at DESC, id DESC`
+   *    ⇒ 升序索引 `(created_at, id)` **倒着扫**就是这两个 DESC，不需要降序索引。
+   *  · `sort=energy`：`ORDER BY energy DESC, id ASC`（并列先来的在前）
+   *    ⇒ 混合方向，必须**降序索引** `(energy DESC, id ASC)`（同成长榜那三个）。
+   */
+  index('users_created_at_idx').on(t.createdAt, t.id),
+  index('users_energy_idx').on(sql`${t.energy} DESC`, t.id),
+])
 
 /** 朗读单元（文章 = 句子）。内容走静态资源，这里只放索引与竞技状态/统计 */
 export const articles = mysqlTable('articles', {
@@ -359,8 +389,9 @@ export const articles = mysqlTable('articles', {
  *        —— 一个用户在一个窗口里固定读同一句；
  *      · **按这个用户的难度档**推荐（services/recommend.ts）；
  *      · uid **可省略 = 匿名**（初级档里按参与人数加权随机，不写用户行）。
- *    ⇒ "日期"因此不再是内容的一部分，只是**归属信息**（这次提交算哪一天，
- *      见 services/schedule-date.ts）—— 所以 `submissions.schedule_date` 那一列留着。
+ *    ⇒ "日期"因此不再是内容的一部分，只是**归属信息**（这次提交算哪一天）
+ *      —— `submissions.schedule_date` 那一列留着，但值现在**由服务端取今天**
+ *      （2026-09 删掉了客户端声明；见 routes/submissions.ts）。
  *
  *    ⚠️ 被这张表一起带走的分支（别在别处再长回来）：
  *      预排两周（scheduleAhead）· 运营排期（admin 的排期面板）·
@@ -686,27 +717,29 @@ export const participations = mysqlTable('participations', {
    */
   articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
   /**
-   * ⭐⭐ **这一句的原文快照**（用户 2026-09 要求：「participations 中最好能够记录下句子中的 text 信息」）。
-   *
-   * ⚠️⚠️ 为什么必须存快照、而不是 join 回 articles：
-   *    · 参与列表是**用户的历史**，历史必须**自足** —— 句子没上线 / 内容改过 / 被删，
-   *      列表都得能显示「我当时读的是哪句」（原来走 `innerJoin(articles)`，关联不上整行消失）；
-   *    · 它也是「句子不许硬删」的原因之一：快照取自 articles，硬删之后**新记录取不到内容**。
-   * ⚠️ 写入方只有一个：`services/participations.ts`（与其它列同源，重算式）。
-   * ⚠️ 随**重算**刷新（每次结算现读一次 articles）⇒ 内容改了这里跟着更新。
-   *    它记的是「参与」而不是「内容副本」⇒ 只存 text 与 words，不存译文/难度/标签。
-   */
-  text: text('text'),
-  /**
    * ⭐⭐ **这一句的词表快照**（用户 2026-09 要求：「participation 应该快照的（是）words」）。
    *
-   * ⚠️ 为什么连词表也要快照：参与列表上显示的是「多少个词」，而那个数**原来靠回查**
-   *    （`plainWordsOf(text).length`）—— 切词规则一改、或内容改了，历史卡片的词数跟着变，
-   *    而用户当时读的是**旧的那一份**。存下来才算「历史」。
-   * ⚠️ 与 `text` 同源同写入方：`services/participations.ts` 在重算时读一次 articles 落下来。
+   * ⚠️⚠️ 它**同时承载原文**：`words[].text` 含标点（`"days,"` / `"count."`），
+   *    用空格拼起来就是原句 —— 所以 2026-09 把原来的 `text` 列**删掉了**：
+   *    原文是 `words` 的派生值，再存一列就是第二份真相。
+   *    ⚠️ 端侧要显示句子时，自己 `words.map(w => w.text).join(' ')`（见 ParticipationRecord）。
+   *
+   * ⚠️ 为什么连词表也要快照：参与列表显示的是「多少个词」、以及逐词信息，
+   *    而那个数**原来靠回查**（`plainWordsOf(text).length`）—— 切词规则一改、或内容改了，
+   *    历史卡片的词数跟着变，而用户当时读的是**旧的那一份**。存下来才算「历史」。
+   * ⚠️ 写入方只有一个：`services/participations.ts` 重算时读一次 articles 落下来。
    *    形状与 `articles.words` 一致（词 / 音标 / 重音 / 音节 / 技巧 / 句中释义）。
    */
   words: json('words').$type<ArticleWordItem[]>(),
+  /**
+   * ⭐⭐ **词间连读标注快照**（与 `articles.links` 同形）：
+   *    `links[i]` 描述 `words[i]` 与 `words[i+1]` 之间；**空字符串 = 这里不连**。
+   *
+   * ⚠️ 只有 words 没有 links 的话，历史里的「哪儿要连读」就丢了；
+   *    而回查 `articles` 又会让历史不自足（内容改过之后，看到的不是当时那份）。
+   * ⇒ 与 words 同源、同写入方、同一次读取（2026-09 加）。
+   */
+  links: json('links').$type<string[]>(),
 
   /** 已出分的挑战次数（与参与人数同一口径） */
   attempts: int('attempts').notNull(),
@@ -717,8 +750,10 @@ export const participations = mysqlTable('participations', {
   /** 第一次 / 最近一次已出分挑战的时刻（列表按 last_at 倒序） */
   firstAt: datetime('first_at', { mode: 'date', fsp: 3 }).notNull(),
   lastAt: datetime('last_at', { mode: 'date', fsp: 3 }).notNull(),
-  /** 最近那次挑战是从哪一天的排期进来的（显示用；竞技术语里没有它） */
-  lastScheduleDate: varchar('last_schedule_date', { length: 10 }),
+  // ⚠️ 这里原来有一列 last_schedule_date（"最近这次挑战是从哪天的排期进来的"）。
+  //    2026-09 删除：它唯一的消费者是"参与记录页点卡片时把那天当 ?date= 传给朗读页"，
+  //    而客户端声明日期整条已经删掉（提交时服务端一律取今天）⇒ 没有任何地方读它。
+  //    它的值现在恒等于 dayKey(last_at)，是纯派生 —— 留着只会让人以为"按天"还有一层。
 
   /**
    * ⭐ **对比标准**：我的最高分挑战。

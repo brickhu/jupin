@@ -57,7 +57,6 @@ interface Row {
   //    都会带上这个标记，一列队徽就成了噪声。
   /** 检测失败的记录：没有分数，多半也没有音频了 */
   failed: boolean
-  scheduleDate: string
   /** ⭐ 这一句的视觉主题（bar 卡用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
 }
@@ -121,7 +120,6 @@ function toRow(r: ChallengeRecord): Row {
     ago: agoText(r.at),
 
     failed: r.status === 'failed',
-    scheduleDate: r.scheduleDate ?? '',
     theme: r.theme,
   }
 }

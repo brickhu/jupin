@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { verifyToken } from '../lib/token'
-import { getOrCreateUserByOpenid, type User } from '../services/user'
+import { findUserByOpenid, type User } from '../services/user'
 
 export interface Variables {
   userId: number
@@ -21,17 +21,23 @@ export interface Variables {
  *      ⚠️ 所以本文件是**唯一**"凭据 → user.id"的翻译层：路由拿到的永远是
  *        `c.get('userId')`。将来加登录方式时，改的只是这一层。
  *
- * ⚠️⚠️ 它同时是**全站唯一的注册点**，而这一点比「鉴权」本身更重要。
+ * ⚠️⚠️ 它**不再建行**（2026-09 用户定：**注册不能做成自动的**）。
  *
- *    任何业务数据（分数、榜单、排期、录音）都挂在 user_id 上，
- *    所以**用户必须先在我们库里有一行，才谈得上使用业务数据**。
- *    这件事就由这里保证：把身份换成 users 那一行的是
- *    getOrCreateUserByOpenid() —— **没有就当场建**，之后才放行到路由。
- *    路由里拿到的 c.get('userId') 因此**一定**对应一条真实存在的行。
+ *    这里只回答一件事：**这次请求对应库里哪一行**。
+ *      · 认得出凭据、行也在   → 放行，`c.get('userId')` 是 `users.id`；
+ *      · 认得出凭据、行不在   → **未注册**，回 403 `NOT_REGISTERED`
+ *                              （不是 401：401 的语义是"我认不出你是谁"）；
+ *      · 认不出凭据           → 401（`AUTH_REQUIRED` / `AUTH_EXPIRED`）。
+ *
+ *    ⚠️⚠️ 建行的唯一入口是 `POST /api/auth/register`（用户在「加入句拼」页
+ *       按下「确认加入」那一次），用的是 services/user.ts 的 `createUserByOpenid`。
+ *       这里以前调的是 `getOrCreateUserByOpenid` —— "顺手取一下就建号"，
+ *       于是**打开小程序就等于注册**，用户没有任何选择的机会。那个函数已删除，
+ *       就是为了让"自动注册"在类型层面不可能再发生。
  *
  *    ⚠️ 「wx.login 是静默的」不等于「用户已经注册了」：
  *       wx.login 只解决「你是谁」（授权层），它只是 openid 的来源；
- *       「你在我们库里」是**这一层**发生的事。两者不是一回事。
+ *       「你在我们库里」是**用户自己决定加入**之后才发生的事。
  *
  *    ⚠️ 这条不变量最容易在一件很平常的事上破掉：加一个新路由、忘了挂鉴权。
  *       那一刻没有任何东西会报错 —— 接口能用、数据能出，
@@ -65,63 +71,78 @@ export interface Variables {
  * ⚠️ 抽出来是为了让「认不出身份」只有一处判断 —— 两套规则必然会分叉，
  *    而分叉的地方恰好是安全边界。
  */
-type Resolved =
-  | { ok: true; user: User }
-  /** 什么都没带 */
-  | { ok: false; reason: 'anonymous' }
-  /** 带了 token 但验不过 */
-  | { ok: false; reason: 'expired' }
-  /** 老 token 里的 userId 已经不存在了 */
-  | { ok: false; reason: 'gone' }
-
-async function resolveUser(c: Context<{ Variables: Variables }>): Promise<Resolved> {
+/**
+ * 解析这次请求的**凭据**（openid）—— 不查库、不建行。
+ *
+ * ⚠️⚠️ 只回答「你是谁」，不回答「你注册了没有」。注册接口
+ *    （`POST /api/auth/register`）要的正是前半句：**建行之前**也得先认出人。
+ *    鉴权中间件则在这之上再查一次库（见 resolveUser）。
+ */
+export async function resolveOpenid(c: Context): Promise<string | null> {
   // ---- 路径 ①：微信云托管内网调用 ----
   if (c.req.header('x-wx-source')) {
     // 资源复用场景没有 x-wx-openid，OpenID 在 x-wx-from-openid
     const openid = c.req.header('x-wx-openid') ?? c.req.header('x-wx-from-openid')
-    if (openid) return { ok: true, user: await getOrCreateUserByOpenid(openid) }
+    if (openid) return openid
   }
 
   // ---- 路径 ②：Bearer token ----
   const header = c.req.header('Authorization')
-  if (!header?.startsWith('Bearer ')) return { ok: false, reason: 'anonymous' }
+  if (!header?.startsWith('Bearer ')) return null
   const payload = verifyToken(header.slice(7))
-  if (!payload) return { ok: false, reason: 'expired' }
-
-  {
-
-    /**
-     * ⭐⭐ token 里带凭据（现在就是 openid）时，**一律走「按凭据取或建」**，
-     *    而不是「按 userId 查」。
-     *
-     * ⚠️ 两者的差别不是风格，是**能不能自愈**：
-     *    · 按 userId 查：那一行数据没了，这张 token 就永远是废纸 ——
-     *      用户被永久挡在门外，而他的身份（凭据）根本没变。
-     *      清库、换环境、误删账号之后，每个人都要手动重启小程序才能恢复。
-     *    · 按凭据取或建：行没了就再建一行，凭据还是同一个，对他而言**什么都没发生**。
-     *
-     * ⚠️ 这不会绕过封禁：被禁的账号 status='banned' 但仍然**存在**，
-     *    getOrCreateUserByOpenid 会原样返回它，不会重建。只有真被删掉的行才会重建。
-     *
-     * ⚠️⚠️⚠️ **没有凭据的老 token：一律 401，绝不退回按 userId 查**（用户 2026-09 定）。
-     *    理由不是洁癖，是**静默串号**：userId 是签发那一刻的行号，那一行可能已被删，
-     *    而自增 id 会被复用 —— 按 userId 查会把请求认成**另一个人的账号**，
-     *    表现为"我的成绩变成别人的"。宁可让他重新登录一次。
-     *    ⇒ 凭据是身份的唯一入口；`userId` 只用于日志（见 lib/token.ts 的文件头）。
-     *    ⚠️ 现在只有微信这一种凭据（openid）。将来加手机号 / Apple 登录时，
-     *      这里改成"按凭据类型分发"即可，**业务代码一行都不用动** ——
-     *      因为它拿到的一直是 `users.id`，不是 openid。
-     */
-    if (!payload.openid) return { ok: false, reason: 'anonymous' }
-    return { ok: true, user: await getOrCreateUserByOpenid(payload.openid) }
-  }
+  /**
+   * ⚠️⚠️ **没有凭据的老 token：一律不认**（用户 2026-09 定）。
+   *    理由不是洁癖，是**静默串号**：token 里的 userId 是签发那一刻的行号，
+   *    那一行可能已被删，而自增 id 会被复用 —— 按 userId 查会把请求认成
+   *    **另一个人的账号**，表现为"我的成绩变成别人的"。宁可让他重新登录一次。
+   */
+  return payload?.openid ?? null
 }
 
-const REASON_MESSAGE: Record<'anonymous' | 'expired' | 'gone', string> = {
+type Resolved =
+  | { ok: true; user: User }
+  /** 什么都没带 */
+  | { ok: false; reason: 'anonymous' }
+  /** 带了 token 但验不过（含没有凭据的老 token） */
+  | { ok: false; reason: 'expired' }
+  /**
+   * ⭐ 凭据认得出来，但**库里没有这一行** —— 即「还没加入句拼」。
+   * ⚠️ 它不是错误，是本产品里**每个新用户的起点**（打开小程序 ≠ 注册）。
+   */
+  | { ok: false; reason: 'unregistered' }
+
+async function resolveUser(c: Context<{ Variables: Variables }>): Promise<Resolved> {
+  const openid = await resolveOpenid(c)
+
+  if (!openid) {
+    // 区分「什么都没带」与「带了但验不过」：只影响错误文案与 code（对界面是同一件事）
+    const header = c.req.header('Authorization')
+    return { ok: false, reason: header?.startsWith('Bearer ') ? 'expired' : 'anonymous' }
+  }
+
+  /**
+   * ⚠️⚠️ **只查不建**。以前这里是 `getOrCreateUserByOpenid`：
+   *    认得出 openid 就顺手建一行 —— 那等于"打开小程序即注册"。
+   *    现在查不到就明确回「未注册」，由用户自己去加入页把这一行建出来。
+   *    ⚠️ 副作用（有意的）：库被清空 / 换环境之后，老 token **不再自动重建账号**，
+   *      用户需要再走一次「加入」—— 这正是"注册是显式动作"的必然结果。
+   */
+  const user = await findUserByOpenid(openid)
+  if (!user) return { ok: false, reason: 'unregistered' }
+  return { ok: true, user }
+}
+
+const REASON_MESSAGE: Record<'anonymous' | 'expired', string> = {
   anonymous: '未登录',
   expired: '登录已过期',
-  gone: '用户不存在',
 }
+
+/**
+ * ⭐ 未注册那一句 —— **不是错误，是一个状态**。
+ * ⚠️ 端侧按 `code` 认它（见 miniprogram 的 lib/auth.ts）：收到它就说明
+ *    "服务端认识我这个人，但我还没加入句拼"，据此画「加入」而不是报错。
+ */
+export const UNREGISTERED_MESSAGE = '还没有加入句拼'
 
 /**
  * ⭐ **可选身份**：认得出就带上 userId，认不出就按 0（匿名）—— **绝不 401**。
@@ -149,20 +170,34 @@ export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (
   const id = await resolveUser(c)
   if (!id.ok) {
     /**
+     * ⭐⭐ **未注册 = 403 `NOT_REGISTERED`，不是 401**（2026-09 定）。
+     *
+     *    401 的语义是"我认不出你是谁"（没带凭据 / 凭据过期）—— 用户除了重新登录
+     *    没有别的动作。而这里凭据是好的、人也是同一个人，只是**还没加入句拼**：
+     *    他要做的是一个产品内的动作（去加入页），所以必须是一个**可区分**的状态。
+     *    混成 401 的后果：客户端会把"还没注册"当成"登录失效"，走重登逻辑，然后
+     *    重登一次仍然未注册 —— 转一圈还是不知道要干什么。
+     */
+    if (id.reason === 'unregistered') {
+      return c.json(
+        { ok: false, error: UNREGISTERED_MESSAGE, code: 'NOT_REGISTERED' },
+        403,
+      )
+    }
+
+    /**
      * ⭐ 401 带上**错误码**（2026-09 加）。
      *
-     * ⚠️ 客户端 `lib/auth.ts` 一直按 `code === 'AUTH_EXPIRED'` 判"服务端明确说认不出我"，
-     *    但那个 code **两端都不存在**（服务端只给 error 文案，客户端抛的
-     *    AuthExpiredError 也没有 code 字段）⇒ 那条分支是死代码：
+     * ⚠️ 客户端 `lib/auth.ts` 一直按 `code` 判"服务端明确说认不出我"，
+     *    但那个 code 一度两端都不存在 ⇒ 那条分支是死代码：
      *    token 失效时界面画的是「重新连接」而不是「加入」，用户点重试还是失败。
-     * ⚠️ 两个 reason 都映射到同一个 code：对客户端而言"没凭据"与"凭据过期"是同一件事
-     *    —— 都表示"你得重新登录/加入一次"。（具体原因仍在 error 文案里，供人排查。）
+     * ⚠️ 两个 reason 都落在"你得重新登录一次"上（具体原因仍在 error 文案里，供人排查）。
      */
     return c.json(
       {
         ok: false,
         error: REASON_MESSAGE[id.reason],
-        code: id.reason === 'gone' ? 'AUTH_EXPIRED' : 'AUTH_REQUIRED',
+        code: id.reason === 'expired' ? 'AUTH_EXPIRED' : 'AUTH_REQUIRED',
       },
       401,
     )

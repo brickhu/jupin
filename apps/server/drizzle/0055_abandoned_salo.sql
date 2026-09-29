@@ -1,0 +1,1 @@
+ALTER TABLE `participations` DROP COLUMN `text`;

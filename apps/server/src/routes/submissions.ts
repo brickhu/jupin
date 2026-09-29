@@ -1,5 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { and, eq, or, sql } from 'drizzle-orm'
+import { today } from '@jushuo/shared'
 import type {
   ScoreDimensions,
   ScoreParts,
@@ -16,7 +17,6 @@ import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../serv
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { describe } from '../services/submission-view'
-import { resolveScheduleDate } from '../services/schedule-date'
 import type { Variables } from '../middleware/auth'
 import { defaultHook } from '../openapi'
 import { errorResponse, okEnvelope, SubmissionStatusResponseSchema } from '../openapi/schemas'
@@ -58,9 +58,12 @@ const HEARTBEAT_TIMEOUT_MS = 30_000
  * ⭐ 路由声明（POST /api/user/submissions）。
  *
  * ⚠️ 请求体只把**服务端真正必需的**两个字段标成必填（articleId / audioKey）——
- *    其余（audioUrl / isPublic / attemptId / scheduleDate）保持可选：
+ *    其余（audioUrl / isPublic / attemptId）保持可选：
  *    它们各有自己的校验分支与错误文案（比如 attemptId 不合法时的提示语），
  *    在这里标必填会把那些分支挡掉、错误文案也跟着变。
+ *
+ * ⚠️ **没有 `scheduleDate`**（2026-09 删）：以前它是"这次挑战归到哪一天"的
+ *    客户端声明（服务端再校验），现在**一律由服务端取自己的今天**。
  */
 const submitRoute = createRoute({
   method: 'post',
@@ -90,7 +93,6 @@ const submitRoute = createRoute({
             audioUrl: z.string().nullish().openapi({ description: '带签名的下载地址（可选，可为 null）' }),
             isPublic: z.boolean().nullish().openapi({ description: '是否公开这次录音（默认 false）' }),
             attemptId: z.string().nullish().openapi({ description: '幂等键（32 位十六进制）' }),
-            scheduleDate: z.string().nullish().openapi({ description: '这次挑战归到哪一天' }),
           }),
         },
       },
@@ -109,7 +111,7 @@ const submitRoute = createRoute({
       },
       description: '已受理（status=scoring，打分在后台跑）',
     },
-    400: errorResponse('参数不合法（缺 articleId/audioKey、attemptId 或 scheduleDate 格式错）'),
+    400: errorResponse('参数不合法（缺 articleId/audioKey，或 attemptId 格式错）'),
     403: errorResponse('audioKey 不属于当前用户'),
     404: errorResponse('句子不存在'),
     429: errorResponse('能量不够（code=ENERGY_EXHAUSTED，附 energy 余额）'),
@@ -126,7 +128,6 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
     audioKey?: string
     audioUrl?: string
     isPublic?: boolean
-    scheduleDate?: string
     attemptId?: string
   }>()
   const articleId = body.articleId
@@ -176,19 +177,18 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   }
 
   // ---- 0. 挑战日期 ----
-  //
-  // ⚠️ 由客户端声明、服务端**校验**，而不是服务端一律取今天：
-  //    用户可以对历史挑战点「再次挑战」，那次提交的归属是**那一天**；
-  //    一律记成今天的话，昨天那张卡片的参与人数会莫名其妙地涨。
-  //
-  // ⚠️ 校验两道，缺一不可：
-  //    ① 格式与真实性（isValidDay 会把 2026-02-30 这种「格式对但不存在」的挡掉）
-  //    ② **范围**：不能是未来，也不能太旧 —— 否则可以伪造任意日期的成绩，
-  //       把历史榜单刷成自己的。
-  const scheduleDate = resolveScheduleDate(body.scheduleDate)
-  if (!scheduleDate) {
-    return c.json({ ok: false, error: 'scheduleDate 不合法（必须是最近 30 天内的日期）' }, 400)
-  }
+  /**
+   * ⭐ **这次挑战算哪一天 —— 服务端说了算**（2026-09 删掉客户端声明）。
+   *
+   * ⚠️ 以前这里是 `resolveScheduleDate(body.scheduleDate)`：收一个客户端声明的日期，
+   *    再校验「格式真实 / 不能未来 / ≤30 天」。那套东西存在的唯一理由是
+   *    「回到某一天再挑战」要归到那一天 —— 而那个场景已经不需要了。
+   *    ⇒ 现在一律用服务端的今天；`submissions.schedule_date` 这一列保留，
+   *      但它的值从此**只由服务端产生**（不再有客户端输入）。
+   * ⚠️ 连战天数本来就不看它（settle.ts 用的是 `dayKey(createdAt)`），
+   *    竞技口径也全部按 article_id —— 所以这与成绩无关。
+   */
+  const scheduleDate = today()
 
   // ---- 1. ⚠️ 安全边界：路径必须属于当前用户 ----
   // ⚠️ 两步的顺序不能反：先确认 audioKey 属于本人，再确认 audioUrl 指的就是那个 key。
@@ -224,11 +224,13 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   /**
    * ⚠️⚠️ 判据是 **(userId, attemptId)** —— 不是 audioKey。
    *
-   * audioKey 里含上传时间戳，而客户端每次重试都会重新上传一次 ⇒ 换了 key，
-   * 按它判重必然落空（真实事故：用户按提示重试 → 第二条成绩 + 第二次扣能量）。
-   * ⚠️ 同时保留一条 audioKey 兜底：同一次上传被**并发**提交两次时（两个请求同一个 key、
-   * 但 attemptId 也相同 —— 那时 attemptId 那条已经能挡），以及理论上"客户端换了
-   * attemptId 但复用了同一个音频对象"的异常路径。
+   * 真实事故：**当年** audioKey 里含上传时间戳，客户端每次重试都会重新上传 ⇒ 换了 key，
+   * 按它判重必然落空（用户按提示重试 → 第二条成绩 + 第二次扣能量）。
+   * ⚠️ 现在两条索引并存、分工不同（见 db/schema.ts）：
+   *    · `(userId, attemptId)` 挡"同一段录音被用户**重试**"（真实发生过的那条路）；
+   *    · `(userId, audioKey)` 挡"同一次上传被**并发**提交两次"。
+   *    ⚠️ 这两者的对象都挂在 attemptId 上（路径第三段 = attemptId，不再是时间戳）——
+   *      所以重试既覆盖同一个音频对象，也命中同一行。
    */
   const [dupe] = await db
     .select({ id: submissions.id })
@@ -275,8 +277,8 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
    *    （"哪一天读哪一句"是提前排好的数据）。2026-09 排期表整体删除：
    *    句子的归属由 `/api/articles/today?uid=` 的 24 小时窗口决定（匿名那一支没有窗口），
    *    不再需要"这一天必须先有一条排期行"。
-   * ⚠️ `scheduleDate` 本身**留着**：它是"这次提交算哪一天"的归属信息
-   *    （历史挑战要归到那一天，否则昨天那张卡的数字会变）。
+   * ⚠️ `submissions.schedule_date` 这一列**留着**，但值由服务端给（见上面 `today()`）；
+   *    端侧已经不再传它。
    */
 
   // ---- 4. （原来的"分配序列号"已删除）----

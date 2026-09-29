@@ -1,0 +1,45 @@
+<!--
+  ⭐⭐ 全局骨架占位区（见 skeleton.ts 的说明）。
+  ⚠️ 这里**只画形状**：不绑任何事件、不含任何数据 —— 因此也不会挡住用户的点击
+     （骨架下面就是真内容的容器，加载完由调用方换成真内容）。
+  ⚠️ 四块形状各一个分支，别再加第五种"通用行"：形状不匹配的骨架比没有骨架更糟
+     （用户会以为数据长那样）。
+-->
+<view class="sk">
+
+  <!-- 个人状态卡：三格数字 -->
+  <view class="sk-card sk-stats" wx:if="{{variant === 'stats'}}">
+    <view class="sk-stats-col" wx:for="{{triple}}" wx:key="*this">
+      <view class="sk-bar sk-num"></view>
+      <view class="sk-bar sk-label"></view>
+    </view>
+  </view>
+
+  <!-- 单张卡：标题 + 两行正文 + 按钮 -->
+  <view class="sk-card" wx:elif="{{variant === 'card'}}">
+    <view class="sk-bar sk-line"></view>
+    <view class="sk-bar sk-line sk-short"></view>
+    <view class="sk-bar sk-btn"></view>
+  </view>
+
+  <!-- 一列同构卡片：最新上线那一段 -->
+  <block wx:elif="{{variant === 'list'}}">
+    <view class="sk-card" wx:for="{{lines}}" wx:key="*this">
+      <view class="sk-bar sk-line"></view>
+      <view class="sk-bar sk-line sk-short"></view>
+    </view>
+  </block>
+
+  <!-- 排行榜：tab 药丸 + 若干行（头像 + 昵称 + 数值） -->
+  <view class="sk-card" wx:else>
+    <view class="sk-tabs">
+      <view class="sk-bar sk-tab" wx:for="{{triple}}" wx:key="*this"></view>
+    </view>
+    <view class="sk-row" wx:for="{{lines}}" wx:key="*this">
+      <view class="sk-bar sk-dot"></view>
+      <view class="sk-bar sk-name"></view>
+      <view class="sk-bar sk-value"></view>
+    </view>
+  </view>
+
+</view>

@@ -1,13 +1,16 @@
 import { z } from '@hono/zod-openapi'
 
 import type {
-  ArenaDetail,
-  ArenaRecord,
-  ArenaRecordsResponse,
   ArticleCard,
+  ArticleListResponse,
+  LatestCardsResponse,
   ArticleDetail,
-  ArticleRecordItem,
-  ArticleRecordsResponse,
+  ArticleStats,
+  ArticleStatsResponse,
+  ArticleParticipationRow,
+  ArticleParticipationsResponse,
+  ParticipationSubmissionItem,
+  ParticipationSubmissionsResponse,
   ArticleWordItem,
   ChallengeRecord,
   ChallengeShareResponse,
@@ -17,6 +20,7 @@ import type {
   EnergyResponse,
   FavoriteItem,
   FavoritesResponse,
+  IsFavoriteResponse,
   Gender,
   GrowthRankResponse,
   GrowthRankRow,
@@ -24,7 +28,6 @@ import type {
   ProfileUpdateResponse,
   ParticipationRecord,
   ParticipationsResponse,
-  LatestCardsResponse,
   LeaderboardRow,
   ScoreDimensions,
   ScoreParts,
@@ -37,7 +40,10 @@ import type {
   StreakView,
   SubmissionStatusResponse,
   SubmitResponse,
+  TodayArticleResponse,
   TokenResponse,
+  UserListResponse,
+  UserSummary,
   VirtualPayData,
   WordScore,
 } from '@jushuo/shared'
@@ -91,24 +97,17 @@ export const StandardAudioSchema = AudioRefSchema.extend({
 /**
  * ⭐ 首页卡片（「今天挑战」与「最新上线」**共用同一个形状**）。
  * ⚠️ 服务端返回它时一律带上**竞技统计**（参与人数 / 最高 / 最低）。
+ * ⚠️ **纯句子数据**：日期 / isToday 这类"哪一天"的字段**全站都不再随句子返回**
+ *    （2026-09 统一；日期由服务端在提交时决定）。
  */
 export const ArticleCardSchema = z
   .object({
-    /** 这一条排给哪一天（只有今日那一张有） */
-    date: z.string().optional(),
     articleId: z.string(),
     text: z.string(),
     translation: z.string(),
     difficulty: ArticleLevelSchema.nullable(),
     tags: z.array(z.string()),
     audio: StandardAudioSchema.nullable(),
-    /** 只有今日那一张有 */
-    isScheduled: z.boolean().optional(),
-    /** 只有今日那一张有 */
-    isToday: z.boolean().optional(),
-    participantCount: z.number().int(),
-    topScore: z.number().nullable(),
-    lowestScore: z.number().nullable(),
     theme: ArticleThemeSchema.nullable(),
   })
   .openapi('ArticleCard')
@@ -145,10 +144,24 @@ export const errorResponse = (description: string) => ({
   description,
 })
 
+/**
+ * ⭐ **句库通用查询的信封**（`GET /api/articles`）—— **没有 `date`**：
+ *    这条回答"句库里有哪些句子"，与"今天"无关。
+ * ⚠️ 带 `date` 的是另外两条"今天的"接口（见下面的 LatestCardsResponse / TodayArticleResponse），
+ *    那个 date **只用于端侧按天做缓存失效**，不参与成绩归属。
+ */
+export const ArticleListResponseSchema = okEnvelope(
+  z.object({ items: z.array(ArticleCardSchema) }).openapi('ArticleListResponse'),
+)
+
+/**
+ * ⭐ **最新上线**（`GET /api/articles/latest`）—— 与通用查询的唯一区别是多了 `date`，
+ *    端侧拿它判断"这份首屏缓存是不是今天的"（跨天的列表不能拿来当今天的画）。
+ */
 export const LatestCardsResponseSchema = okEnvelope(
   z
     .object({
-      /** 服务端认定的今天（端侧用它对齐自然日） */
+      /** 服务端认定的今天 —— 只用于端侧按天缓存失效 */
       date: z.string(),
       items: z.array(ArticleCardSchema),
     })
@@ -156,9 +169,11 @@ export const LatestCardsResponseSchema = okEnvelope(
 )
 
 /**
- * ⭐ **今日推荐**（`GET /api/articles/today?uid=<id>`，**uid 可省略 = 匿名**）——
- *    data 就是**一张标准 ArticleCard**（与 `/api/articles?latest=N` 的 items 同形
- *    ⇒ 端侧一套渲染）。
+ * ⭐ **今日推荐**（`GET /api/articles/today?uid=<id>`，**uid 可省略 = 匿名**）。
+ *
+ * ⚠️ 带 `date`（服务端的今天）—— 与 `/latest` 一样，**只用于端侧按天缓存失效**；
+ *    `item` 是**纯句子数据**（标准 ArticleCard）。
+ *    ⚠️ 它不是"这次挑战记哪一天"的依据（那个由服务端在受理提交时决定）。
  *
  * ⚠️ 匿名（不带 uid / uid=0）时：**默认初级档**，在该档句子里**随机**挑一条、
  *    **参与人数多的更容易被抽中**，且**不写任何用户行**。
@@ -168,8 +183,8 @@ export const LatestCardsResponseSchema = okEnvelope(
  *    前三项是工程备注（用户 2026-09 明确不要），后两项走
  *    `GET /api/user/participation/{articleId}`。
  */
-export const TodayArticleResponseSchema = okEnvelope(ArticleCardSchema).openapi(
-  'TodayArticleResponse',
+export const TodayArticleResponseSchema = okEnvelope(
+  z.object({ date: z.string(), item: ArticleCardSchema }).openapi('TodayArticleResponse'),
 )
 
 /* ---------- 我的：挑战记录 / 参与场次 / 能量 ---------- */
@@ -201,19 +216,50 @@ export const ChallengeRecordSchema = z
   })
   .openapi('ChallengeRecord')
 
+/**
+ * 词级数据（音标 / 释义 / 音节）—— 与运行时的 WordScore 是两回事。
+ *
+ * ⚠️ 定义在这里（而不是跟 ArticleDetail 放一起）是因为 `ParticipationRecordSchema`
+ *    也要用它 —— `const` 有 TDZ：引用一个**后面**才定义的 schema 会在模块加载时直接抛。
+ */
+/** 词重音三档：-1 轻读 / 0 普通 / 1 句重音落点 */
+export const ArticleWordStressSchema = z
+  .union([z.literal(-1), z.literal(0), z.literal(1)])
+  .openapi('ArticleWordStress')
+
+export const ArticleWordItemSchema = z
+  .object({
+    text: z.string(),
+    stress: ArticleWordStressSchema,
+    syllables: z.array(z.string()),
+    ipa: z.string(),
+    meaning: z.string(),
+    tip: z.string(),
+  })
+  .openapi('ArticleWordItem')
+
 /** ⭐ 「参与场次」一条（一句一行 = 一个竞技场） */
 export const ParticipationRecordSchema = z
   .object({
     articleId: z.string(),
-    text: z.string(),
-    words: z.number().int(),
+    /**
+     * ⭐⭐ 词表快照（与 ArticleDetail.words 同形）—— **它同时就是原文**：
+     *    `words[].text` 含标点，拼起来即原句。所以这里**没有 text 字段**（2026-09 删）。
+     */
+    words: z.array(ArticleWordItemSchema),
+    /** ⭐ 连读标注快照：links[i] 描述 words[i] 与 words[i+1] 之间；空串 = 不连 */
+    links: z.array(z.string()),
     attempts: z.number().int(),
     bestScore: z.number(),
     worstScore: z.number(),
     rank: z.number().int(),
     participantCount: z.number().int(),
     lastAt: z.string(),
-    lastScheduleDate: z.string(),
+    /**
+     * ⭐ 兜底原文 —— **只在词表快照为空（内容缺口）时出现**；正常行没有它，
+     *    端侧自己从 words 拼句子（见 shared 的 ParticipationRecord）。
+     */
+    text: z.string().optional(),
     theme: ArticleThemeSchema.nullable(),
   })
   .openapi('ParticipationRecord')
@@ -236,24 +282,8 @@ export const ParticipationRecordResponseSchema = okEnvelope(
   ParticipationRecordSchema.nullable(),
 ).openapi('ParticipationRecordResponse')
 
-/** ⭐ 竞技场一条（按句子）—— `ranks=1` 时才带名次/击败人数 */
-export const ArenaRecordSchema = z
-  .object({
-    articleId: z.string(),
-    bestScore: z.number().nullable(),
-    attempts: z.number().int(),
-    rank: z.number().int().nullable(),
-    beatenCount: z.number().int().nullable(),
-    isFavorite: z.boolean(),
-  })
-  .openapi('ArenaRecord')
-
-export const ArenaRecordsResponseSchema = okEnvelope(
-  z.object({ items: z.array(ArenaRecordSchema) }).openapi('ArenaRecordsResponse'),
-)
-
 /** ⭐ 「我在某一句上的历史挑战」一条（逐次；`score` 为 null = 那次没出分） */
-export const ArticleRecordItemSchema = z
+export const ParticipationSubmissionItemSchema = z
   .object({
     submissionId: z.string(),
     status: z.enum(['scored', 'failed']),
@@ -264,19 +294,19 @@ export const ArticleRecordItemSchema = z
     scheduleDate: z.string().nullable(),
     isPublic: z.boolean(),
   })
-  .openapi('ArticleRecordItem')
+  .openapi('ParticipationSubmissionItem')
 
-export const ArticleRecordsResponseSchema = okEnvelope(
+export const ParticipationSubmissionsResponseSchema = okEnvelope(
   z
     .object({
-      items: z.array(ArticleRecordItemSchema),
+      items: z.array(ParticipationSubmissionItemSchema),
       bestScore: z.number().nullable(),
       attempts: z.number().int(),
       rank: z.number().int().nullable(),
       participantCount: z.number().int(),
       lowestScore: z.number().nullable(),
     })
-    .openapi('ArticleRecordsResponse'),
+    .openapi('ParticipationSubmissionsResponse'),
 )
 
 /** 能量流水一条 */
@@ -533,24 +563,7 @@ export const ProfileUpdateResponseSchema = okEnvelope(
 )
 
 
-/* ---------- 句库详情 / 竞技场详情 ---------- */
-
-/** 词重音三档：-1 轻读 / 0 普通 / 1 句重音落点 */
-export const ArticleWordStressSchema = z
-  .union([z.literal(-1), z.literal(0), z.literal(1)])
-  .openapi('ArticleWordStress')
-
-/** 内容侧的词级数据（音标 / 释义 / 音节）—— 与运行时的 WordScore 是两回事 */
-export const ArticleWordItemSchema = z
-  .object({
-    text: z.string(),
-    stress: ArticleWordStressSchema,
-    syllables: z.array(z.string()),
-    ipa: z.string(),
-    meaning: z.string(),
-    tip: z.string(),
-  })
-  .openapi('ArticleWordItem')
+/* ---------- 句库详情 / 参与记录 ---------- */
 
 /** ⭐ 句子详情（**全量**）—— 阅读页要的那一份（含词级数据） */
 export const ArticleDetailSchema = okEnvelope(
@@ -571,26 +584,55 @@ export const ArticleDetailSchema = okEnvelope(
     .openapi('ArticleDetail'),
 )
 
-/** ⭐ 竞技场详情 —— **按句子**寻址（同一句两次挑战看的是同一个场子） */
-export const ArenaDetailSchema = okEnvelope(
+/**
+ * ⭐⭐ **一句的参与统计**（`GET /api/participations/stats?ids=a,b,c`，公开）。
+ *
+ * ⚠️ 用户 2026-09 定的结构（L1 解耦）：统计**不挂在 article / ArticleCard /
+ *    ArticleDetail 上** —— 那三个是"句子内容"（稳定、可缓存），统计每次现算。
+ *    它与句子的生命周期无关：`articleId` 只是 key，句子行不在了也照样能查到。
+ */
+export const ArticleStatsSchema = z
+  .object({
+    articleId: z.string(),
+    participantCount: z.number().int(),
+    topScore: z.number().nullable(),
+    lowestScore: z.number().nullable(),
+  })
+  .openapi('ArticleStats')
+
+/** `GET /api/participations/stats?ids=…` 的响应（按请求的 ids 零值补齐） */
+export const ArticleStatsResponseSchema = okEnvelope(
+  z.object({ items: z.array(ArticleStatsSchema) }).openapi('ArticleStatsResponse'),
+)
+
+/**
+ * ⭐⭐ 这一句的**参与记录**（`GET /api/articles/{id}/participations`，公开）。
+ *
+ * ⚠️ 它替代了原来那条"大而全"的 `/api/arenas/{articleId}`（2026-09 拆掉）：
+ *    句子数据走 `/api/articles/{id}`、榜单/参与者走这一条、我的参与走
+ *    `/api/user/participation/{articleId}`、收藏走 `/api/user/is-favorite`。
+ */
+export const ArticleParticipationRowSchema = z
+  .object({
+    /** 名次：按最高分全序算，与 `sort` 无关 */
+    rank: z.number().int(),
+    userId: z.number().int(),
+    nickname: z.string(),
+    avatarUrl: z.string().nullable(),
+    attempts: z.number().int(),
+    bestScore: z.number(),
+    lastAt: z.string(),
+  })
+  .openapi('ArticleParticipationRow')
+
+/** `GET /api/articles/{id}/participations` 的响应（`total` 用于分页判据） */
+export const ArticleParticipationsResponseSchema = okEnvelope(
   z
     .object({
-      articleId: z.string(),
-      text: z.string(),
-      translation: z.string(),
-      difficulty: ArticleLevelSchema.nullable(),
-      tags: z.array(z.string()),
-      /** 从这里发起的挑战该记到哪一天（按句子寻址 = 服务端的今天） */
-      submissionDate: z.string(),
-      isToday: z.boolean(),
-      participantCount: z.number().int(),
-      topScore: z.number().nullable(),
-      lowestScore: z.number().nullable(),
-      audio: StandardAudioSchema.nullable(),
-      theme: ArticleThemeSchema.nullable(),
-      leaderboard: z.array(LeaderboardRowSchema),
+      items: z.array(ArticleParticipationRowSchema),
+      total: z.number().int(),
     })
-    .openapi('ArenaDetail'),
+    .openapi('ArticleParticipationsResponse'),
 )
 
 
@@ -670,16 +712,33 @@ export const AdminAudioUploadResponseSchema = okEnvelope(
 
 /* ---------- 身份 / 收藏 / 成长榜 / 商店 / 公开分享页 ---------- */
 
-/** 登录换到的凭据（`POST /api/auth/login`）—— 云端容器通道下不用它（网关注入身份） */
+/**
+ * 登录换到的凭据（`POST /api/auth/login`）—— 云端容器通道下不用它（网关注入身份）。
+ *
+ * ⚠️⚠️ `user` **可为 null**：登录**不等于**注册（2026-09 定）。
+ *    还没加入句拼的人也能拿到 token（里面带的是凭据），但他没有账号可回 ——
+ *    端侧拿 `user === null` 就该去画「加入」，而不是当成登录失败。
+ */
 export const TokenResponseSchema = okEnvelope(
   z
-    .object({ token: z.string(), user: z.object({ id: z.number().int(), nickname: z.string().nullable() }) })
+    .object({
+      token: z.string(),
+      user: z.object({ id: z.number().int(), nickname: z.string().nullable() }).nullable(),
+    })
     .openapi('TokenResponse'),
 )
 
 /** 收藏开关的结果（PUT / DELETE /api/user/favorites/:articleId） */
 export const FavoriteToggleResponseSchema = okEnvelope(
   z.object({ articleId: z.string(), favorited: z.boolean() }).openapi('FavoriteToggleResponse'),
+)
+
+/**
+ * ⭐ **"这一句我收藏了吗"**（`GET /api/user/is-favorite`）—— 独立的一次查询。
+ * ⚠️ 只有 `favorited` 一个字段：它只回答这一个问题（见 routes/favorites.ts 的说明）。
+ */
+export const IsFavoriteResponseSchema = okEnvelope(
+  z.object({ favorited: z.boolean() }).openapi('IsFavoriteResponse'),
 )
 
 /** 收藏列表里的一条（带句子正文与我的战绩） */
@@ -712,15 +771,45 @@ export const GrowthRankRowSchema = z
   })
   .openapi('GrowthRankRow')
 
-/** 三块成长榜（首页下方） */
+/**
+ * 成长榜（首页下方）—— **按需返回**：没点名的键**不出现**（不是空数组）。
+ * 见 `GET /api/leaderboards/growth` 的 `?self` / `?diligence` / `?standout`。
+ */
 export const GrowthRankResponseSchema = okEnvelope(
   z
     .object({
-      self: z.array(GrowthRankRowSchema),
-      diligence: z.array(GrowthRankRowSchema),
-      standout: z.array(GrowthRankRowSchema),
+      self: z.array(GrowthRankRowSchema).optional(),
+      diligence: z.array(GrowthRankRowSchema).optional(),
+      standout: z.array(GrowthRankRowSchema).optional(),
     })
     .openapi('GrowthRankResponse'),
+)
+
+/**
+ * ⭐ **用户目录**（`GET /api/users`）里的一行。
+ * ⚠️ 这条接口是**公开**的且**含 energy**（用户 2026-09 明确要求）——
+ *    它不改变 `/api/profile/:id` 那条「能量只给本人」的边界，别当先例。
+ */
+export const UserSummarySchema = z
+  .object({
+    id: z.number().int(),
+    nickname: z.string().nullable(),
+    avatarUrl: z.string().nullable(),
+    energy: z.number().int(),
+    createdAt: z.string(),
+    /** 参与次数 = 参与场次（一句 = 一场，只数拿到分的）—— 同 /api/profile 的 conqueredCount */
+    conqueredCount: z.number().int(),
+    /** 挑战回合（出过分的提交次数） */
+    challengedRounds: z.number().int(),
+    /** 连战天数 */
+    streakDays: z.number().int(),
+    /** 成长值（三个指标，不合成总分） */
+    growth: GrowthViewSchema,
+  })
+  .openapi('UserSummary')
+
+export const UserListResponseSchema = okEnvelope(
+  z.object({ items: z.array(UserSummarySchema) }).openapi('UserListResponse'),
 )
 
 /** 商店商品一项 */
@@ -811,9 +900,17 @@ type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
 /** 每一对都得是 `true`；写成 `false` 时 TS 会在这里报错 */
 type _CardParity = Equal<z.infer<typeof ArticleCardSchema>, ArticleCard>
+type _ArticleListParity = Equal<
+  z.infer<typeof ArticleListResponseSchema>['data'],
+  ArticleListResponse
+>
 type _LatestParity = Equal<
   z.infer<typeof LatestCardsResponseSchema>['data'],
   LatestCardsResponse
+>
+type _TodayArticleParity = Equal<
+  z.infer<typeof TodayArticleResponseSchema>['data'],
+  TodayArticleResponse
 >
 type _ParticipationOneParity = Equal<
   z.infer<typeof ParticipationRecordResponseSchema>['data'],
@@ -841,15 +938,10 @@ type _ParticipationsParity = Equal<
 >
 type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
-type _ArenaRecParity = Equal<z.infer<typeof ArenaRecordSchema>, ArenaRecord>
-type _ArenaResParity = Equal<
-  z.infer<typeof ArenaRecordsResponseSchema>['data'],
-  ArenaRecordsResponse
->
-type _ArtRecParity = Equal<z.infer<typeof ArticleRecordItemSchema>, ArticleRecordItem>
+type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
 type _ArtResParity = Equal<
-  z.infer<typeof ArticleRecordsResponseSchema>['data'],
-  ArticleRecordsResponse
+  z.infer<typeof ParticipationSubmissionsResponseSchema>['data'],
+  ParticipationSubmissionsResponse
 >
 type _StreakViewParity = Equal<z.infer<typeof StreakViewSchema>, StreakView>
 type _MeParity = Equal<z.infer<typeof MeResponseSchema>['data'], MeResponse>
@@ -868,9 +960,26 @@ type _ArticleDetailParity = Equal<
   z.infer<typeof ArticleDetailSchema>['data'],
   ArticleDetail
 >
-type _ArenaDetailParity = Equal<z.infer<typeof ArenaDetailSchema>['data'], ArenaDetail>
+type _ArticleStatsParity = Equal<z.infer<typeof ArticleStatsSchema>, ArticleStats>
+type _ArticleStatsResParity = Equal<
+  z.infer<typeof ArticleStatsResponseSchema>['data'],
+  ArticleStatsResponse
+>
+type _ArticleParticipationRowParity = Equal<
+  z.infer<typeof ArticleParticipationRowSchema>,
+  ArticleParticipationRow
+>
+type _ArticleParticipationsParity = Equal<
+  z.infer<typeof ArticleParticipationsResponseSchema>['data'],
+  ArticleParticipationsResponse
+>
 type _TokenParity = Equal<z.infer<typeof TokenResponseSchema>['data'], TokenResponse>
 type _GrowthRowParity = Equal<z.infer<typeof GrowthRankRowSchema>, GrowthRankRow>
+type _UserSummaryParity = Equal<z.infer<typeof UserSummarySchema>, UserSummary>
+type _UserListParity = Equal<
+  z.infer<typeof UserListResponseSchema>['data'],
+  UserListResponse
+>
 type _GrowthResParity = Equal<
   z.infer<typeof GrowthRankResponseSchema>['data'],
   GrowthRankResponse
@@ -888,6 +997,10 @@ type _FavResParity = Equal<
   z.infer<typeof FavoriteListResponseSchema>['data'],
   FavoritesResponse
 >
+type _IsFavParity = Equal<
+  z.infer<typeof IsFavoriteResponseSchema>['data'],
+  IsFavoriteResponse
+>
 type _SubAudioParity = Equal<
   z.infer<typeof SubmissionAudioResponseSchema>['data'],
   SubmissionAudioResponse
@@ -897,7 +1010,9 @@ type _SubAudioParity = Equal<
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
 const _parityChecks: [
   _CardParity,
+  _ArticleListParity,
   _LatestParity,
+  _TodayArticleParity,
   _ParticipationOneParity,
   _SubmitParity,
   _StatusParity,
@@ -912,9 +1027,7 @@ const _parityChecks: [
   _ParticipationsParity,
   _LedgerParity,
   _EnergyParity,
-  _ArenaRecParity,
-  _ArenaResParity,
-  _ArtRecParity,
+  _PartSubmissionParity,
   _ArtResParity,
   _StreakViewParity,
   _MeParity,
@@ -924,9 +1037,14 @@ const _parityChecks: [
   _ProfileParity,
   _WordItemParity,
   _ArticleDetailParity,
-  _ArenaDetailParity,
+  _ArticleStatsParity,
+  _ArticleStatsResParity,
+  _ArticleParticipationRowParity,
+  _ArticleParticipationsParity,
   _TokenParity,
   _GrowthRowParity,
+  _UserSummaryParity,
+  _UserListParity,
   _GrowthResParity,
   _GoodsItemParity,
   _GoodsResParity,
@@ -935,6 +1053,7 @@ const _parityChecks: [
   _ShareParity,
   _FavItemParity,
   _FavResParity,
+  _IsFavParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

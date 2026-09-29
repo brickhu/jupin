@@ -63,8 +63,12 @@ function mountsOf() {
   return out
 }
 
+/** spec 里一条操作的形状（只取这条守门要看的字段） */
+type SpecOperation = { security?: unknown[]; tags?: string[] }
+type Spec = { paths?: Record<string, Record<string, SpecOperation>> }
+
 /** 用一个"只有注册表"的 app 生成 spec（不启服务、不连库） */
-async function buildSpecPaths(): Promise<Set<string>> {
+async function buildSpec(): Promise<Spec> {
   const app = new OpenAPIHono()
   for (const mount of mountsOf()) {
     const mod = (await import(path.join(ROOT, 'apps/server/src', mount.module))) as Record<string, unknown>
@@ -73,11 +77,14 @@ async function buildSpecPaths(): Promise<Set<string>> {
     // route() 会合并子应用的注册表（见 @hono/zod-openapi 的实现）—— 正是它在产文档
     app.route(mount.prefix, sub as never)
   }
-  const doc = app.getOpenAPI31Document({
+  return app.getOpenAPI31Document({
     openapi: '3.1.0',
     info: { title: 'jushuo API', version: '1.0.0' },
-  }) as { paths?: Record<string, unknown> }
-  return new Set(Object.keys(doc.paths ?? {}).map(normalize))
+  }) as Spec
+}
+
+async function buildSpecPaths(): Promise<Set<string>> {
+  return new Set(Object.keys((await buildSpec()).paths ?? {}).map(normalize))
 }
 
 /**
@@ -155,5 +162,51 @@ describe('接口契约 —— 两个客户端调的路径都在 spec 里', () =>
       return ![...used].some((u) => p === u || u.startsWith(p + '/') || p.startsWith(u + '/'))
     })
     expect(orphans, '这些接口没有任何客户端在用（要么删掉，要么在上面登记为服务端专用）：\n' + orphans.join('\n')).toEqual([])
+  })
+})
+
+/** 会被 spec 记成一条操作的 HTTP 方法（paths 里还有 `parameters` 这种非方法键，要跳过） */
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch', 'head', 'options'])
+
+describe('鉴权声明 —— /api/user/* 的每条接口都要在文档里写明「要带身份」', () => {
+  /**
+   * ⚠️⚠️ 为什么需要它（2026-09 修 favorites / shop 时定的）：
+   *    运行时鉴权由 index.ts 的 `app.use('/api/user/*', authMiddleware)` 兜住，
+   *    所以**漏写 security 不会让接口真的变公开** —— 但 OpenAPI 会说谎：
+   *    Swagger UI 上它们与 `/api/articles` 长得一样（都不带锁），
+   *    而"谁能调"恰恰是接口文档最要紧的一件事。
+   *    ⇒ 判据：**路径**是权威（`/api/user/*` = 要身份），文档必须与它一致。
+   *    ⚠️ 别改成"扫源码里有没有写 security"：那样只能证明写了，证明不了写对。
+   */
+  it('每个 /api/user/* 操作都有 security: [{ userToken: [] }]', async () => {
+    const spec = await buildSpec()
+    const missing: string[] = []
+    let checked = 0
+
+    for (const [p, ops] of Object.entries(spec.paths ?? {})) {
+      /**
+       * ⚠️⚠️ 判据必须**按路径段**匹配，不能用 `p.startsWith('/api/user')`：
+       *    `/api/users`（复数，公开的用户目录）也以这串字符开头 ——
+       *    写成前缀比较会把它错误地当成鉴权接口（2026-09 加 `/api/users` 时当场被这条测试抓到）。
+       *    ⇒ 只有 `/api/user` 本身与 `/api/user/...` 才是鉴权命名空间。
+       */
+      if (p !== '/api/user' && !p.startsWith('/api/user/')) continue
+      for (const [method, op] of Object.entries(ops)) {
+        if (!HTTP_METHODS.has(method)) continue
+        checked++
+        const declared = Array.isArray(op.security) && op.security.some(
+          (s) => typeof s === 'object' && s !== null && 'userToken' in s,
+        )
+        if (!declared) missing.push(method.toUpperCase() + ' ' + p)
+      }
+    }
+
+    // ⚠️ 底下这条是防"正则/spec 生成悄悄失效"：一条都没扫到的话，上面永远是绿的
+    expect(checked, '一条 /api/user/* 操作都没扫到 —— spec 生成或前缀判定失效了').toBeGreaterThan(5)
+    expect(
+      missing,
+      '这些接口挂在 /api/user/* 下（运行时确实要鉴权），但 OpenAPI 没写 security —— ' +
+        'Swagger 会把它们标成公开接口：\n' + missing.join('\n'),
+    ).toEqual([])
   })
 })

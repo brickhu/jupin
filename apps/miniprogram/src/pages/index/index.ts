@@ -1,24 +1,25 @@
-import { BRAND, formatScore, startButtonLabel, today } from '@jushuo/shared'
+import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type {
   ArticleTheme,
   GrowthRankResponse,
   GrowthRankRow,
   MeResponse,
   ArticleCard,
-  LatestCardsResponse,
+  ParticipationRecord,
   StreakView,
 } from '@jushuo/shared'
-import { fetchLatestCards, fetchArenaRecords, fetchGrowthBoards, fetchToday } from '../../lib/api/client'
+import { fetchLatestCards, fetchGrowthBoards, fetchToday } from '../../lib/api/client'
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
+import { ensureArticleStats } from '../../lib/article-stats'
+import { ensureParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
 import * as me from '../../lib/store'
-import type { ArenaRecord } from '../../lib/store'
 
 /**
  * ⭐ 分享卡片图 —— **代码包里**的一张固定图（5:4，微信分享卡的标准比例）。
@@ -49,18 +50,18 @@ interface BoardView {
  *    （📈 自我超越 / 🔥 坚持不懈 / 🏔️ 人中翘楚）。
  * ⚠️ 顺序固定为「自我超越 / 坚持不懈 / 人中翘楚」—— 与用户面板那一排一致，
  *    换个顺序会让人以为漏了一个。
+ * ⚠️ 接口是**按需返回**的（没点名的键不出现）⇒ 每个键都要 `?? []` 兜底：
+ *    首页不带旗标（三块全要），但兜底不能省 —— 少了它，服务端只回一块时会当场抛。
  */
 function boardListOf(b: GrowthRankResponse): BoardView[] {
   return [
-    { key: 'self', label: '📈 自我超越', rows: b.self },
-    { key: 'diligence', label: '🔥 坚持不懈', rows: b.diligence },
-    { key: 'standout', label: '🏔️ 人中翘楚', rows: b.standout },
+    { key: 'self', label: '📈 自我超越', rows: b.self ?? [] },
+    { key: 'diligence', label: '🔥 坚持不懈', rows: b.diligence ?? [] },
+    { key: 'standout', label: '🏔️ 人中翘楚', rows: b.standout ?? [] },
   ]
 }
 
 interface CardView {
-  /** 只有今日那一张有（见 toView 的说明） */
-  date: string
   articleId: string
   /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
@@ -217,21 +218,27 @@ function statText(participantCount: number): string {
  *    它紧跟在「你已参与 N 次」后面，两句话的主语必须是同一个（我）——
  *    换成全场最高分就成了「别人的成绩」，而那是榜单的事，在详情页里。
  *
- * ⚠️ 是**这一句**上的最好成绩（按 articleId 取，见 lib/store）。
- *    竞技数据跟着句子走，同一句排在多天就是同一份战绩。
+ * ⚠️ 数据来自 `GET /api/user/participation/{articleId}`（存进 store，见 lib/participation）。
  *
- * ⚠️ 没参与时整段都不说，**绝不写「最高得分 0」** ——
- *    那读起来像「我去读过、拿了 0 分」，而真相是「还没去过」。
- *    同理，有次数但没成绩（数据不完整的中间态）时只说次数，不编一个 0 出来。
+ * ⚠️⚠️ **三种状态必须分开**（这正是 `loaded` 存在的理由）：
+ *    · 还没拉到（!loaded）→ **什么都不说** —— 编一句"还未参与挑战"是在替服务端下结论；
+ *    · 拉到了、确实没参与（record === null）→ 「还未参与挑战」；
+ *    · 参与过 → 「你已经参与 N 次…」。
  *
- * ⚠️ 同样写成**纯函数**：输入只有「我的战绩」一个对象，与页面实例无关，好单测。
+ * ⚠️ 没参与时**绝不写「最高得分 0」** —— 那读起来像"我去读过、拿了 0 分"，
+ *    而 0 分是合法成绩，两者不能混。有次数但没成绩（未出分那种）时只说次数。
+ *
+ * ⚠️ 写成**纯函数**：输入只有参与状态一个对象，与页面实例无关，好单测。
  */
-function hintText(mine: ArenaRecord): string {
-  if (mine.myAttempts <= 0) return '还未参与挑战'
-  const times = '你已经参与 ' + mine.myAttempts + ' 次挑战'
-  if (mine.myBest === null) return times
+function hintOf(mine: { loaded: boolean; record: ParticipationRecord | null }): string {
+  if (!mine.loaded) return ''
+  const record = mine.record
+  if (!record) return '还未参与挑战'
+  const times = '你已经参与 ' + record.attempts + ' 次挑战'
+  const best = record.bestScore
+  if (best === null || best === undefined) return times
   // ⚠️ 分值全站统一一位小数（formatScore）
-  return times + ' · 最高得分 ' + formatScore(mine.myBest)
+  return times + ' · 最高得分 ' + formatScore(best)
 }
 
 Page({
@@ -245,9 +252,32 @@ Page({
      */
     navTop: 0,
 
-    loading: true,
-    /** 连不上时的**可操作**提示（不是「请求失败」四个字） */
-    error: '',
+    /**
+     * ⭐⭐ 三块**数据区各自**的加载态（用户 2026-09 定：分块异步 + 共用骨架）。
+     *
+     * ⚠️⚠️ 不再用整页一个 loading：四块（状态卡 / 今日卡 / 最新卡片 / 排行榜）
+     *    到达时间不同，整页白会让人以为整页坏了；分块骨架才能让
+     *    **"还没到"**（骨架）与 **"到了就是空的"**（空态）看起来不一样。
+     * ⚠️ 状态卡**没有自己的请求** —— 它读全局 store 的 userInfo，
+     *    所以它的"加载中"由 `statusMode` 表达（见 render()）。
+     */
+    latestLoading: true,
+    latestError: '',
+    todayLoading: true,
+    todayError: '',
+    boardsLoading: true,
+    boardsError: '',
+
+    /**
+     * ⭐ 状态卡的三种形态（用户 2026-09 定）：
+     *    · 'loading'  —— 身份还没解析完（store.session === 'pending'）⇒ 骨架
+     *    · 'data'     —— 有用户（store.userInfo 非空）⇒ 三格数字
+     *    · 'unknown'  —— 问不到（断网 / 后端没起来）⇒ 「重新连接」，**不画「未加入」**
+     *    · 'unjoined' —— 服务端明确说库里没有我这一行 ⇒ 「未加入」+ 加入按钮
+     * ⚠️⚠️ 'unknown' 与 'unjoined' 绝不能合并：前者是"不知道"，后者是"确定没有" ——
+     *    把断网画成"你还没加入"，有账号的老用户会以为账号没了。
+     */
+    statusMode: 'loading' as 'loading' | 'data' | 'unknown' | 'unjoined',
 
     /**
      * ⭐ 「开始挑战」正在确认身份（见 onStart）—— 那几秒里把按钮写成「确认中…」。
@@ -284,8 +314,6 @@ Page({
      *    动态下标 + 点号连写在小程序模板里支持得很勉强，换个写法就白屏。
      */
     activeRows: [] as GrowthRankRow[],
-    /** 榜拉回来了没有 —— 没回来时整块不渲染（别闪一个空框） */
-    boardsLoaded: false,
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
     avatarPlaceholder: '/assets/avatar-placeholder.png',
     /**
@@ -313,9 +341,13 @@ Page({
    *    不需要先把整张列表重新拉一遍。
    */
   /**
-   * ⚠️ `today` **可空**：公开列表接口（`/api/articles?latest=N`）**不返回它**
+   * ⚠️ `today` **可空**：公开列表接口（`/api/articles/latest`）**不返回它**
    *    （2026-09 随 `schedules` 表一起删）—— 今日那一句只由公开推荐接口
    *    `GET /api/articles/today` 给（可匿名调用）。首屏先只画 `latest`，今日卡等推荐回来再填。
+   *
+   * ⚠️ 卡片里**没有日期**：挑战归哪一天由服务端在受理提交时决定。
+   *    响应信封上那个 `date` 只用来判"缓存是不是今天的"（见 store 的 cachedToday /
+   *    cachedLatestCards），不往页面上带。
    */
   cards: null as { today: ArticleCard | null; latest: ArticleCard[] } | null,
 
@@ -342,7 +374,12 @@ Page({
     // ⭐ 订阅全局「我的记录」：朗读页打完分写进去，这里立刻重画。
     //    ⚠️ 这是「提交完返回首页不更新」的根治手段 ——
     //       它不依赖 onShow 的时机，也不要求首页还在页面栈里。
-    this.unsubStore = me.subscribe(() => this.render())
+    //    ⚠️ 顺带补一次「这一屏句子的参与状态」：身份解析与卡片是**两条并发线**，
+    //       卡片先回来时那次拉取会因为"还不知道我是谁"而空转（见 fillCardData）。
+    this.unsubStore = me.subscribe(() => {
+      this.render()
+      this.fillCardData()
+    })
 
     /**
      * ⭐ 先用**上次那一屏卡片**把首屏画出来，再照常去刷新。
@@ -354,15 +391,25 @@ Page({
      *    所以这里拿到的要么是当天的、要么是 null。
      */
     const cached = me.cachedLatestCards()
-    if (cached) {
+    /** ⭐ 今日卡也有自己的缓存（按响应里的 `date` 判过期）——冷启动时它才是首屏主角 */
+    const cachedToday = me.cachedToday()
+    if (cached || cachedToday) {
+      this.cards = { today: cachedToday?.item ?? null, latest: cached?.items ?? [] }
       /**
-       * ⚠️ 缓存里**没有** `today`（公开列表接口不返回它，见 LatestCardsResponse 的说明）：
-       *    今日那一张由 `GET /api/articles/today` 填，这里先留空。
+       * ⚠️ 有缓存的那几块**直接算已加载**（骨架不闪）：缓存是"上一次已经拿到的数据"，
+       *    先把它画出来，再照常去刷新 —— 骨架只代表"从没有过数据"。
        */
-      this.cards = { today: null, latest: cached.items ?? [] }
-      this.setData({ loading: false })
+      this.setData({ latestLoading: !cached, todayLoading: !cachedToday })
       this.render()
+      // ⭐ 缓存里的这一屏也要补参与状态（身份可能还没解析完，见 fillCardData）
+      this.fillCardData()
     }
+
+    /**
+     * ⚠️ 三块是**并发**写的，谁都可能先回来（`loadToday` 可能早于 `loadLatest`）——
+     *    所以这个容器必须先存在，不能等某一块的响应去创建它。
+     */
+    if (!this.cards) this.cards = { today: null, latest: [] }
 
     void this.load()
   },
@@ -519,20 +566,45 @@ Page({
     this.gone = true
   },
 
+  /**
+   * ⭐⭐ 首屏加载 —— **三块各自独立**（用户 2026-09 定：分块异步 + 共用骨架）。
+   *
+   * ⚠️⚠️ 为什么不再是一个大 load()：四块的到达时间完全不同（当天推荐要现算、
+   *    榜单最重、最新上线最快）。合成一个 try 的后果是**最慢的那块决定整页**，
+   *    而且任何一块失败都会把整页打成错误页 —— 榜单挂了不该让人看不见今天读哪句。
+   *    ⇒ 每块自己负责 loading / error，失败**只影响自己那一块**。
+   *
+   * ⚠️ 并发仍用一个 requesting 挡：onLoad 与 onShow 在启动时会前后脚触发，
+   *    不挡就会把三块各打两遍。
+   */
   async load() {
-    // ⚠️ 并发用独立的 requesting 挡，**不要**用 loading：
-    //    loading 还兼任「首屏骨架」的开关，用它挡并发就会顺带吞掉真正的刷新。
     if (this.requesting) return
     this.requesting = true
-    // ⚠️ 已经有卡片时不再回到骨架屏 —— 刷新是「就地换数字」，不是「整页白一下」
-    if (!this.cards) this.setData({ loading: true })
-    this.setData({ error: '' })
+    try {
+      // ⚠️ 三块**并发**跑、互不 await：谁先回来谁先画（各自 setData）
+      await Promise.all([this.loadLatest(), this.loadToday(), this.loadBoards()])
+    } finally {
+      this.requesting = false
+    }
+  },
+
+  /**
+   * 块 ③：最新上线（公开接口 `GET /api/articles/latest`）。
+   *
+   * ⚠️ 顺带刷一次「我是谁」：状态卡那两个累计数只有 `/me` 有，而它们刚在朗读页变过。
+   *    不 await、失败只警告（它供的是状态卡，不该拖住列表这一块）。
+   */
+  async loadLatest() {
+    if (this.gone) return
+    this.setData({ latestError: '' })
+    // ⚠️ 已经有内容时不回到骨架 —— 刷新是「就地换数字」，不是「整块白一下」
+    if (!(this.cards && this.cards.latest.length > 0)) this.setData({ latestLoading: true })
     try {
       const d = await fetchLatestCards()
-      // ⭐ 先把「我的记录」写进 store（广播给所有页面），再本地重画一次
+      // ⭐ 先把公开内容写进 store（广播给所有页面），再本地重画一次
       me.applyLatestCards(d)
       /**
-       * ⚠️⚠️ **服务端可能比端侧旧** —— 这里必须容错，不能直接 d.latest.map()。
+       * ⚠️⚠️ **服务端可能比端侧旧** —— 这里必须容错，不能直接 `d.items.map()`。
        *
        *    真实事故（2026-09-28 真机预览）：服务端把那个列表字段改过名
        *    （`history` → `latest`，后来又并成 `items`），而 dev 云托管上
@@ -542,119 +614,147 @@ Page({
        *      · 开发者工具里一切正常（它打的是本机 Docker，那份是当前代码），
        *        只有真机（打云托管 dev）才炸 —— 极易被误判成「真机特有问题」。
        *    ⇒ 端侧发版与服务端发版是**两条独立的节奏**，端侧对新增字段一律当**可选**，
-       *      缺了就少一段列表，页面照常可用（见下面 items 的兜底）。
+       *      缺了就少一段列表，页面照常可用。
        */
       const latest = d.items ?? []
-      /**
-       * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
-       *    myBest / myAttempts 属于「我的」，按页面模型走鉴权接口，端侧按 articleId
-       *    融合（见 store 的 applyArenaRecords）—— 公开列表只管公开数据。
-       * ⚠️ 只问**这一屏上的 id**（最多 6 个），不是把我的全量记录拉下来。
-       * ⚠️ 不 await：列表先出来；个人那份到了会走 store 广播重画。
-       */
-      void fetchArenaRecords(latest.map((x) => x.articleId)).then((r) => me.applyArenaRecords(r.items))
-      /**
-       * ⭐ 顺带刷一次「我是谁」—— 状态卡上那两个累计数（挑战几句 / 一共几回）
-       *    只有 /me 有，而它们**刚在朗读页变过**。
-       *
-       * ⚠️ 不 await：列表该先出来。刷新回来后 store 会广播，卡片自己重画
-       *    （见 lib/join.ts 的 refreshMe：失败只警告，不影响这一页的加载）。
-       */
-      void refreshMe()
-      /**
-       * ⭐ 顺带拉三块成长榜 —— **不 await**：它在页面最下方，
-       *    而首页上半段没理由等它。回来了自己 setData。
-       * ⚠️ 失败只警告：榜拉不到，首页照常能用（顶多那三块不出现）。
-       */
-      void fetchGrowthBoards()
-        .then(async (b) => {
-          /**
-           * ⚠️ 头像要先换址（云存储 fileID → 临时地址）才能进 <image src>，
-           *    见 lib/cloud-file.ts。三块榜最多 30 行，同一个人的头像会重复出现 ——
-           *    换址那边有会话缓存与并发去重，不会真的请求 30 次。
-           * ⚠️ 换址失败只是没有头像（界面退回本地占位图），不该让这三块榜整体不出现，
-           *    所以这里的 await 不会抛。
-           */
-          const list = await Promise.all(
-            boardListOf(b).map(async (board) => ({
-              ...board,
-              rows: await attachAvatarSrc(board.rows),
-            })),
-          )
-          this.setData({ boardList: list, activeRows: list[0]?.rows ?? [], boardsLoaded: true })
-        })
-        .catch((err: Error) => console.warn('[index] 成长榜拉取失败：' + err.message))
-      /**
-       * ⚠️ 先按**公开列表**把首页画出来（latest 那一段只有它有），
-       *    今日那张卡再被下面的推荐替换掉 —— 推荐接口慢/失败都不能让首屏空着。
-       */
-      this.cards = { today: null, latest }
-      this.setData({ loading: false })
+      this.cards = { today: this.cards?.today ?? null, latest }
+      if (this.gone) return
+      this.setData({ latestLoading: false })
       this.render()
-
-      /**
-       * ⭐⭐ 今日那一张走**推荐**（公开接口 `GET /api/articles/today`，本地有 uid 就带上，
-       *    没有则匿名：初级档里随机 + 偏热门），不再用排期里今天那一条。
-       *    用户 2026-09：按天轮转对所有人推同一句"很鸡肋"。
-       */
-      void fetchToday()
-        .then((t) => {
-          if (this.cards) this.cards = { today: t, latest: this.cards.latest }
-          this.render()
-          /**
-           * ⚠️「我的」那一份必须跟着**换过的**今日句再取一次：
-           *    否则那张卡的「已参与 / 最高分 / 按钮文案」还是按别的句子算的
-           *    （明明读过却写着"立即朗读，参与挑战"）。
-           * ⚠️ 匿名时这本就会失败/为空 —— 不 await，失败只影响那张卡的角标。
-           */
-          void fetchArenaRecords([t.articleId]).then((r) => me.applyArenaRecords(r.items))
-        })
-        .catch((err: Error) => console.warn('[index] 今日推荐失败（今日卡留空）：' + err.message))
+      // ⭐ 列表出来之后再拉这一屏的参与状态（用户 2026-09 口径：所有列表都走这条）
+      this.fillCardData()
     } catch (err) {
-      /**
-       * ⚠️⚠️ 冷启动（云托管缩容到 0）**不是网络故障**，不能说成「连不上服务器」——
-       *    那会让人去查手机网络，而真正要做的是等平台把实例拉起来（或再点一次重试）。
-       *    client 已经把这种情况标成 ApiError.code = 'COLD_START'；而 explain() 只看
-       *    message 认不出 code，所以这里先按 code 分流。
-       */
-      const e = err as Error & { code?: string }
-      const message =
-        e.code === 'COLD_START'
-          ? '服务正在唤醒（云托管缩容后首次打开约需 30 秒），请再点一次「重试」'
-          : this.explain(e.message || String(e))
-      this.setData({ loading: false, error: message })
-    } finally {
-      this.requesting = false
+      if (this.gone) return
+      this.setData({ latestLoading: false, latestError: this.explainError(err) })
+    }
+    // ⚠️ 资料只是让状态卡更新，不该拖住列表：不 await，回来自己重画
+    void refreshMe().then(() => this.render())
+  },
+
+  /**
+   * 块 ②：今日卡（公开接口 `GET /api/articles/today?uid=`）+ **这一句的参与状态**。
+   *
+   * ⚠️⚠️ 参与状态按用户 2026-09 的口径走 **`GET /api/user/participation/{articleId}`**
+   *    （不再是列表接口 + arena-records 融合），拉到之后存进**全局 store**
+   *    （见 lib/participation 与 store 的 applyParticipation），页面只负责拉完重画。
+   */
+  async loadToday() {
+    if (this.gone) return
+    this.setData({ todayError: '' })
+    if (!this.cards?.today) this.setData({ todayLoading: true })
+    try {
+      const t = await fetchToday()
+      // ⭐ 存进 store：它同时是**冷启动首屏缓存**（按 t.date 判过期，见 cachedToday）
+      me.applyToday(t)
+      if (this.gone) return
+      this.cards = { today: t.item, latest: this.cards?.latest ?? [] }
+      this.setData({ todayLoading: false })
+      this.render()
+      // ⭐ 再拉这一屏句子的参与状态；到了写 store 并重画（并发去重在 lib 里做）
+      this.fillCardData()
+    } catch (err) {
+      if (this.gone) return
+      this.setData({ todayLoading: false, todayError: this.explainError(err) })
     }
   },
 
   /**
-   * 重画 —— 把「服务端卡片」与「store 里的我的记录」拼成展示视图。
+   * ⭐⭐ 把**这一屏句子**的两份"我的/全场"数据补上 —— **幂等、可反复调**。
+   *
+   *   · 我的参与状态（`lib/participation` → `/api/user/participation/{id}`，写 store）
+   *   · 全场参与统计（`lib/article-stats` → `/api/participations/stats?ids=`，写 store）
+   *
+   * ⚠️⚠️ 为什么需要它（真实竞态）：身份解析（`/me`）与卡片列表是两条并发网络线，
+   *    **卡片可能先回来**。那一刻 `store.session` 还是 'pending'，`ensureParticipation`
+   *    按规矩什么都不写（不知道我是谁，不能替我下"没参与"的结论）——
+   *    于是卡片上的「已参与」描边 / 按钮文案会一直停在默认态，直到用户手动下拉刷新。
+   *    ⇒ 每次 store 广播（身份解析完、打完分…）都补问一次。
+   *
+   * ⚠️ 两份**分开拉、各自写 store**：参与状态按用户（鉴权）、统计是公开聚合，
+   *    失败互不影响。统计那边**每次都重新拉**（活数，不能缓存住）。
+   */
+  fillCardData() {
+    const ids: string[] = []
+    if (this.cards?.today) ids.push(this.cards.today.articleId)
+    for (const x of this.cards?.latest ?? []) ids.push(x.articleId)
+    if (ids.length === 0) return
+    // ⚠️ 判活：这批请求可能在页面销毁之后才回来，别往销毁的页面上 setData
+    void ensureParticipation(ids).then(() => {
+      if (!this.gone) this.render()
+    })
+    void ensureArticleStats(ids).then(() => {
+      if (!this.gone) this.render()
+    })
+  },
+
+  /**
+   * 块 ④：荣誉榜（`GET /api/leaderboards/growth`）。
+   *
+   * ⚠️ 它在页面最下方、也最重（三块各 TOP10 + 头像换址）—— 绝不 await 它，
+   *    更不该因为它失败把上面三块也拖下水。
+   */
+  async loadBoards() {
+    if (this.gone) return
+    this.setData({ boardsError: '' })
+    if (this.data.boardList.length === 0) this.setData({ boardsLoading: true })
+    try {
+      const b = await fetchGrowthBoards()
+      /**
+       * ⚠️ 头像要先换址（云存储 fileID → 临时地址）才能进 <image src>，
+       *    见 lib/cloud-file.ts。三块榜最多 30 行，同一个人的头像会重复出现 ——
+       *    换址那边有会话缓存与并发去重，不会真的请求 30 次。
+       */
+      const list = await Promise.all(
+        boardListOf(b).map(async (board) => ({
+          ...board,
+          rows: await attachAvatarSrc(board.rows),
+        })),
+      )
+      if (this.gone) return
+      this.setData({
+        boardList: list,
+        // ⚠️ 用户可能已经切过 tab：保留他选的那一块，别跳回第一块
+        activeRows: list[this.data.activeBoard]?.rows ?? list[0]?.rows ?? [],
+        boardsLoading: false,
+      })
+    } catch (err) {
+      if (this.gone) return
+      this.setData({ boardsLoading: false, boardsError: this.explainError(err) })
+    }
+  },
+
+  /**
+   * 重画 —— 把「服务端卡片」与「store 里的我的参与状态」拼成展示视图。
    *
    * ⭐ 所有与「我」有关的字段（已参与 / 已挑战几次 / 按钮文案）**只从 store 取**，
    *    不再读卡片上那份 —— 否则同一个事实会有两个来源，
    *    而它们更新时机不同，必然出现「卡片说没参与、store 说有」。
    */
   render() {
-    const c = this.cards
-    if (!c) return
+    const c = this.cards ?? { today: null, latest: [] }
     const st = me.getState()
+    /**
+     * ⭐⭐ 状态卡的形态由**全局 store**决定（用户 2026-09 定：空用户 = 未加入，
+     *    有用户 = 用户数据）。四态见 data.statusMode 的说明。
+     * ⚠️ 与导航栏那一格用**同一个判据**（store 的 hasJoined / session）——
+     *    两处各判一套必然出现「导航栏说没加入、状态卡却在显示 0 场」。
+     */
+    const statusMode: 'data' | 'unjoined' | 'loading' | 'unknown' = st.userInfo
+      ? 'data'
+      : st.session === 'ready'
+        ? 'unjoined'
+        : st.session === 'pending'
+          ? 'loading'
+          : 'unknown'
     /**
      * ⚠️ 最新上线里要剔掉**今日推荐命中**的那一句：推荐是从同一句库里选的，
      *    很可能正好是刚上线的最新那一句 —— 不剔首页就会出现两张一模一样的卡。
-     *    （服务端那边剔的是"排期里今天那一句"，与这里的判据不是同一个，
-     *      所以这一步必须留在端侧。）
+     *    ⚠️ `c.today` 可能还没有，过滤条件必须容忍它（否则读 `.articleId` 就抛）。
      */
-    /**
-     * ⚠️ `c.today` **可能还没有**（公开列表不返回今日那一句，只有推荐接口给）——
-     *    首屏会先只画 `latest`，推荐回来后 store 广播重画。
-     *    所以下面两处都要按"今日可能缺席"写：
-     *    · `toView` 只对存在的今日卡调用；
-     *    · `latest` 的过滤条件要容忍 `today === null`（否则读 `.articleId` 就抛）。
-     */
-    const today = c.today ? this.toView(c.today) : null
+    const today = c.today ? this.toView(c.today, true) : null
     this.setData({
-      stats: statsOf(st.userInfo, st.userInfo?.streak ?? null),
+      statusMode,
+      stats: statusMode === 'data' ? statsOf(st.userInfo, st.userInfo?.streak ?? null) : null,
       today,
       /**
        * ⚠️ `?? []` 不是多余的：c 可能来自**上次启动落下的缓存**，
@@ -663,35 +763,49 @@ Page({
        */
       latest: (c.latest ?? [])
         .filter((x) => !c.today || x.articleId !== c.today.articleId)
-        .map((x) => this.toView(x)),
+        .map((x) => this.toView(x, true)),
     })
   },
 
-  /** 卡片 → 展示视图 */
-  toView(card: ArticleCard): CardView {
-    // ⭐ 「我」的部分一律来自 store
-    const mine = me.arenaOf(card.articleId)
+  /**
+   * 卡片 → 展示视图。
+   *
+   * ⚠️ 这里**没有日期**（2026-09 统一）：挑战归哪一天由服务端在受理提交时决定，
+   *    端侧不再把它从响应里搬运到朗读页。
+   *
+   * @param withParticipation 要不要带「我参没参与」。**今日卡与最新上线都带**
+   *   （用户 2026-09 口径：所有句子列表都拉 `/api/user/participation/{id}`）——
+   *   list 形态的 arena-card 用 `joined` 画那圈「读过」的描边（没有药丸、也不占位），
+   *   所以列表卡片同样需要它，不能只给今日卡。
+   */
+  toView(card: ArticleCard, withParticipation: boolean): CardView {
+    // ⭐ 「我」的部分一律来自全局 store（写入方是 lib/participation）
+    const mine = withParticipation ? me.participationOf(card.articleId) : null
+    /**
+     * ⚠️ 参与过 = **这一句上有一条参与记录**（服务端按 (我, 这一句) 存的）。
+     *    `mine.loaded === false`（还没拉到）时按"未参与"画 —— 但那只是默认值，
+     *    拉回来会重画（见 hintOf 对"没拉到"的处理：不编结论性的文案）。
+     */
+    const joined = !!mine?.record
+    /**
+     * ⚠️⚠️ 「N 人参与」**不在卡片上**（用户 2026-09 定：L1 解耦）——
+     *    它来自 `GET /api/participations/stats`，见 lib/article-stats 与 store 的 articleStats。
+     *    没拉到就按 0 画（= 那行字不出现），拉到之后 store 广播会重画。
+     */
+    const stats = me.getArticleStats(card.articleId)
     return {
-      /**
-       * ⚠️ 只有今日那一张有日期（它的按钮要把它带给朗读页）；
-       *    最新上线卡片来自句库、与日期无关，这里就是空串 —— 而它们也不需要它，
-       *    点进去走的是按句子寻址的 arena（data-article）。
-       */
-      date: card.date ?? '',
       articleId: card.articleId,
       theme: card.theme,
       header: true,
       text: card.text,
       translation: card.translation,
-      stat: statText(card.participantCount),
-      joined: mine.myBest !== null,
+      stat: statText(stats?.participantCount ?? 0),
+      joined,
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
       durationMs: card.audio ? card.audio.durationMs : null,
-      hint: hintText(mine),
-      // ⚠️ 用 myBest 判断而不是 myAttempts：两者在正常流程里同进同退，
-      //    但「参与过」的权威判据是**有没有成绩**。
+      hint: mine ? hintOf(mine) : '',
       // ⚠️ 正在确认身份（见 onStart）时按钮换一句 —— 那几秒不能毫无反馈
-      action: this.data.starting ? '确认中…' : startButtonLabel(mine.myBest !== null),
+      action: this.data.starting ? '确认中…' : startButtonLabel(joined),
     }
   },
 
@@ -706,14 +820,52 @@ Page({
     this.setData({ activeBoard: index, activeRows: this.data.boardList[index]?.rows ?? [] })
   },
 
+  /** 下拉刷新 / 整页重试：三块一起重来 */
   onRetry() {
     void this.load()
   },
 
+  /** 块 ③ 自己的重试（最新上线的错误卡上那颗按钮） */
+  onRetryLatest() {
+    void this.loadLatest()
+  },
+
+  /** 块 ② 自己的重试 */
+  onRetryToday() {
+    void this.loadToday()
+  },
+
+  /** 块 ④ 自己的重试 */
+  onRetryBoards() {
+    void this.loadBoards()
+  },
+
   /**
-   * 把底层错误翻译成**用户能动手**的一句话。
+   * 状态卡「重新连接」——**只再问一次「我是谁」**，问到"未加入"就画未加入。
+   * ⚠️ 刻意**不跳加入页**：这一格表达的可能是"断网了再试一次"，
+   *    而加入是用户自己的另一个动作（导航栏那一格才是明确要加入）。
+   */
+  onReconnect() {
+    void refreshMe().then(() => this.render())
+  },
+
+  /**
+   * 把底层错误翻译成**用户能动手**的一句话（带 code 的那层分流）。
    * ⚠️ 不展示技术细节（那些在服务端 /health 里）—— 页面上的技术细节只会让人更困惑。
    */
+  explainError(err: unknown): string {
+    const e = err as { code?: string; message?: string }
+    /**
+     * ⚠️⚠️ 冷启动（云托管缩容到 0）**不是网络故障**，不能说成「连不上服务器」——
+     *    那会让人去查手机网络，而真正要做的是等平台把实例拉起来（或再点一次重试）。
+     *    client 已经把这种情况标成 ApiError.code = 'COLD_START'。
+     */
+    if (e?.code === 'COLD_START') {
+      return '服务正在唤醒（云托管缩容后首次打开约需 30 秒），点「重试」'
+    }
+    return this.explain(e?.message || String(err))
+  },
+
   explain(msg: string): string {
     if (msg.includes('COLD_START')) {
       return '服务正在启动（云托管冷启动约 6 秒），再点一次「重试」就好。'
@@ -748,32 +900,30 @@ Page({
   /**
    * ⭐⭐ 开始 / 再次挑战 —— 先过**身份那一关**，再跳朗读页（用户 2026-09 定）。
    *
-   * ⚠️⚠️ 为什么这里必须拦（而不是像原来那样直接跳）：
-   *    **uid = 0 时那条 `users` 行根本还没建**（服务端 `getOrCreateUserByOpenid`
-   *    是全站唯一的注册点，它在**第一个成功的请求**上才建行）。那时用户读得再认真，
-   *    成绩也**没有归属** —— 分数、榜单、成长值全挂在 user_id 上：
+   * ⚠️⚠️ 为什么这里必须拦：
+   *    本机没身份 = **服务端库里没有我这一行**（`userInfo === null`）。那时用户
+   *    读得再认真，成绩也**没有归属** —— 分数、榜单、成长值全挂在 user_id 上：
    *      · 录音上传路径 `audio/{句子id}/{uid}/…` 里的 uid 非法，上传必失败；
    *      · 就算传上去了，那条提交也不属于任何人。
    *    ⇒ "让他先读、提交时再说"是错的：他会花 20 秒读一遍、再等上传，然后一无所获。
    *
-   * ⚠️ 拦的**不是**"加入过没有"（昵称/头像）：那件事随时能补、也不影响成绩归属
-   *    （见 pages/join 与 lib/auth.ts 的说明）。
+   * ⚠️⚠️ **这里不再"顺手注册"**（2026-09 用户定：注册不能做成自动的）。
+   *    以前 ensureAuthed() 会静默登录一次，而那一步在服务端会**建行** ——
+   *    于是"点开始挑战"就等于"替你注册了"。现在没身份只会**跳加入页**，
+   *    建行只发生在那一页按下「确认加入」时（见 profile-form 的 register 模式）。
    *
-   * 处置：本机没身份 → 先**静默重登一次**（这一步顺带完成注册）：
-   *    · 成了 → 照常进朗读页；
-   *    · 没成 → 跳**加入句拼**页（用户 2026-09 定的去处）。那一页的「确认加入」
-   *      会自己再要一次身份（见 profile-form 的 onSubmit），要不到就明说，
-   *      不会把它变成一个点了没反应的按钮。
+   * ⚠️ 拦的**不是**"起没起名字"（昵称/头像）：那件事随时能补、也不影响成绩归属
+   *    （见 pages/join 与 lib/auth.ts 的说明）。
    */
-  async onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string; date: string }>) {
-    const ds = { id: e.detail.articleId, date: e.detail.date }
-    if (!ds.id || !ds.date) return
-    // ⚠️ 连点保护：确认身份的那几秒里按钮还在，重复点会打出好几次 login
+  async onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string }>) {
+    const articleId = e.detail.articleId
+    if (!articleId) return
+    // ⚠️ 连点保护：确认身份的那几秒里按钮还在，重复点会打出好几次 /me
     if (this.data.starting) return
 
     // ⚠️ 已经有身份就不折腾界面：老用户点一下直接走（一次网络都不发）
     if (isAuthed()) {
-      this.goReading(ds.id, ds.date)
+      this.goReading(articleId)
       return
     }
 
@@ -784,7 +934,7 @@ Page({
     /**
      * ⭐ 走**通用的 auth 中间函数**（`lib/auth.ts`，用户 2026-09 定的用法）：
      *    · 'joined'     —— users 里有我这一行，放行；
-     *    · 'not-joined' —— 服务端说认不出我，它**已经跳了加入页**；
+     *    · 'not-joined' —— 服务端说库里没有我，它**已经跳了加入页**（注册在那一页）；
      *    · 'unknown'    —— 没问到（断网 / 后端没起来），**什么都没做**，给一句提示。
      */
     const auth = await ensureAuthed()
@@ -795,15 +945,19 @@ Page({
       this.render()
     }
     if (auth === 'joined') {
-      this.goReading(ds.id, ds.date)
+      this.goReading(articleId)
     } else if (auth === 'unknown') {
       // ⚠️ 没问到 —— 说一句能做什么（'not-joined' 那条路 auth 已经把人带去加入页了）
       wx.showToast({ title: AUTH_RETRY_HINT, icon: 'none', duration: 2500 })
     }
   },
 
-  /** 进朗读页（开始挑战的唯一出口）—— 必须把**这一天的日期**带过去 */
-  goReading(articleId: string, date: string) {
-    void go(ROUTES.reading.url + '?id=' + articleId + '&date=' + date)
+  /**
+   * 进朗读页（开始挑战的唯一出口）。
+   * ⚠️ **不带日期**：挑战归哪一天由服务端在受理提交时决定（见 lib/api/client 的 submitReading）。
+   *    只有「回到某一天再挑战」（参与记录进来的那条路）才由朗读页自己带上 `?date=`。
+   */
+  goReading(articleId: string) {
+    void go(ROUTES.reading.url + '?id=' + articleId)
   },
 })

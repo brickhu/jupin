@@ -1,0 +1,8 @@
+<!--
+  ⭐ 启动遮罩（见 boot-overlay.ts 的说明）。
+  ⚠️ catchtouchmove 吃掉滚动：遮罩下面那一页还没数据，跟着手指滚会看到空白在动。
+-->
+<view class="bo" wx:if="{{visible}}" catchtouchmove="noop">
+  <view class="bo-spin"></view>
+  <text class="bo-text">正在进入句拼…</text>
+</view>

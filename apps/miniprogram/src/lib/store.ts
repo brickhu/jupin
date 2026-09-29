@@ -50,21 +50,17 @@
  */
 
 import type {
+  ArticleDetail,
+  ArticleStats,
   MeResponse,
+  ParticipationRecord,
   ProfileUpdateResponse,
   LatestCardsResponse,
+  TodayArticleResponse,
   StreakDelta,
   StreakView,
 } from '@jushuo/shared'
 import { daysBetween, today } from '@jushuo/shared'
-
-/** 我在某个**竞技场（句子）**里的战绩 */
-export interface ArenaRecord {
-  /** 我在这句上的最好成绩；没参与为 null */
-  myBest: number | null
-  /** 我在这句上打过几次分 */
-  myAttempts: number
-}
 
 /**
  * 全局状态。
@@ -90,24 +86,70 @@ export interface ArenaRecord {
 export type SessionState = 'pending' | 'ready' | 'unknown'
 
 export interface MeState {
-  /** 服务端的「今天」—— 只用于显示与判断缓存过期，不参与任何竞技口径 */
-  serverDate: string | null
-  /** ⭐ articleId → 我在那个竞技场里的战绩 */
-  arena: Record<string, ArenaRecord>
   /** ⭐ /api/user/me 的原始返回体；null = 服务端还没答上来（还没确认账号） */
   userInfo: MeResponse | null
   /** ⭐ 身份解析到哪一步了（见 SessionState） */
   session: SessionState
   /**
-   * ⭐ 上一次拿到的那一屏卡片（今日 + 历史）—— **只为冷启动首屏秒开**。
+   * ⭐ 上一次拿到的**最新上线**那一屏（首页下半段）—— 只为冷启动首屏秒开。
    *
    * ⚠️⚠️ 它是**公开内容**的缓存，与上面那些「我的」数据分开：内容只有拉到才有，
    *    而云托管缩容到 0 时第一次请求要硬等 9~25 秒（见 client.ts 的 LAUNCH_BUDGET_MS），
    *    那段时间首屏不该是一片空白。
-   * ⚠️ 用它之前**必须校验日期**（见 cachedLatestCards）：跨天的列表是错的，
-   *    把昨天那句当「今日挑战」画出来比空着更糟。
+   * ⚠️ 用它之前**必须按 `date` 校验**（见 cachedLatestCards）：跨天的列表是错的。
    */
   latestCards: LatestCardsResponse | null
+  /**
+   * ⭐ 上一次拿到的**今日挑战卡** —— 同样只为冷启动首屏。
+   *
+   * ⚠️ 没有它的话，冷启动那 9~25 秒里首页最上面那张卡是**空的**（只有下面的
+   *    「最新上线」有缓存），而它恰恰是这一页的主角。
+   * ⚠️ 同样按 `date` 校验（见 cachedToday）：跨天不能再把昨天那句当"今日挑战"。
+   */
+  today: TodayArticleResponse | null
+  /**
+   * ⭐⭐ articleId → 我在那一句上的**参与记录**（`GET /api/user/participation/{articleId}` 的原始返回）。
+   *
+   * ⚠️⚠️ 三态要分清（键在不在本身就是信息）：
+   *    · **键不存在** —— 还没拉过（未知）；界面按"默认未参与"画，但不是结论；
+   *    · **null**     —— 拉到了，服务端**明确说**这一句我没参与过；
+   *    · **对象**     —— 参与过（bestScore / attempts / rank / 词表快照…）。
+   *    ⇒ 绝不能把"没拉到"（超时/断网）写成 null —— 那是把"不知道"说成"没去过"。
+   *
+   * ⚠️ 它是「一句的参与状态」的**唯一来源**（今日卡的按钮文案、已参与描边、
+   *    按钮下方那行都读它）。原来是拿公开列表接口 + 一条批量「战绩」接口融合出来的，
+   *    现在按用户 2026-09 的口径改成**按句子单独取**。
+   */
+  participation: Record<string, ParticipationRecord | null>
+  /**
+   * ⭐⭐ **句子详情（`GET /api/articles/{id}`）的会话级缓存** —— 只活在内存里，**不落 storage**。
+   *
+   * 用户 2026-09 定：句子数据（正文 / 词表 / 难度 / 标签 / 主题 / 标准音 / 参与概要）
+   * 拉一次就该全站共用 —— 朗读页与竞技场页读的是同一份。
+   *
+   * ⚠️⚠️ **不落 storage** 有两个理由：
+   *    ① 它带**词级数据**（音标 / 释义 / 技巧），一句话就是几十 KB ——
+   *       写进去会把 storage 撑爆（小程序单 key 上限 1MB）；
+   *    ② "上一次会话的正文"跨会话复用价值极低（句子会改、会下架），
+   *       而存着旧正文反而会让用户看到过期内容。
+   *    ⇒ 它就是**会话缓存**：本次启动有效，重开小程序重新拉。
+   *
+   * ⚠️ 其中 `participantCount / topScore / lowestScore` 会跟着缓存一起变旧；
+   *    要绝对新鲜的参与人数看 `/api/articles/{id}/participations` 的 `total`。
+   */
+  articleDetail: Record<string, ArticleDetail>
+  /**
+   * ⭐⭐ 句子 → **参与统计**（`GET /api/participations/stats?ids=` 的批量结果）。
+   *
+   * 用户 2026-09 定的结构（L1 解耦）：人数 / 最高 / 最低是 `participations` 的
+   * **聚合派生值**，**不挂在句子卡片 / 详情上**（那两个是内容，可缓存）。
+   *
+   * ⚠️ 统计是**现算**的：加载器 `ensureArticleStats` 每次都重新拉（不做 loaded 短路），
+   *    这里存的只是"最近一次拿到的值"，供卡片与概要卡跨组件读同一份。
+   * ⚠️ 它同样**不落 storage**（与 articleDetail 同理：会话级、值会变）。
+   * ⚠️ 键不存在 = 还没拉到（界面按"还没有人参与"画，但那不是结论）。
+   */
+  articleStats: Record<string, ArticleStats>
 }
 
 /**
@@ -121,7 +163,15 @@ export interface MeState {
 const STORAGE_KEY = 'me_state_v3'
 
 function emptyState(): MeState {
-  return { serverDate: null, arena: {}, userInfo: null, session: 'pending', latestCards: null }
+  return {
+    userInfo: null,
+    session: 'pending',
+    latestCards: null,
+    today: null,
+    participation: {},
+    articleDetail: {},
+    articleStats: {},
+  }
 }
 
 /** 一份零值 streak —— 只在「还没拿到 /me、但已经发生了一件需要账号的事」时临时用 */
@@ -146,11 +196,6 @@ const listeners = new Set<(s: MeState) => void>()
 
 export function getState(): MeState {
   return state
-}
-
-/** 我在**这一句**上的战绩；没参与过就返回「没参与」 */
-export function arenaOf(articleId: string): ArenaRecord {
-  return state.arena[articleId] ?? { myBest: null, myAttempts: 0 }
 }
 
 /**
@@ -252,7 +297,15 @@ function commit(next: MeState): void {
 /** 持久层 —— 唯一写 storage 的地方（只被 commit 调） */
 function persist(): void {
   try {
-    wx.setStorageSync(STORAGE_KEY, state)
+    /**
+     * ⚠️⚠️ **句子详情不进 storage**（见 MeState.articleDetail 的说明）：
+     *    它带词级数据、量大，而且只对"本次启动"有意义。
+     *    ⇒ 持久化前先把它摘掉；hydrate 那边也永远是空表。
+     */
+    const snapshot: Partial<MeState> = { ...state }
+    delete snapshot.articleDetail
+    delete snapshot.articleStats
+    wx.setStorageSync(STORAGE_KEY, snapshot)
   } catch {
     // 存储写不进去不该影响主流程
   }
@@ -268,12 +321,23 @@ export function hydrate(): void {
   hydrated = true
   try {
     const raw = wx.getStorageSync(STORAGE_KEY) as Partial<MeState> | '' | undefined
-    if (raw && typeof raw === 'object' && raw.arena) {
+    /**
+     * ⚠️ 判据只看"是不是一个对象"——**别拿某个字段当哨兵**。
+     *    这里原来写的是 `&& raw.arena`，而 `arena` 那一格 2026-09 已经删了：
+     *    留着它，旧缓存永远进不来（战绩缓存白丢），而且下一格被删时还会再犯一次。
+     */
+    if (raw && typeof raw === 'object') {
       state = {
-        serverDate: raw.serverDate ?? null,
-        arena: raw.arena,
         userInfo: raw.userInfo ?? null,
         latestCards: raw.latestCards ?? null,
+        // ⚠️ 老缓存里没有它（那时还没缓存今日卡）⇒ null，首屏少一次秒开，不会解错
+        today: raw.today ?? null,
+        // ⚠️ 同上：老缓存里没有参与记录 ⇒ 空表（= 全部"还没拉过"），不会解错
+        participation: raw.participation ?? {},
+        // ⚠️⚠️ **永远是空的**：句子详情是会话缓存，不落 storage（见 MeState.articleDetail）
+        articleDetail: {},
+        // ⚠️ 同理：参与统计是"最近一次拿到的值"，不落 storage（见 MeState.articleStats）
+        articleStats: {},
         // ⚠️ 缓存里有 userInfo 就直接算「已解析」（头像秒出，不必先转一圈 spinner）；
         //    没有就仍算 pending —— 本机也没记住我是谁，得等这次登录问回来。
         session: raw.userInfo ? 'ready' : 'pending',
@@ -286,13 +350,6 @@ export function hydrate(): void {
   }
   // 即使没有缓存也挂一次：让 globalData 至少指向当前（空）状态
   mount()
-}
-
-/** 两个「我的最好成绩」合并：有成绩的优先，都有取大 */
-function mergeBest(a: number | null, b: number | null): number | null {
-  if (a === null) return b
-  if (b === null) return a
-  return Math.max(a, b)
 }
 
 /**
@@ -324,29 +381,39 @@ function ensureUserInfo(): MeResponse {
 }
 
 /**
- * 用「最新上线」列表接口（**公开**，`GET /api/articles?latest=N`）的返回值刷新。
+ * 用「最新上线」列表接口（**公开**，`GET /api/articles/latest`）的返回值刷新。
  *
  * ⚠️ 它原来是 `applySchedules`（`GET /api/schedules`）—— 那条接口与 `schedules` 排期表
  *    一起删了（用户 2026-09 定）。现在这个包只回答「最近上线了哪几句」。
  *
- * ⚠️⚠️ 这里刻意**不碰** arena 与 userInfo —— 公开接口不带「我的」字段了：
- *    · 「我在这句上的战绩」→ applyArenaRecords（鉴权接口 /api/user/arena-records）
+ * ⚠️⚠️ 这里刻意**不碰** participation 与 userInfo —— 公开接口不带「我的」字段了：
+ *    · 「我在这句上的战绩 / 参没参与」→ applyParticipation（/api/user/participation/{id}）
  *    · 「连续天数 / 解冻卡」→ /api/user/me（写 userInfo 的是 applyProfile）
  *    一份数据一个写入方，才不会有「两个来源对不上」。
  */
 export function applyLatestCards(res: LatestCardsResponse): void {
   // ⚠️ 其余字段原样带着走（各有各的写入方，见上）
-  // ⭐ 整份存下来 —— 它同时是「首屏缓存」（见 MeState.latestCards）
-  commit({ ...state, serverDate: res.date, latestCards: res })
+  // ⭐ 整份存下来 —— 它同时是「首屏缓存」（见 MeState.latestCards，含 date）
+  commit({ ...state, latestCards: res })
 }
 
 /**
- * ⭐ 冷启动首屏用：把上次那一屏卡片取回来 —— **只在还是同一天时**。
+ * 用「今天读哪一句」（**公开**，`GET /api/articles/today`）的返回值刷新。
+ *
+ * ⚠️ 和 applyLatestCards 一样，**只存公开内容 + date**（date 用来判缓存过期）。
+ *    它不碰 participation / userInfo —— 「我在这句上的战绩」另有写入方。
+ */
+export function applyToday(res: TodayArticleResponse): void {
+  commit({ ...state, today: res })
+}
+
+/**
+ * ⭐ 冷启动首屏用：把上次那一屏列表取回来 —— **只在服务端说还是同一天时**。
  *
  * ⚠️⚠️ 跨天一律返回 null：缓存里存的是**那一天**的列表，
  *    拿昨天的当「今日挑战」画出来，点进去还是昨天那句 —— 错的比空着更糟。
- * ⚠️ 判据用客户端自己的「今天」（shared 的 today()）——
- *    与切自然日用的是同一条规则，不会出现「端说同一天、服务端说不同天」。
+ * ⚠️ 判据用响应里的 `date`（**服务端的今天**）而不是本地时钟：
+ *    手机时间可以随便改，而"这份缓存是哪天的"只有服务端说了算。
  */
 export function cachedLatestCards(): LatestCardsResponse | null {
   const s = state.latestCards
@@ -354,25 +421,95 @@ export function cachedLatestCards(): LatestCardsResponse | null {
 }
 
 /**
- * ⭐ 用「我在这几句上的战绩」（鉴权接口 /api/user/arena-records）刷新。
+ * ⭐ 冷启动首屏用：把上次那张**今日挑战卡**取回来 —— 同样只在 `date` 还是今天时。
  *
- * ⚠️⚠️ 这是「我的」数据的**唯一来源**：公开接口（首页列表 / 竞技场）不含「我的」字段，
- *    端侧拿公开那一份渲染内容、拿这一份渲染「我读过没有 / 最好多少分 / 我第几名」。
- * ⚠️ 保守合并（理由同 applyLatestCards）：端侧可能已经有更高的分（刚打完分那次
- *    applySubmissionResult 先落了地），不能被一次旧快照盖回去。
+ * ⚠️ 没有它的话，冷启动那 9~25 秒里首页最上面那张卡是空的（下面「最新上线」反而有）。
+ * ⚠️ 跨天一律 null：今日卡是有"哪一天"含义的，昨天那张不能当今天的画。
  */
-export function applyArenaRecords(
-  items: { articleId: string; bestScore: number | null; attempts: number }[],
+export function cachedToday(): TodayArticleResponse | null {
+  const t = state.today
+  return t && t.date === today() ? t : null
+}
+
+/**
+ * ⭐⭐ 「一句的参与状态」的**唯一写入方** —— `GET /api/user/participation/{articleId}` 的返回值。
+ *
+ * ⚠️ `record` 为 **null** 是**结论**（服务端说这一句我没参与过），不是"没拉到" ——
+ *    后者**不要调它**（键不存在才是"未知"，见 MeState.participation 的说明）。
+ * ⚠️ 键是 **articleId**（句子身份），与日期无关（同 store 头部那条口径）。
+ */
+export function applyParticipation(articleId: string, record: ParticipationRecord | null): void {
+  applyParticipations([{ articleId, record }])
+}
+
+/**
+ * ⭐⭐ 批量版（**列表**用）—— 一次 commit 写多句。
+ *
+ * ⚠️ 为什么要有它：一屏 7 张卡（首页今日 + 最新 6 张）如果逐条写，就是 7 次广播、
+ *    7 次整页重画 —— 而那 7 条是**同一批**拿回来的，本来就该是一次更新。
+ *
+ * ⚠️ 与单条版同一条纪律：`record: null` 是**结论**（服务端说没参与过），
+ *    "没拉到"**不要**走这里（键不存在才是未知）。
+ */
+export function applyParticipations(
+  items: { articleId: string; record: ParticipationRecord | null }[],
 ): void {
-  const arena = { ...state.arena }
-  for (const r of items) {
-    const prev = arena[r.articleId]
-    arena[r.articleId] = {
-      myBest: mergeBest(prev?.myBest ?? null, r.bestScore),
-      myAttempts: Math.max(prev?.myAttempts ?? 0, r.attempts),
-    }
-  }
-  commit({ ...state, arena })
+  if (items.length === 0) return
+  const participation = { ...state.participation }
+  for (const it of items) participation[it.articleId] = it.record
+  commit({ ...state, participation })
+}
+
+/**
+ * ⭐ 读「我在这一句上的参与状态」。
+ *
+ * @returns `loaded` = 拉过没有（服务端给过答复）；
+ *          `record` = 参与记录；`loaded && record === null` 才是"明确没参与过"。
+ * ⚠️ 调用方**必须**分开这两件事：`loaded === false` 时按默认（未参与）画，
+ *    但那不是结论，界面不该说"你还没参与过"这种肯定句以外的话。
+ */
+export function participationOf(articleId: string): {
+  loaded: boolean
+  record: ParticipationRecord | null
+} {
+  const loaded = Object.prototype.hasOwnProperty.call(state.participation, articleId)
+  return { loaded, record: loaded ? (state.participation[articleId] ?? null) : null }
+}
+
+/**
+ * ⭐ 读**会话缓存**里的句子详情（`GET /api/articles/{id}`）。
+ *
+ * ⚠️ 没有就返回 **null**（= 还没拉过），调用方去拉一次再写回来 —— 见 lib/content。
+ * ⚠️ 这个缓存**不落 storage**，重开小程序即失效（见 MeState.articleDetail）。
+ */
+export function getArticleDetail(id: string): ArticleDetail | null {
+  return state.articleDetail[id] ?? null
+}
+
+/**
+ * ⭐ 写会话缓存。⚠️ 同一个 id **后写的覆盖先写的**（服务端是唯一真相，不做合并）。
+ */
+export function applyArticleDetail(detail: ArticleDetail): void {
+  commit({ ...state, articleDetail: { ...state.articleDetail, [detail.id]: detail } })
+}
+
+/**
+ * ⭐ 读**最近一次**拿到的参与统计（`GET /api/participations/stats`）。
+ * ⚠️ 键不存在 = 还没拉到 —— 界面按"还没有人参与"画，但那不是结论。
+ */
+export function getArticleStats(articleId: string): ArticleStats | null {
+  return state.articleStats[articleId] ?? null
+}
+
+/**
+ * ⭐ 批量写参与统计（一次 commit）。
+ * ⚠️ 统计是**现算**的：同一 id 每次拉到就覆盖，不做合并（服务端是唯一真相）。
+ */
+export function applyArticleStats(items: ArticleStats[]): void {
+  if (items.length === 0) return
+  const articleStats = { ...state.articleStats }
+  for (const it of items) articleStats[it.articleId] = it
+  commit({ ...state, articleStats })
 }
 
 /**
@@ -392,15 +529,6 @@ export function applySubmissionResult(input: {
   score: number
   streak?: StreakDelta
 }): void {
-  const prev = arenaOf(input.articleId)
-  const arena = { ...state.arena }
-  arena[input.articleId] = {
-    // ⚠️ 取较大的那个：同一句可能提交多次，这一个是「又一次」，不一定是新高。
-    //    端侧只做这一步保守合并；真正的权威值会在下一次刷新时被服务端覆盖。
-    myBest: prev.myBest === null ? input.score : Math.max(prev.myBest, input.score),
-    myAttempts: prev.myAttempts + 1,
-  }
-
   // streak 直接用服务端算好的那一份；只有服务端没给时才保留旧的
   let userInfo = state.userInfo
   if (input.streak) {
@@ -418,7 +546,15 @@ export function applySubmissionResult(input: {
     }
   }
 
-  commit({ ...state, arena, userInfo })
+  /**
+   * ⚠️⚠️ 顺手把这一句的**参与记录**标成"未知"（删掉键）：刚打完分，
+   *    上一次拉到的 `null` / 旧 attempts 已经过期了 —— 下次页面读它时会重新拉
+   *    （见 lib/participation.ts）。留着一个旧快照，表现就是"提交完按钮没变"。
+   */
+  const participation = { ...state.participation }
+  delete participation[input.articleId]
+
+  commit({ ...state, userInfo, participation })
 }
 
 /**
@@ -433,27 +569,34 @@ export function applyProfile(m: MeResponse): void {
 }
 
 /**
- * ⭐ 身份解析结束（成功或失败都算）—— 由登录 / refreshMe 的收尾调用。
- *
- * ⚠️ 为什么失败也要调：后端连不上时如果一直停在 pending，
- *    导航栏就永远转圈 —— 那比显示「加入 / 连不上，点我重试」更糟。
- *    解析结束 = 可以给用户一个**可操作**的界面了。
- */
-export function markSessionReady(): void {
-  if (state.session === 'ready') return
-  commit({ ...state, session: 'ready' })
-}
-
-/**
  * ⭐ 问不到身份（超时 / 没网 / 后端没起来）—— 由 lib/auth 在"没问到"时调用。
  *
- * ⚠️⚠️ 为什么不复用 `markSessionReady()`：那个的意思是"服务端给了答复"
- *    （答复可以是"没这一行"）。把"问不到"也说成 ready，界面就会画出一个
- *    **假的「加入」按钮** —— 有记录的老用户会以为账号没了（见 SessionState 的说明）。
+ * ⚠️⚠️ 它与 `'ready'` 的区别是硬的：`'ready'` 的意思是"服务端给了答复"
+ *    （答复可以是"库里没有你这一行"，见 clearIdentity）。把"问不到"也说成
+ *    ready，界面就会画出一个**假的「加入」按钮** —— 有记录的老用户会以为
+ *    账号没了（见 SessionState 的说明）。
  */
 export function markSessionUnknown(): void {
   if (state.session === 'unknown') return
   commit({ ...state, session: 'unknown' })
+}
+
+/**
+ * ⭐⭐ 服务端**明确**说「库里没有我这一行」—— 把本机那份"已加入"的快照清掉。
+ *
+ * ⚠️⚠️ 为什么必须清：`userInfo` 会落 storage，它是**上一次**问到的快照。
+ *    服务端那边的行可能已经没了（清库 / 换环境 / 账号被删），而本机会一直
+ *    自信地认为"我加入过" ⇒ `ensureAuthed()` 直接放行，用户点下去发现每个
+ *    鉴权接口都 403，界面表现成"什么都打不开"。
+ *
+ * ⚠️ 清的是**身份相关**的那几格（userInfo / participation 战绩）；公开内容缓存
+ *    （latestCards / today）留着 —— 它们与账号无关，且是首屏秒开用的。
+ * ⚠️ session 标成 `'ready'`（不是 'pending'）：服务端**已经答复过**了，
+ *    答案是"没有你这一行" ⇒ 界面该画「加入」，而不是继续转圈。
+ */
+export function clearIdentity(): void {
+  // ⚠️ 参与记录也一并清掉：它是"我的"数据，跟着账号走
+  commit({ ...state, userInfo: null, participation: {}, session: 'ready' })
 }
 
 /**

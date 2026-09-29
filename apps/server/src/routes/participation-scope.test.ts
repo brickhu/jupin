@@ -51,6 +51,20 @@ const ARENA_WIDE_ALLOWED: Array<{ file: string; nth: number; why: string }> = [
       '它按 articleId 而不是 userId 过滤，但**不读、不返回**任何用户数据 ——' +
       '是「删除这一句的引用」，不是「看谁的记录」。',
   },
+  {
+    file: 'services/article-participations.ts',
+    nth: 2,
+    why:
+      'participantCount：这一句的**总人数**（响应里的 total），按定义要数所有人的行；' +
+      '它只返回计数，不返回任何人的成绩或画像。',
+  },
+  {
+    file: 'services/article-participations.ts',
+    nth: 3,
+    why:
+      'listArticleStats：公开的**聚合统计**（人数 / 最高 / 最低），按定义要看所有人的行；' +
+      '出去的是三个聚合值，不含任何单个用户的成绩。',
+  },
 ]
 
 function files(): string[] {

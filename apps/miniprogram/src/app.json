@@ -22,6 +22,10 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
+  "usingComponents": {
+    "boot-overlay": "/components/boot-overlay/boot-overlay",
+    "skeleton": "/components/skeleton/skeleton"
+  },
   "plugins": {
     "WechatSI": {
       "version": "0.3.5",

@@ -79,19 +79,69 @@ export function columnsFromArticleContent(c: ArticleContent): ArticleContentColu
 }
 
 /**
+ * ⭐⭐ **句子不可修改** —— 用户 2026-09 定的产品原则，这是它的机器判据。
+ *
+ * ⚠️⚠️ `articleId = sha256(text) 前 16 位`（见 shared/article-id.ts）⇒
+ *    **改文案就是另一句**（新 id、新统计、新历史）。所以"原地改正文"这件事
+ *    在产品上根本不成立，不是"不允许"，而是**没有意义**。
+ *
+ * ⚠️ 为什么必须落在写入层（而不是靠 admin 路由那条 id 校验顺带挡住）：
+ *    · 那条校验只对**规范 id**（16 位十六进制）生效 —— 注释里特意留了
+ *      "历史脏 id 的老行还能改"，于是非规范 id 的行可以原地换正文；
+ *    · 而这里是**所有内容列的唯一写入函数**（admin 走它；将来别的调用方也走它）。
+ *      ⇒ 判据写在唯一入口，才不会有第二条绕过它的路。
+ *
+ * ⚠️ 只禁**正文**：译文 / 判据分 / 标签 / 挑战语 / 建议 / 标准音都允许原地更新 ——
+ *    它们是正文的派生或附属，改它们不等于换句子。
+ */
+export class ArticleTextImmutableError extends Error {
+  constructor(readonly articleId: string) {
+    super(
+      '句子不可修改：改文案就是另一句（句子 id = 正文的哈希）。' +
+        '请按新文案**新建**一条，再把旧的那条下架或删除。',
+    )
+    this.name = 'ArticleTextImmutableError'
+  }
+}
+
+/** 纯函数版判据 —— 单独抽出来是为了能不起库直接单测 */
+export function assertTextUnchanged(articleId: string, existingText: string, nextText: string): void {
+  /**
+   * ⚠️ 按 **trim 后**比较：`articleId = sha256(text.trim())`（见 shared/article-id.ts）
+   *    ⇒ 句子的身份本来就是"去掉首尾空白的那段文字"。
+   *    不 trim 的话，某条历史行尾部带一个空格，运营只改译文也会被误判成"改了正文"。
+   * ⚠️ 内部空白差异**仍然算改**（hash 会变）—— 那是真的不同的句子。
+   */
+  if ((existingText ?? '').trim() !== (nextText ?? '').trim()) {
+    throw new ArticleTextImmutableError(articleId)
+  }
+}
+
+/**
  * 写入一条句子的内容列（更新已有行；不存在则建行）。
  *
  * @param isActive 新建时的上线状态。⚠️ 缺省 **false（草稿）**：
  *                 生成出来的东西要先过运营的眼，不能一存就在首页出现。
+ * @throws ArticleTextImmutableError 更新已有行时想改正文（见上）
  */
 export async function saveArticleContent(
   id: string,
   cols: ArticleContentColumns,
   opts: { isActive?: boolean } = {},
 ): Promise<{ created: boolean }> {
-  const [existing] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
+  const [existing] = await db
+    .select({ id: articles.id, text: articles.text })
+    .from(articles)
+    .where(eq(articles.id, id))
+    .limit(1)
 
   if (existing) {
+    /**
+     * ⭐⭐ **正文不可变**（句子身份 = 正文哈希）—— 见 assertTextUnchanged 的说明。
+     * ⚠️ 放在最前面：宁可在写之前就拒掉，也不要"先写了别的列再抛"。
+     */
+    assertTextUnchanged(id, existing.text ?? '', cols.text ?? '')
+
     /**
      * ⚠️⚠️ 更新时 `is_active` **只在调用方明确给了才写** —— 2026-09 真实踩到的坑：
      *

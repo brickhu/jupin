@@ -7,7 +7,6 @@ import {
   peakBars,
   samplesFromPcm16,
   sniffAudioContainer,
-  today,
 } from '@jushuo/shared'
 import { plainWordsOf } from '@jushuo/shared'
 import type { GrowthView, SubmitResponse } from '@jushuo/shared'
@@ -15,7 +14,7 @@ import type { GrowthView, SubmitResponse } from '@jushuo/shared'
 import { PLATFORM } from '../../config'
 import {
   ApiError,
-  fetchArticleRecords,
+  fetchParticipationSubmissions,
   fetchSubmissionStatus,
   getUserId,
   submitReading,
@@ -37,7 +36,8 @@ import {
   recordingKeyOf,
   saveLastRecording,
 } from '../../lib/audio/last-recording'
-import { AUTH_RETRY_HINT, ensureAuthed, isAuthed } from '../../lib/auth'
+import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, isUnregistered } from '../../lib/auth'
+import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -732,12 +732,6 @@ Page({
    */
   recordingKey: '',
 
-  /**
-   * 这次要挑战的是哪一天。
-   * ⚠️ 由首页带进来（/pages/reading/reading?id=<articleId>&date=2026-09-21），
-   *    缺省取今天 —— 直接进朗读页（开发时）也不该崩。
-   */
-  scheduleDate: '',
   /** 本次录音开始时刻 */
   startedAt: 0,
   /**
@@ -756,8 +750,8 @@ Page({
       // ⚠️ 先拿缓存里的值画出来（store 里有上次 /me 的结果），不必等一次往返
       energy: me.getState().userInfo?.energy ?? 0,
     })
-    // ⚠️ 用服务端的 day.ts 而不是本地时钟：手机时间可以随便改
-    this.scheduleDate = query.date ?? today()
+    // ⚠️ **不再有 `?date=`**（2026-09 删）：这次挑战归哪一天由**服务端**在受理提交时取它的今天，
+    //    端侧不传、也不拿本地时钟算（手机时间可以随便改，见 shared/day.ts）。
     void this.loadContent()
   },
 
@@ -855,7 +849,7 @@ Page({
       this.setData({ historyLoading: true })
     }
     try {
-      const res = await fetchArticleRecords(articleId)
+      const res = await fetchParticipationSubmissions(articleId)
       // ⚠️ 期间用户可能已经换了页面 / 这一页销毁了
       if (this.gone || this.data.articleId !== articleId) return
       const { rows, attempts, bestScoreText } = historyRowsOf(res, this.submissionId)
@@ -871,6 +865,15 @@ Page({
       })
     } catch (err) {
       if (this.gone || this.data.articleId !== articleId) return
+      /**
+       * ⚠️ 未注册（403 NOT_REGISTERED）：这一句上**必然没有我的历史** ——
+       *    它不是一个该显示的错误，按"空历史"处理（这一页本来是受保护页，
+       *    未注册的人会被 route guard 送去加入页，这里只是兜底）。
+       */
+      if (isUnregistered(err)) {
+        this.setData({ historyLoading: false, historyError: '', historyReady: true })
+        return
+      }
       /**
        * ⭐⭐ 冷启动兜底：云托管 `MinReplicas = 0`，闲置后**第一个请求**要等容器起来
        *    （实测 30 秒级，见 api/client 的 LAUNCH_BUDGET_MS）。
@@ -1035,6 +1038,12 @@ Page({
         })
       }
       this.syncEnergyNote()
+      /**
+       * ⭐ 这一句的**参与状态**也写进全局 store（用户 2026-09 口径：详情同样走
+       *    `GET /api/user/participation/{articleId}`）—— 首页/竞技场读的是同一份。
+       * ⚠️ 不 await：它供的是别的页面的角标，不该拖住朗读页的出句。
+       */
+      void ensureParticipation([this.data.articleId])
       /**
        * ⭐ 历史也拉一遍 —— 与 onShow 那次是**同一份数据**（重复一次请求，很便宜）：
        *    这是"一定会拉"的那一条路，而 onShow 只保证"回到页面时"会拉。
@@ -1663,11 +1672,10 @@ Page({
       if (this.data.phase === 'uploading') this.setData({ phase: 'scoring' })
 
       // ⭐ 只受理，不等打分（打分要 10–20 秒，见 lib/api/client.ts 的注释）
-      // ⚠️ 回传的是**当初点进来的那一天**，不是今天：
-      //    历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变。
+      // ⚠️ **不传日期**（2026-09 删）：归哪一天由服务端受理时取它的今天，端侧不碰这个决定。
       // ⚠️ 不传 isPublic —— 提交时**不问**用户，用服务端默认值（false）落库，
       //    结果页（pages/challenge）再给那个开关。
-      const task = await submitReading(articleId, audioKey, this.scheduleDate, audioUrl, false, attemptId)
+      const task = await submitReading(articleId, audioKey, audioUrl, false, attemptId)
       // ⭐ 记住它：弹窗里「评测详情」要靠它去 pages/challenge
       this.submissionId = task.submissionId
       // ⚠️ 受理阶段就被判失败（音频不合规 / 文章不存在）→ 直接进 s6

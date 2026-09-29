@@ -2,36 +2,27 @@
      两者相加会多让出 12px。见 lib/nav.ts。 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
 
+  <!-- ⭐ 启动遮罩：身份解析出结果之前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
+
   <!-- ⭐ 统一的自定义导航栏：左侧头像（点头像拉开全局用户面板），中间是品牌名 -->
   <!-- ⚠️ id="nav" 是页面 onPageScroll 找到它的方式（见 lib/nav.ts），三页统一 -->
   <nav-bar id="nav" title="{{brand.name}}" left="avatar" />
 
-  <!-- ══ 我的状态卡 ═══════════════════════════════════════
-       ⚠️ 放在「今天这一张」**上面**：先回答"我是谁、走到哪了"，
-          再回答"今天读哪一句"——先有身份才有任务。
-       ⚠️ 三个数是**全时段累计**（服务端数的），不是今天：今天剩几次在朗读页说。
-       ⚠️⚠️ **判据是「服务端认识我」**（users 里已经有我这一行），见 index.ts 的 statsOf。
-          **不是**「我起名字了没有」：那两件事曾经被混成一个，
-          结果一个没起名字的老用户会被判成新人、状态卡凭空消失。
-          三个数都是 0 时照常显示：那是真实的 0，不是记录丢了。
-       ⚠️ 不认识我时这一格**不再消失**（原来是消失的）：改成居中的定位语 + 「加入」，
-          高度两态共用 min-h 撑住 —— 见下面那张卡自己的注释。
-       ⚠️ **三格各自可点**：参与场次 → 参与场次页（句子粒度）；
-          挑战回合 → 我的挑战（提交粒度）；连战天数 → 连战记录（日历 + 领奖）。
-          三格的标签都带一个 ›，就是为了让「能点」这件事**在点之前**看得出来。 -->
-  <!-- ⭐ 这一格**两态共用同一张卡**：
-       · 服务端认识我 → 三格数字，各自可点进对应的列表页
-       · 还不认识我 → 居中一句定位语 + 「加入」
-       ⚠️ 判据与**导航栏那一格完全相同**（store 的 hasJoined = profile 非空）。
-          两处各判一套，就会出现「导航栏说没加入、状态条却显示 0 场 0 天」这种自相矛盾。
-       ⚠️ min-h 是两态**共用**的：未登录那版内容更矮，不撑住高度卡片就会塌，
-          下面整页内容跟着上跳 —— 而这是页面第一段，跳一下的代价是
-          用户以为自己点错了什么。 -->
-  <view class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center box-border min-h-[144rpx]">
-    <block wx:if="{{stats}}">
-      <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。
-           攻克线废除之后「攻克」就等于「参与并拿到分」，是同一个数，
-           所以直接用更直白的说法。单位「场」跟着标签走（数的是句子=场次）。 -->
+  <!-- ══ 块 ①：我的状态卡 ═══════════════════════════════════
+       ⚠️⚠️ 数据**只来自全局 store**（GET /api/user/me 的结果），本页不为它单独发请求。
+          四态见 index.ts 的 data.statusMode / render()：
+            · loading  —— 身份还没解析完 ⇒ 骨架
+            · data     —— 有用户 ⇒ 三格数字（参与场次 / 挑战回合 / 连战天数）
+            · unjoined —— 服务端明确说库里没有我这一行 ⇒ 「未加入」+ 加入
+            · unknown  —— 问不到（断网）⇒ 「重新连接」（**绝不画「未加入」**）
+       ⚠️ 三格各自可点：参与场次 → 句子粒度；挑战回合 → 提交粒度；连战天数 → 日历。 -->
+  <skeleton wx:if="{{statusMode === 'loading'}}" variant="stats" />
+
+  <view wx:else
+        class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center box-border min-h-[144rpx]">
+    <block wx:if="{{statusMode === 'data' && stats}}">
+      <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。 -->
       <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
           <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
@@ -42,8 +33,7 @@
 
       <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-      <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「攻克」分开看：
-           读十次才攻克一句，也是常有的事，这两个数本来就该不一样。 -->
+      <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「参与场次」分开看。 -->
       <view class="flex-1 text-center" bindtap="onOpenChallenges" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
           <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
@@ -54,9 +44,6 @@
 
       <view class="w-[1rpx] h-[56rpx] bg-line"></view>
 
-      <!-- ⚠️ 第三格曾经**没有**对应页面（连战只有天数、没有可看的细节）。
-           连战记录页做出来之后它就有了归属 —— 而「同一屏里长得一样的三格，
-           两格能点、一格点了没反应」比三格都不能点更让人困惑。 -->
       <view class="flex-1 text-center" bindtap="onOpenStreak" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
           <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
@@ -66,126 +53,108 @@
       </view>
     </block>
 
-    <!-- ⭐ 还没加入（后端没答上来也算这一态）：同一张卡、同一个高度。
-         ⚠️ 卡片**不消失** —— 它一消失，下面所有内容整体上移。
-         ⚠️ 文案取自 brand.pitch（shared/brand.ts 的三个字段之一），
-            不在这里另抄一句：抄了就会和导航栏、项目描述各说各的。
-         ⚠️ 点「加入」进的是补昵称/头像那一页（lib/join 的 openJoinPage），
-            它**不是登录** —— 账号是静默拿到的，这一页只决定「榜上显示成什么」。 -->
-    <view class="flex-1 flex items-center justify-center px-2" wx:else>
+    <!-- ⚠️⚠️ 「问不到」与「未加入」是**两件事**，绝不能画成同一个样子：
+         前者是"不知道库里有没有我"，后者是"服务端说没有"。把断网画成「未加入」，
+         有账号的老用户会以为账号没了（B31 定下的）。 -->
+    <view wx:elif="{{statusMode === 'unknown'}}" class="flex-1 flex items-center justify-center px-2">
+      <text class="text-24rpx text-muted">连不上服务器</text>
+      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-brand text-white text-24rpx"
+            bindtap="onReconnect" hover-class="active__opacity-60">重新连接</view>
+    </view>
+
+    <!-- ⭐ 未加入：同一张卡、同一个高度（见下面 onJoin 的说明） -->
+    <view wx:else class="flex-1 flex items-center justify-center px-2">
       <text class="text-24rpx text-muted">{{brand.pitch}}</text>
       <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-brand text-white text-24rpx"
             bindtap="onJoin" hover-class="active__opacity-60">加入</view>
     </view>
   </view>
 
-  <!-- ── 加载中 ────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
-    <text class="text-28rpx text-muted">正在取挑战列表…</text>
+  <!-- ══ 块 ②：今日挑战 ═════════════════════════════════════
+       ⚠️ 标题是**必须**的：卡片上没有日期，所以"这是今天要读的那句"只能由它说。
+       ⚠️ 靠左，与「最新上线」「荣誉榜」同一档字号 + 同一处缩进（三个分组标题是一对）。 -->
+  <text class="text-28rpx font-semibold text-ink block px-1 pt-1 pb-2">今日挑战</text>
+
+  <skeleton wx:if="{{todayLoading}}" variant="card" />
+
+  <!-- ⚠️ 错误只在本块**没有内容**时占位；有缓存卡就照常画（刷新失败不该让内容消失） -->
+  <view wx:elif="{{todayError && !today}}" class="bg-white rounded-2.5 p-5">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{todayError}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
+          bindtap="onRetryToday">重试</view>
   </view>
 
-  <!-- ── 连不上 ────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error}}">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  <!-- ⭐ 今日推荐 = arena-card 的 featured 形态（主题色 + currentColor 分层）
+       ⚠️ 参与状态（已参与描边 / 按钮文案 / 按钮下那行）全部来自 store 的 participation，
+          写入方是 lib/participation（GET /api/user/participation/{articleId}）。 -->
+  <arena-card wx:elif="{{today}}" mode="featured" entry="{{today}}"
+              playing="{{playingArticle === today.articleId}}"
+              loading="{{loadingArticle === today.articleId}}"
+              bind:open="onOpenDetail" bind:play="onPlayAudio" bind:start="onStart" />
+
+  <!-- ══ 块 ③：最新上线 ══════════════════════════════════════
+       ⚠️ 这一段列的是句库里按上线时间（articles.published_at）倒序的最新几句。
+       ⚠️ 卡片**不挂药丸、也不挂按钮**（一串同构卡片每张挂按钮会变成按钮墙），
+          但**参与状态照拉**（用户 2026-09 口径：所有句子列表都走
+          /api/user/participation/{id}）—— list 形态用 joined 画一圈描边，
+          不占位、也不跟句子抢眼。 -->
+  <view class="pt-6 pb-2 px-1" wx:if="{{latestLoading || latest.length > 0}}">
+    <text class="text-28rpx font-semibold text-ink">最新上线</text>
+  </view>
+
+  <skeleton wx:if="{{latestLoading}}" variant="list" rows="3" />
+
+  <view wx:elif="{{latestError && latest.length === 0}}" class="bg-white rounded-2.5 p-5">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{latestError}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
+          bindtap="onRetryLatest">重试</view>
+  </view>
+
+  <!-- ⭐ 最新上线卡片**整张就是一个入口**，没有按钮：一串同构卡片每张挂按钮会变成按钮墙。 -->
+  <arena-card wx:for="{{latest}}" wx:key="articleId" mode="list" entry="{{item}}"
+              playing="{{playingArticle === item.articleId}}"
+              loading="{{loadingArticle === item.articleId}}"
+              bind:open="onOpenDetail" bind:play="onPlayAudio" />
+
+  <!-- ══ 块 ④：荣誉榜 ═══════════════════════════════════════
+       ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板那三个数**完全一致**。
+       ⚠️ 单独一个接口、单独一块加载态：它最重（30 行 + 头像换址），
+          绝不能因为它失败或慢，把上面三块一起拖住。 -->
+  <view class="pt-6 pb-2 px-1">
+    <text class="text-28rpx font-semibold text-ink">荣誉榜</text>
+  </view>
+
+  <skeleton wx:if="{{boardsLoading}}" variant="rank" rows="3" />
+
+  <view wx:elif="{{boardsError && boardList.length === 0}}" class="bg-white rounded-2.5 p-5">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{boardsError}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
+          bindtap="onRetryBoards">重试</view>
   </view>
 
   <block wx:else>
-    <!-- ══ 今日挑战 ═════════════════════════════════════════
-         ⚠️ 这个标题是**必须**的，不是装饰：卡片上的日期已经去掉了
-            （那个日期容易被读成「这句子的发布日期」），
-            所以「这是今天要读的那句」只能由这行标题说。
-         ⚠️ 靠左，与下面「最新上线」**同一档字号、同一处缩进** ——
-            两个分组标题是一对，对齐方式不一致会显得像两种东西。
-            （它居中过一版：那样这行像一个独立的标签，
-              而紧跟着的卡片却是整宽的，观感上脱开。） -->
-    <text class="text-28rpx font-semibold text-ink block px-1 pt-1 pb-2">今日挑战</text>
+    <!-- ⭐ 三个指标**共用一个位置**，用等宽药丸切换（三块平铺 = 最多 30 行，会把首页拖长）。 -->
+    <view class="bg-white rounded-2.5 p-4 mb-3">
+      <view class="flex items-center">
+        <view class="flex-1 text-center py-2 rounded-full {{activeBoard === i ? 'bg-brand' : ''}}"
+              wx:for="{{boardList}}" wx:for-item="tab" wx:for-index="i" wx:key="key"
+              data-i="{{i}}" bindtap="onSwitchBoard" hover-class="active__opacity-60">
+          <text class="text-24rpx {{activeBoard === i ? 'text-white font-medium' : 'text-muted'}}">{{tab.label}}</text>
+        </view>
+      </view>
 
-    <!-- ⭐ 今日推荐 = arena-card 的 featured 形态（主题色 + currentColor 分层） -->
-    <arena-card mode="featured" entry="{{today}}"
-                playing="{{playingArticle === today.articleId}}"
-                loading="{{loadingArticle === today.articleId}}"
-                bind:open="onOpenDetail" bind:play="onPlayAudio" bind:start="onStart" />
+      <view class="mt-2">
+        <view class="flex items-center py-2" wx:for="{{activeRows}}" wx:for-item="row" wx:key="rank">
+          <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐 -->
+          <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
+          <!-- ⭐ 头像 + 昵称（fileID 已在 index.ts 里换过址；失败退回本地占位图） -->
+          <image class="w-[44rpx] h-[44rpx] rounded-full shrink-0 mr-2" src="{{row.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+          <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
+          <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
+        </view>
 
-    <!-- ══ 最新上线 ══════════════════════════════════════════
-         ⚠️ 标题「最新上线」是**产品定的措辞**（2026-09）：这一段列的是句库里
-            按上线时间（articles.published_at）倒序的最新几句，不再是过去的排期。
-            （旧标题叫「历史挑战」、字段叫 history —— 那是上一版口径，已整体改掉。）
-         ⚠️ 与上面「今日挑战」同一档字号、同一处缩进 —— 两个分组标题是一对，
-            对齐方式必须一致（见上面那段）。 -->
-    <view class="pt-6 pb-2 px-1" wx:if="{{latest.length > 0}}">
-      <text class="text-28rpx font-semibold text-ink">最新上线</text>
+        <text class="text-22rpx text-faint block py-3 text-center" wx:if="{{activeRows.length === 0}}">还没有人上榜</text>
+      </view>
     </view>
-
-    <!-- ⚠️ 最新上线卡片**不显示我参没参与**（药丸和「已挑战 N 次」都去掉了），
-         因为它们没有按钮、也就没有「按钮下方那行」来承接这个信息。
-         要看自己的成绩和名次，点进详情页 —— 那里有完整榜单。 -->
-    <!-- ⭐ 最新上线卡片**整张就是一个入口**，没有按钮。
-         ⚠️ 刻意不放按钮：它是一串同构卡片，每张都挂一个实心按钮，
-            整页会变成一片按钮墙，反而看不出哪一张是今天。
-            要看榜单、要重读，都点进详情页 —— 那里有一个、且只有一个按钮。 -->
-    <!-- ⭐ 最新上线 = arena-card 的 list 形态 -->
-    <arena-card wx:for="{{latest}}" wx:key="articleId" mode="list" entry="{{item}}"
-                playing="{{playingArticle === item.articleId}}"
-                loading="{{loadingArticle === item.articleId}}"
-                bind:open="onOpenDetail" bind:play="onPlayAudio" />
-
-    <!--
-      ⚠️ 这里原来有一块「连续朗读 N 天 / 解冻卡」的卡（再早是等级徽章阶梯）。
-         产品要求去掉：连战天数已经在**顶部状态卡第三格**里（还能点进连战记录），
-         同一屏里同一个数再出现一次，只会让人怀疑哪个才准。
-         连战记录页（日历 + 领奖）的入口因此只留状态卡那一处。
-    -->
-
-    <!-- ══ 荣誉榜 ═══════════════════════════════════════════
-         ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板里那三个数**完全一致**
-            （直接读 users.growth_*，不从 submissions 现算 —— 否则会出现
-             「榜上的数和面板里的数不一样」这种没法解释的差）。
-         ⚠️ 数据单独一个接口（/api/leaderboards/growth）、**不 await**：
-            它在页面最下方，首页上半段没理由等它；拉不到就是这一整块不出现。
-         ⚠️ 图标与用户面板里那三个数一致（📈 自我超越 / 🔥 坚持不懈 / 🏔️ 人中翘楚）。 -->
-    <block wx:if="{{boardsLoaded}}">
-      <!--
-        ⚠️ 分割标题与「今日挑战」「最新上线」是同一套：
-           同一档字号（text-28rpx font-semibold）+ 同一处缩进（px-1）+ 靠左 ——
-           三个分组标题长得一样，用户才知道它们是并列的三段。
-        ⚠️ 它在这块**里面**（跟着 boardsLoaded 一起出现）：
-           数据没回来就先亮一个标题、底下空着，比晚半秒出现更难解释。
-      -->
-      <view class="pt-6 pb-2 px-1">
-        <text class="text-28rpx font-semibold text-ink">荣誉榜</text>
-      </view>
-      <!--
-        ⭐ 三个指标**共用一个位置**，用等宽药丸切换。
-
-        ⚠️ 为什么不做成三块平铺：三块 TOP10 = 最多 30 行，首页会拖到两三屏，
-           而用户同一时刻只会看一个指标 —— 三块里有两块永远在浪费位置。
-        ⚠️ 切换是**纯本地**的（三个榜一次就全拉回来了），点一下立刻换、不发请求。
-        ⚠️ 卡片类名与「最新上线」那串一字不差：两段的差异只该是内容，不是排版。
-      -->
-      <view class="bg-white rounded-2.5 p-4 mb-3">
-        <!-- tab 行：三段等宽，选中的是实心药丸 -->
-        <view class="flex items-center">
-          <view class="flex-1 text-center py-2 rounded-full {{activeBoard === i ? 'bg-brand' : ''}}"
-                wx:for="{{boardList}}" wx:for-item="tab" wx:for-index="i" wx:key="key"
-                data-i="{{i}}" bindtap="onSwitchBoard" hover-class="active__opacity-60">
-            <text class="text-24rpx {{activeBoard === i ? 'text-white font-medium' : 'text-muted'}}">{{tab.label}}</text>
-          </view>
-        </view>
-
-        <view class="mt-2">
-          <view class="flex items-center py-2" wx:for="{{activeRows}}" wx:for-item="row" wx:key="rank">
-            <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐，一眼就能看出来 -->
-            <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
-            <!-- ⭐ 头像 + 昵称（fileID 已在 index.ts 里换过址；失败退回本地占位图） -->
-            <image class="w-[44rpx] h-[44rpx] rounded-full shrink-0 mr-2" src="{{row.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-            <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
-            <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
-          </view>
-
-          <text class="text-22rpx text-faint block py-3 text-center" wx:if="{{activeRows.length === 0}}">还没有人上榜</text>
-        </view>
-      </view>
-    </block>
   </block>
 </view>

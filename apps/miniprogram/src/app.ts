@@ -2,12 +2,19 @@ import type { MeResponse } from '@jushuo/shared'
 import { CLOUD_ENV_ID } from './config'
 import { login, markCloudInit } from './lib/api/client'
 import { refreshMe } from './lib/join'
-import { hydrate, markSessionReady } from './lib/store'
+import { hydrate, hasJoined, markSessionUnknown } from './lib/store'
 import type { MeState } from './lib/store'
 
 /**
  * 小程序入口。
- * ⭐ 打开即登录（wx.login → openid），无注册、无密码、无验证码。
+ *
+ * ⭐ 打开即拿到**授权身份**（wx.login → openid），无密码、无验证码。
+ *
+ * ⚠️⚠️ 但**注册是另一件事**（2026-09 用户定：注册不能做成自动的）：
+ *    打开小程序**不会**在 `users` 里建行 —— 那只发生在用户于「加入句拼」页
+ *    按下「确认加入」时（见 lib/auth 与 components/profile-form）。
+ *    在那之前他只有只读浏览：首页 / 句库 / 榜单 / 竞技场都能看，
+ *    挑战、能量、参与记录、收藏一律先跳加入页。
  */
 App({
   globalData: {
@@ -74,12 +81,17 @@ App({
       this.globalData.ready = true
       console.log('[app] 登录完成')
       /**
-       * ⭐ 打开就把「我是谁」问一次 —— 加入过的人从这一刻起就是"已加入"，
-       *    不必等某个页面点下去才去问（那一下会明显地卡顿）。
+       * ⭐⭐ 授权的下一步：把「我是谁」问一次，结果写进全局 store（用户 2026-09 定的首屏数据流）。
        *
-       * ⚠️ 不 await：首页的首屏不该为了一个头像多等一次往返。
-       *    拿到之前导航栏显示兜底的「加入」按钮，拿到之后 store 广播，组件自己会重画。
-       * ⚠️ refreshMe 自己吞掉失败（只警告），它供的是界面，不该连累启动流程。
+       *   wx.login → code →（服务端换 openid；云托管通道由网关注入）
+       *     → GET /api/user/me → store.userInfo（缓存 + 全局唯一来源）
+       *
+       * ⚠️ 不 await：它是"页面数据"而不是"能不能用"—— `await login()` 已经保证了后者。
+       *    在它落地之前，**每个页面的 `boot-overlay` 会整页盖住**
+       *    （判据是 store.session === 'pending'，见 components/boot-overlay）——
+       *    所以不会出现"先画一个假的「加入」再闪成头像"。
+       * ⚠️ refreshMe 自己吞掉失败（分三态写 store，见 lib/auth）：它供的是界面，
+       *    不该连累启动流程；问不到时画「重新连接」，**绝不画「加入」**。
        */
       void refreshMe()
     } catch (err) {
@@ -89,9 +101,15 @@ App({
       //
       //    另外：真机自检页（T1–T6）是**纯端侧**的，后端连不上完全不影响它。
       this.globalData.ready = false
-      // ⚠️ 登录失败也要把身份解析标记为「结束」：否则导航栏会一直转圈。
-      //    结束后按 hasJoined() 画「加入」，用户点一下可以重试身份确认。
-      markSessionReady()
+      /**
+       * ⚠️⚠️ 登录失败要分成两种情况（见 store 的 SessionState）：
+       *   · 本机缓存里**已经有身份**（hydrate 读回来的）→ 保持原样：
+       *     账号在服务端，不因这一次请求失败而消失；
+       *   · 本机什么都没有 → 标 `unknown`（画「重新连接」）。
+       * ⚠️ 绝不能标 `ready`：那会让界面画出一个**假的「加入」** ——
+       *    而"库里有我、只是这次没问到"的人会以为账号没了（B31 定下的）。
+       */
+      if (!hasJoined()) markSessionUnknown()
       console.warn('[app] 登录失败（后端未连接？）', err)
     }
   },

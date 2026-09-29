@@ -3,12 +3,15 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * refreshMe / openJoinPage / openProfilePage 的单测。
  *
- * ⚠️⚠️ 这一版守的是一条产品判断：**「加入」= 有账号，与有没有起名字无关**。
+ * ⚠️⚠️ 这一版守的是两条产品判断：
+ *    ① **「加入」= 服务端库里有我这一行**，与有没有起名字无关；
+ *    ② **注册不是自动的**（2026-09 用户定）—— auth 只负责判断与跳页，
+ *       建行只发生在加入页按下「确认加入」那一下（见 components/profile-form）。
  *
- *    若 refreshMe 的三态不分开，就会把「没问到」当成「没加入」：
- *      · true / false —— 服务端认识我（false 只是「还没填昵称」，不是「没加入」）
- *      · null         —— 没问到，注册状态未知
- *    后果很实在：老用户被推去加入页，然后以为自己的成绩没了。
+ *    refreshMe 的三态必须分开，否则会把「没问到」当成「没加入」：
+ *      · 'joined'       —— 服务端认识我
+ *      · 'unregistered' —— 服务端明确说库里没有我（该画「加入」）
+ *      · 'unknown'      —— 没问到（画「重新连接」，绝不推去加入页）
  */
 
 const memory = new Map<string, unknown>()
@@ -28,13 +31,9 @@ vi.stubGlobal('wx', {
 })
 
 const fetchMe = vi.fn()
-const login = vi.fn()
 vi.mock('./api/client', () => ({
   fetchMe: () => fetchMe(),
-  login: () => login(),
-  getUserId: () => Number(memory.get('uid') ?? 0),
-  setUserId: (id: number) => memory.set('uid', id),
-  /** 真的 ApiError 只多一个 code —— auth 靠它区分"明确没记录"与"没问到" */
+  setNotRegisteredHandler: () => {},
   ApiError: class ApiError extends Error {
     constructor(
       message: string,
@@ -55,7 +54,7 @@ beforeAll(async () => {
   join = await import('./join')
 })
 
-/** 造一份 /api/user/me 的响应 */
+/** 造一份 /api/user/me 的响应（只填用例关心的字段） */
 function meResponse(nickname: string | null) {
   return {
     id: 1,
@@ -65,22 +64,27 @@ function meResponse(nickname: string | null) {
     age: null,
     bio: null,
     status: 'active',
-    isMember: false,
-    dailyLimit: 1,
-    usedToday: 0,
+    energy: 3,
     challengedCount: 0,
     challengedRounds: 0,
     conqueredCount: 0,
+    growth: { self: 0, diligence: 0, standout: 0 },
     streak: {
       streakDays: 0,
       streakBest: 0,
-      freezeCount: 0,
-      badge: null,
-      nextBadge: null,
-      daysToNext: 7,
       readToday: false,
+      unfreezeCards: 0,
+      unfreezePending: 0,
+      unfreezeExpiresOn: null,
     },
   }
+}
+
+async function notRegistered(): Promise<Error> {
+  const { ApiError } = (await import('./api/client')) as unknown as {
+    ApiError: new (m: string, c?: string) => Error
+  }
+  return new ApiError('还没有加入句拼', 'NOT_REGISTERED')
 }
 
 beforeEach(() => {
@@ -90,21 +94,25 @@ beforeEach(() => {
   store.reset()
 })
 
-describe('refreshMe', () => {
-  it('服务端认识我 → true，并把资料写进 state', async () => {
+describe('refreshMe —— 「我加入了没有」的三态', () => {
+  it('服务端认识我 → joined，并把资料写进 state', async () => {
     fetchMe.mockResolvedValue(meResponse('老用户'))
-    await expect(join.refreshMe()).resolves.toBe(true)
+    await expect(join.refreshMe()).resolves.toBe('joined')
     expect(store.hasJoined()).toBe(true)
   })
 
-  it('服务端不认识我 → false', async () => {
-    fetchMe.mockResolvedValue(meResponse(null))
-    await expect(join.refreshMe()).resolves.toBe(false)
+  it('服务端明确说库里没有我 → unregistered（并把本机过期快照清掉）', async () => {
+    store.applyProfile(meResponse('旧快照') as never)
+    fetchMe.mockRejectedValue(await notRegistered())
+    await expect(join.refreshMe()).resolves.toBe('unregistered')
+    expect(store.hasJoined()).toBe(false)
+    expect(store.getState().session).toBe('ready')
   })
 
-  it('⚠️ 问不到 → null（与 false 分开，调用方据此决定放不放行）', async () => {
+  it('⚠️ 问不到 → unknown（与 unregistered 分开，调用方据此决定跳不跳页）', async () => {
     fetchMe.mockRejectedValue(new Error('boom'))
-    await expect(join.refreshMe()).resolves.toBe(null)
+    await expect(join.refreshMe()).resolves.toBe('unknown')
+    expect(store.getState().session).toBe('unknown')
   })
 })
 
@@ -131,13 +139,8 @@ describe('openJoinPage', () => {
     expect(nav).toEqual([])
   })
 
-  it('⭐ 服务端明确说认不出我（401）→ auth 自己把人送到加入页', async () => {
-    // ⚠️ 只有 401 才算"库里没我这一行"；超时/没网是 unknown，**不跳页**（见 lib/auth）
-    login.mockImplementation(() => {})
-    const { ApiError } = (await import('./api/client')) as unknown as {
-      ApiError: new (m: string, c?: string) => Error
-    }
-    fetchMe.mockRejectedValue(new ApiError('未登录', 'AUTH_EXPIRED'))
+  it('⭐ 服务端明确说库里没有我（403）→ auth 自己把人送到加入页', async () => {
+    fetchMe.mockRejectedValue(await notRegistered())
     await expect(join.ensureAuthed()).resolves.toBe('not-joined')
     expect(nav).toEqual(['to:' + join.JOIN_PAGE])
   })
@@ -156,11 +159,9 @@ describe('openJoinPage', () => {
 
 describe('openProfilePage —— 用户面板里的「修改」', () => {
   it('⭐ 去的是修改资料页，不是加入页', async () => {
-    // ⚠️ 修改资料是**受保护页**：先让服务端认识我（否则 auth 会先把人送去加入页）
-    fetchMe.mockResolvedValue(meResponse('张三'))
-    await join.ensureAuthed()
+    // ⚠️ 修改资料是**受保护页**：先让 store 里有一份"已加入"（否则 auth 会先送人去加入页）
+    store.applyProfile(meResponse('张三') as never)
     nav.length = 0
-    // ⚠️ 受保护页的判据是 uid（见 lib/auth）——上面那次 ensureAuthed 已经把它落下了
     join.openProfilePage()
     // ⚠️ goOnce → go 是 async 的（中间还要过一次 auth）：等它落下来再断言
     await vi.waitFor(() => expect(nav).toEqual(['to:' + join.PROFILE_PAGE]))

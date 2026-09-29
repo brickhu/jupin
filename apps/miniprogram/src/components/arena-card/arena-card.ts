@@ -18,7 +18,6 @@ import { resolveTheme } from '@jushuo/shared'
 
 interface Entry {
   articleId: string
-  date?: string
   header?: boolean
   text?: string
   translation?: string
@@ -80,7 +79,8 @@ Component({
     },
     onStart() {
       const e = this.data.entry as Entry | null
-      this.triggerEvent('start', { articleId: e?.articleId, date: e?.date })
+      // ⚠️ 不再带 date（2026-09 统一「句子类响应不带日期」）：挑战归哪一天由服务端决定
+      this.triggerEvent('start', { articleId: e?.articleId })
     },
     /**
      * ⭐ 点右上角那颗心 —— 收藏的是**这一句**（与"我读没读过"无关）。

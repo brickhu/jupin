@@ -1,0 +1,41 @@
+/*
+ * ⭐ 启动遮罩样式。
+ * ⚠️ 不用 UnoCSS 工具类：自定义组件默认样式隔离，app.wxss 的类进不来（同 skeleton.wxss）。
+ * ⚠️ z-index 要**高于用户面板与导航栏**：它们都是浮层，遮罩必须压在它们上面，
+ *    否则启动时会露出一截导航栏（那正是"半成品首屏"最明显的形态）。
+ */
+
+.bo {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #f7f7f8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.bo-spin {
+  width: 56rpx;
+  height: 56rpx;
+  border: 5rpx solid #e6e6ea;
+  border-top-color: #1a1a1a;
+  border-radius: 50%;
+  animation: bo-spin 0.8s linear infinite;
+}
+
+@keyframes bo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bo-text {
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: #9a9aa2;
+}

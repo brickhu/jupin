@@ -54,15 +54,20 @@ await conn.execute('UPDATE users SET energy = 20 WHERE id = ?', [uid])
 check('测试用户就绪', !!uid, 'uid=' + uid + ' energy=20')
 
 // ---- ② 今日句子 ----
-// ⚠️ 2026-09：这条改成公开接口 GET /api/articles/today?uid=<id>（不再走鉴权前缀），
-//    返回的是**标准 ArticleCard**（不再是 { entry, myLevel, ... } 那个信封）。
+// ⚠️ 2026-09：这条改成公开接口 GET /api/articles/today?uid=<id>（不再走鉴权前缀）。
+//    返回的是 `{ date, item }`：item = 标准 ArticleCard（纯句子数据），
+//    date = 服务端的今天（**只用于端侧按天缓存**）。
 step('②', 'GET /api/articles/today?uid=' + uid)
 const today = await j(await fetch(BASE + '/api/articles/today?uid=' + uid))
-const entry = today?.data
+const entry = today?.data?.item
 check('拿到今日句子', !!entry?.articleId, entry?.articleId + ' | ' + String(entry?.text).slice(0, 32))
 if (!entry?.articleId) { console.error(JSON.stringify(today).slice(0, 300)); process.exit(1) }
 const articleId = entry.articleId
-const scheduleDate = entry.date
+/**
+ * ⚠️⚠️ HTTP 提交时**不传 scheduleDate**（2026-09 统一）：归哪一天由服务端在受理时决定。
+ *    这个服务端日期只用于"直接写库造悬空行"（那条 SQL 需要非空 schedule_date）。
+ */
+const scheduleDate = today?.data?.date
 
 // ---- ③ 上传音频 ----
 step('③', 'POST /api/user/uploads')
@@ -92,7 +97,7 @@ const audioUrl = up.data?.audioUrl ?? up.data?.url ?? null
 step('④', 'POST /api/user/submissions（新 attemptId）')
 const sub = await j(await fetch(BASE + '/api/user/submissions', {
   method: 'POST', headers: H,
-  body: JSON.stringify({ articleId, audioKey, audioUrl, attemptId, scheduleDate }),
+  body: JSON.stringify({ articleId, audioKey, audioUrl, attemptId }),
 }))
 const submissionId = sub?.data?.submissionId
 check('受理成功（202 + submissionId）', sub?.ok === true && !!submissionId, 'status=' + sub?.data?.status + ' id=' + submissionId)
@@ -147,7 +152,7 @@ const ghostAttempt = 'f'.repeat(32)
 const before = (await conn.execute('SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=?', [uid, articleId]))[0][0].n
 const sub2 = await j(await fetch(BASE + '/api/user/submissions', {
   method: 'POST', headers: H,
-  body: JSON.stringify({ articleId, audioKey: ghostKey, attemptId: ghostAttempt, scheduleDate }),
+  body: JSON.stringify({ articleId, audioKey: ghostKey, attemptId: ghostAttempt }),
 }))
 const id2 = sub2?.data?.submissionId
 for (let i = 0; i < 20 && id2; i++) {
@@ -194,7 +199,7 @@ formX.append('audioKey', keyX)
 const upX = await j(await fetch(BASE + '/api/user/uploads', { method: 'POST', headers: uploadHeaders, body: formX }))
 const subX = await j(await fetch(BASE + '/api/user/submissions', {
   method: 'POST', headers: H,
-  body: JSON.stringify({ articleId, audioKey: upX?.data?.audioKey ?? keyX, attemptId: attemptX, scheduleDate }),
+  body: JSON.stringify({ articleId, audioKey: upX?.data?.audioKey ?? keyX, attemptId: attemptX }),
 }))
 const idX = subX?.data?.submissionId
 // ⚠️ 这里**故意不轮询**：完全模拟"用户提交完就退出小程序"

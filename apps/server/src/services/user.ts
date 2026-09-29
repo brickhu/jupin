@@ -77,18 +77,39 @@ async function withLocalDevPrivilege(user: User): Promise<User> {
 
 
 /**
- * 按 openid 取用户，没有就建。
+ * ⭐⭐ **只查，不建** —— 按 openid 看这个人在不在我们库里。
  *
- * ⭐ 这是「打开即已登录」的落点：小程序用户没有注册、没有密码、没有验证码。
+ * ⚠️⚠️ 这是鉴权路径（middleware/auth.ts）唯一允许用的那个：
+ *    **注册不能是自动的**（用户 2026-09 定）—— 不能用一次网络请求就替用户
+ *    在 `users` 里建一行。建行只能由用户**显式**的动作触发（见 createUserByOpenid）。
+ *
+ * ✗ 这里曾经叫 `getOrCreateUserByOpenid`，被中间件与 /api/auth/login 一起调用，
+ *    结果「打开小程序」就等于「注册」：用户连首屏都没看到，库里已经有他了。
+ *    把「取」和「建」拆开就是为了让这件事不可能再悄悄发生 ——
+ *    想建行，只能显式调用下面那个函数。
+ */
+export async function findUserByOpenid(openid: string): Promise<User | null> {
+  const [found] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
+  return found ? withLocalDevPrivilege(found) : null
+}
+
+/**
+ * ⭐⭐⭐ **全站唯一的建行点** —— 只有「加入句拼」那一次显式动作能到这里
+ *    （`POST /api/auth/register`，见 routes/auth.ts）。
+ *
+ * ⚠️⚠️ 调用方必须是一个**用户主动发起的写操作**。任何"顺手取一下用户"的路径
+ *    都不许调它 —— 那正是「自动注册」这个错误的形态。
+ *
+ * ⚠️ 幂等：行已存在时直接返回它（重试 / 双端点击不会建出第二行）。
  *
  * ⚠️ 两个 MySQL 特有的坑：
  *   ① 没有 INSERT ... RETURNING，拿不到刚插入的行，只能回查；
- *   ② 首登并发时两个请求会同时插入、撞 openid 唯一键 ——
+ *   ② 并发注册时两个请求会同时插入、撞 openid 唯一键 ——
  *      用 INSERT IGNORE 让其中一个静默失败，之后统一回查。
  */
-export async function getOrCreateUserByOpenid(openid: string): Promise<User> {
-  const [existing] = await db.select().from(users).where(eq(users.openid, openid)).limit(1)
-  if (existing) return withLocalDevPrivilege(existing)
+export async function createUserByOpenid(openid: string): Promise<User> {
+  const existing = await findUserByOpenid(openid)
+  if (existing) return existing
 
   // ⚠️ 建号时**不再直接写 energy**：先把账号建出来（energy 走默认 0），
   //    再由 withLocalDevPrivilege 走账本补一条流水 —— 两处直写合成同一条路。
