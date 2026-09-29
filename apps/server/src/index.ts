@@ -10,6 +10,7 @@ import { probeStandardAudio } from './services/standard-audio'
 import { goodsPriceMap, productIdStatus } from './services/goods'
 import { authMiddleware, optionalAuthMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
+import { adminRoutes } from './routes/admin'
 import { articlesRoutes } from './routes/articles'
 import { submissionsRoutes } from './routes/submissions'
 import { uploadsRoutes } from './routes/uploads'
@@ -193,6 +194,13 @@ app.use('/api/user/*', async (c, next) => {
     }
   })()
 })
+
+/**
+ * ⭐ 内容管理接口（只有 tools/admin 用）—— 走 **ADMIN_TOKEN** 鉴权，不在 /api/user/* 里。
+ * ⚠️ 挂载顺序无所谓（前缀不同），但**必须**在 authMiddleware 的挂载之后读起来才顺：
+ *    `/api/admin/*` 不受用户身份中间件影响（它自己校验令牌）。
+ */
+app.route('/api/admin', adminRoutes)
 
 app.route('/api/articles', articlesRoutes)
 /**

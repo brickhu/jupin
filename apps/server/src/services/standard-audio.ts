@@ -28,6 +28,25 @@ import { hasContent, readStaticFile, resolveStaticRoot } from './content'
 const KEY_PREFIX = 'content/audio'
 
 /** 这篇文章的标准音在对象存储里的 key */
+/**
+ * ⭐ **存一条标准音**：写对象存储 → 把 key 记进 `articles.standard_audio`。
+ *
+ * ⚠️ 收在这里而不是让路由直接写：`standard_audio` 这一列的**唯一写入方是这个服务**
+ *    （`domain-write-guard` 会拦别的地方写它，那次拦截是对的）。
+ * ⚠️ 顺序：**先存对象、再记列** —— 反过来的话，对象上传失败会留下
+ *    "库里有地址、点开没声音"的行（客户端会渲染一个点了没反应的播放钮）。
+ * ⚠️ 由 `tools/admin` 在本机生成好 mp3 之后调用（服务端不转码，见路由里的说明）。
+ */
+export async function storeStandardAudio(
+  articleId: string,
+  bytes: Uint8Array,
+): Promise<{ audioKey: string }> {
+  const key = audioKeyOf(articleId)
+  await getStorage().put(key, bytes)
+  await db.update(articles).set({ standardAudio: key }).where(eq(articles.id, articleId))
+  return { audioKey: key }
+}
+
 export function audioKeyOf(articleId: string): string {
   return `${KEY_PREFIX}/${articleId}.mp3`
 }

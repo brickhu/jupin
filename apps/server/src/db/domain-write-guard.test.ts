@@ -56,6 +56,7 @@ const P = {
   streak: 'apps/server/src/services/streak.ts',
   articleIndex: 'apps/server/src/services/article-index.ts',
   standardAudio: 'apps/server/src/services/standard-audio.ts',
+  articleContent: 'apps/server/src/services/article-content.ts',
   scoring: 'apps/server/src/services/scoring.ts',
   submissionsRoute: 'apps/server/src/routes/submissions.ts',
   favorites: 'apps/server/src/services/favorites.ts',
@@ -121,8 +122,11 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   // articles 的正文真相在 content/articles/*.json，这里只是可 SQL 筛选的索引。
   // difficulty/tags 与 standard_audio 各有一个唯一写入方（docs 1.1 / 1.8）。
   articles: {
-    owners: [P.articleIndex, P.standardAudio],
-    note: 'difficulty → article-index；standard_audio → standard-audio；其它列见 COLUMN_OWNERS',
+    owners: [P.articleIndex, P.standardAudio, P.articleContent],
+    note:
+      'difficulty → article-index；standard_audio → standard-audio；' +
+      '正文各列（text/translation/scores/challenge/advice/words/links/tags）→ article-content；' +
+      '发布面（is_active 等）见 COLUMN_OWNERS',
   },
 }
 
@@ -169,11 +173,18 @@ const COLUMN_OWNERS: Record<string, Record<string, string[]>> = {
     difficulty: [P.articleIndex],
     // 标准音是否「分发得出去」：standard-audio 上传成功后写（docs 1.1）
     standard_audio: [P.standardAudio],
-    // 发布面：admin 是唯一会改上线状态/发布时间/主题的入口（审计里说它「无唯一写入方」，
-    // 这里**指定** admin 为所有者 —— 它是发布这个动作的入口文件）
-    is_active: [P.admin],
-    published_at: [P.admin],
-    theme: [P.admin],
+    /**
+     * ⚠️ 发布面（上线状态 / 发布时间 / 主题）。
+     *
+     * 原来这里指向 `tools/admin/server.ts`（本地管理台**直连库**写这三列）。
+     * 2026-09 改为：管理台**不再连库**，它调服务端的 `/api/admin/*`，
+     * 由 `services/article-content.ts` 承担这次写入 ⇒ 所有者跟着搬到服务里。
+     * 这条改动本身也是"写入只剩一条路"的一部分：以前是两份逻辑（管理台 + 服务端），
+     * 全靠这两处各自记得"发布时间只在草稿→上线那一刻写"。
+     */
+    is_active: [P.articleContent],
+    published_at: [P.articleContent],
+    theme: [P.articleContent],
   },
   submissions: {
     // 结算快照列由 settle 写（与评测列同表，但概念不同，docs 1.4）

@@ -1,0 +1,174 @@
+import { timingSafeEqual } from 'node:crypto'
+import { Hono } from 'hono'
+import { desc, eq } from 'drizzle-orm'
+import { db } from '../db'
+import { articles } from '../db/schema'
+import { env } from '../env'
+import { contentColumnsOf, saveArticleContent } from '../services/article-content'
+import { storeStandardAudio } from '../services/standard-audio'
+
+/**
+ * ⭐⭐ **内容管理接口**（只有 `tools/admin` 用）—— 2026-09 用户定的分工：
+ *
+ *     admin 把活干完（LLM 出内容字段 + fish 出音频 + 转码），
+ *     然后**调这组接口**上传音频并写入 `articles`。
+ *
+ * ⚠️⚠️ 为什么不让 admin 直连数据库（它原来就是那样）：
+ *    ① **连不上** —— dev/prod 的库没开外网地址（实测 `IsOpenPubNetAccess = false`），
+ *       本机只有 local 能连；而"这个库在不在公网"是运维决定，不该成为管理台的前置条件。
+ *    ② **两套写入逻辑** —— admin 自己写过 `insert(articles)` / `update(articles)`，
+ *       服务端也写；两份必然分叉（真实案例：标签顺序，admin 读关联表拿了字母序，
+ *       保存时把正文里的顺序改掉了）。
+ *    ⇒ 写入只有这一条路：**服务端**。admin 只是它的一个客户端。
+ *
+ * ⚠️ 鉴权用 `ADMIN_TOKEN`（Bearer），**不是**用户身份那一套：
+ *    这是运营侧接口，不做管理员账号体系（谁审批/轮换/审计是另一个工程）。
+ *    **没配 = 503；配了但对不上 = 401** —— 绝不"没配就放行"。
+ */
+export const adminRoutes = new Hono()
+
+/** 常数时间的字符串比较（长度不同直接 false —— 长度本身不是秘密） */
+function sameSecret(a: string, b: string): boolean {
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+adminRoutes.use('*', async (c, next) => {
+  const configured = env.ADMIN_TOKEN
+  if (!configured) {
+    /**
+     * ⚠️ 没配口令时**拒绝服务**而不是放行：这组接口能改全站内容，
+     *    "忘了配"绝不能等价于"谁都能写"。
+     */
+    return c.json({ ok: false, error: '服务端没有配置 ADMIN_TOKEN（内容管理接口未启用）' }, 503)
+  }
+  const header = c.req.header('Authorization') ?? ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : ''
+  if (!token || !sameSecret(token, configured)) {
+    return c.json({ ok: false, error: 'ADMIN_TOKEN 不正确' }, 401)
+  }
+  await next()
+})
+
+/** 列表：给 admin 的表格用（只给必要字段，正文不整篇回传） */
+adminRoutes.get('/articles', async (c) => {
+  const rows = await db
+    .select({
+      id: articles.id,
+      text: articles.text,
+      translation: articles.translation,
+      difficulty: articles.difficulty,
+      tags: articles.tags,
+      isActive: articles.isActive,
+      publishedAt: articles.publishedAt,
+      standardAudio: articles.standardAudio,
+      createdAt: articles.createdAt,
+    })
+    .from(articles)
+    .orderBy(desc(articles.createdAt))
+    .limit(200)
+  return c.json({ ok: true, data: { items: rows } })
+})
+
+/** 详情：整条（admin 的编辑表单要全部字段） */
+adminRoutes.get('/articles/:id', async (c) => {
+  const id = c.req.param('id')
+  const [row] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  if (!row) return c.json({ ok: false, error: '句子不存在' }, 404)
+  return c.json({ ok: true, data: row })
+})
+
+/**
+ * ⭐ 写入一条句子（新建或更新）—— **按列写**（2026-09 拆列之后，不再有 content 那整份 JSON）。
+ *
+ * ⚠️ 难度**由判据分算**，不接受客户端传来的 difficulty（与 admin 里的口径一致）：
+ *    这样"正文里的 scores"与"库里的 difficulty"永远自洽。
+ * ⚠️ `id` 由客户端给：它是内容 hash（`sha256(text)` 前 16 位），
+ *    生成那一刻就该定下来，服务端不重新算（换算法会让老 id 全失效）。
+ */
+adminRoutes.put('/articles/:id', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.json<{
+    text?: string
+    translation?: string
+    scores?: unknown
+    challenge?: string
+    advice?: string
+    words?: unknown
+    links?: unknown
+    tags?: unknown
+    isActive?: boolean
+  }>()
+
+  const text = (body.text ?? '').trim()
+  if (!text) return c.json({ ok: false, error: 'text（原文）不能为空' }, 400)
+
+  /**
+   * ⚠️ 列的拼装走 `services/article-content.ts`（**唯一一处**）——
+   *    路由不自己算 difficulty、不自己整 tags（那正是"两套写入逻辑"的开始，
+   *    也是 domain-write-guard 会拦下来的事情）。
+   */
+  const cols = contentColumnsOf({
+    text,
+    translation: body.translation,
+    scores: body.scores,
+    challenge: body.challenge,
+    advice: body.advice,
+    words: body.words,
+    links: body.links,
+    tags: body.tags,
+  })
+
+  const { created } = await saveArticleContent(id, cols, { isActive: body.isActive })
+  console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
+  return c.json({ ok: true, data: { id, created } })
+})
+
+/**
+ * ⭐⭐ 上传**标准音** → 写对象存储 → 把 `standard_audio` 记到那一行。
+ *
+ * ⚠️ 这是"音频只有一个住址"关键的一步：mp3 由 admin 在本机生成，
+ *    然后经这里进对象存储；服务端读音频只认 `standard_audio` 这一列
+ *    （`fileIdOf(audioKeyOf(id))`），不再依赖仓库里的 `content/audio/`。
+ * ⚠️ 语音格式由客户端保证（24kHz 单声道 mp3，与原来 pipeline 转码后的产物一致）——
+ *    服务端**不做转码**（那需要 ffmpeg，而运行镜像里虽然有，但转码是内容生产的事，
+ *    不该塞进一条接收接口）。
+ */
+adminRoutes.post('/articles/:id/audio', async (c) => {
+  const id = c.req.param('id')
+  const [row] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
+  if (!row) return c.json({ ok: false, error: '句子不存在（先写入句子再传音频）' }, 404)
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ ok: false, error: '请求体不是 multipart/form-data' }, 400)
+  }
+  const file = form.get('file')
+  if (!(file instanceof File)) return c.json({ ok: false, error: '缺少 file 字段' }, 400)
+
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  /**
+   * ⚠️ 格式由客户端保证（24kHz 单声道 mp3，与原来 pipeline 转码后的产物一致）——
+   *    服务端**不做转码**：转码是内容生产的事，不该塞进一条接收接口。
+   *    这里只挡"空文件"和"明显误传"（一条标准音正常是几十 KB）。
+   */
+  if (bytes.byteLength === 0) return c.json({ ok: false, error: '音频是空的' }, 400)
+  const MAX_BYTES = 5 * 1024 * 1024
+  if (bytes.byteLength > MAX_BYTES) {
+    return c.json({ ok: false, error: `音频太大（${bytes.byteLength} 字节，上限 ${MAX_BYTES}）` }, 413)
+  }
+
+  try {
+    // ⚠️ 写对象存储 + 记 standard_audio 都归 services/standard-audio.ts（唯一写入方）
+    const { audioKey } = await storeStandardAudio(id, bytes)
+    console.log(`[admin] 标准音已上传 id=${id}（${bytes.byteLength} 字节 → ${audioKey}）`)
+    return c.json({ ok: true, data: { id, audioKey, bytes: bytes.byteLength } })
+  } catch (err) {
+    console.error('[admin] 标准音写入失败：' + (err as Error).message)
+    return c.json({ ok: false, error: '标准音写入失败：' + (err as Error).message }, 500)
+  }
+})
