@@ -428,18 +428,28 @@ async function fail(submissionId: string, reason: string, kind: 'invalid' | 'inf
   }
 
     /**
-     * ⭐⭐ **"挑战过"要算上这一次**（用户 2026-09 定：检测真的跑到了、给了结论，就算一次）。
+     * ⭐⭐ **按失败的性质分流**（用户 2026-09 定的收尾口径）——
      *
-     * ⚠️⚠️ 这里原来**不写**参与记录（只有成功路径写）⇒ 症状是：
-     *    `submissions` 里有那次 failed，而 `participations.attempts` 不算它，
-     *    于是列表显示"第 6 次"而卡片写"5 次" —— 卡片与列表**永远差一个**。
-     * ⚠️ 位置：状态已改成 failed 之后；整块 try 住（派生索引失败不该让结论变异常）。
+     *    · `invalid`（**引擎判无效**，例如"未检测到有效语音"）⇒
+     *      **保留这一行**（"这次不算"就是给用户的结论）+ 退能量；
+     *      它**算一次挑战**，会出现在历史列表里（按「未出分」显示）。
+     *
+     *    · `infra`（**我们这边的问题**：音频读不出来 / 网络 / 解析异常）⇒
+     *      **整行删掉 + 退能量** —— 用户那句话说得对："音频都删了，重新检测有什么用"。
+     *      留着它没有任何补救价值：音频没了、检测也没跑成，只会在历史里多一条
+     *      假的「未出分」并白占一个序号。⚠️ 删掉后序号也空出来，用户重录一次
+     *      就是**干干净净的一次新挑战**（不需要"重试同一段音频"那套机制）。
      */
     if (failed) {
       try {
-        await syncParticipation(failed.userId, failed.articleId)
+        if (kind === 'infra') {
+          await db.delete(submissions).where(eq(submissions.id, submissionId))
+          console.warn('[scoring] 没触达（' + reason + '）⇒ 已删掉这一行，让用户重录')
+        } else {
+          await syncParticipation(failed.userId, failed.articleId)
+        }
       } catch (err) {
-        console.warn('[scoring] 参与记录没跟上（失败那次）id=' + submissionId + '：' + (err as Error).message)
+        console.warn('[scoring] 失败收尾没做完 id=' + submissionId + '：' + (err as Error).message)
       }
     }
 

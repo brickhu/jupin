@@ -138,6 +138,28 @@ const apiAttempts = d.attempts
 const apiRows = (d.rows ?? d.items ?? []).length
 check('卡片次数 = 列表行数（不会再出现"5 次"配"第 6 次"）', apiAttempts === apiRows, 'attempts=' + apiAttempts + ' rows=' + apiRows)
 
+// ---- ⑧ 场景二：「没触达」应当**整行删掉**（音频读不出来 = 我们这边的问题）----
+step('⑧', '场景二：audioKey 指向不存在的文件 ⇒ 该整行删掉（不占序号、不进历史）')
+const ghostKey = `audio/${articleId}/${uid}/${'f'.repeat(32)}.mp3`
+const ghostAttempt = 'f'.repeat(32)
+const before = (await conn.execute('SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=?', [uid, articleId]))[0][0].n
+const sub2 = await j(await fetch(BASE + '/api/user/submissions', {
+  method: 'POST', headers: H,
+  body: JSON.stringify({ articleId, audioKey: ghostKey, attemptId: ghostAttempt, scheduleDate }),
+}))
+const id2 = sub2?.data?.submissionId
+for (let i = 0; i < 20 && id2; i++) {
+  await new Promise((r) => setTimeout(r, 1000))
+  const st = await j(await fetch(BASE + '/api/user/submissions/' + id2, { headers: H }))
+  if (st?.data?.status !== 'scoring') break
+}
+const after = (await conn.execute('SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=?', [uid, articleId]))[0][0].n
+check('没触达 ⇒ 行数没有增加（整行被删了）', after === before, 'before=' + before + ' after=' + after)
+const [ghost] = await conn.execute('SELECT COUNT(*) n FROM submissions WHERE attempt_id=?', [ghostAttempt])
+check('那一行确实不在库里', ghost[0].n === 0, 'count=' + ghost[0].n)
+const [e2] = await conn.execute('SELECT energy FROM users WHERE id=?', [uid])
+check('能量已退回（没触达不该扣）', e2[0].energy >= 20 - 2, 'energy=' + e2[0].energy)
+
 // ---- 清理 ----
 await conn.execute('UPDATE users SET energy = 0 WHERE id = ?', [uid])
 console.log('\n' + (failed === 0 ? '✅ 端到端通过（测试用户 openid=' + OPENID + '）' : '❌ 有 ' + failed + ' 项没过'))
