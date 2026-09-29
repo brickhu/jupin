@@ -206,6 +206,22 @@ async function loadLoginEnvs() {
  * ⚠️ 下拉框的选中要同步进 `state.pickedEnv`（提交时读的是它，不是 DOM）。
  *    原来是三个 radio 各自挂 change，现在只有这一个控件。
  */
+/**
+ * ⭐ 详情页的删除（与列表页**同一个** `removeArticle`，只是删完要离开这一页）。
+ * ⚠️ 详情页的 id 从 `state.detail.id` 取（服务端返回的那份），不从 URL 猜。
+ */
+$("#dt-delete").addEventListener("click", async function () {
+  const d = state.detail
+  if (!d) return
+  const gone = await removeArticle({ id: d.id, text: d.text })
+  // ⚠️ 只有真删掉才回列表：被 409 拦住时要留在这一页（人还得接着下架）
+  if (gone) {
+    state.detail = null
+    navigate("/articles")
+    await loadList()
+  }
+})
+
 $("#login-env").addEventListener("change", function (ev) {
   state.pickedEnv = ev.target.value
 })
@@ -346,11 +362,12 @@ async function loadList() {
  */
 async function removeArticle(row) {
   const label = String(row.text || row.id).slice(0, 40)
-  if (!window.confirm("确定删除这一句？\n\n" + label + "\n\n删除不可逆；要只是让它不再出现，请用「下架」。")) return
+  if (!window.confirm("确定删除这一句？\n\n" + label + "\n\n删除不可逆；要只是让它不再出现，请用「下架」。")) return false
   try {
     await api("/api/articles/" + encodeURIComponent(row.id), { method: "DELETE" })
     toast("已删除")
     await loadList()
+    return true
   } catch (e) {
     /**
      * ⚠️ 409 = "有用户数据，不能删"（不是出错）。把服务端的说法原样给出，
@@ -363,9 +380,10 @@ async function removeArticle(row) {
           " / 收藏 " + (r.favorites || 0) + "）",
         true,
       )
-      return
+      return false
     }
     toast(e.message, true)
+    return false
   }
 }
 
@@ -418,16 +436,10 @@ function renderList() {
     detailBtn.addEventListener("click", function () { navigate("/article/" + row.id) })
     actTd.appendChild(detailBtn)
       /**
-       * ⭐ 删除（用户 2026-09 要求"句子管理缺少删除功能"）。
-       * ⚠️ 与「发布 / 下架」并列：日常用**下架**（留历史），删除只给"刚建错、还没人碰过"的句子。
-       *    有用户数据的句子服务端会拒绝（409 + 引用数），这里把那句话原样告诉人。
+       * ⚠️ 删除**只放在详情页**（用户 2026-09 明确要求：列表里去掉）。
+       *    理由与「危险动作要隔开」一致：列表是一排排的，删除按钮挨着「详情」，
+       *    手快点错就是不可逆的事；而详情页是"先看清这一句、再决定"。
        */
-      const delBtn = document.createElement("button")
-      delBtn.type = "button"
-      delBtn.className = "ghost danger"
-      delBtn.textContent = "删除"
-      delBtn.addEventListener("click", function () { removeArticle(row) })
-      actTd.appendChild(delBtn)
     tr.appendChild(actTd)
 
     tbody.appendChild(tr)

@@ -39,8 +39,13 @@ import { parseRange } from '../../apps/server/src/lib/http-range'
  * ⚠️ 用 **shared** 里那一份 `articleIdOf`（唯一实现）。
  *    原来这里 import 的是 `tools/pipeline/src/lib/article-id.ts` —— 那个文件属于"待清理"，
  *    而 id 口径**全端只能有一份**（见 packages/shared/src/article-id.ts 的说明）。
+ *
+ * ⚠️ 这里写**相对路径**而不是 `@jushuo/shared`：admin 的 `package.json` 里没有
+ *    （也一直不需要）声明这个依赖，而 `tsx` 在 `tools/admin/` 下找不到 tsconfig 的 `paths`
+ *    ⇒ 包名解析在运行时失败（`ERR_MODULE_NOT_FOUND`）。相对路径两边都成立。
+ *    类型仍按包名走 tsconfig 的 `paths`（见下面其它 import），两条路都通。
  */
-import { articleIdOf } from '@jushuo/shared'
+import { articleIdOf } from '../../packages/shared/src/article-id'
 import { produceStandardAudio } from '../pipeline/src/lib/audio-assets'
 import { gradeArticles } from '../pipeline/src/lib/article-meta'
 import { buildWordInfo } from '../pipeline/src/lib/word-info'

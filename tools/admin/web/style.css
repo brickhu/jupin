@@ -78,6 +78,11 @@ button.primary:hover { background: var(--brand-2); border-color: var(--brand-2);
  * ⚠️ 危险动作（删除）—— 与其它 ghost 按钮区分开。
  *    它不该长得跟「详情」一样：点错一次是不可逆的。
  */
+/**
+ * ⚠️ 危险区（详情页底部的「删除这一句」）：用一条分隔线把它与日常按钮**物理隔开** ——
+ *    它挨着「更新」的话，手快点错就是不可逆的事。
+ */
+.danger-zone { border-top: 1px solid #3a2626; margin-top: 14px; padding-top: 12px; }
 button.ghost.danger { color: #f0a0a0; border-color: #4a2b2b; }
 button.ghost.danger:hover { background: #2a1b1b; border-color: #7a3b3b; }
 button.ghost { background: transparent; }
