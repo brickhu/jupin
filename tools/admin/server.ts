@@ -114,17 +114,30 @@ function staleCodeWarning(): string | null {
  * ⚠️ 读**暂时仍走库**（列表/详情/排期）：那是"看"，不是"改"——
  *    先把**写入**收成一条路（分叉只发生在写入侧）。读的收口是下一步，不混在这次里。
  *
- * ⚠️ 令牌从 `.env.<mode>` 的 `ADMIN_TOKEN` 读（与服务端同一个值）。
- *    地址：local/dev 是已知的（dev 的写在 AGENT.md 里），prod 由 `ADMIN_PROD_URL` 给 ——
- *    **绝不猜**生产域名。
+ * ⚠️ 两个键都在 `.env.<mode>` 里读：
+ *    · `ADMIN_API_URL` —— 管理台去哪找服务端（**一个名字**，环境由文件区分）；
+ *    · `ADMIN_TOKEN`   —— 与服务端同一个值（服务端拿它校验，管理台拿它当 Bearer）。
+ * ⚠️ **绝不猜地址**：dev/prod 必须显式配 —— 猜错的失败方式是"连到别的环境去改内容"。
  */
 function serverUrlOf(mode: Mode): string | null {
   const vars = varsOf(mode)
-  if (mode === 'local') return vars.ADMIN_SERVER_URL ?? 'http://127.0.0.1:' + (vars.API_PORT ?? '8899')
-  if (mode === 'dev') {
-    return vars.ADMIN_DEV_URL ?? 'https://jupin-219743-12-1258596499.sh.run.tcloudbase.com'
+  /**
+   * ⭐ **一个名字，三个环境各写各的值**：`ADMIN_API_URL`。
+   *
+   * ⚠️⚠️ 这里原来有**三个名字**（`ADMIN_SERVER_URL` / `ADMIN_DEV_URL` / `ADMIN_PROD_URL`）——
+   *    那是没必要的复杂：环境已经由 `.env.<mode>` 这个**文件**区分了，
+   *    同一个概念就不该再按环境各起一个键名（用户 2026-09 指出）。
+   *    三个名字的代价是真实的：加一个环境就要多一个键名，而"忘了配哪个"
+   *    会表现成"这个环境连不上"，排查时先要去读代码才知道该配什么。
+   *
+   * ⚠️ 兜底只留给 local（`127.0.0.1:<API_PORT>`，本机固定）：
+   *    dev/prod 的地址**必须显式配** —— 猜一个地址比报错更危险
+   *    （连到别的环境上去改内容，是这里最坏的失败方式）。
+   */
+  if (mode === 'local' && !vars.ADMIN_API_URL) {
+    return 'http://127.0.0.1:' + (vars.API_PORT ?? '8899')
   }
-  return vars.ADMIN_PROD_URL ?? null
+  return vars.ADMIN_API_URL ?? null
 }
 
 interface AdminApiResult {
@@ -141,7 +154,7 @@ async function adminApi(
 ): Promise<AdminApiResult> {
   const base = serverUrlOf(mode)
   const token = varsOf(mode).ADMIN_TOKEN
-  if (!base) throw new Error('这个环境没配服务端地址（.env.' + mode + ' 的 ADMIN_PROD_URL）')
+  if (!base) throw new Error('.env.' + mode + ' 里没有 ADMIN_API_URL（管理台去哪找服务端）')
   if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN —— 与云上那个值要一致')
 
   const res = await fetch(base + apiPath, {
@@ -164,7 +177,7 @@ async function adminApi(
 async function adminApiUploadAudio(mode: Mode, id: string, bytes: Uint8Array): Promise<AdminApiResult> {
   const base = serverUrlOf(mode)
   const token = varsOf(mode).ADMIN_TOKEN
-  if (!base) throw new Error('这个环境没配服务端地址')
+  if (!base) throw new Error('.env.' + mode + ' 里没有 ADMIN_API_URL')
   if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN')
 
   const form = new FormData()
