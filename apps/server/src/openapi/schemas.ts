@@ -3,7 +3,14 @@ import { z } from '@hono/zod-openapi'
 import type {
   ArticleCard,
   LatestCardsResponse,
+  LeaderboardRow,
+  ScoreDimensions,
+  ScoreParts,
+  StreakDelta,
+  SubmissionStatusResponse,
+  SubmitResponse,
   TodayResponse,
+  WordScore,
 } from '@jushuo/shared'
 
 /**
@@ -88,7 +95,13 @@ export const ErrorSchema = z
   .object({
     ok: z.literal(false),
     error: z.string(),
+    /** 端侧据此分支（如 `ENERGY_EXHAUSTED` / `INVALID_REQUEST`） */
     code: z.string().optional(),
+    /**
+     * ⚠️ 能量不够时**额外带当前余额**（429 ENERGY_EXHAUSTED）——
+     *    端侧直接显示「还差几点」而不是自己减一遍（见 reading.ts 的提示语）。
+     */
+    energy: z.number().int().optional(),
   })
   .openapi('Error')
 
@@ -119,6 +132,119 @@ export const TodayResponseSchema = okEnvelope(
       myAttempts: z.number().int(),
     })
     .openapi('TodayResponse'),
+)
+
+/* ---------- 提交检测（核心链路） ---------- */
+
+/** 引擎输出的词级结果（这次这个词读得怎么样） */
+export const WordScoreSchema = z
+  .object({
+    word: z.string(),
+    score: z.number(),
+    dp: z.enum(['normal', 'omission', 'insertion', 'repetition', 'mispronunciation']),
+    startMs: z.number(),
+    endMs: z.number(),
+  })
+  .openapi('WordScore')
+
+/** 讯飞四维（句级）—— mock / 历史数据可能没有 ⇒ 上层可选 */
+export const ScoreDimensionsSchema = z
+  .object({
+    accuracy: z.number(),
+    fluency: z.number(),
+    standard: z.number(),
+    integrity: z.number(),
+  })
+  .openapi('ScoreDimensions')
+
+/** 我们自己那套分项明细（结果页「评分详情」）—— 加起来就是总分 */
+export const ScorePartsSchema = z
+  .object({
+    prosody: z.number(),
+    weakness: z.number(),
+    accuracy: z.number(),
+    fluency: z.number(),
+    completeness: z.number(),
+    gates: z.array(z.string()),
+  })
+  .openapi('ScoreParts')
+
+/** streak 变化（只有真正打分成功的那一次才有） */
+export const StreakDeltaSchema = z
+  .object({
+    streakDays: z.number().int(),
+    streakBest: z.number().int(),
+    counted: z.boolean(),
+    delta: z.number().int(),
+    unfreezeCards: z.number().int(),
+  })
+  .openapi('StreakDelta')
+
+/** 成长值快照（这一把各加了多少） */
+export const GrowthViewSchema = z
+  .object({ self: z.number(), diligence: z.number(), standout: z.number() })
+  .openapi('GrowthView')
+
+/** 榜单一行（中心 5 条 + 竞技场榜单共用） */
+export const LeaderboardRowSchema = z
+  .object({
+    rank: z.number().int(),
+    nickname: z.string(),
+    /** ⚠️ 云存储 fileID（cloud://…），端侧要换址后才能进 <image src> */
+    avatarUrl: z.string().nullable(),
+    score: z.number(),
+    isMe: z.boolean(),
+  })
+  .openapi('LeaderboardRow')
+
+/**
+ * ⭐⭐ **一次挑战的完整结果**（打分成功后才有）。
+ * ⚠️ 字段多且大多可选：`parts`/`words`/`dimensions` 是增强项，缺失时端侧必须能优雅退化。
+ */
+export const SubmitResponseSchema = z
+  .object({
+    score: z.number(),
+    aiComment: z.string().optional(),
+    aiAdvice: z.string().optional(),
+    parts: ScorePartsSchema.optional(),
+    text: z.string().optional(),
+    durationMs: z.number().optional(),
+    scheduleDate: z.string().optional(),
+    rank: z.number().int(),
+    participantCount: z.number().int(),
+    gapToPrev: z.number().nullable(),
+    beatenCount: z.number().int(),
+    isPersonalBest: z.boolean(),
+    isConquered: z.boolean(),
+    articleId: z.string(),
+    isPublic: z.boolean(),
+    theme: ArticleThemeSchema.nullable(),
+    previousBest: z.number().nullable(),
+    /** 这一把是这句的第几次（可空：序号只在"有结论"时才分配） */
+    attempts: z.number().int().optional(),
+    growth: GrowthViewSchema.optional(),
+    leaderboard: z.array(LeaderboardRowSchema),
+    words: z.array(WordScoreSchema).optional(),
+    dimensions: ScoreDimensionsSchema.optional(),
+    streak: StreakDeltaSchema.optional(),
+  })
+  .openapi('SubmitResponse')
+
+/**
+ * ⭐⭐ **提交状态**（`GET /api/user/submissions/:id`）—— 客户端轮询它直到 status 定型。
+ * ⚠️ 这也是 `POST /api/user/submissions` 幂等命中时的 200 响应体。
+ */
+export const SubmissionStatusResponseSchema = okEnvelope(
+  z
+    .object({
+      submissionId: z.string(),
+      status: z.enum(['scoring', 'scored', 'failed']),
+      /** 只在 scored 时存在 */
+      result: SubmitResponseSchema.optional(),
+      /** 只在 failed 时存在 */
+      error: z.string().optional(),
+    })
+    .openapi('SubmissionStatusResponse'),
 )
 
 /**
@@ -154,8 +280,29 @@ type _LatestParity = Equal<
   LatestCardsResponse
 >
 type _TodayParity = Equal<z.infer<typeof TodayResponseSchema>['data'], TodayResponse>
+type _SubmitParity = Equal<z.infer<typeof SubmitResponseSchema>, SubmitResponse>
+type _StatusParity = Equal<
+  z.infer<typeof SubmissionStatusResponseSchema>['data'],
+  SubmissionStatusResponse
+>
+type _WordsParity = Equal<z.infer<typeof WordScoreSchema>, WordScore>
+type _DimsParity = Equal<z.infer<typeof ScoreDimensionsSchema>, ScoreDimensions>
+type _PartsParity = Equal<z.infer<typeof ScorePartsSchema>, ScoreParts>
+type _StreakParity = Equal<z.infer<typeof StreakDeltaSchema>, StreakDelta>
+type _RowParity = Equal<z.infer<typeof LeaderboardRowSchema>, LeaderboardRow>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
-const _parityChecks: [_CardParity, _LatestParity, _TodayParity] = [true, true, true]
+const _parityChecks: [
+  _CardParity,
+  _LatestParity,
+  _TodayParity,
+  _SubmitParity,
+  _StatusParity,
+  _WordsParity,
+  _DimsParity,
+  _PartsParity,
+  _StreakParity,
+  _RowParity,
+] = [true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { and, eq, or, sql } from 'drizzle-orm'
 import type {
   ScoreDimensions,
@@ -18,8 +18,10 @@ import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring 
 import { describe } from '../services/submission-view'
 import { resolveScheduleDate } from '../services/schedule-date'
 import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import { errorResponse, okEnvelope, SubmissionStatusResponseSchema } from '../openapi/schemas'
 
-export const submissionsRoutes = new Hono<{ Variables: Variables }>()
+export const submissionsRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
 /** 心跳多久没刷新就认为跑打分的进程已经死了 —— 与 services/scoring.ts 保持一致 */
 const HEARTBEAT_TIMEOUT_MS = 30_000
@@ -52,7 +54,70 @@ const HEARTBEAT_TIMEOUT_MS = 30_000
  * ⚠️⚠️ 服务端不接受客户端传 fileID，只接受结构化路径并校验它。
  * ⚠️ 音频**永久保留**，只在检测失败时删除。
  */
-submissionsRoutes.post('/', async (c) => {
+/**
+ * ⭐ 路由声明（POST /api/user/submissions）。
+ *
+ * ⚠️ 请求体只把**服务端真正必需的**两个字段标成必填（articleId / audioKey）——
+ *    其余（audioUrl / isPublic / attemptId / scheduleDate）保持可选：
+ *    它们各有自己的校验分支与错误文案（比如 attemptId 不合法时的提示语），
+ *    在这里标必填会把那些分支挡掉、错误文案也跟着变。
+ */
+const submitRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['挑战提交'],
+  summary: '提交一段录音去检测（受理后立刻返回 submissionId，打分在后台跑）',
+  description:
+    '⚠️⚠️ 受理与打分**在协议上是分开的**：一次评测要 10–20 秒，而云托管单次请求上限 15 秒 ——' +
+    '一个请求装不下一次打分。所以这里立刻返回 submissionId，客户端轮询' +
+    '`GET /api/user/submissions/{id}` 直到 status 变成 scored / failed。\n\n' +
+    '⚠️ 幂等键是 `attemptId`（32 位十六进制）：同一次尝试重发只会受理一次；' +
+    '命中已存在的那一条时返回 **200**（而非 202），响应体形状相同。',
+  security: [{ userToken: [] }],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            articleId: z.string().openapi({ description: '句子 id' }),
+            audioKey: z.string().openapi({ description: 'audio/{句子}/{我}/{attemptId}.mp3' }),
+            /**
+             * ⚠️⚠️ 可选字段一律用 `nullish()`（= 可选 + **可为 null**），不是 `optional()`：
+             *    端侧会把没有的值显式传成 `null`（`audioUrl: null`），只写 optional 会被
+             *    校验挡下来 → 400「audioUrl：Expected string, received null」。
+             *    这是端到端测试当场抓到的回归（真机上就是"提交不了"）。
+             */
+            audioUrl: z.string().nullish().openapi({ description: '带签名的下载地址（可选，可为 null）' }),
+            isPublic: z.boolean().nullish().openapi({ description: '是否公开这次录音（默认 false）' }),
+            attemptId: z.string().nullish().openapi({ description: '幂等键（32 位十六进制）' }),
+            scheduleDate: z.string().nullish().openapi({ description: '这次挑战归到哪一天' }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: SubmissionStatusResponseSchema } },
+      description: '幂等命中（这段录音已经受理过，直接给当前状态）',
+    },
+    202: {
+      content: {
+        'application/json': {
+          schema: SubmissionStatusResponseSchema,
+        },
+      },
+      description: '已受理（status=scoring，打分在后台跑）',
+    },
+    400: errorResponse('参数不合法（缺 articleId/audioKey、attemptId 或 scheduleDate 格式错）'),
+    403: errorResponse('audioKey 不属于当前用户'),
+    404: errorResponse('句子不存在'),
+    429: errorResponse('能量不够（code=ENERGY_EXHAUSTED，附 energy 余额）'),
+    500: errorResponse('落库失败（请重试）'),
+  },
+})
+
+submissionsRoutes.openapi(submitRoute, async (c) => {
   const userId = c.get('userId')
   const user = c.get('user')
 
@@ -188,7 +253,10 @@ submissionsRoutes.post('/', async (c) => {
       console.log('[submissions] 幂等命中 user=' + userId + ' key=' + audioKey + ' → ' + status.status)
       // ⚠️ failed 也返回 200 + 明确状态，而不是 400：
       //    客户端只需要读 status 一条路径，分支越少越不容易漏。
-      return c.json({ ok: true, data: status }, status.status === 'scoring' ? 202 : 200)
+      // ⚠️ 用**两个显式分支**而不是三元表达式：OpenAPI 的强类型要求每个出口都是
+      //    已声明的响应之一，三元式在类型层对不上（行为逐字一致：scoring→202，其余→200）。
+      if (status.status === 'scoring') return c.json({ ok: true, data: status }, 202)
+      return c.json({ ok: true, data: status }, 200)
     }
   }
 
@@ -335,7 +403,31 @@ submissionsRoutes.post('/', async (c) => {
  * ⚠️ 这个端点还承担**故障恢复**：如果跑打分的进程死了（心跳停），
  *    是这里把它认领回来重跑的。没有这一步，容器一重启那条音频就永远停在 scoring。
  */
-submissionsRoutes.get('/:id', async (c) => {
+/**
+ * ⭐ 路由声明（GET /api/user/submissions/:id）—— 客户端**轮询**它直到 status 定型。
+ * ⚠️ 它是幂等的只读接口：轮询会反复调用，任何副作用都不许有。
+ */
+const submissionStatusRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['挑战提交'],
+  summary: '查一次提交的状态（轮询用；scoring / scored / failed）',
+  description:
+    '⚠️ 这是**公开性可控的本人接口**（要登录，且只能查自己的提交）。\n\n' +
+    '⚠️ 服务端在这里还负责**救活悬空的打分**：心跳停了的行会被重新认领' +
+    '（见 services/scoring.ts 的 claimStaleScoring），所以"卡住"的提交再问一次往往就好了。',
+  security: [{ userToken: [] }],
+  request: { params: z.object({ id: z.string().openapi({ description: '提交 id（16 位十六进制）' }) }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: SubmissionStatusResponseSchema } },
+      description: '当前状态（result 只在 scored 时给，error 只在 failed 时给）',
+    },
+    404: errorResponse('提交记录不存在（或不属于当前用户）'),
+  },
+})
+
+submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
 
@@ -347,7 +439,7 @@ submissionsRoutes.get('/:id', async (c) => {
 
   if (row.status !== 'scoring') {
     const done = await describe(userId, id)
-    return c.json({ ok: true, data: done ?? { submissionId: id, status: 'failed' as const } })
+    return c.json({ ok: true, data: done ?? { submissionId: id, status: 'failed' as const } }, 200)
   }
 
   // ---- 还在打分：先看心跳 ----
@@ -355,7 +447,7 @@ submissionsRoutes.get('/:id', async (c) => {
     row.heartbeatAt !== null &&
     Date.now() - new Date(row.heartbeatAt).getTime() < HEARTBEAT_TIMEOUT_MS
   if (alive) {
-    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } })
+    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } }, 200)
   }
 
   // ---- 心跳停了 ----
@@ -364,7 +456,7 @@ submissionsRoutes.get('/:id', async (c) => {
     console.warn('[submissions] 打分重试次数用尽 id=' + id + '（' + row.attempts + ' 次）')
     await markScoringFailed(id, '打分多次中断，请重录一次')
     const dead = await describe(userId, id)
-    return c.json({ ok: true, data: dead ?? { submissionId: id, status: 'failed' as const } })
+    return c.json({ ok: true, data: dead ?? { submissionId: id, status: 'failed' as const } }, 200)
   }
 
   // ⭐ 原子认领。⚠️ 认领成功后**在原地把它跑完**（await），而不是又丢回后台：
@@ -373,12 +465,12 @@ submissionsRoutes.get('/:id', async (c) => {
   const claimed = await claimStaleScoring(id)
   if (!claimed) {
     // 被并发的另一次轮询抢走了，让它跑
-    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } })
+    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } }, 200)
   }
   console.log('[submissions] 接管停跳的打分任务 id=' + id + '（第 ' + (row.attempts + 1) + ' 次）')
   await runScoring(id)
   const recovered = await describe(userId, id)
-  return c.json({ ok: true, data: recovered ?? { submissionId: id, status: 'scoring' as const } })
+  return c.json({ ok: true, data: recovered ?? { submissionId: id, status: 'scoring' as const } }, 200)
 })
 
 /**
@@ -395,7 +487,44 @@ submissionsRoutes.get('/:id', async (c) => {
  * ⚠️ 只允许本人改：不校验归属的话，任何人就能把别人的录音设成公开 ——
  *    那是一次真实的隐私事故，不是一个越权小 bug。
  */
-submissionsRoutes.post('/:id/visibility', async (c) => {
+/**
+ * ⭐ 路由声明（POST /api/user/submissions/:id/visibility）——
+ *    结果页那个「允许公众收听」开关。
+ *
+ * ⚠️ 提交时**不问**用户（默认私密），只在这里改 —— 语音是生物特征，默认不公开，
+ *    公开是用户自己打开的结果。
+ */
+const submissionVisibilityRoute = createRoute({
+  method: 'post',
+  path: '/{id}/visibility',
+  tags: ['挑战提交'],
+  summary: '改这次录音的可见性（允许公众收听 / 关掉）',
+  security: [{ userToken: [] }],
+  request: {
+    params: z.object({ id: z.string().openapi({ description: '提交 id' }) }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ isPublic: z.boolean().openapi({ description: 'true = 允许公众收听' }) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: okEnvelope(z.object({ submissionId: z.string(), isPublic: z.boolean() })),
+        },
+      },
+      description: '改完之后的权威值',
+    },
+    400: errorResponse('缺 isPublic'),
+    404: errorResponse('提交记录不存在（或不属于当前用户）'),
+  },
+})
+
+submissionsRoutes.openapi(submissionVisibilityRoute, async (c) => {
   const userId = c.get('userId')
   const id = c.req.param('id')
 
@@ -414,7 +543,7 @@ submissionsRoutes.post('/:id/visibility', async (c) => {
 
   await db.update(submissions).set({ isPublic: body.isPublic }).where(eq(submissions.id, id))
   console.log('[submissions] 可见性改为 ' + (body.isPublic ? '公开' : '私密') + ' id=' + id)
-  return c.json({ ok: true, data: { submissionId: id, isPublic: body.isPublic } })
+  return c.json({ ok: true, data: { submissionId: id, isPublic: body.isPublic } }, 200)
 })
 
 // ⚠️ describe() 已经搬到 services/submission-view.ts ——
