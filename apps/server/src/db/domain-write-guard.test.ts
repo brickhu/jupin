@@ -263,6 +263,15 @@ const EXEMPTIONS: Exemption[] = [
         '（服务端 2026-09 之前不校验 id 时期留下的行，例如 zzdev653288）。' +
         '默认只看不改、只连 local；外键已去掉，所以改 id 不必联动别的表。',
     },
+    {
+      audit: '#10',
+      file: 'tools/e2e-submission.mjs',
+      tables: ['users'],
+      why:
+        '端到端业务流测试：对着真实服务跑一遍「上传→受理→检测→落库→历史卡」，' +
+        '它要自己造一个测试用户并给能量（raw 写 users）—— 跑完把能量清零，' +
+        '不依赖服务端任何测试后门。',
+    },
   {
     audit: '#10',
     file: 'tools/dev-unlock.mjs',

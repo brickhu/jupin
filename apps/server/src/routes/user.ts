@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, participations, submissions, users } from '../db/schema'
 import { env } from '../env'
@@ -139,20 +139,37 @@ userRoutes.get('/article-records', async (c) => {
       createdAt: submissions.createdAt,
       scheduleDate: submissions.scheduleDate,
       isPublic: submissions.isPublic,
+      /** ⚠️ 客户端按它区分「未出分」与「有分」（见下面 where 的说明） */
+      status: submissions.status,
     })
     .from(submissions)
     .where(
       and(
         eq(submissions.userId, userId),
         eq(submissions.articleId, articleId),
-        eq(submissions.status, 'scored'),
+        /**
+         * ⚠️⚠️ **failed 也要取出来**（用户 2026-09 报的现象）：
+         *    只取 scored 时，失败那次的序号已经被消耗掉了 ⇒ 列表里出现
+         *    「第 4 次 → 第 6 次」的断档，看起来像丢了一次记录。
+         *    failed 是**检测真的跑到了、并给了结论**（未检测到有效语音），
+         *    它算一次挑战，界面上按「未出分」显示。
+         */
+        or(eq(submissions.status, 'scored'), eq(submissions.status, 'failed')),
       ),
     )
     .orderBy(desc(submissions.createdAt))
 
   const items: ArticleRecordItem[] = rows.map((r) => ({
     submissionId: r.submissionId,
-    score: Number(r.score),
+    /**
+     * ⚠️ 两点都要小心：
+     *    · `status` 在库里是 varchar，drizzle 读到的是 `string` ⇒ 这里**收窄**成联合类型
+     *      （上面的查询已经把它限定在 scored / failed 两种）；
+     *    · `score` **可能是 null**（未出分那次）—— **不能 `Number(null)`**：
+     *      那会变成 0，而 0 分是合法成绩，两者混起来"最低分"就错了。
+     */
+    status: r.status === 'failed' ? ('failed' as const) : ('scored' as const),
+    score: r.score === null || r.score === undefined ? null : Number(r.score),
     seq: Number(r.seq),
     createdAt: r.createdAt.toISOString(),
     scheduleDate: r.scheduleDate ?? null,
@@ -179,8 +196,20 @@ userRoutes.get('/article-records', async (c) => {
 
   const data: ArticleRecordsResponse = {
     items,
-    bestScore: items.length === 0 ? null : Math.max(...items.map((i) => i.score)),
-    attempts: items.length,
+      /**
+       * ⚠️ `score` 可能是 null（未出分那次）⇒ 先滤掉再取最高：
+       *    `Math.max(...)` 里混进 null 会当成 0，"最高分"就变成 0 了。
+       *    ⚠️ 而 **0 分是合法成绩** —— 两种都不能混。
+       */
+      bestScore: (() => {
+        const scored = items.map((i) => i.score).filter((s): s is number => typeof s === 'number')
+        return scored.length === 0 ? null : Math.max(...scored)
+      })(),
+      /**
+       * ⚠️ **"挑战过"的口径 = scored + failed**（用户 2026-09 定）——
+       *    与列表行数一致，也与服务端 participations.attempts 一致。
+       */
+      attempts: items.length,
     rank: rankInfo,
     participantCount: stats?.participantCount ?? 0,
     lowestScore: stats?.lowestScore ?? null,

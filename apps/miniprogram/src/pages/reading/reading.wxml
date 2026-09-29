@@ -281,7 +281,11 @@
             <text class="text-22rpx text-faint ml-2" wx:if="{{item.ago}}">{{item.ago}}</text>
           </view>
           <view class="flex items-center shrink-0">
-            <text class="text-32rpx font-bold text-ink">{{item.scoreText}}</text>
+            <!-- ⚠️ 「未出分」（pending）用弱化样式，别和成绩一样粗黑体 ——
+                 它不是一个分数（检测跑到了、但没读出有效语音），
+                 抢眼会让人把它当成"这次考了多少"。 -->
+            <text wx:if="{{item.pending}}" class="text-26rpx text-faint">{{item.scoreText}}</text>
+            <text wx:else class="text-32rpx font-bold text-ink">{{item.scoreText}}</text>
             <!-- ⭐ 分数后面这颗 › =「点得进去」的提示（用户 2026-09 要求）。
                  ⚠️ 整行本来就 bindtap 进那一次的结果屏（见 onOpenHistory）——
                     没有它的时候这一行看起来只是一条只读记录，点了会跳是"猜"出来的。

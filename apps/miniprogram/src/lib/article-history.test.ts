@@ -87,10 +87,10 @@ describe('historyRowsOf —— 朗读页的历史挑战列表', () => {
   })
 
   it('一次都没读过（或只剩当前这一次）→ 空列表、没有最高分', () => {
-    expect(historyRowsOf(resOf([], null), '', NOW)).toEqual({ rows: [], attempts: 0, bestScoreText: '' })
+    expect(historyRowsOf(resOf([], null), '', NOW)).toEqual({ rows: [], attempts: 0, bestScoreText: '', lowestScoreText: '' })
 
     const only = resOf([item('s1', 88, 1, new Date(NOW).toISOString())], 88)
-    expect(historyRowsOf(only, 's1', NOW)).toEqual({ rows: [], attempts: 0, bestScoreText: '' })
+    expect(historyRowsOf(only, 's1', NOW)).toEqual({ rows: [], attempts: 0, bestScoreText: '', lowestScoreText: '' })
     // ⚠️ 没有要免的那一条时它照常出现（进入页面还没提交过 = 不该凭空少一条）
     expect(historyRowsOf(only, '', NOW).rows).toHaveLength(1)
   })
@@ -108,17 +108,28 @@ describe('historyRowsOf —— 朗读页的历史挑战列表', () => {
 describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位列 / 最低）', () => {
   it('四个数各就各位（位列带参与人数，同 participations 的口径）', () => {
     const res: ArticleRecordsResponse = {
-      items: [],
+      /**
+       * ⚠️⚠️ **我自己的三次**（81 / 41 / 62）。
+       *    注意 `lowestScore: 55` 是**全场**最低分，与"我的最低"（41）**故意不同** ——
+       *    这条用例就是盯住用户 2026-09 报的那个不一致：
+       *    卡片写 82.4 而列表里明明有 65.0，因为原来取错了字段（全场 ≠ 我的）。
+       */
+      items: [
+        item('s3', 62, 3, new Date(NOW - 60_000).toISOString()),
+        item('s2', 41, 2, new Date(NOW - 120_000).toISOString()),
+        item('s1', 81, 1, new Date(NOW - 180_000).toISOString()),
+      ],
       attempts: 3,
       bestScore: 89.456,
       rank: 2,
       participantCount: 18,
-      lowestScore: 41,
+      lowestScore: 55,
     }
     expect(historySummaryOf(res)).toEqual({
       attemptsText: '3 次',
       bestScoreText: '89.5',
       rankText: '2 / 18',
+      // ⚠️ **我的**最低分（41），不是全场的（55）
       lowestScoreText: '41.0',
     })
   })

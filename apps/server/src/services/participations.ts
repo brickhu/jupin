@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, max, min } from 'drizzle-orm'
+import { and, asc, count, desc, eq, max, min, or } from 'drizzle-orm'
 
 import { db } from '../db'
 import type { ArticleWordItem } from '@jushuo/shared'
@@ -66,6 +66,24 @@ function scoredOf(userId: number, articleId: string) {
 }
 
 /**
+ * ⭐ **"挑战过"的口径**（用户 2026-09 定）：`scored` **或** `failed`。
+ *
+ * ⚠️⚠️ 为什么 `failed` 也算：它是**检测真的跑到了、并且给了结论**
+ *    （"未检测到有效语音"）—— 用户确实读了一遍、系统也确实调了引擎。
+ *    只算 `scored` 会直接露在界面上：卡片写"挑战 5 次"，列表里却出现"第 6 次"。
+ *
+ * ⚠️ 但 **best / worst / first / last 仍只按 `scored` 算**（见 `scoredOf`）——
+ *    `failed` 那次没有分数，混进去会让"最低分"变成 null。
+ */
+function attemptedOf(userId: number, articleId: string) {
+  return and(
+    eq(submissions.userId, userId),
+    eq(submissions.articleId, articleId),
+    or(eq(submissions.status, 'scored'), eq(submissions.status, 'failed')),
+  )
+}
+
+/**
  * 算出一行参与记录 —— **只读，不写**。
  * sync 与 rebuild **共用这一份**，所以「每次挑战后写下的」和「整表重建算出来的」
  * 不可能分叉。
@@ -77,6 +95,18 @@ async function computeParticipation(
   articleId: string,
   database: Database,
 ): Promise<ParticipationRow | null> {
+  /**
+   * ⚠️⚠️ **这一行只由"有分"的提交撑起来**（`scored`）—— 不改这个口径，原因很硬：
+   *
+   *    `participations.best_submission_id` 与 `reached_at` 是 **NOT NULL** ——
+   *    "我的最高分是哪一次"必须存在。而一个**只有 failed** 的句子根本没有最高分，
+   *    于是**写不出这一行**（真实事故：我一度把 attempts 改成 scored+failed，
+   *    结果聚合里 best/worst 变 null，守卫抛"聚合缺字段"，整行都写不进去）。
+   *
+   *    ⇒ 「检测跑到了但没出分」那一次**不计入这里**；它"算一次挑战"体现在
+   *      **列表**上（`/api/user/article-records` 连 failed 一起返回），
+   *      卡片上的次数直接数那个列表的行数 —— 两边同一个来源，不会打架。
+   */
   const [agg] = await database
     .select({
       attempts: count(),
@@ -89,6 +119,7 @@ async function computeParticipation(
     .where(scoredOf(userId, articleId))
 
   if (!agg || Number(agg.attempts ?? 0) === 0) return null
+
 
   /**
    * ⭐ 对比标准 = 全序的第一条。

@@ -28,8 +28,13 @@ export interface HistoryRow {
   submissionId: string
   /** 这是这句上的第几次（服务端 `submissions.seq`，从 1 开始） */
   seq: number
-  /** '89.5' —— 成品文本，WXML 只负责摆 */
+  /** '89.5' —— 成品文本，WXML 只负责摆；**没出分时是 '未出分'** */
   scoreText: string
+  /**
+   * ⚠️ 这一次**没出分**（服务端 `status='failed'`：检测跑到了、但没读出有效语音）。
+   *    它照样占一个序号，所以要显示出来 —— 藏掉就会出现「第 4 次 → 第 6 次」的断档。
+   */
+  pending: boolean
   /** '刚刚' / '昨天 14:03' —— 北京时间、精确到分（见 lib/time.ts） */
   ago: string
   /** 是不是**目前**的最高分 —— 每行最多一个，用来标「最高」 */
@@ -41,10 +46,15 @@ export interface HistoryRow {
 /** 一次历史列表的成品：行 + 表头要用的两个数 */
 export interface HistoryRows {
   rows: HistoryRow[]
-  /** 除当前这一次之外还剩几次 */
+  /**
+   * 这一句上**我一共挑战过几次**（含"未出分"的那些）——
+   * ⚠️ 直接取服务端的 `attempts`，与卡片上那个数字**同一个来源**。
+   */
   attempts: number
   /** 这些记录里的最高分（'89.5'）；一条都没有时是空串 */
   bestScoreText: string
+  /** ⭐ **我**在这句上的最低分；一条有分的都没有时是空串 */
+  lowestScoreText: string
 }
 
 /**
@@ -65,20 +75,35 @@ export function historyRowsOf(
   now: number = Date.now(),
 ): HistoryRows {
   const items = res.items.filter((i) => i.submissionId !== excludeId)
-  const best = items.length === 0 ? null : Math.max(...items.map((i) => i.score))
+  /**
+   * ⚠️ 只有**有分**的那些参与算最高分 / 最低分：
+   *    `score` 为 null 的是「未出分」（检测跑到了但没读出有效语音）。
+   *    ⚠️ 不能用 `0` 代替 null —— 0 分是合法成绩，两者混起来"最低分"就错了。
+   */
+  const scored = items.filter((i) => typeof i.score === 'number').map((i) => i.score as number)
+  const best = scored.length === 0 ? null : Math.max(...scored)
+  const worst = scored.length === 0 ? null : Math.min(...scored)
   return {
     rows: items.map((i) => ({
       submissionId: i.submissionId,
       seq: i.seq,
-      scoreText: formatScore(i.score),
+      scoreText: typeof i.score === 'number' ? formatScore(i.score) : '未出分',
+      pending: typeof i.score !== 'number',
       ago: agoText(i.createdAt, now),
       // ⚠️ 并列最高时两行都标：这里要回答的是"哪些次是我的最好水平"，
       //    不是"哪一次是唯一的纪录"。
       isBest: best !== null && i.score === best,
       scheduleDate: i.scheduleDate ?? '',
     })),
+    /**
+     * ⚠️ 这是**列表那批**的条数（已免掉当前这一次）—— 与 `rows.length` 同一个口径。
+     *    ⚠️ 别改成 `res.attempts`：那个是"我在这一句上的全部"（含当前这次），
+     *      属于**摘要卡**口径。两张卡挨着放，口径一旦混就会互相打架。
+     */
     attempts: items.length,
     bestScoreText: best === null ? '' : formatScore(best),
+    /** ⭐ **我**在这句上的最低分（不是全场的，见 HistorySummary 的说明） */
+    lowestScoreText: worst === null ? '' : formatScore(worst),
   }
 }
 
@@ -118,6 +143,13 @@ export function historySummaryOf(res: ArticleRecordsResponse): HistorySummary {
       typeof res.rank === 'number' && res.rank > 0
         ? res.rank + ' / ' + res.participantCount
         : '—',
-    lowestScoreText: formatScore(res.lowestScore),
+    /**
+     * ⚠️⚠️ **用「我的最低」，不是「全场最低」**（用户 2026-09 报的不一致）：
+     *    那张卡上「挑战 / 最高 / 位列」都是"我的"，只有这一个原来取的是
+     *    `res.lowestScore`（**全场**最低分）⇒ 只有我一个人参与时会显示成我自己最高分
+     *    （82.4），而列表里明明有一次 65.0 —— 同屏自相矛盾。
+     *    ⚠️ 全场的最高/最低分留在**竞技场页**那张「参与概要」里（标签本来就写了"全场"）。
+     */
+    lowestScoreText: historyRowsOf(res, '').lowestScoreText || '—',
   }
 }

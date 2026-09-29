@@ -569,8 +569,14 @@ export interface FavoritesResponse {
  */
 export interface ArticleRecordItem {
   submissionId: string
-  /** 云端权威分 0–100 */
-  score: number
+  /**
+   * ⚠️ `scored` = 有分；`failed` = **检测跑到了但没出分**（未检测到有效语音）。
+   *    后者也**要显示在列表里**（按「未出分」渲染）—— 只显示有分的会让序号断档
+   *    （用户 2026-09 看到「第 4 次 → 第 6 次」就是这个原因）。
+   */
+  status: 'scored' | 'failed'
+  /** 云端权威分 0–100；`failed` 时是 null（**不是 0**，0 分是合法成绩） */
+  score: number | null
   /** 这一把是**第几次**读这句（从 1 开始）—— 列表里显示"第 3 次" */
   seq: number
   /** 提交时间（ISO） */

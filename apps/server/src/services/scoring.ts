@@ -143,7 +143,7 @@ export async function runScoring(submissionId: string): Promise<void> {
         readError = readError ? `${readError}；对象存储：${(err as Error).message}` : (err as Error).message
       }
     }
-    if (!audio) return fail(submissionId, `读取音频失败: ${readError}`)
+    if (!audio) return fail(submissionId, `读取音频失败: ${readError}`, 'infra')
 
     // ---- 归一化 + 评测 ----
     let audioBytes = audio.byteLength
@@ -388,7 +388,15 @@ export async function markScoringFailed(submissionId: string, reason: string): P
 }
 
 /** 判失败：写状态、删音频（音频只在失败时删；成功永久保留） */
-async function fail(submissionId: string, reason: string): Promise<void> {
+/**
+ * @param kind `'invalid'` = **引擎判无效**（音频里没读出有效语音）；
+ *             `'infra'`   = **我们这边的问题**（读音频失败 / 网络 / 解析异常）。
+ *
+ * ⚠️⚠️ 为什么要这个参数：原来靠 `/读取音频失败/` **匹配 reason 文案**来判断
+ *    该不该计入防刷 —— 业务规则挂在文案上，改一个字（比如去掉"的"）防刷就
+ *    **静默失效**，而且没有任何测试会发现。现在由**抛错的地方**显式说明它是哪一种。
+ */
+async function fail(submissionId: string, reason: string, kind: 'invalid' | 'infra' = 'invalid'): Promise<void> {
   console.warn(`[scoring] 失败 id=${submissionId}: ${reason}`)
   const [row] = await db
     .update(submissions)
@@ -419,6 +427,22 @@ async function fail(submissionId: string, reason: string): Promise<void> {
     }
   }
 
+    /**
+     * ⭐⭐ **"挑战过"要算上这一次**（用户 2026-09 定：检测真的跑到了、给了结论，就算一次）。
+     *
+     * ⚠️⚠️ 这里原来**不写**参与记录（只有成功路径写）⇒ 症状是：
+     *    `submissions` 里有那次 failed，而 `participations.attempts` 不算它，
+     *    于是列表显示"第 6 次"而卡片写"5 次" —— 卡片与列表**永远差一个**。
+     * ⚠️ 位置：状态已改成 failed 之后；整块 try 住（派生索引失败不该让结论变异常）。
+     */
+    if (failed) {
+      try {
+        await syncParticipation(failed.userId, failed.articleId)
+      } catch (err) {
+        console.warn('[scoring] 参与记录没跟上（失败那次）id=' + submissionId + '：' + (err as Error).message)
+      }
+    }
+
   if (failed?.audioKey) {
     await getStorage()
       .remove(failed.audioKey)
@@ -429,7 +453,7 @@ async function fail(submissionId: string, reason: string): Promise<void> {
   //    连续读不出有效语音就当天封停，否则「随便传个静音」是免费的。
   //    ⚠️ 只在**引擎判无效**时计，读音频失败（网络/对象存储）不计 ——
   //       那是我们的问题，不该罚用户。
-  if (failed && !/读取音频失败/.test(reason)) {
+  if (failed && kind === 'invalid') {
     const [u] = await db.select().from(users).where(eq(users.id, failed.userId)).limit(1)
     if (u) {
       const day = new Date().toISOString().slice(0, 10)
