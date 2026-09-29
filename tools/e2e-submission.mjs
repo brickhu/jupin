@@ -115,8 +115,8 @@ check('接口正常', rec?.ok === true, 'attempts=' + d.attempts + ' best=' + d.
 
 // ---- ⑦ 库 ----
 step('⑦', '核对库里的行')
-const [rows] = await conn.execute('SELECT seq, status, score, attempt_id FROM submissions WHERE user_id=? AND article_id=? ORDER BY seq DESC LIMIT 3', [uid, articleId])
-for (const r of rows) console.log('   · seq=' + r.seq + ' status=' + r.status + ' score=' + r.score + ' attempt=' + String(r.attempt_id ?? '-').slice(0, 8))
+const [rows] = await conn.execute('SELECT status, score, attempt_id FROM submissions WHERE user_id=? AND article_id=? ORDER BY created_at DESC LIMIT 3', [uid, articleId])
+for (const r of rows) console.log('   · status=' + r.status + ' score=' + r.score + ' attempt=' + String(r.attempt_id ?? '-').slice(0, 8))
 check('这一行真的落库了', rows.some((r) => r.attempt_id === attemptId), 'attempt=' + attemptId.slice(0, 8))
 /**
  * ⚠️⚠️ 这里的**不变量**是（2026-09 定，别改回去）：
@@ -160,24 +160,26 @@ check('那一行确实不在库里', ghost[0].n === 0, 'count=' + ghost[0].n)
 const [e2] = await conn.execute('SELECT energy FROM users WHERE id=?', [uid])
 check('能量已退回（没触达不该扣）', e2[0].energy >= 20 - 2, 'energy=' + e2[0].energy)
 
-// ---- ⑨ 最关键：序号**不许有空洞**（用户报的"第 4 次跳到第 6 次"）----
-step('⑨', '序号连续性（根治项）：占过号的行必须恰好是 1..N')
-const [seqRows] = await conn.execute(
-  'SELECT seq FROM submissions WHERE user_id=? AND article_id=? AND seq IS NOT NULL ORDER BY seq',
-  [uid, articleId],
-)
-const seqs = seqRows.map((r) => r.seq)
+// ---- ⑨ 最关键：列表里的序号**不许有空洞**（用户报的"第 4 次跳到第 6 次"）----
+step('⑨', '序号连续性（根治项）：接口给出的「第几次」必须恰好是 1..N')
+/**
+ * ⚠️ "第几次"**不是库里的列**（`seq` 已删）—— 它是接口按行序现算的，
+ *    所以这里只能问**接口**，而不是查库。
+ */
+const rec9 = await j(await fetch(BASE + '/api/user/article-records?article=' + articleId, { headers: H }))
+const items9 = rec9?.data?.items ?? []
+const seqs = items9.map((i) => i.seq).sort((a, b) => a - b)
 const expectSeq = seqs.map((_, i) => i + 1)
 check(
-  '序号是 1..N 连续的（没有空洞）',
-  JSON.stringify(seqs) === JSON.stringify(expectSeq),
+  '列表里的「第几次」是 1..N 连续的（没有空洞）',
+  seqs.length > 0 && JSON.stringify(seqs) === JSON.stringify(expectSeq),
   '实际=[' + seqs.join(',') + '] 期望=[' + expectSeq.join(',') + ']',
 )
-const [nullSeq] = await conn.execute(
-  'SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=? AND seq IS NULL',
+const [stray] = await conn.execute(
+  "SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=? AND status='scoring'",
   [uid, articleId],
 )
-check('没有"无号"的残留行（检测中/没触达都该被清掉）', nullSeq[0].n === 0, 'count=' + nullSeq[0].n)
+check('没有卡在"检测中"的残留行', stray[0].n === 0, 'count=' + stray[0].n)
 
 // ---- ⑩ 用户中途退出：提交后**谁都不问**，服务端该自己跑完 ----
 step('⑩', '用户中途退出（提交后不再轮询）⇒ 后台自己跑完并落号')
@@ -197,25 +199,28 @@ const idX = subX?.data?.submissionId
 let settledX = null
 for (let i = 0; i < 30; i++) {
   await new Promise((r) => setTimeout(r, 2000))
-  const [r] = await conn.execute('SELECT status, seq FROM submissions WHERE id=?', [idX])
+  const [r] = await conn.execute('SELECT status FROM submissions WHERE id=?', [idX])
   if (r.length === 0) { settledX = { status: 'deleted' }; break }
   if (r[0].status !== 'scoring') { settledX = r[0]; break }
 }
 check(
   '没有人轮询，后台也把这一把跑完了（有结论）',
   settledX !== null && settledX.status !== 'scoring',
-  settledX ? 'status=' + settledX.status + ' seq=' + settledX.seq : '仍在 scoring（超时）',
+  settledX ? 'status=' + settledX.status : '仍在 scoring（超时）',
 )
 if (settledX && settledX.status !== 'deleted') {
-  check('它拿到了序号（算一次挑战、会出现在历史里）', settledX.seq !== null, 'seq=' + settledX.seq)
+  // ⚠️ 判据是"它在历史里看得见"（接口返回的第一条就是它），而不是查某个号 —— 号已经不存在了
+  const recX = await j(await fetch(BASE + '/api/user/article-records?article=' + articleId, { headers: H }))
+  const first = (recX?.data?.items ?? [])[0]
+  check('它出现在历史列表里（算一次挑战）', first?.submissionId === idX, 'first=' + (first?.submissionId ?? '(空)'))
 }
 
 // ---- ⑪ 进程崩了留下的悬空行 ⇒ 清扫时**整行删掉**（没触达，不该占号/进历史）----
 step('⑪', '悬空行（进程崩了）被清扫 ⇒ 整行删掉，不占号')
 const ghostId = 'zzsweep' + Date.now().toString(16).slice(-8)
 await conn.execute(
-  `INSERT INTO submissions (id, user_id, article_id, seq, schedule_date, status, heartbeat_at, attempts, attempt_id, audio_key, energy_state)
-   VALUES (?, ?, ?, NULL, ?, 'scoring', DATE_SUB(NOW(), INTERVAL 30 MINUTE), 1, ?, ?, 'held')`,
+  `INSERT INTO submissions (id, user_id, article_id, schedule_date, status, heartbeat_at, attempts, attempt_id, audio_key, energy_state)
+   VALUES (?, ?, ?, ?, 'scoring', DATE_SUB(NOW(), INTERVAL 30 MINUTE), 1, ?, ?, 'held')`,
   [ghostId, uid, articleId, scheduleDate, 'a'.repeat(31) + '0', `audio/${articleId}/${uid}/${'a'.repeat(31)}0.mp3`],
 )
 /**

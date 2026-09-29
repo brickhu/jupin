@@ -203,16 +203,12 @@ async function main(): Promise<void> {
     const lastDay = addDays(start, c.readsToday ? 0 : -1)
     const firstDay = addDays(lastDay, -(c.run - 1))
 
-    // 他在该句上的第几次提交 —— 与服务端的 seq 口径一致（按 articleId 计）
-    const seqOf = new Map<string, number>()
-
+    // ⚠️ 这个内层循环是"这位选手连着读的那几天"（每天一句）—— 补回来时别只补计数器。
     for (let d = 0; d < c.run; d++) {
       const date = addDays(firstDay, d)
       const articleId = articleOf.get(date)
       if (!articleId) continue
 
-      const seq = (seqOf.get(articleId) ?? 0) + 1
-      seqOf.set(articleId, seq)
 
       // 58 分的底 + 水平带来的上限，再加一点当天波动
       const jitter = rnd() * 8 - 4
@@ -226,7 +222,6 @@ async function main(): Promise<void> {
         id: makeSubmissionId(attemptIdOf(userId, articleId, at)),
         userId,
         articleId,
-        seq,
         scheduleDate: date,
         status: 'scored',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）

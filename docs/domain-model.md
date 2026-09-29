@@ -248,7 +248,16 @@
 5. **评测中间态没有回收任务。** 哪里：受理时一次事务只锁能量、写 `status='scoring'`（`routes/submissions.ts:169,187,203`），回收完全依赖客户端轮询（`routes/submissions.ts:255-261` 的 `claimStaleScoring`）。会出什么错：用户不轮询（关掉小程序）→ 行永远 `status='scoring'`、`energy_state='held'`，那 2 点能量**永久占住**；全仓库无 cron/定时清理（`grep setInterval|cron` 只命中心跳与 TTS 超时）。怎么发现：查 `submissions WHERE status='scoring' AND heartbeat_at < now-30s`——**没有命令**。
 
 **另外两个不排进前五、但确实存在的口子：**
-- `submissions.attempts`（= `seq`，含失败/进行中，`routes/submissions.ts:155`+`submission-view.ts:90`）与 `participations.attempts`（只算 scored，`participations.ts:45-51`）**口径不同，且会同时出现在界面上**：结果页 s5 显示「第 K 次朗读」（`reading.ts:1477`，K=`seq`），首页卡片显示「你已经参与 N 次挑战」（`index.ts:233-235`，N=只算 scored）。有失败提交时 K > N。两处差异是**有意**的（`packages/shared/src/types/api.ts:174-183` 写明了），但同一个词 `attempts` 在 `SubmitResponse` 与 `ArenaRecord` 里是两个口径。
+- `SubmitResponse.attempts`（= **"这一句上的第几次"**，只数**有结论**的行：`scored` + 引擎判无效；
+  由 `services/submission.ts` 的 `attemptNoOf()` **读的时候现算**，`submission-view.ts` 用它）与
+  `participations.attempts` / `ArenaRecord.attempts`（**只算 scored**，`participations.ts`）**口径不同，
+  且会同时出现在界面上**：结果页 s5 显示「第 K 次朗读」（K = 前者），首页卡片显示「你已经参与 N 次挑战」
+  （N = 后者）。有「引擎判无效」的提交时 K > N。两处差异是**有意**的，但同一个词 `attempts` 在两个类型里
+  是两个口径。
+- ⚠️ **"第几次"不再是库里的列**（`submissions.seq` 已于迁移 0051 删除）：它是个**显示位置**，
+  存下来就要养分配器、`(user, article, seq)` 唯一索引、撞号重试和重编号脚本 ——
+  而那个分配器**真的把服务进程搞崩过**（并发撞唯一键 + 异常逃逸）。现在列表按行序现算、
+  s5 按 `attemptNoOf()` 统计，两者同一个口径 ⇒ 序号天然连续，不可能有空洞。
 - **业务规则在端侧重算。** `packages/shared` 与端侧确实存在「服务端已给、端侧又算一遍」：`resolveTheme(theme, articleId)` 在有 id 时按 `themeFromHash` 复算主题（`packages/shared/src/theme.ts:98-105`，调用点 `apps/miniprogram/src/pages/challenge/challenge.ts:294`）；首页端侧再按 `articleId !== today.articleId` 过滤一次 latest（`apps/miniprogram/src/pages/index/index.ts:623`，因为服务端剔除的是排期那句、判据不同，见 `:611-617`）；`store.applySubmissionResult` 本地把 `myAttempts + 1`、`myBest = max(...)`（`apps/miniprogram/src/lib/store.ts:386-398`），是服务端口径的影子，随后由 `/api/user/arena-records` 覆盖（`store.ts:360-371`）。
   而题面点名的三个：`subtitleOf`（`reading.ts:1583`，输入全是服务端字段 `previousBest/isPersonalBest/rank/beatenCount`）、`formatScore`（`packages/shared/src/scoring.ts:190`，纯展示）、`startButtonLabel`（`packages/shared/src/brand.ts:42`，只吃服务端 `myBest !== null`）——**都是展示层/由服务端事实派生，不算把服务端才算得出的东西重算**。真正值得记的是上面三条。
 

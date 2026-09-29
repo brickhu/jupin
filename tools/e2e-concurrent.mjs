@@ -67,7 +67,12 @@ try { alive = (await fetch(BASE + '/api/user/today', { headers: H })).ok } catch
 console.log('  ① 服务端仍然存活：' + (alive ? '✅' : '❌ 崩了'))
 
 // ② 序号连续吗
-const [rows] = await conn.execute('SELECT seq, status FROM submissions WHERE user_id=? AND article_id=? AND seq IS NOT NULL ORDER BY seq', [uid, articleId])
+/**
+ * ⚠️ "第几次"是**接口现算**的（库里的 `seq` 列已删）⇒ 只能问接口。
+ *    这也正是要验的：并发下它仍然必须是 1..N（不是错的、也不是重复的）。
+ */
+const rec = await (await fetch(BASE + '/api/user/article-records?article=' + articleId, { headers: H })).json()
+const rows = (rec?.data?.items ?? []).map((i) => ({ seq: i.seq, status: i.status })).sort((a, b) => a.seq - b.seq)
 const seqs = rows.map((r) => r.seq)
 const want = seqs.map((_, i) => i + 1)
 const contig = JSON.stringify(seqs) === JSON.stringify(want)

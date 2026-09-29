@@ -89,7 +89,8 @@ Page({
     mySummary: '',
     /**
      * ⭐ 我在这句上**出过分**几次（= participations.attempts，只数 status='scored'）。
-     * ⚠️ 用它而不是 submissions.seq：seq 含失败/进行中，会出现「挑战 3 回合」却只有一条成绩。
+     * ⚠️ 用它而不是那一把的「第几次」：后者只数**有结论**的行，
+     *    会出现「挑战 3 回合」却只有一条成绩（两个口径，别混）。
      */
     myAttempts: 0,
     /**

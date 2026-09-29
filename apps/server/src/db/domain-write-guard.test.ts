@@ -296,15 +296,6 @@ const EXEMPTIONS: Exemption[] = [
         '并发撞号测试：同时提交 N 次，验证服务端不崩（撞唯一键不能让异常逃逸）' +
         '且序号恰好 1..N。它自建用户、造提交，跑完按外键顺序清理（含出分发的奖励）。',
     },
-    {
-      audit: '#10',
-      file: 'tools/fix-submission-seq.mjs',
-      tables: ['submissions'],
-      why:
-        '一次性修复：把历史提交的 seq 重编号成连续的 1..N。' +
-        '旧规则（受理时分配 + 没触达时删行）留下了空洞，那正是用户看到的' +
-        '「第 4 次跳到第 6 次」；新规则根治了产生，但历史空洞要靠这个脚本补平。',
-    },
   {
     audit: '#10',
     file: 'tools/dev-unlock.mjs',

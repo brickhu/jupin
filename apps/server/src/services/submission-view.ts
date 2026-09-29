@@ -5,6 +5,7 @@ import { db } from '../db'
 import { articles, submissions } from '../db/schema'
 import { loadArticleRefText } from './content'
 import { getBestExcluding, getLeaderboardAround, getRank } from './leaderboard'
+import { attemptNoOf } from './submission'
 import type { SubmissionStatusResponse } from '@jushuo/shared'
 
 /**
@@ -93,11 +94,13 @@ export async function describe(
     // ⭐ 这一把是这句的第几次（从 1 开始）—— s5 副标题的「第 K 次」，
     //    不再让端侧从 store 缓存里猜（见 shared 的 SubmitResponse.attempts）。
     /**
-     * ⚠️ `seq` **可空**（"检测中 / 没触达"的行没有序号，见 db/schema.ts 的说明）——
-     *    这里是"出结论"的视图，正常都有；真为 null 就**不给这个字段**，
-     *    端侧那个 `?? 0` 会兜住（宁可显示「第 0 次」也不要在运行时炸）。
+     * ⭐ **读的时候现算**（`attemptNoOf`），不是存的列 —— 那个 `seq` 列已经删了。
+     *
+     * ⚠️ 口径：只数"有结论的"行（scored / 引擎判无效），按时间从旧到新、旧的为 1。
+     *    与历史列表**同一个函数、同一个口径** ⇒ 弹窗上的「第 N 次」与列表那一行永远一致。
+     * ⚠️ "检测中"的行不算（它还没定）；能走到这里说明本行已经有结论，必然数得到自己。
      */
-    ...(row.seq === null ? {} : { attempts: row.seq }),
+    attempts: await attemptNoOf(row.userId, row.articleId, row.createdAt, row.id),
     // ⭐ 这一把的成长值快照 —— s5 三张卡的 +N。字段名就照端侧读的 growth 给
     //    （reading.ts 的 growthDeltaOf），不自创第二套。
     //    ⚠️ 结算与「status 置为 scored」不是同一个事务，轮询可能卡在中间

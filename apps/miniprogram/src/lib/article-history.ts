@@ -26,7 +26,10 @@ import { agoText } from './time'
 /** 列表里的一行（显示形态与接口字段分开：WXML 里不做计算） */
 export interface HistoryRow {
   submissionId: string
-  /** 这是这句上的第几次（服务端 `submissions.seq`，从 1 开始） */
+  /**
+   * 这是这句上的第几次（从 1 开始）—— ⚠️ **服务端现算的，不是库里的列**
+   * （`submissions.seq` 已删：存它就要养分配器 / 唯一索引 / 重编号脚本，而它只是个显示位置）。
+   */
   seq: number
   /** '89.5' —— 成品文本，WXML 只负责摆；**没出分时是 '未出分'** */
   scoreText: string

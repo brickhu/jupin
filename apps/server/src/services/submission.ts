@@ -1,4 +1,4 @@
-import { max, isNotNull, and, count, countDistinct, eq } from 'drizzle-orm'
+import { and, count, countDistinct, eq, lt, lte, or } from 'drizzle-orm'
 import { MAX_INVALID_PER_DAY } from '@jushuo/shared'
 
 import { db } from '../db'
@@ -39,61 +39,41 @@ export async function challengeStats(
  * ⚠️ 并发提交可能撞号，由 uniqueIndex(userId, articleId, seq) 兜底。
  */
 /**
- * ⭐⭐ **分配"这一句上的第几次"**（= 列表里的序号）—— **只在"有结论"时调用**。
+ * ⭐⭐ **这一把是"这句上的第几次"** —— **现算，不存列**（2026-09 改）。
  *
- * ⚠️⚠️ 为什么不在受理时分配（用户 2026-09 报的"第 4 次跳到第 6 次"的根因）：
- *    受理时分配的话，"没触达"（音频读不出来 / 网络断）那一行最终要被清掉，
- *    而它**占过的号会变成永久空洞**。把分配点挪到"有结论"这一刻，并保证
- *    **占过号的行永不删** ⇒ 序号里不可能有空洞。
+ * ⚠️ 原来它是 `submissions.seq`（受理/出结论时 `MAX+1` 写进去）。为了维护那个字段，
+ *    养了一整套机制：分配器、撞号重试、`uniqueIndex(user, article, seq)`、重编号脚本 ——
+ *    而它**只是一个显示用的位置**：列表本来就一次把这句上所有的行全查出来了，
+ *    数一下下标就有；存下来等于把"派生值"变成第二个真相。
+ *    ⚠️ 而且那个分配器**真的把进程搞崩过**：并发撞唯一键、异常逃逸、Node 直接退出。
  *
- * ⚠️ 算法就是"已占号的行数 + 1"：因为占号的行只增不减、且永不删，
- *    这个数天然连续（1、2、3…）。
- * ⚠️ 并发提交可能撞 `uniqueIndex(user, article, seq)` ⇒ 撞了就重算（下面那个循环），
- *    这与原来 `nextSeq` 靠唯一键兜底的思路一致，只是现在多了一步重试。
+ * ⚠️ 口径：**只数"有结论的"行**（`scored` / 引擎判无效），按时间从旧到新编号，旧的为 1。
+ *    "检测中"的行不算 —— 数了会让列表出现空洞（这正是用户报过的「第 4 次跳到第 6 次」）。
+ * ⚠️ 同一毫秒内的并列按 `id` 兜底排序，保证同一个行每次问到的号一致。
  */
-export async function nextDisplaySeq(userId: number, articleId: string): Promise<number> {
-  /**
-   * ⚠️⚠️ **用 `MAX(seq) + 1`，不是 `COUNT(*) + 1`**（2026-09 实测踩到）：
-   *    "数有几行就给第几号"在**有历史数据**时必然撞号 ——
-   *    库里已经有 `seq=6` 的行时，数出 6 行就会再给一个 6 ⇒
-   *    `Duplicate entry … for key submissions_user_article_seq_idx`。
-   *    ⚠️ 当时那个异常还**逃逸出去把整个进程带走**（容器重启）。
-   *
-   * ⚠️ 并发下仍可能撞（两个请求同时读到同一个 max）⇒ 调用方**必须重试**，
-   *    见下面的 `withDisplaySeq`。
-   */
-  const [row] = await db
-    .select({ max: max(submissions.seq) })
-    .from(submissions)
-    .where(and(eq(submissions.userId, userId), eq(submissions.articleId, articleId)))
-  return Number(row?.max ?? 0) + 1
-}
-
-/**
- * ⭐ **带重试地分配序号并执行一次写入**（并发撞号时重算）。
- *
- * ⚠️ 为什么需要它：`MAX(seq)+1` 在并发下会撞 `uniqueIndex(user, article, seq)`。
- *    这里撞了就重算（最多 5 次），而不是让异常逃逸 ——
- *    那个异常**会把整个 Node 进程带走**（实测：容器重启、所有进行中的打分一起丢）。
- *
- * @param write 拿到序号后要执行的写入；返回 `true` 表示写成功（不再重试）
- */
-export async function withDisplaySeq(
+export async function attemptNoOf(
   userId: number,
   articleId: string,
-  write: (seq: number) => Promise<boolean>,
-): Promise<boolean> {
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    const seq = await nextDisplaySeq(userId, articleId)
-    try {
-      return await write(seq)
-    } catch (err) {
-      const dup = (err as { code?: string }).code === 'ER_DUP_ENTRY'
-      if (!dup || attempt === 5) throw err
-      console.warn('[submission] 序号撞号，重算（第 ' + attempt + ' 次）：' + userId + '/' + articleId)
-    }
-  }
-  return false
+  createdAt: Date,
+  id: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        eq(submissions.articleId, articleId),
+        // 有结论的（"检测中"不算 —— 它还没定，数进来会给列表开洞）
+        or(eq(submissions.status, 'scored'), eq(submissions.status, 'failed')),
+        // 排在它前面的（含它自己；同一毫秒按 id 兜底）
+        or(
+          lt(submissions.createdAt, createdAt),
+          and(eq(submissions.createdAt, createdAt), lte(submissions.id, id)),
+        ),
+      ),
+    )
+  return Number(row?.n ?? 0)
 }
 
 /**

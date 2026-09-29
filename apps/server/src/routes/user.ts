@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { isNotNull, and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, participations, submissions, users } from '../db/schema'
 import { env } from '../env'
@@ -135,7 +135,6 @@ userRoutes.get('/article-records', async (c) => {
     .select({
       submissionId: submissions.id,
       score: submissions.score,
-      seq: submissions.seq,
       createdAt: submissions.createdAt,
       scheduleDate: submissions.scheduleDate,
       isPublic: submissions.isPublic,
@@ -148,23 +147,26 @@ userRoutes.get('/article-records', async (c) => {
         eq(submissions.userId, userId),
         eq(submissions.articleId, articleId),
         /**
-         * ⚠️⚠️ **判据是"有没有序号"，不是"什么状态"**（2026-09 改，这是根治办法）：
-         *
-         *    序号（`seq`）**只在"有结论"时才分配**（见 db/schema.ts 的说明）⇒
-         *    "有号"精确等于"这是用户的一次挑战"，一句话覆盖了所有中间态：
-         *      · `scoring`（检测中）—— 没有号，不该出现在历史里；
-         *      · 没触达（音频读不出来）—— 没有号，而且那一行会被删掉；
-         *      · `scored` / 引擎判无效 —— 有号，显示（后者按「未出分」渲染）。
-         *    ⚠️ 比"状态白名单"稳：以后再加中间态，**这里不用改**，
-         *      也不会再出现"列表 5 行、卡片写 6 次"那种对不上的数字。
+         * ⚠️⚠️ **判据是"有没有结论"**（`scored` / 引擎判无效）：
+         *      · `scoring`（检测中）—— 没有结论，不该出现在历史里；
+         *      · 没触达 —— 那一行已经被删掉了，根本查不到；
+         *      · `scored` / 引擎判无效 —— 显示（后者按「未出分」渲染）。
+         *    ⚠️ "第几次"不再存列（`seq` 已删）—— 它按**这里返回的行序现算**（见下面 items），
+         *      所以序号天然连续、不可能有空洞，也不需要分配器/唯一索引/重编号。
          */
-        isNotNull(submissions.seq),
+        or(eq(submissions.status, 'scored'), eq(submissions.status, 'failed')),
       ),
     )
     .orderBy(desc(submissions.createdAt))
 
-  const items: ArticleRecordItem[] = rows.map((r) => ({
-    submissionId: r.submissionId,
+    const items: ArticleRecordItem[] = rows.map((r, i) => ({
+      submissionId: r.submissionId,
+      /**
+       * ⭐ 第几次 —— **按行序现算**（列表是最新在前 ⇒ 最后一行是最旧的 = 第 1 次）。
+       *    ⚠️ 不存列：存了就要维护（分配器 + 撞号重试 + 唯一索引 + 重编号脚本），
+       *      而它只是个显示位置；现算还顺带保证"序号一定连续"。
+       */
+      seq: rows.length - i,
     /**
      * ⚠️ 两点都要小心：
      *    · `status` 在库里是 varchar，drizzle 读到的是 `string` ⇒ 这里**收窄**成联合类型
@@ -174,7 +176,6 @@ userRoutes.get('/article-records', async (c) => {
      */
     status: r.status === 'failed' ? ('failed' as const) : ('scored' as const),
     score: r.score === null || r.score === undefined ? null : Number(r.score),
-    seq: Number(r.seq),
     createdAt: r.createdAt.toISOString(),
     scheduleDate: r.scheduleDate ?? null,
     isPublic: r.isPublic === true,
