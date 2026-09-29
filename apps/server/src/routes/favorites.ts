@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { normalizeLevel, normalizeTags } from '@jushuo/shared'
 import type { FavoriteItem, FavoritesResponse } from '@jushuo/shared'
@@ -61,6 +61,14 @@ favoritesRoutes.get('/', async (c) => {
       .select({ id: articles.id, theme: articles.theme })
       .from(articles)
       .where(inArray(articles.id, ids)),
+    /**
+     * ⚠️⚠️ `eq(participations.userId, userId)` **不能少**（2026-09 修）。
+     *
+     * 参与记录是「一人一句一行」⇒ 只按 articleId 查会把这句**所有人**的行都捞回来，
+     * 而下面 `new Map(...)` 按 articleId 后写覆盖 ⇒ `mine.get(id)` 拿到的是**别人**的
+     * 最高分与次数 —— 收藏列表于是把别人的成绩当我的显示，界面上完全看不出来。
+     * （"我的战绩"这四个字是这段代码唯一的判据，注释说对没用，where 才是。）
+     */
     db
       .select({
         articleId: participations.articleId,
@@ -68,7 +76,7 @@ favoritesRoutes.get('/', async (c) => {
         attempts: participations.attempts,
       })
       .from(participations)
-      .where(inArray(participations.articleId, ids)),
+      .where(and(eq(participations.userId, userId), inArray(participations.articleId, ids))),
   ])
   const meta = new Map(metaRows.map((r) => [r.id, r]))
   const mine = new Map(mineRows.map((r) => [r.articleId, r]))
