@@ -1,10 +1,41 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { env } from '../env'
 import { getStorage } from '../storage'
 import { assertAudioKeyOwnedBy } from '../services/audio-key'
 import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import { errorResponse, UploadResponseSchema } from '../openapi/schemas'
 
-export const uploadsRoutes = new Hono<{ Variables: Variables }>()
+export const uploadsRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+
+/**
+ * ⭐ 路由声明 —— **文档的来源**（见 openapi.ts 的说明）。
+ *
+ * ⚠️⚠️ 刻意**不声明 `request.body`**：声明了框架就会去校验表单，而它解析 multipart
+ *    的行为会把正常上传打成 400（本机联调立刻全挂）。字段名写在 description 里。
+ */
+const uploadRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['挑战提交'],
+  summary: '上传音频（仅 STORAGE=local 时可用；线上走对象存储直传）',
+  description:
+    '⚠️ 线上链路是「小程序 wx.cloud.uploadFile → 微信对象存储 → 服务端用 COS SDK 读」，' +
+    '这条只服务本机联调（容器里没有 COS 凭证）。\n\n' +
+    '请求体 multipart/form-data，字段：`articleId` / `audioKey` / `file`。\n\n' +
+    '⚠️ `audioKey` 必须是 `audio/{句子}/{我自己}/{attemptId}.mp3` —— 服务端会**校验归属**。',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UploadResponseSchema } },
+      description: '上传成功（返回 audioKey 与写入字节数）',
+    },
+    400: errorResponse('请求体不是 multipart/form-data / 缺 articleId、audioKey、file'),
+    403: errorResponse('audioKey 不属于当前用户（路径归属校验失败）'),
+    404: errorResponse('本端点只在 STORAGE=local 时可用'),
+    500: errorResponse('存储实现不支持写入'),
+  },
+})
 
 /**
  * 本地开发用的音频直传端点。
@@ -22,7 +53,7 @@ export const uploadsRoutes = new Hono<{ Variables: Variables }>()
  * ⚠️ 请求体大小：20 秒 16k/16bit 单声道约 640KB，**远超云托管那 100KiB 上限**。
  *    这条路只能本地走 —— 正好也是它的定位。
  */
-uploadsRoutes.post('/', async (c) => {
+uploadsRoutes.openapi(uploadRoute, async (c) => {
   if (env.STORAGE !== 'local') {
     return c.json({ ok: false, error: '本地直传端点仅在 STORAGE=local 时可用' }, 404)
   }
@@ -65,5 +96,5 @@ uploadsRoutes.post('/', async (c) => {
   const bytes = new Uint8Array(await file.arrayBuffer())
   await storage.put(audioKey, bytes)
   console.log(`[uploads] 本地直传 ${audioKey}（${bytes.byteLength} 字节）`)
-  return c.json({ ok: true, data: { audioKey, bytes: bytes.byteLength } })
+  return c.json({ ok: true, data: { audioKey, bytes: bytes.byteLength } }, 200)
 })

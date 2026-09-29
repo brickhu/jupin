@@ -121,6 +121,24 @@ export const TodayResponseSchema = okEnvelope(
     .openapi('TodayResponse'),
 )
 
+/**
+ * ⭐ **上传成功的返回**（`POST /api/user/uploads`）。
+ *
+ * ⚠️ 它**没有**对应的共享 TS 类型：端侧只用 `audioKey` 拼提交参数
+ *    （见 miniprogram/src/lib/api/upload.ts 的 UploadResult，那是端侧自己的形状）。
+ *    所以这里不做双向比对 —— 但字段名必须与端侧读的一致（`audioKey`）。
+ */
+export const UploadResponseSchema = okEnvelope(
+  z
+    .object({
+      /** 落库/对象存储里的 key（= `audio/{句子}/{用户}/{attemptId}.mp3`） */
+      audioKey: z.string(),
+      /** 实际写入字节数（排查用；端侧不消费） */
+      bytes: z.number().int(),
+    })
+    .openapi('UploadResponse'),
+)
+
 /* ---------- ⭐ 与共享 TS 类型的双向比对（漂移在这里报错） ---------- */
 
 /**
