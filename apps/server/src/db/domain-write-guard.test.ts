@@ -272,6 +272,23 @@ const EXEMPTIONS: Exemption[] = [
         '它要自己造一个测试用户并给能量（raw 写 users）—— 跑完把能量清零，' +
         '不依赖服务端任何测试后门。',
     },
+    {
+      audit: '#10',
+      file: 'tools/e2e-concurrent.mjs',
+      tables: ['users', 'submissions', 'participations', 'energy_ledger'],
+      why:
+        '并发撞号测试：同时提交 N 次，验证服务端不崩、序号恰好 1..N。' +
+        '它要自己造用户、造提交并清理（raw 写这四张表）。',
+    },
+    {
+      audit: '#10',
+      file: 'tools/fix-submission-seq.mjs',
+      tables: ['submissions'],
+      why:
+        '一次性修复：把历史提交的 seq 重编号成连续的 1..N。' +
+        '旧规则（受理时分配 + 没触达时删行）留下了空洞，那正是用户看到的' +
+        '「第 4 次跳到第 6 次」；新规则根治了产生，但历史空洞要靠这个脚本补平。',
+    },
   {
     audit: '#10',
     file: 'tools/dev-unlock.mjs',

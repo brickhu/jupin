@@ -12,7 +12,6 @@ import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } from '../services/audio-key'
-import { nextSeq } from '../services/submission'
 import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
@@ -213,8 +212,25 @@ submissionsRoutes.post('/', async (c) => {
    */
 
   // ---- 4. 分配序列号 ----
-  const seq = await nextSeq(userId, articleId)
-  const submissionId = makeSubmissionId(userId, articleId, seq)
+  /**
+   * ⚠️⚠️ **行 id 不再依赖序号**（2026-09 改，根治"第 4 次跳到第 6 次"）：
+   *    原来 `submissionId = hash(userId, articleId, seq)` ⇒ **必须先分配序号才能建行**，
+   *    而序号一旦分配就被"没触达"的行白占掉、留下永久空洞。
+   *    现在 id 从 `attemptId`（客户端一次尝试的稳定 id）派生 ⇒ 受理时就能算出，
+   *    而**序号改到"有结论"时才分配**（见 services/scoring.ts）。
+   */
+  /**
+  /**
+   * ⚠️⚠️ **`attemptId` 现在是必需的**（2026-09）—— 因为**行 id 从它派生**
+   *    （见上面那段说明：id 必须能在"分配序号之前"算出来）。
+   *    ⚠️ 代价说清楚：不带它的老客户端会拿到 400。
+   *    判断依据是客户端的 `uploadAudio` **本来就要求合法 attemptId**（32 hex），
+   *    并用它做上传路径的第三段 —— 所以能上传成功的客户端一定带得出来。
+   */
+  if (!attemptId || !/^[a-f0-9]{32}$/.test(attemptId)) {
+    return c.json({ ok: false, error: 'attemptId 必须提供（32 位十六进制）' }, 400)
+  }
+  const submissionId = makeSubmissionId(attemptId)
 
   // ---- 5. ⭐ 能量锁：受理时先把这次挑战要花的能量占住 ----
   //
@@ -264,7 +280,6 @@ submissionsRoutes.post('/', async (c) => {
           id: submissionId,
           userId,
           articleId,
-          seq,
           audioKey,
           // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
           //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。

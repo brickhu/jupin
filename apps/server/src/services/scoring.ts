@@ -6,7 +6,7 @@ import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { getEngine } from '../engines'
 import { getStorage } from '../storage'
-import { trackInvalid } from './submission'
+import { nextDisplaySeq, trackInvalid, withDisplaySeq } from './submission'
 import { releaseChallengeEnergy } from './energy'
 import { settle } from './settle'
 import { generateCoachFeedback } from './coach'
@@ -257,32 +257,48 @@ export async function runScoring(submissionId: string): Promise<void> {
     //   （见 routes/submissions.ts 的说明）。
     //    ⚠️ 按**句子**算：句子就是竞技场，日期只是首页列表上的一个格子。
     const previousBest = await getMyBest(articleId, userId)
+
 void previousBest
 
-    // ⚠️ 带 status='scoring' 条件：如果这条已经被接管者打完（理论上不会，
-    //    认领是原子的），这里就不该覆盖别人的结果。
-    const [header] = await db
-      .update(submissions)
-      .set({
-        status: 'scored',
-        // ⭐ 能量**结算**：打分成功 → 受理时锁住的那 2 点变成实扣
-        energyState: 'charged',
-        // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）；数值本身是一位小数
-        score: score.toFixed(1),
-        // ⚠️ 归一化后字节数/时长变了，必须一起写回来
-        audioBytes,
-        audioDurationMs,
-        wordScores: result.words ? JSON.stringify(result.words) : null,
-        dimensions: result.dimensions ? JSON.stringify(result.dimensions) : null,
-        // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
-        aiComment: coach?.comment ?? null,
-        aiAdvice: coach?.advice ?? null,
-        // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
-        scoreParts: breakdown ? JSON.stringify(breakdown) : null,
-        scoredAt: new Date(),
-      })
-      .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))
-    if ((header as unknown as { affectedRows?: number })?.affectedRows !== 1) {
+    /**
+     * ⚠️ 带 status='scoring' 条件：如果这条已经被接管者打完（理论上不会，
+     *    认领是原子的），这里就不该覆盖别人的结果。
+     *
+     * ⚠️⚠️ **序号用 `withDisplaySeq` 包住**（2026-09 实测踩到）：
+     *    序号算法是 `MAX(seq)+1`，并发提交会撞
+     *    `uniqueIndex(user, article, seq)` —— 那时必须**重算重写**。
+     *    不包的话那个 `ER_DUP_ENTRY` 会**逃逸出去把整个进程带走**
+     *    （实测：容器重启，所有正在打分的提交一起丢）。
+     *
+     * ⭐ 序号**在这一刻才分配**：分配点是"有结论"，不是"受理"。
+     *    占过号的行永不删 ⇒ 序号不可能有空洞（根治"第 4 次跳到第 6 次"）。
+     */
+    const wrote = await withDisplaySeq(userId, articleId, async (seq) => {
+      const [header] = await db
+        .update(submissions)
+        .set({
+          status: 'scored',
+          seq,
+          // ⭐ 能量**结算**：打分成功 → 受理时锁住的那 2 点变成实扣
+          energyState: 'charged',
+          // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）；数值本身是一位小数
+          score: score.toFixed(1),
+          // ⚠️ 归一化后字节数/时长变了，必须一起写回来
+          audioBytes,
+          audioDurationMs,
+          wordScores: result.words ? JSON.stringify(result.words) : null,
+          dimensions: result.dimensions ? JSON.stringify(result.dimensions) : null,
+          // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
+          aiComment: coach?.comment ?? null,
+          aiAdvice: coach?.advice ?? null,
+          // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
+          scoreParts: breakdown ? JSON.stringify(breakdown) : null,
+          scoredAt: new Date(),
+        })
+        .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))
+      return (header as unknown as { affectedRows?: number })?.affectedRows === 1
+    })
+    if (!wrote) {
       console.warn(`[scoring] 结果未写入（状态已变）id=${submissionId}`)
       return
     }
@@ -396,15 +412,36 @@ export async function markScoringFailed(submissionId: string, reason: string): P
  *    该不该计入防刷 —— 业务规则挂在文案上，改一个字（比如去掉"的"）防刷就
  *    **静默失效**，而且没有任何测试会发现。现在由**抛错的地方**显式说明它是哪一种。
  */
-async function fail(submissionId: string, reason: string, kind: 'invalid' | 'infra' = 'invalid'): Promise<void> {
-  console.warn(`[scoring] 失败 id=${submissionId}: ${reason}`)
-  const [row] = await db
-    .update(submissions)
-    .set({ status: 'failed', failReason: reason.slice(0, 255) })
-    .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))
-  if ((row as unknown as { affectedRows?: number })?.affectedRows !== 1) return
+  async function fail(submissionId: string, reason: string, kind: 'invalid' | 'infra' = 'invalid'): Promise<void> {
+    console.warn(`[scoring] 失败 id=${submissionId}: ${reason}`)
 
-  const [failed] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
+    /**
+     * ⚠️ 先把行读出来：分配序号需要 `(userId, articleId)`，而它们只有行上有。
+     *    ⚠️ 顺序**必须**是"先读 → 算序号 → 再更新"：
+     *      序号要在同一句 `UPDATE` 里写进去（否则会出现"改了状态但没号"的中间态）。
+     */
+    const [before] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
+    if (!before) return
+
+    /**
+     * ⚠️ **只有 `invalid` 才占号**（引擎判无效 = 检测跑到了、给了结论）。
+     *    `infra`（我们这边的问题）那一行马上会被删掉 —— 给它序号就会留下空洞，
+     *    那正是"第 4 次跳到第 6 次"的成因。
+     * ⚠️ 占号那条路用 `withDisplaySeq` 包住：撞号要重算，不能让异常逃逸（会带走进程）。
+     */
+    const row = await withDisplaySeq(before.userId, before.articleId, async (seq) => {
+      const [header] = await db
+        .update(submissions)
+        .set({
+          status: 'failed',
+          failReason: reason.slice(0, 255),
+          ...(kind === 'invalid' ? { seq } : {}),
+        })
+        .where(and(eq(submissions.id, submissionId), eq(submissions.status, 'scoring')))
+      return (header as unknown as { affectedRows?: number })?.affectedRows === 1
+    })
+    if (!row) return
+    const [failed] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
 
   /**
    * ⭐ 能量**结算**：失败就退回受理时锁住的那 2 点。

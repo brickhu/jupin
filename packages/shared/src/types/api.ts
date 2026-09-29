@@ -174,14 +174,14 @@ export interface SubmitResponse {
   /**
    * ⭐ 这一把是**这句**的第几次提交（从 1 开始）—— s5 副标题「第 K 次挑战」用的就是它。
    *
-   * ⚠️ 取自 `submissions.seq`（受理那一刻分配），**包含失败 / 进行中的那几次**，
+   * ⚠️⚠️ **可空**（2026-09 改）：序号**只在"有结论"时才分配**（见 db/schema.ts），
    *    与「我在这句打过几次分」（ArenaRecord.attempts）不是同一个数 —— 后者只数 scored。
    *    端侧原来拿 store 的缓存猜、还夹了下限 2：缓存里没有这句的旧战绩时会猜成
    *    「第 2 次」，而 previousBest 又是 null（首次）—— 两个字段自相矛盾。
    * ⚠️ 「是不是首次」仍由 previousBest === null 判，不用它：首次失败过的用户
    *    第二次出分时 previousBest 还是 null，那时该显示「首次挑战」。
    */
-  attempts: number
+  attempts?: number
   /**
    * ⭐ 这一把的**成长值快照**（三个指标各加了多少）—— s5 三张卡上的 +N 就是它。
    *

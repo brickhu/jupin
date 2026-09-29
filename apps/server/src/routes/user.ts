@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { isNotNull, and, desc, eq, inArray, lt, or } from 'drizzle-orm'
 import { db } from '../db'
 import { articles, energyLedger, participations, submissions, users } from '../db/schema'
 import { env } from '../env'
@@ -148,13 +148,17 @@ userRoutes.get('/article-records', async (c) => {
         eq(submissions.userId, userId),
         eq(submissions.articleId, articleId),
         /**
-         * ⚠️⚠️ **failed 也要取出来**（用户 2026-09 报的现象）：
-         *    只取 scored 时，失败那次的序号已经被消耗掉了 ⇒ 列表里出现
-         *    「第 4 次 → 第 6 次」的断档，看起来像丢了一次记录。
-         *    failed 是**检测真的跑到了、并给了结论**（未检测到有效语音），
-         *    它算一次挑战，界面上按「未出分」显示。
+         * ⚠️⚠️ **判据是"有没有序号"，不是"什么状态"**（2026-09 改，这是根治办法）：
+         *
+         *    序号（`seq`）**只在"有结论"时才分配**（见 db/schema.ts 的说明）⇒
+         *    "有号"精确等于"这是用户的一次挑战"，一句话覆盖了所有中间态：
+         *      · `scoring`（检测中）—— 没有号，不该出现在历史里；
+         *      · 没触达（音频读不出来）—— 没有号，而且那一行会被删掉；
+         *      · `scored` / 引擎判无效 —— 有号，显示（后者按「未出分」渲染）。
+         *    ⚠️ 比"状态白名单"稳：以后再加中间态，**这里不用改**，
+         *      也不会再出现"列表 5 行、卡片写 6 次"那种对不上的数字。
          */
-        or(eq(submissions.status, 'scored'), eq(submissions.status, 'failed')),
+        isNotNull(submissions.seq),
       ),
     )
     .orderBy(desc(submissions.createdAt))

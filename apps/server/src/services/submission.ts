@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq } from 'drizzle-orm'
+import { max, isNotNull, and, count, countDistinct, eq } from 'drizzle-orm'
 import { MAX_INVALID_PER_DAY } from '@jushuo/shared'
 
 import { db } from '../db'
@@ -38,12 +38,62 @@ export async function challengeStats(
  * 取该用户在该文章的下一个序列号（从 1 开始）。
  * ⚠️ 并发提交可能撞号，由 uniqueIndex(userId, articleId, seq) 兜底。
  */
-export async function nextSeq(userId: number, articleId: string): Promise<number> {
+/**
+ * ⭐⭐ **分配"这一句上的第几次"**（= 列表里的序号）—— **只在"有结论"时调用**。
+ *
+ * ⚠️⚠️ 为什么不在受理时分配（用户 2026-09 报的"第 4 次跳到第 6 次"的根因）：
+ *    受理时分配的话，"没触达"（音频读不出来 / 网络断）那一行最终要被清掉，
+ *    而它**占过的号会变成永久空洞**。把分配点挪到"有结论"这一刻，并保证
+ *    **占过号的行永不删** ⇒ 序号里不可能有空洞。
+ *
+ * ⚠️ 算法就是"已占号的行数 + 1"：因为占号的行只增不减、且永不删，
+ *    这个数天然连续（1、2、3…）。
+ * ⚠️ 并发提交可能撞 `uniqueIndex(user, article, seq)` ⇒ 撞了就重算（下面那个循环），
+ *    这与原来 `nextSeq` 靠唯一键兜底的思路一致，只是现在多了一步重试。
+ */
+export async function nextDisplaySeq(userId: number, articleId: string): Promise<number> {
+  /**
+   * ⚠️⚠️ **用 `MAX(seq) + 1`，不是 `COUNT(*) + 1`**（2026-09 实测踩到）：
+   *    "数有几行就给第几号"在**有历史数据**时必然撞号 ——
+   *    库里已经有 `seq=6` 的行时，数出 6 行就会再给一个 6 ⇒
+   *    `Duplicate entry … for key submissions_user_article_seq_idx`。
+   *    ⚠️ 当时那个异常还**逃逸出去把整个进程带走**（容器重启）。
+   *
+   * ⚠️ 并发下仍可能撞（两个请求同时读到同一个 max）⇒ 调用方**必须重试**，
+   *    见下面的 `withDisplaySeq`。
+   */
   const [row] = await db
-    .select({ n: count() })
+    .select({ max: max(submissions.seq) })
     .from(submissions)
     .where(and(eq(submissions.userId, userId), eq(submissions.articleId, articleId)))
-  return Number(row?.n ?? 0) + 1
+  return Number(row?.max ?? 0) + 1
+}
+
+/**
+ * ⭐ **带重试地分配序号并执行一次写入**（并发撞号时重算）。
+ *
+ * ⚠️ 为什么需要它：`MAX(seq)+1` 在并发下会撞 `uniqueIndex(user, article, seq)`。
+ *    这里撞了就重算（最多 5 次），而不是让异常逃逸 ——
+ *    那个异常**会把整个 Node 进程带走**（实测：容器重启、所有进行中的打分一起丢）。
+ *
+ * @param write 拿到序号后要执行的写入；返回 `true` 表示写成功（不再重试）
+ */
+export async function withDisplaySeq(
+  userId: number,
+  articleId: string,
+  write: (seq: number) => Promise<boolean>,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const seq = await nextDisplaySeq(userId, articleId)
+    try {
+      return await write(seq)
+    } catch (err) {
+      const dup = (err as { code?: string }).code === 'ER_DUP_ENTRY'
+      if (!dup || attempt === 5) throw err
+      console.warn('[submission] 序号撞号，重算（第 ' + attempt + ' 次）：' + userId + '/' + articleId)
+    }
+  }
+  return false
 }
 
 /**

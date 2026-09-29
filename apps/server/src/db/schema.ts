@@ -399,7 +399,20 @@ export const submissions = mysqlTable('submissions', {
    */
   articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
   /** 该用户在该文章的第几次提交，从 1 开始 */
-  seq: int('seq').notNull(),
+  /**
+   * ⭐⭐ **这一句上的第几次**（从 1 开始）—— 同时是**列表里的序号**。
+   *
+   * ⚠️⚠️ **只在"这一行确定要有"时才分配**（`scored` / `failed`），受理那一刻是 NULL。
+   *    为什么（用户 2026-09 报的"第 4 次跳到第 6 次"就是这么来的）：
+   *    原来在**受理时**就分配序号，而"没触达"（音频读不出来 / 网络断）的那一行
+   *    最终要被清掉 —— 它占过的号就变成了**永久空洞**，用户看到序号跳号。
+   *    现在把分配点挪到"有结论"那一刻，并保证：**占过号的行永不删** ⇒
+   *    **序号里不可能出现空洞**（空洞只能来自"删掉一个占过号的行"，那件事不再发生）。
+   *
+   * ⚠️ 可空是这套设计的**关键**：它让"检测中 / 没触达"的行与"真的一次挑战"
+   *    在数据层面就是两回事，不需要额外的 status 约定去区分。
+   */
+  seq: int('seq'),
 
   /**
    * ⭐ 这次提交是**针对哪一天的挑战**（'YYYY-MM-DD'，北京时间）。
@@ -621,7 +634,13 @@ export const submissions = mysqlTable('submissions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   scoredAt: datetime('scored_at', { mode: 'date', fsp: 3 }),
 }, (t) => [
-  uniqueIndex('submissions_user_article_seq_idx').on(t.userId, t.articleId, t.seq),
+    /**
+     * ⚠️ `(user, article, seq)` 唯一 —— 但 **seq 为 NULL 的行不参与**
+     *    （MySQL 的唯一索引本来就不约束 NULL，这正是我们要的）：
+     *    "检测中 / 没触达"的行没有序号，可以同时存在多条；
+     *    而一旦给了序号，那一句上就不允许重号。
+     */
+    uniqueIndex('submissions_user_article_seq_idx').on(t.userId, t.articleId, t.seq),
   /**
    * ⭐ 幂等 + 防刷：一次录音只能产生一条提交。
    *    没有它的话：网络重试会多插一条重复记录（还白扣一次冷却），

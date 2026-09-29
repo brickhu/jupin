@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { count, eq } from 'drizzle-orm'
 import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
 
@@ -221,7 +222,8 @@ async function main(): Promise<void> {
       const at = new Date(date + 'T12:00:00.000Z')
 
       rows.push({
-        id: makeSubmissionId(userId, articleId, seq),
+        /** ⚠️ 行 id 由 attemptId 派生（见 routes/submissions.ts 的说明）—— 造数据时用它自己那份 */
+        id: makeSubmissionId(attemptIdOf(userId, articleId, at)),
         userId,
         articleId,
         seq,

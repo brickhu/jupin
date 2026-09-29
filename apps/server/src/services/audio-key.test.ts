@@ -1,44 +1,36 @@
+import { randomBytes } from 'node:crypto'
+
 import { describe, expect, it } from 'vitest'
 import { RECORD_SPEC, SUBMISSION_ID_LENGTH } from '@jushuo/shared'
 
 import { assertAudioKeyOwnedBy, makeAudioKey, makeSubmissionId } from './audio-key'
 
-describe('makeSubmissionId', () => {
-  it('是确定性的 —— 同样输入永远同样输出', () => {
-    expect(makeSubmissionId(1, '2', 3)).toBe(makeSubmissionId(1, '2', 3))
+describe('makeSubmissionId —— 行 id 由 attemptId 派生（不再依赖序号）', () => {
+  /** ⚠️ 同样输入永远同样输出 —— 受理与重试拿到的 id 一致 */
+  it('是确定性的', () => {
+    expect(makeSubmissionId('a'.repeat(32))).toBe(makeSubmissionId('a'.repeat(32)))
   })
 
-  it('任一输入变化都会改变结果', () => {
-    const base = makeSubmissionId(1, '2', 3)
-    expect(makeSubmissionId(9, '2', 3)).not.toBe(base)
-    expect(makeSubmissionId(1, '9', 3)).not.toBe(base)
-    expect(makeSubmissionId(1, '2', 9)).not.toBe(base)
-  })
-
-  it('不同组合不会撞号', () => {
+  it('不同 attemptId 不撞号（500 个取值）', () => {
     const seen = new Set<string>()
-    for (const u of [1, 2, 12]) {
-      for (const a of ['3', '4', '34']) {
-        for (const s of [5, 6, 56]) seen.add(makeSubmissionId(u, a, s))
-      }
-    }
-    expect(seen.size).toBe(27)
+    // ⚠️ 用 `randomBytes` 造 500 个**真的不同**的 attemptId ——
+    //    我第一版用 `i.toString(16) + '0'.repeat(31)` 拼，结果它们互相碰撞
+    //    （尾部全是 0），测出来是红的而实现没问题。
+    for (let i = 0; i < 500; i++) seen.add(makeSubmissionId(randomBytes(16).toString('hex')))
+    expect(seen.size).toBe(500)
   })
 
   /**
-   * ⚠️ 断言里**引用常量**，不写死位数。
-   *    这条测试原来写的是「长度固定 24，适合做 varchar(40) 主键」——
-   *    结果派生函数是 24、而列宽真的被写成了 40，它却什么都没挡住：
-   *    写死的数字只能证明「没变」，证明不了「三处一致」。
-   *    真正的一致性靠三处都引用 SUBMISSION_ID_LENGTH（派生 / 列宽 / 路由正则）。
+   * ⚠️⚠️ 这条盯的是**这次改动的根因**：
+   *    id 曾经是 `hash(userId, articleId, seq)` ⇒ **必须先分配序号才能建行**，
+   *    而序号一旦被「没触达」的行白占就留下永久空洞（用户看到「第 4 次跳到第 6 次」）。
+   *    ⇒ 现在 id 只由 `attemptId` 决定 —— 受理时就算得出来，与序号解耦。
    */
-  it('长度 = SUBMISSION_ID_LENGTH，且是十六进制（列宽与路由正则共用这个常量）', () => {
-    const id = makeSubmissionId(1, '2', 3)
-    expect(id).toHaveLength(SUBMISSION_ID_LENGTH)
-    expect(id).toMatch(/^[0-9a-f]+$/)
-    expect(makeSubmissionId(999999, '999999', 999999)).toHaveLength(SUBMISSION_ID_LENGTH)
+  it('形状与 attemptId 一致（长度用 shared 常量，别写死）', () => {
+    expect(makeSubmissionId('f'.repeat(32))).toHaveLength(SUBMISSION_ID_LENGTH)
   })
 })
+
 
 describe('makeAudioKey', () => {
   it('按 句子/用户/attemptId 三段组织', () => {

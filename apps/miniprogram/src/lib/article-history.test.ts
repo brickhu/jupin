@@ -31,6 +31,8 @@ const item = (
   scheduleDate: string | null = '2026-09-21',
 ): ArticleRecordsResponse['items'][number] => ({
   submissionId,
+    // ⚠️ 夹具跟着契约走：status 必填（未出分那次也会出现在列表里）
+    status: 'scored' as const,
   score,
   seq,
   createdAt,

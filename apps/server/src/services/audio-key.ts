@@ -20,9 +20,9 @@ const AUDIO_PREFIX = 'audio'
  * ⚠️ 长度用 shared 的常量：它同时决定列的宽度和接口校验 sid 的正则，
  *    三处各写一个数就会漂（这次就漂过一次：派生 24、列宽 40）。
  */
-export function makeSubmissionId(userId: number, articleId: string, seq: number): string {
+export function makeSubmissionId(attemptId: string): string {
   return createHash('sha256')
-    .update(`jushuo:${userId}:${articleId}:${seq}`)
+    .update(`jushuo:attempt:${attemptId}`)
     .digest('hex')
     .slice(0, SUBMISSION_ID_LENGTH)
 }

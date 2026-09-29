@@ -160,6 +160,25 @@ check('那一行确实不在库里', ghost[0].n === 0, 'count=' + ghost[0].n)
 const [e2] = await conn.execute('SELECT energy FROM users WHERE id=?', [uid])
 check('能量已退回（没触达不该扣）', e2[0].energy >= 20 - 2, 'energy=' + e2[0].energy)
 
+// ---- ⑨ 最关键：序号**不许有空洞**（用户报的"第 4 次跳到第 6 次"）----
+step('⑨', '序号连续性（根治项）：占过号的行必须恰好是 1..N')
+const [seqRows] = await conn.execute(
+  'SELECT seq FROM submissions WHERE user_id=? AND article_id=? AND seq IS NOT NULL ORDER BY seq',
+  [uid, articleId],
+)
+const seqs = seqRows.map((r) => r.seq)
+const expectSeq = seqs.map((_, i) => i + 1)
+check(
+  '序号是 1..N 连续的（没有空洞）',
+  JSON.stringify(seqs) === JSON.stringify(expectSeq),
+  '实际=[' + seqs.join(',') + '] 期望=[' + expectSeq.join(',') + ']',
+)
+const [nullSeq] = await conn.execute(
+  'SELECT COUNT(*) n FROM submissions WHERE user_id=? AND article_id=? AND seq IS NULL',
+  [uid, articleId],
+)
+check('没有"无号"的残留行（检测中/没触达都该被清掉）', nullSeq[0].n === 0, 'count=' + nullSeq[0].n)
+
 // ---- 清理 ----
 await conn.execute('UPDATE users SET energy = 0 WHERE id = ?', [uid])
 console.log('\n' + (failed === 0 ? '✅ 端到端通过（测试用户 openid=' + OPENID + '）' : '❌ 有 ' + failed + ' 项没过'))

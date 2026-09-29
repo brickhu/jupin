@@ -1851,7 +1851,7 @@ Page({
       //    任何一帧被打断（定时器被清）都不能让界面停在半路。
       scoreText: formatScore(result.score),
       scoreSubtitle: this.subtitleOf(result),
-      attemptTitle: result.attempts > 0 ? '第' + result.attempts + '次朗读' : 'AI口语测评',
+      attemptTitle: (result.attempts ?? 0) > 0 ? '第' + (result.attempts ?? 0) + '次朗读' : 'AI口语测评',
       growthCards: growthCardsOf(growth),
       failDetail: '',
       playingWord: -1,
