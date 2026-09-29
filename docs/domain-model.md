@@ -15,14 +15,14 @@
 
 | # | 业务概念 | 真相在哪 | 唯一写入方 | 派生物 / 对账 | 主要读者 |
 |---|---|---|---|---|---|
-| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | `content/articles/<id>.json`；上线状态在 `articles.is_active` | **无** —— 见 1.1，至少 4 类写入点 | 难度/标签物化到 `articles.difficulty` + `article_tags`（可重跑 reindex）；主题是 id 的纯函数 | `/api/articles`、`/api/schedules`、`/api/arenas`、`/api/user/today` |
+| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles`、`/api/schedules`、`/api/arenas`、`/api/user/today` |
 | 2 | 一次朗读（录音） | 对象存储里的音频；索引在 `submissions`（`audio_key` / `audio_url` / `bytes` / `duration_ms` / `is_public`） | **无** —— 3 个写点（受理 insert、评测 update、可见性 update） | 失败时对象被删；成功时归档成 mp3 并改 `audio_key` | `GET /api/challenge/:sid/audio`、`/api/user/challenges` |
 | 3 | 一次评测（分数 / 逐词 / 点评） | `submissions` 的 `score` / `word_scores` / `dimensions` / `score_parts` / `ai_comment` / `ai_advice` | 唯一模块 `services/scoring.ts`；**函数级不唯一**（`runScoring` / `fail`） | `participations`（比分）；`users.growth_*`（结算） | `GET /api/user/submissions/:id`、`GET /api/challenge/:sid`、`/api/user/challenges` |
 | 4 | 一次奖励结算（成长值 / 连战 / 能量） | `submissions`（快照）+ `users`（累计/连战/能量）+ `energy_ledger` + `unfreeze_cards` + `reward_grants` | 唯一入口 `services/settle.ts:47`；**但内部跨 4+ 个独立事务** | `submissions.growth_*` / `streak_delta` 是快照 | 结果页 `SubmitResponse.growth` / `.streak`、`/api/user/me` |
 | 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/arena-records`、首页卡片 |
 | 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/arenas/:articleId`、`/api/schedules/:date`、`/api/user/submissions/:id` |
 | 7 | 今日挑战（24 小时窗口） | `users.today_article_id` + `today_assigned_at` | `recommendToday`（`services/recommend.ts:330`） | 无 | `GET /api/user/today` |
-| 8 | 难度档位 | 正文 JSON 的 `difficulty`（由 `scores` 算出） | 派生列 `articles.difficulty` **无唯一写入方**（article-index + admin 两处） | `articles.difficulty` + `article_tags`；重算 `pnpm content:regrade --apply` | 端侧展示读正文；SQL 筛选读 `articles.difficulty` |
+| 8 | 难度档位 | **`articles.scores`**（三个判据分才是源）；`articles.difficulty` 由它算出 | `services/article-content.ts`（写 scores 时一并算 difficulty） | `articles.difficulty`（派生列，供 SQL 筛选） | 端侧展示读 `difficulty`；SQL 筛选读同一列 |
 | 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/arena-records` |
 | 10 | 连战 | `users.streak_days` / `streak_best` / `last_read_date` | `recordRead`（`services/streak.ts:83`）——**但被 `unfreeze.ts:183` 绕过一处** | 连战日历现算（`services/streak-record.ts`） | `/api/user/me`、`/api/user/streak-record` |
 | 10b | 解冻卡 | `unfreeze_cards`（一张卡一行，有效期/领取/使用都在行上） | 发放 `grantUnfreezeCard`（`unfreeze.ts:98`）、领取 `claimUnfreezeCards`（`unfreeze.ts:75`）、使用 `useUnfreezeCards`（`unfreeze.ts:131`）——三个动作各有唯一函数 | 无 | `/api/user/me`、`/api/user/claim`、`/api/user/unfreeze` |
@@ -35,7 +35,7 @@
 
 | 数据 | 写入点（`文件:行`） | 说明 |
 |---|---|---|
-| 正文 JSON | `tools/admin/server.ts:573`（writeContentFile）、`tools/pipeline`（LLM/TTS 落盘） | 正文文件本身；可手工改 |
+| 句子各列 | `services/article-content.ts`（由 `/api/admin/*` 与部署灌库共用） | `articles` 表；`tools/admin` 通过 `/api/admin/*` 间接写 |
 | `articles.difficulty` | `services/article-index.ts:73`（syncArticleIndex）、`tools/admin/server.ts:650,662`（upsertArticle） | **两处都直接写这一列**。schema 注释说「不要手写、只由 syncArticleIndex 物化」（`apps/server/src/db/schema.ts:32`），但 admin 发布自己又写了一次 |
 | `article_tags` | `services/article-index.ts:76,78` | 这一个是真·唯一写入方 |
 | `articles.is_active` | `tools/admin/server.ts:646,662`（upsertArticle）、`tools/admin/server.ts:880`（setPublishedBatch）、`apps/server/src/db/seed-articles.ts:92`（灌库插值） | **三个写入方** |
@@ -43,7 +43,7 @@
 | `articles.standard_audio` | `services/standard-audio.ts:204`、`apps/server/src/db/seed-articles.ts:125`（仅 STORAGE=local）、`tools/admin/server.ts:648,662`、`tools/rename-content-to-hash.mjs:98` | **四个写入方** |
 | `articles.theme` | `tools/admin/server.ts:647,662`、`apps/server/src/db/seed-articles.ts:91`、`tools/backfill-article-theme.ts:91` | 它是 `themeFromHash(id)` 的物化副本（`packages/shared/src/theme.ts:111`） |
 
-**② 真相在哪。** 正文、`difficulty`、`tags` 的真相是 `content/articles/<id>.json`（`apps/server/src/db/schema.ts:28-34`）。`articles` 只是索引。`theme` 连「正文真相」都不需要——它是 id 的纯函数。**唯一真正以列为真相的是 `is_active`**（`schema.ts:223`）。
+**② 真相在哪。** 正文的真相**就是 `articles` 表上的列**（2026-09 拆列，见 AGENT.md 1.5）：`text` / `translation` / `scores` / `challenge` / `advice` / `words` / `links` 是**源**；`difficulty` / `tags` / `theme` / `standard_audio` 是**派生**（由 `scores` / `text` / `id` 算出）；`is_active` 是**源**。⚠️ 仓库里的 `content/articles/` 下那些 json 只剩「历史内容的导入源」这一个角色，运行时不再读它。
 
 **③ 派生物 / 对账。**
 - 难度 / 标签 → `articles.difficulty` + `article_tags`，由 `syncArticleIndex` / `reindexArticles`（`services/article-index.ts:89,109`）幂等重建。
@@ -142,7 +142,7 @@
 
 **① 唯一写入方？无。** 派生列 `articles.difficulty` 有两个写点：`services/article-index.ts:73`（syncArticleIndex）与 `tools/admin/server.ts:650,662`（upsertArticle，随后 `:663` 又调 syncArticleIndex 写同一值）。灌库路径 `seed-articles.ts` **不**直接写 difficulty，只调 `reindexArticles`（`seed-articles.ts:134`）。
 
-**② 真相在哪。** 正文 JSON 的 `difficulty`，由三个判据分 `scores` 算出：`difficultyFromScores` / `weightedScoreOf`（`packages/shared/src/level.ts:142,155`）。`articles.difficulty` 只是「能走 SQL 筛选」的副本（`schema.ts:210-221`）。
+**② 真相在哪。** **`articles.scores`**（三个判据分）才是源；难度由它算出：`difficultyFromScores` / `weightedScoreOf`（`packages/shared/src/level.ts`）。`articles.difficulty` 是「能走 SQL 筛选」的派生列。⚠️ 老注释把这件事写反过（说「真相在正文的 difficulty 里」），实现一直是从 `scores` 算 —— 2026-09 已按事实改。
 
 **③ 派生物 / 对账。** `articles.difficulty` + `article_tags`（`article-index.ts:72-80`），幂等重建 `reindexArticles`（`:109`）。命令 `pnpm content:regrade --apply`（`tools/regrade-content.ts:11,66`）。自洽单测 `services/content-files.test.ts:54`（只验正文，不验库）。
 

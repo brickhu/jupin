@@ -322,7 +322,7 @@ interface ScoreResult {
   依据必须与 difficulty 一致（初级句不许写"母语者都读不顺"）。两句在竞技场里拼成一段
   （challenge + "。" + advice + "。"），必须接得上。禁水平标签、"词都很常见"式盖章、
   "直逼母语者水平"式不可验证承诺，也禁同一批里用同一个句尾模板。
-  对外**只有** difficulty + challenge + advice；`scores` 进正文 JSON 与管理台，**不进公开 API** ——
+  对外**只有** difficulty + challenge + advice；`scores` 进 `articles.scores` 与管理台，**不进公开 API** ——
   ArticleDetail 仍是「公不公开」的唯一定义处。
 - ⭐ **难度全由 LLM 判，不算脚本特征**（2026-09 决定，废弃了原方案「脚本算特征 → LLM 综合判断」）：
   能算出来的那几个量（难音密度 / 连读点 / 弱读词数 / 音节数）**都只是代理指标** ——

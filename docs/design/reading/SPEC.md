@@ -209,7 +209,7 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
 
 1. **s2 左下的 ↺ = 重录，但录音中它是 disabled**（录音中不给重录，只作占位）。
 2. **IPA 胶囊 = 在单词下方显示音标**（切换）。
-   ✅ 数据已经有了：正文 JSON 的 words[] 每项带 `ipa`（还有 syllables / stress / tip / meaning），
+   ✅ 数据已经有了：`articles.words` 每项带 `ipa`（还有 syllables / stress / tip / meaning），
    形如 /ˈɛvɹiˌθɪŋ/ —— 不需要新接口，也不需要新增流水线。渲染上要做的只是
    **把句子按词渲染**（现在大概率是整段文本），每个词下面挂它自己的 ipa。
 3. **s6 左上角那个图标换成 X**（原来画的是红底对勾，失败态用 √ 会读成成功）。
