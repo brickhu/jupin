@@ -87,8 +87,6 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   participations: { owners: [P.participations], note: 'syncParticipation / rebuildParticipations' },
   // 收藏：主键 (user_id, article_id)，两个方向都幂等（docs 1.9）
   favorites: { owners: [P.favorites], note: 'setFavorite' },
-  // 金句标签：article_tags 是真·唯一写入方（docs 1.1）
-  article_tags: { owners: [P.articleIndex], note: 'syncArticleIndex（reindexArticles 幂等重建）' },
   // 每日排期：轮转与运营排期都走同一模块（docs 1.7 的两套之一）
   schedules: { owners: [P.schedules], note: 'services/schedules.ts 的轮转 + setSchedule' },
   goods: { owners: [P.goods], note: 'services/goods.ts' },
@@ -232,7 +230,7 @@ const EXEMPTIONS: Exemption[] = [
   {
     audit: '#8 / #16',
     file: 'tools/backfill-article-theme.ts',
-    tables: ['articles', 'schedules', 'submissions', 'article_tags'],
+    tables: ['articles', 'schedules', 'submissions'],
     why: '一次性把旧内容 id 改写成 hash，四张表必须一起改；跑完即弃，复用服务层反而多出中途失败的风险。submissions.theme 只有这一处写。',
   },
   {

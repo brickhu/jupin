@@ -24,14 +24,14 @@ import { basename, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-import { eq, desc, inArray } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 
 import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
 import type { ArticleWordItem, ArticleWordStress, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
-import { articleTags, articles, schedules } from '../../apps/server/src/db/schema'
+import { articles, schedules } from '../../apps/server/src/db/schema'
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
 import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
@@ -445,14 +445,11 @@ async function contentOf(id: string): Promise<Record<string, unknown> | null> {
 async function listArticles(mode: Mode, q: string, limit: number) {
   const d = await dbOf(mode)
   const rows = await d.select().from(articles).orderBy(desc(articles.createdAt)).limit(limit)
-  const ids = rows.map((r) => r.id)
-  const tagRows = ids.length ? await d.select().from(articleTags).where(inArray(articleTags.articleId, ids)) : []
-  const tagMap = new Map<string, string[]>()
-  for (const t of tagRows) {
-    const list = tagMap.get(t.articleId) ?? []
-    list.push(t.tag)
-    tagMap.set(t.articleId, list)
-  }
+  /**
+   * ⚠️ 标签**从正文取**（2026-09 起没有 `article_tags` 表了，见 apps/server/src/db/schema.ts）。
+   *    ⚠️ 顺序因此也对了：以前读索引会按字母排序，而正文里第一个标签最重要 ——
+   *      那正是"详情页要专门绕开索引"的原因，现在不需要绕了。
+   */
   const out = []
   for (const r of rows) {
     const c = await contentOf(r.id)
@@ -473,7 +470,8 @@ async function listArticles(mode: Mode, q: string, limit: number) {
       standardAudio: r.standardAudio ?? null,
       text: typeof c?.text === 'string' ? c.text : null,
       translation: typeof c?.translation === 'string' ? c.translation : null,
-      tags: (tagMap.get(r.id) ?? []).sort(),
+      // ⚠️ 从正文取（顺序有意义，不要 .sort() —— 第一个标签最重要）
+      tags: Array.isArray(c?.tags) ? c.tags : [],
       words: Array.isArray(c?.words) ? c.words : [],
     })
   }
@@ -1079,7 +1077,6 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const [row] = await d.select().from(articles).where(eq(articles.id, id)).limit(1)
     if (!row) return fail(res, '句库没有这一条', 404)
     const c = await contentOf(id)
-    const tags = await d.select().from(articleTags).where(eq(articleTags.articleId, id))
     const sched = await d
       .select({ date: schedules.date })
       .from(schedules)
@@ -1109,12 +1106,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       text: typeof c?.text === 'string' ? c.text : null,
       translation: typeof c?.translation === 'string' ? c.translation : '',
       /**
-       * ⚠️ 标签的**真相在正文 JSON**，而且**顺序有意义**（第一个最重要，见 db/schema.ts
-       *    里 article_tags 的注释）。article_tags 只是集合索引，**丢了顺序** ——
-       *    所以详情优先用正文里的那份，索引只作为兜底。
-       *    （踩过：详情读索引 → 界面里是排序后的顺序 → 一保存就把 JSON 的标签顺序改了。）
+       * ⚠️ 标签只有一个来源：**正文**（`article_tags` 表 2026-09 删了）。
+       *    而且**顺序有意义**（第一个最重要），所以这里不做任何排序 ——
+       *    （踩过：以前读索引得到的是排序后的顺序，一保存就把正文里的标签顺序改掉了。）
        */
-      tags: Array.isArray(c?.tags) && c.tags.length ? c.tags : tags.map((t) => t.tag).sort(),
+      tags: Array.isArray(c?.tags) ? c.tags : [],
       words: Array.isArray(c?.words) ? c.words : [],
       /** ⭐ 词间连读标注（与 words 一一对应；空串 = 不连）—— 详情页在两行之间显示它 */
       links: Array.isArray(c?.links) ? c.links : [],

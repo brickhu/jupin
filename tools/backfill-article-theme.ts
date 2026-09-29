@@ -2,7 +2,7 @@
  * ⭐ 把 articles.id 从「数字字符串」重映射成「内容 hash」，并回填 theme。
  *
  *   1. 读每篇正文 → articleId = sha256(text.trim()) 前 16 位（content-addressed）
- *   2. 重映射 articles.id 与 3 张外键表（schedules / submissions / article_tags）
+ *   2. 重映射 articles.id 与 2 张外键表（schedules / submissions）—— article_tags 已删
  *   3. articles.theme = themeFromHash(newId)
  *   4. submissions.theme = 对应 articles.theme（按 article_id 拷）
  *
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
         await conn.execute('UPDATE articles SET id = ?, theme = ? WHERE id = ?', [m.newId, themeJson, m.oldId])
         await conn.execute('UPDATE schedules SET article_id = ? WHERE article_id = ?', [m.newId, m.oldId])
         await conn.execute('UPDATE submissions SET article_id = ? WHERE article_id = ?', [m.newId, m.oldId])
-        await conn.execute('UPDATE article_tags SET article_id = ? WHERE article_id = ?', [m.newId, m.oldId])
+        // ⚠️ article_tags 表 2026-09 已删除（没人查它），这一步随之去掉
       }
       await conn.commit()
     } catch (err) {

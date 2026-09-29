@@ -3,7 +3,7 @@ import { normalizeLevel, normalizeTags } from '@jushuo/shared'
 import { eq } from 'drizzle-orm'
 
 import { db } from '../db'
-import { articleTags, articles } from '../db/schema'
+import { articles } from '../db/schema'
 import { loadArticleContent } from './content'
 
 /**
@@ -16,25 +16,33 @@ import { loadArticleContent } from './content'
 type Database = typeof db
 
 /**
- * ⭐ 难度 / 标签的**派生索引** —— 从正文 JSON 物化到 articles.difficulty + article_tags。
+ * ⭐ **难度的派生索引** —— 从正文物化到 `articles.difficulty`。
  *
- * ⚠️⚠️ **真相永远是正文 JSON**（见 db/schema.ts 顶部与 spec.md 第九节）。
- *    这里写的两处都是副本，存在的唯一理由是：
- *    「按档位 / 标签筛选、排序」能走 SQL，而不用把每篇正文都读一遍。
+ * ⚠️⚠️ **真相永远是正文**（`articles.content`，见 db/schema.ts 顶部）。
+ *    这里写的那个值是副本，存在的唯一理由是：
+ *    「按档位筛选 / 排序」能走 SQL，而不用把每篇正文都读一遍
+ *    （`recommend.ts` 里确实有这么一条 `where(eq(articles.difficulty, lv))`）。
  *
  *    所以规矩只有一条：**只由这里写，随时可全量重建**。
- *    内容改了（改 JSON / 换正文）就重跑 —— 导入与「新增句」会自动跑，
+ *    内容改了（admin 里改难度判据分 / 换正文）就重跑 —— 导入与「新增句」会自动跑，
  *    存量或手动改过正文之后跑 CLI 的 reindex。
  *
- * ⚠️ 正文读不到（文件丢了 / CDN 挂了）时**把索引清成空**，而不是留着旧值：
+ * ⚠️ 正文读不到时**把索引清成空**，而不是留着旧值：
  *    留旧值的后果是「筛出来一条，点进去正文已经不是那个难度了」——
  *    比筛不到更难排查。
+ * ⚠️ 标签**没有**派生索引：原来有一张 `article_tags`，2026-09 删了
+ *    （零查询方，见 db/schema.ts 里那段说明）。标签的真相只有正文里的 `tags`。
  */
 
 export interface ArticleIndexResult {
   articleId: string
   /** 朗读难度（三个判据按权重合成的一个档位，见 shared/level.ts） */
   difficulty: ArticleLevel | null
+  /**
+   * ⚠️ 仍然报告标签，但**只作为"读到了什么"的回执**（CLI 打印用），不再落任何表。
+   *    保留它是因为 reindex 的日志需要能看出"这篇的标签是什么"，
+   *    而它已经是解析正文的副产品、不额外花代价。
+   */
   tags: string[]
   /**
    * 正文里的 `id` 与 articles.id 不一致 —— 内容被改过却没换 id。
@@ -69,14 +77,20 @@ async function applyIndex(
 ): Promise<ArticleIndexResult> {
   const idx = indexOfContent(articleId, content)
 
+  /**
+   * ⚠️⚠️ 这里原来还会把标签物化进 `article_tags` 表 —— **2026-09 删掉那张表**。
+   *
+   *    它只有一个写入方（这个函数）和**零个查询方**：服务端从不读它，
+   *    客户端与路由的标签都从正文取（`normalizeTags(content.tags)`），
+   *    而它 `(article_id, tag)` 两列的形状还会**丢掉顺序**（顺序有意义：第一个最重要）——
+   *    admin 详情页因此得专门写一段"优先用正文那份、索引只兜底"来绕开它。
+   *    它当初是为"将来按标签筛选能走 SQL"准备的，而那个功能**从未实现**。
+   *    ⇒ 一个没人查的派生表 = 每次内容变更都要重建，还多一份可能与正文不一致的副本。
+   *    ⚠️ 对照：`articles.difficulty` 看着同类但**真被用**（recommend.ts 的 where/order by），
+   *      所以难度这一半留着。判断标准是"有没有查询方"，不是"看起来像不像索引"。
+   */
   await database.transaction(async (tx) => {
     await tx.update(articles).set({ difficulty: idx.difficulty }).where(eq(articles.id, articleId))
-    // ⚠️ 先删后插，不做 diff：tags 是**集合**语义，重跑不能累积，
-    //    而「猜哪几个要删」正是漂移的来源
-    await tx.delete(articleTags).where(eq(articleTags.articleId, articleId))
-    if (idx.tags.length > 0) {
-      await tx.insert(articleTags).values(idx.tags.map((tag) => ({ articleId, tag })))
-    }
   })
 
   return { articleId, ...idx }

@@ -175,7 +175,8 @@ export async function seedArticles(): Promise<number> {
     }
   }
 
-  // ⭐ 灌完正文顺手把难度 / 标签**物化**进索引（articles.difficulty + article_tags）。
+  // ⭐ 灌完正文顺手把难度**物化**进索引（articles.difficulty）。
+  //    ⚠️ 标签没有派生索引了（`article_tags` 2026-09 删除，见 db/schema.ts）。
   //    真相在正文 JSON 里，这两处只是能被 SQL 筛选的副本 —— 见 services/article-index.ts。
   //    ⚠️ 动态 import：本文件不能静态引 db（见文件头），而 article-index 引了 db。
   const { reindexArticles } = await import('../services/article-index')

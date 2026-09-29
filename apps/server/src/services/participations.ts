@@ -8,7 +8,7 @@ import { participations, submissions } from '../db/schema'
  *
  * 层级（用户 2026-09 定）：竞技场（一篇正文）⊃ 参与记录（一人一行）⊃ 挑战记录（submissions）。
  * 真相永远在 submissions；participations 是**派生索引** —— 与 articles.difficulty /
- * article_tags 同一套路（见 services/article-index.ts 的说明）：
+ * articles.difficulty 同一套路（见 services/article-index.ts 的说明）：
  *   · **只由这里写**；
  *   · **随时可整表重建**，重建前后必须一模一样（rebuildParticipations 的 check 模式就是这条判据）。
  *

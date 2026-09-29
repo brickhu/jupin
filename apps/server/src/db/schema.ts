@@ -30,7 +30,7 @@ import {
  *      ⚠️ 不是 [3,4) 就算高级 —— 词汇只到高中（2）的句子光靠发音顶多是中级。
  *    ⚠️ 三个判据分记在正文 JSON 的 `scores` 里 —— 那是为了让档位**能被代码验算**，不进这一列。
  *
- * ⭐ 难度与标签**另有一份派生索引**：articles.difficulty + article_tags。
+ * ⭐ 难度**另有一份派生索引**：articles.difficulty（标签的派生表已删，见下面那段说明）。
  *    · **真相永远是正文 JSON**；这两处只是「能被 SQL 筛选 / 排序」用的副本；
  *    · 由 services/article-index.ts 的 syncArticleIndex 从正文物化（幂等）；
  *    · 内容改了要重跑（CLI 的 reindex；导入 / 新增句会自动跑）。
@@ -357,20 +357,18 @@ export const schedules = mysqlTable('schedules', {
 ])
 
 /**
- * 标签关联表 —— 独立成表才能**按单个标签索引**（这是它不做成 JSON 列的唯一理由）。
+ * ⚠️⚠️ 这里**曾经有一张 `article_tags` 表**（(article_id, tag) 两列），2026-09 删除。
  *
- * ⚠️ 与 articles.difficulty 同一条规矩：真相在正文 JSON 的 tags 里，
- *    这张表是 syncArticleIndex 物化出来的**派生索引**，可随时重建。
- * ⚠️ 它丢掉了标签顺序（JSON 里第一个最重要）：这里只有集合语义。
- *    要展示顺序就读正文 —— 接口目前正是这么做的（见 routes/schedules.ts）。
+ *    它只有一个写入方（services/article-index.ts 的 applyIndex）和**零个查询方**：
+ *    · 服务端从不 select 它 —— 客户端与各路由的标签都从正文取（normalizeTags(content.tags)）；
+ *    · 全仓库没有任何"按标签筛选/排序"的查询（只有一句注释设想将来会有）；
+ *    · 它 `(article_id, tag)` 的形状还会**丢掉顺序**，而标签顺序有意义（第一个最重要）——
+ *      admin 详情页因此专门写了一段"优先用正文、索引只兜底"来绕开它。
+ *
+ *    ⇒ 一个没人查的派生表 = 每次内容变更都要重建，还多一份可能与正文不一致的副本。
+ *    ⚠️ 留下的对照：`articles.difficulty` **真被查询**（recommend.ts 的 where / order by），
+ *      所以难度那一半保留。判断标准是"有没有查询方"，不是"看起来像不像索引"。
  */
-export const articleTags = mysqlTable('article_tags', {
-  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
-  tag: varchar('tag', { length: 32 }).notNull(),
-}, (t) => [
-  uniqueIndex('article_tags_uniq_idx').on(t.articleId, t.tag),
-  index('article_tags_tag_idx').on(t.tag),
-])
 
 /** 提交记录 —— 每次一条，永久保留 */
 export const submissions = mysqlTable('submissions', {
@@ -653,7 +651,7 @@ export const submissions = mysqlTable('submissions', {
  *        而参与拿什么去比，由它指向的那条挑战决定（并列时取先达到该分的那条，
  *        与 services/leaderboard.ts 的三键全序完全同源）。
  *
- * ⚠️⚠️ **它是派生索引，不是第二份真相** —— 与 articles.difficulty / article_tags 同一类：
+ * ⚠️⚠️ **它是派生索引，不是第二份真相** —— 与 articles.difficulty 同一类：
  *    · 真相永远在 submissions；这里的每一列都是 submissions 的函数；
  *    · **唯一写入方**是 services/participations.ts 的 syncParticipation（重算式，幂等）；
  *    · 随时可以整表重建（rebuildParticipations），重建前后必须一模一样 ——
