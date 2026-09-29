@@ -35,7 +35,12 @@ import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../e
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
 import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
-import { articleIdOf } from '../pipeline/src/lib/article-id'
+/**
+ * ⚠️ 用 **shared** 里那一份 `articleIdOf`（唯一实现）。
+ *    原来这里 import 的是 `tools/pipeline/src/lib/article-id.ts` —— 那个文件属于"待清理"，
+ *    而 id 口径**全端只能有一份**（见 packages/shared/src/article-id.ts 的说明）。
+ */
+import { articleIdOf } from '@jushuo/shared'
 import { produceStandardAudio } from '../pipeline/src/lib/audio-assets'
 import { gradeArticles } from '../pipeline/src/lib/article-meta'
 import { buildWordInfo } from '../pipeline/src/lib/word-info'

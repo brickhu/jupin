@@ -1,6 +1,8 @@
 import { timingSafeEqual } from 'node:crypto'
 import { Hono } from 'hono'
 import { and, desc, eq, inArray } from 'drizzle-orm'
+import { articleIdOf } from '@jushuo/shared'
+
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
@@ -149,6 +151,29 @@ adminRoutes.put('/articles/:id', async (c) => {
 
   const text = (body.text ?? '').trim()
   if (!text) return c.json({ ok: false, error: 'text（原文）不能为空' }, 400)
+
+  /**
+   * ⚠️⚠️ **id 必须是这个文本的内容哈希** —— 服务端自己算一遍，对不上就 400。
+   *
+   * 为什么非要在这里拦（2026-09 真实踩到）：id 同时是主键、音频路径、客户端缓存 key，
+   * 而**全仓库本该只有一处** `articleIdOf`（见 shared/article-id.ts 的说明）。
+   * 服务端原先**根本没有那个式子**、照单全收调用方给的 id ⇒
+   * 接口能建出 `zzdel358045`、`000000000000a568` 这种非哈希 id：
+   *   · 同一句文本用不同 id 能建两行（幂等破裂）；
+   *   · 管理台用 `articleIdOf(text)` 推 id ⇒ 详情页对它**报错**（校验 16 位 hex 不通过）。
+   * ⇒ 与其让各处"记得用同一个式子"，不如让服务端**拒绝**任何对不上的 id。
+   */
+  const expectedId = articleIdOf(text)
+  if (id !== expectedId) {
+    return c.json(
+      {
+        ok: false,
+        error: `id 与正文不匹配：这条正文的 id 应该是 ${expectedId}（id = sha256(text.trim()) 前 16 位）`,
+        data: { expectedId },
+      },
+      400,
+    )
+  }
 
   /**
    * ⚠️ 列的拼装走 `services/article-content.ts`（**唯一一处**）——

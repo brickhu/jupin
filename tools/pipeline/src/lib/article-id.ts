@@ -12,9 +12,15 @@
  *    历史内容的 id 都按旧口径算过（库里的行、content/ 下的文件名、对象存储的 key），
  *    改口径必须配一次全量重命名，见 tools/rename-content-to-hash.mjs。
  */
-import { createHash } from 'node:crypto'
-import { ARTICLE_ID_LENGTH } from '@jushuo/shared'
-
-export function articleIdOf(text: string): string {
-  return createHash('sha256').update(text.trim()).digest('hex').slice(0, ARTICLE_ID_LENGTH)
-}
+/**
+ * ⚠️⚠️ 这里的实现**已经搬走**：`articleIdOf` 现在只有一份，在
+ *    `packages/shared/src/article-id.ts`（纯 sha256 实现，所有端共用）。
+ *
+ *    搬走的原因（2026-09）：服务端当时**没有**这个式子、照单全收调用方给的 id，
+ *    接口因此能建出 `zzdel358045` 这种非哈希 id。把式子放进 shared 之后，
+ *    服务端才能自己算一遍并**拒绝**对不上的 id。
+ *
+ *    ⚠️ 这个文件整个属于 plan 里的"待清理"（它和 9 步流水线一样只被 admin 用到，
+ *    而 admin 现在直接用 shared）。这里只保留转发，保证别处 import 不会断。
+ */
+export { articleIdOf } from '@jushuo/shared'
