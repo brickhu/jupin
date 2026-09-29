@@ -79,6 +79,7 @@
 - [ ] **C4** 小程序开发者工具**清一次 Storage 缓存** —— 里面可能还留着旧的 64 位 id
 - [ ] **C5** 清理旧对象存储 key（64 位 id 那批）—— 上线后它们成为孤儿
 - [ ] **C6** **产品验证实验**：真人录音回答 5 个产品问题 —— ①朗读难度是否真影响拿分难度 ②分数分布→门槛标定 ③重口音识别率 ④竞技场长度与重录意愿 ⑤词级诊断准不准。需要讯飞密钥 + 4–6 位朗读者；方案见 docs/experiments/validation-experiment.md。⚠️ **方案级风险**：若 ①「朗读难度不影响拿分难度」成立，则「按难度分层」在产品里没有依据 —— 难度需要重新定位（可能动摇它的存在本身）
+- [ ] **C21** **「dev 部署链路」修好之后要验的那一步**（用户 2026-09-29 报「admin 连 dev，两条句子删不掉」）：⚠️ 根因不在那两句 —— CI 从 `4458c44` 起每次 push 都死在 `pnpm install --frozen-lockfile`（`ERR_PNPM_OUTDATED_LOCKFILE … not up to date with tools/admin/package.json`），dev 云上因此一直停在 `3f67ad6`（CI run 74 / `jupin-090`），**C17 的 `DELETE /api/admin/articles/:id` 从没上去过** ⇒ 管理台连 dev 点删除一律纯文本 `HTTP 404`（同域 `GET/PUT/POST /api/admin/*` 都是 JSON、`DELETE /api/user/favorites/:id` 回 401 JSON ⇒ 不是网关拦 DELETE、也不是令牌问题）。**已做**：本地 commit `61f1442` 只补 lockfile 里 `tools/admin` 的 `@jushuo/shared`，并在 `/tmp` 干净副本按 CI 顺序预验 `install --frozen-lockfile` / `typecheck` / `test` 全绿 —— **只差 push**。**做完的标志**：push `dev` → CI 绿 → 云上 `DELETE /api/admin/articles/<id>` 回 JSON（不再是纯文本 404）→ 删掉 `zzdev653288`（早期非哈希 id 的重复行）与 `855299deffa0c8bd`（同一正文的规范哈希行，= `sha256(text)[:16]`）→ `GET /api/admin/articles?ids=…` 两条都查不到。⚠️ 若 DELETE 回 **409**，是它挂着用户历史（成绩 / 参与 / 收藏）：按规矩改「下架」，并把三个引用数摊开。⚠️ 别用 `node tools/deploy-cloud.mjs dev` 手动发 —— 那个脚本发的是**工作区**，会把别的会话的半成品（当时有 20+ 个未提交文件）一起带上；`push → CI` 才只发已提交的内容。
 
 ---
 
