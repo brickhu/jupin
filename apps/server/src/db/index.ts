@@ -512,6 +512,27 @@ export async function initDatabase(): Promise<void> {
   await refreshArticleCount()
   await refreshGoodsCount()
   await refreshActiveArticles()
+
+  /**
+   * ⭐ 启动时跑一次**兜底清扫**（services/sweep.ts）：把上次进程死在半路的
+   *    `scoring` 行判失败并退能量、把"已出分但没结算"的补上。
+   *
+   * ⚠️ 刻意 **void + catch**：它是兜底，不是启动前提 ——
+   *    库慢/锁等待都不该拖住服务启动（云托管启动超时会被判失败）。
+   * ⚠️ 动态 import：本文件与 services 之间有环（scoring → db），静态 import 解析不了
+   *    （同 seed-articles 的做法）。
+   */
+  void (async () => {
+    try {
+      const { sweepStaleSubmissions } = await import('../services/sweep')
+      const r = await sweepStaleSubmissions(true)
+      if (r.failed || r.resettled) {
+        console.log(`[db] 启动兜底：判失败 ${r.failed} 条、补结算 ${r.resettled} 条`)
+      }
+    } catch (err) {
+      console.warn('[db] 启动兜底清扫失败（不影响启动）：' + (err as Error).message)
+    }
+  })()
 }
 
 /**

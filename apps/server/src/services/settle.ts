@@ -42,9 +42,35 @@ export interface SettleResult {
 }
 
 /**
- * @returns 结算结果；null = 这条提交不该结算（没分数 / 已经结算过）
+ * ⭐ **进程内的原子认领**：同一条提交在同一进程里只会被结算一次。
+ *
+ * ⚠️ 为什么需要它（2026-09 加兜底清扫之后）：判据是"先读 growth_self 再写"，
+ *    两个并发调用会**都读到 null**、都往下走 —— 而成长值是**累加**的，
+ *    重复加一次不会报错，只会让用户的数字凭空变大（这种错最难发现）。
+ *    以前只有唯一调用点（scoring 里那条 affectedRows===1 的分支），
+ *    现在多了"惰性补跑"（services/sweep.ts）⇒ 并发窗口变成真实存在的。
+ *
+ * ⚠️ 边界说清楚：它是**进程内**的。多副本同时补跑同一条仍然可能双结算；
+ *    本项目 dev/prod 的副本数都是 1（MinReplicas 未调高，见 AGENT.md）。
+ *    真要多副本，这里必须换成数据库层的原子认领
+ *    （例如加一列 `settled_at` 并用 `UPDATE ... WHERE settled_at IS NULL` 抢占）。
+ */
+const inFlight = new Set<string>()
+
+/**
+ * @returns 结算结果；null = 这条提交不该结算（没分数 / 已经结算过 / 正在被结算）
  */
 export async function settle(userId: number, submissionId: string): Promise<SettleResult | null> {
+  if (inFlight.has(submissionId)) return null
+  inFlight.add(submissionId)
+  try {
+    return await settleInner(userId, submissionId)
+  } finally {
+    inFlight.delete(submissionId)
+  }
+}
+
+async function settleInner(userId: number, submissionId: string): Promise<SettleResult | null> {
   const [row] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
   if (!row || row.status !== 'scored' || row.score === null) return null
   // ⚠️ 已经结算过（growth_self 有值）→ 直接退出。

@@ -171,6 +171,29 @@ app.route('/api/pay', payRoutes)
  */
 app.use('/api/user/*', authMiddleware)
 
+/**
+ * ⭐ 兜底清扫的**惰性触发点**（见 services/sweep.ts）：
+ *   带上节流（60 秒），跟在读自己的数据之后跑一次 —— 把"上次进程死在半路的
+ *   scoring 行"判失败退能量、把"已出分但没结算"的补上。
+ *
+ * ⚠️ 为什么挂在中间件而不是各路由里：这是**横切**的运维兜底，不是业务逻辑；
+ *    写进每个路由会让下一个人以为"这一步是那个接口的业务需要"。
+ * ⚠️ 为什么可以放在响应之后：它不改变本次响应（用户这次拿到的仍是当前状态），
+ *    下一次请求就会看到被修好的数据。
+ * ⚠️ 绝不 await：兜底清扫慢一点无所谓，但不能让用户等它（更不能让它把请求搞失败）。
+ */
+app.use('/api/user/*', async (c, next) => {
+  await next()
+  void (async () => {
+    try {
+      const { sweepStaleSubmissions } = await import('./services/sweep')
+      await sweepStaleSubmissions()
+    } catch {
+      /* 兜底清扫失败绝不影响请求（sweep 内部也已经 try 住，这里再兜一层） */
+    }
+  })()
+})
+
 app.route('/api/articles', articlesRoutes)
 /**
  * ⭐⭐ 今日推荐 —— 首页那张"今日挑战"卡。
