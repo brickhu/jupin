@@ -569,6 +569,80 @@ export const ArenaDetailSchema = okEnvelope(
     .openapi('ArenaDetail'),
 )
 
+
+/* ---------- 内容管理（admin 工具专用） ----------
+ *
+ * ⚠️ 这几条**没有** `@jushuo/shared` 的对应类型：它们只给 `tools/admin` 用，
+ *    端侧不消费。所以**不做双向比对**，但要与 routes/admin.ts 的返回逐字段对齐。
+ */
+
+/** 三个判据的分数：**[词汇, 发音, 长度]**（内容生产期写下，见 shared/level.ts） */
+export const DifficultyScoresSchema = z
+  .tuple([z.number(), z.number(), z.number()])
+  .openapi('DifficultyScores')
+
+/** 句子行（`articles` 表原样透出）—— 管理台的列表与详情共用 */
+export const AdminArticleRowSchema = z
+  .object({
+    id: z.string(),
+    text: z.string().nullable(),
+    translation: z.string().nullable(),
+    scores: DifficultyScoresSchema.nullable(),
+    challenge: z.string().nullable(),
+    advice: z.string().nullable(),
+    tags: z.array(z.string()).nullable(),
+    words: z.array(ArticleWordItemSchema).nullable(),
+    links: z.array(z.string()).nullable(),
+    /** 上线状态（下架 = false，句子仍在、成绩仍在） */
+    isActive: z.boolean(),
+    /** ISO 时间串（DB 是 datetime，序列化后是字符串） */
+    publishedAt: z.string().nullable(),
+    /** 对象存储里的标准音 key（不是可播地址） */
+    standardAudio: z.string().nullable(),
+    theme: ArticleThemeSchema.nullable(),
+    createdAt: z.string(),
+    /** 难度档（0–3），内容生产期写下 */
+    difficulty: z.number().int().nullable(),
+  })
+  .openapi('AdminArticleRow')
+
+export const AdminArticleListResponseSchema = okEnvelope(
+  z.object({ items: z.array(AdminArticleRowSchema) }).openapi('AdminArticleListResponse'),
+)
+
+export const AdminArticleDetailResponseSchema = okEnvelope(AdminArticleRowSchema)
+
+export const AdminArticleWriteResponseSchema = okEnvelope(
+  z.object({ id: z.string(), created: z.boolean() }).openapi('AdminArticleWriteResponse'),
+)
+
+/** 引用了这一句的用户数据条数（删除前先看它） */
+export const ArticleRefsSchema = z
+  .object({
+    submissions: z.number().int(),
+    participations: z.number().int(),
+    favorites: z.number().int(),
+  })
+  .openapi('ArticleRefs')
+
+export const AdminArticleDeleteResponseSchema = okEnvelope(
+  z.object({ id: z.string(), refs: ArticleRefsSchema }).openapi('AdminArticleDeleteResponse'),
+)
+
+/**
+ * ⚠️ 409 的形状与全站信封**不完全一样**：它在 `data` 里带 `refs`
+ *    （`{ ok:false, error, data }`）—— 界面要拿引用数说清"删不得"。
+ */
+export const AdminArticleDeleteConflictSchema = z
+  .object({ ok: z.literal(false), error: z.string(), data: z.object({ refs: ArticleRefsSchema }) })
+  .openapi('AdminArticleDeleteConflict')
+
+export const AdminAudioUploadResponseSchema = okEnvelope(
+  z
+    .object({ id: z.string(), audioKey: z.string(), bytes: z.number().int() })
+    .openapi('AdminAudioUploadResponse'),
+)
+
 /* ---------- ⭐ 与共享 TS 类型的双向比对（漂移在这里报错） ---------- */
 
 /**

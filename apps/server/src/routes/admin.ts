@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { articleIdOf } from '@jushuo/shared'
 
@@ -28,7 +28,19 @@ import { storeStandardAudio } from '../services/standard-audio'
  *    这是运营侧接口，不做管理员账号体系（谁审批/轮换/审计是另一个工程）。
  *    **没配 = 503；配了但对不上 = 401** —— 绝不"没配就放行"。
  */
-export const adminRoutes = new Hono()
+import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import {
+  AdminArticleDeleteConflictSchema,
+  AdminArticleDeleteResponseSchema,
+  AdminArticleDetailResponseSchema,
+  AdminArticleListResponseSchema,
+  AdminArticleWriteResponseSchema,
+  AdminAudioUploadResponseSchema,
+  errorResponse,
+} from '../openapi/schemas'
+
+export const adminRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
 /** 常数时间的字符串比较（长度不同直接 false —— 长度本身不是秘密） */
 function sameSecret(a: string, b: string): boolean {
@@ -56,7 +68,22 @@ adminRoutes.use('*', async (c, next) => {
 })
 
 /** 列表：给 admin 的表格用（只给必要字段，正文不整篇回传） */
-adminRoutes.get('/articles', async (c) => {
+const adminListRoute = createRoute({
+  method: 'get',
+  path: '/articles',
+  tags: ['内容管理'],
+  summary: '列出句子（管理台列表；支持搜索 / 只看上线 / 一批 id）',
+  security: [{ adminToken: [] }],
+  request: { query: z.object({ q: z.string().optional(), active: z.string().optional(), ids: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdminArticleListResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+adminRoutes.openapi(adminListRoute, async (c) => {
   /**
    * ⭐ 参数都是**可选**的，因为这个接口现在同时服务两件事：
    *    · admin 的列表（带搜索 / 只看上线）；
@@ -71,7 +98,7 @@ adminRoutes.get('/articles', async (c) => {
   if (activeOnly) where.push(eq(articles.isActive, true))
   if (idsParam) {
     const ids = idsParam.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200)
-    if (ids.length === 0) return c.json({ ok: true, data: { items: [] } })
+    if (ids.length === 0) return c.json({ ok: true, data: { items: [] } }, 200)
     where.push(inArray(articles.id, ids))
   }
 
@@ -111,11 +138,28 @@ adminRoutes.get('/articles', async (c) => {
       )
     : rows
 
-  return c.json({ ok: true, data: { items } })
+  return c.json({ ok: true, data: { items } }, 200)
 })
 
 /** 详情：整条（admin 的编辑表单要全部字段） */
-adminRoutes.get('/articles/:id', async (c) => {
+const adminDetailRoute = createRoute({
+  method: 'get',
+  path: '/articles/{id}',
+  tags: ['内容管理'],
+  summary: '取一条句子（全量列）',
+  security: [{ adminToken: [] }],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdminArticleDetailResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('id 形状不对'),
+    404: errorResponse('句子不存在'),
+  },
+})
+
+adminRoutes.openapi(adminDetailRoute, async (c) => {
   const id = c.req.param('id')
   /**
    * ⚠️ 读取**不要求 id 是规范哈希**：历史脏行（服务端还不校验 id 时期建的，
@@ -132,7 +176,7 @@ adminRoutes.get('/articles/:id', async (c) => {
    *    任何客户端去读它都会把"真相在哪"重新搞混。响应里只给拆开之后的列。
    */
   const { content: _legacyContent, ...rest } = row
-  return c.json({ ok: true, data: rest })
+  return c.json({ ok: true, data: rest }, 200)
 })
 
 /**
@@ -143,7 +187,23 @@ adminRoutes.get('/articles/:id', async (c) => {
  * ⚠️ `id` 由客户端给：它是内容 hash（`sha256(text)` 前 16 位），
  *    生成那一刻就该定下来，服务端不重新算（换算法会让老 id 全失效）。
  */
-adminRoutes.put('/articles/:id', async (c) => {
+const adminWriteRoute = createRoute({
+  method: 'put',
+  path: '/articles/{id}',
+  tags: ['内容管理'],
+  summary: '写入一条句子（新建或按列更新）',
+  security: [{ adminToken: [] }],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdminArticleWriteResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('参数不合法 / id 与正文哈希不一致'),
+  },
+})
+
+adminRoutes.openapi(adminWriteRoute, async (c) => {
   const id = c.req.param('id')
   /** ⚠️ 用 `unknown` 收：下面要靠"字段在不在"区分"没传"与"传了 null" */
   const body = await c.req.json<Record<string, unknown>>()
@@ -206,7 +266,7 @@ adminRoutes.put('/articles/:id', async (c) => {
 
   const { created } = await saveArticleContent(id, cols, { isActive: body.isActive as boolean | undefined })
   console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
-  return c.json({ ok: true, data: { id, created } })
+  return c.json({ ok: true, data: { id, created } }, 200)
 })
 
 /**
@@ -217,7 +277,25 @@ adminRoutes.put('/articles/:id', async (c) => {
  *    更要紧的是用户的"已挑战"历史会指向不存在的东西。
  *    ⇒ 日常用**下架**（`PUT` 带 `isActive:false`）；删除只用于"刚建错、还没人碰过"的句子。
  */
-adminRoutes.delete('/articles/:id', async (c) => {
+const adminDeleteRoute = createRoute({
+  method: 'delete',
+  path: '/articles/{id}',
+  tags: ['内容管理'],
+  summary: '删除一条句子（有用户数据时拒绝）',
+  security: [{ adminToken: [] }],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdminArticleDeleteResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('id 形状不对'),
+    404: errorResponse('句子不存在'),
+    409: { content: { 'application/json': { schema: AdminArticleDeleteConflictSchema } }, description: '有用户数据（成绩/参与/收藏）不能删；要下架请用 isActive' },
+  },
+})
+
+adminRoutes.openapi(adminDeleteRoute, async (c) => {
   const id = c.req.param('id')
   // ⚠️ 删除同样不要求规范 id（理由见 GET 那条）—— 历史脏行必须删得掉
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) {
@@ -242,7 +320,7 @@ adminRoutes.delete('/articles/:id', async (c) => {
     )
   }
   console.log(`[admin] 删除句子 id=${id}（无任何用户数据）`)
-  return c.json({ ok: true, data: { id, refs } })
+  return c.json({ ok: true, data: { id, refs } }, 200)
 })
 
 /**
@@ -255,7 +333,26 @@ adminRoutes.delete('/articles/:id', async (c) => {
  *    服务端**不做转码**（那需要 ffmpeg，而运行镜像里虽然有，但转码是内容生产的事，
  *    不该塞进一条接收接口）。
  */
-adminRoutes.post('/articles/:id/audio', async (c) => {
+const adminAudioRoute = createRoute({
+  method: 'post',
+  path: '/articles/{id}/audio',
+  tags: ['内容管理'],
+  summary: '上传标准音 → 写对象存储 → 记到那一行',
+  security: [{ adminToken: [] }],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdminAudioUploadResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('缺文件 / 不是 multipart'),
+    404: errorResponse('句子不存在'),
+    413: errorResponse('音频太大'),
+    500: errorResponse('写对象存储失败'),
+  },
+})
+
+adminRoutes.openapi(adminAudioRoute, async (c) => {
   const id = c.req.param('id')
   const [row] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
   if (!row) return c.json({ ok: false, error: '句子不存在（先写入句子再传音频）' }, 404)
@@ -285,7 +382,7 @@ adminRoutes.post('/articles/:id/audio', async (c) => {
     // ⚠️ 写对象存储 + 记 standard_audio 都归 services/standard-audio.ts（唯一写入方）
     const { audioKey } = await storeStandardAudio(id, bytes)
     console.log(`[admin] 标准音已上传 id=${id}（${bytes.byteLength} 字节 → ${audioKey}）`)
-    return c.json({ ok: true, data: { id, audioKey, bytes: bytes.byteLength } })
+    return c.json({ ok: true, data: { id, audioKey, bytes: bytes.byteLength } }, 200)
   } catch (err) {
     console.error('[admin] 标准音写入失败：' + (err as Error).message)
     return c.json({ ok: false, error: '标准音写入失败：' + (err as Error).message }, 500)
