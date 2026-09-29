@@ -26,7 +26,16 @@
  *    认不出就是 null / []，**绝不补默认档位**（编出来的档位比没有档位更糟）。
  */
 
-import { difficultyFromScores, normalizeLevel, normalizeScores, normalizeTags, splitParagraphs } from '@jushuo/shared'
+import {
+  breathGroupCount,
+  difficultyFromScores,
+  normalizeLevel,
+  normalizeScores,
+  normalizeTags,
+  splitParagraphs,
+  syllableCount,
+  syllablesPerBreathGroup,
+} from '@jushuo/shared'
 import type { ArticleLevel, ArticleWordItem, DifficultyScores } from '@jushuo/shared'
 import { buildWordInfo } from './word-info'
 import { DICT_TOOL } from './ecdict'
@@ -148,8 +157,15 @@ const SYSTEM = `你是「句拼」的英语朗读内容编辑。用户给你 N �
    ⚠️ **不算难点**：功能词 the / this / that 的 /ð/（英语句句都有，是基本功）、句子短、
      主题是名言哲理、单个的 /r/ 或 /l/（只有两者对立时才按 C 算）。
 
-③ 句子长度（权重 2）——数词数
-   L1 <10 词　L2 10–20 词　L3 20–30 词　L4 30–40 词　L5 >40 词
+  ③ 句子长度（权重 2）——按**呼吸群**判（不是数词数）
+     ⚠️ **呼吸群 = 一口气能读完的一段**（按停顿标点切：, ; : . ! ? … — –）。
+        我给你每一段时**已经把「音节数 / 呼吸群数 / 各群拍数」算好了**（就在段号后面），直接用。
+     L1 音节 ≤10　　L2 11–20　　L3 21–35　　L4 36–55　　L5 >55
+     ⚠️ **两个修正**（这才是"朗读难度"，不是"总量"）：
+        · **某一个呼吸群超过 ~15 拍** ⇒ 至少 L3（一口气读不完，比"总量大但能分口气"更难受）
+        · **呼吸群数 ≥3 且音节 >20** ⇒ 至少 L4（反复起停，节奏压力大）
+     ⚠️ 反面例子（别被词数骗了）：16 词 / 48 音节 / **1 个呼吸群** 的句子，
+        词数看着"中长"、其实是最难的那种（一口气 48 拍）—— 这正是不再按词数的理由。
 
 【定档锚点】⭐ 判完之后把你的结果和下面这几句**比一比** —— 它们是**基准**：
 如果三个分算出来的档位和这张表不一致，就**回头调三个分**（**以这张表为准**，
@@ -311,7 +327,25 @@ export async function gradeArticles(input: string): Promise<ArticleCandidate[]> 
   if (paragraphs.length === 0) return []
 
   // 带上段号再交给模型 —— 回来的 index 是「对回哪一段」的唯一依据
-  const numbered = paragraphs.map((p, i) => '【第 ' + (i + 1) + ' 段】' + p).join('\n\n')
+  /**
+   * ⚠️ 段号后**附带算好的三个数**（音节数 / 呼吸群数 / 各群拍数）——
+   *    它们是"句子长度"那条判据的**输入**，也是回来的 index 之外唯一的事实。
+   *
+   * ⚠️⚠️ 为什么要喂给它（用户 2026-09 的意见："用单词数量不合理"）：
+   *    音节来自 CMU 词典的逐词音节（`word-info.ts`），是**可数的事实**；
+   *    让模型自己数会数错，而且它看不到音节。喂给它 ⇒ 它变成"照表定档"，
+   *    我这边还能用同一份函数复核（`packages/shared/src/breath.ts`，同一口径）。
+   */
+  const numbered = paragraphs
+    .map((p, i) => {
+      const info = buildWordInfo({ text: p })
+      const per = syllablesPerBreathGroup(p, info.words)
+      return (
+        '【第 ' + (i + 1) + ' 段】（音节 ' + syllableCount(p, info.words) +
+        ' · 呼吸群 ' + breathGroupCount(p) + ' · 各群拍数 ' + per.join('/') + '）' + p
+      )
+    })
+    .join('\n\n')
   const raw = await chatJsonWithTools<{ articles?: unknown }>(
     [
       { role: 'system', content: SYSTEM },
