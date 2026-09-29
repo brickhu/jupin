@@ -22,17 +22,26 @@
 | 来源 | 角色 | 权威范围 |
 |---|---|---|
 | **代码及其注释** | **真相** | 业务规则与逻辑的唯一来源；变更 = 改注释 |
+| **`/api/docs` + `/api/openapi.json`** | ⭐⭐ **接口的事实来源（API 以它为准）** | 方法 / 路径 / 鉴权 / 参数 / 响应形状 / 状态码**一律以它为准**（由各路由的 `createRoute()` 生成，见 `apps/server/src/openapi.ts`）。⚠️ 不是手写清单：**改接口 = 改 `createRoute` 声明 + schema**，spec 随之更新。**别在别处另写一份接口表**（端侧类型由 40 项双向比对 + `api-contract-guard.test.ts` 盯着） |
 | [plan.md](plan.md) | **唯一的目标与任务来源** | 哪些做了、哪些没做；状态只有 在做/待办/已完成/已废弃 |
 | [prd.md](prd.md) | **唯一的业务与需求来源** | 业务名词、概念、需求 |
 | **AGENT.md**（本文件） | 工程**架构索引 + 上下文索引** | 只回答「去哪看」与「怎么跑起来」 |
 | [spec.md](spec.md) | 技术决策记录（已降级） | 为什么这样选型；不再承载表结构（指向 `schema.ts`） |
-| **`/api/openapi.json` + `/api/docs`** | **接口清单（代码生成的 OpenAPI）** | ⚠️ 不是手写的：每个路由用 `createRoute()` 声明（见 `apps/server/src/openapi.ts`），运行时产出 spec 与 Swagger UI。改接口 = 改 `createRoute` 的声明。**迁移中**：老写法（`routes.get(...)`）仍工作但不进文档 |
 | [docs/](docs/README.md) | 调研 · 实验 · 设计稿 · 归档 | 需要依据与背景时 |
 
 **元规则：重复即错误。** 同一事实出现在第二个地方，即使当下一致，也已经是 bug 的种子；改一处必须删掉/改掉别处。
 所以本文件已删除一切复述业务规则 / 数据模型字段 / 产品行为的段落，只留指向代码或 prd.md 的指针。
 
-**开工顺序**：先读 AGENT.md（工程怎么跑）→ 任务看 **plan.md** → 业务看 **prd.md** → **现状看代码与注释**。
+**开工顺序**：先读 AGENT.md（工程怎么跑）→ 任务看 **plan.md** → 业务看 **prd.md** → 现状看代码与注释 →
+**碰接口先看 `/api/docs`**（它是接口的事实来源）。
+
+**接口相关的三条铁律**（用户 2026-09 定）：
+1. **接口的事实来源是 OpenAPI**（`/api/docs` / `/api/openapi.json`）—— 与它冲突的说法一律以它为准；
+2. **改接口只改一处**：路由里的 `createRoute` 声明 + `openapi/schemas.ts` 的 schema。spec 是生成的，
+   **不要手写接口清单/字段表**（手写必然漂移，`/api/schedules` 那次就是活例子）；
+3. **两端由机器对齐**：schema 与 `@jushuo/shared` 的 TS 类型做 `Equal<>` 双向比对（改歪则 `tsc` 报），
+   客户端调用的路径由 `api-contract-guard.test.ts` 断言必须存在于 spec（删路由不再静默打断端侧）。
+
 
 docs/ 子目录：[research/](docs/README.md)（引擎横评 · ISE 实测 · 端侧能力 · 内容生产 · 平台选型 · 样式选型）·
 [design/](docs/design/growth-and-energy.md)（成长与能量 · 奖励/解冻卡 · 支付）·

@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest'
  * ⭐⭐ **接口契约守门**：两个客户端（小程序 / admin 工具）调用的**每一条路径**，
  *     都必须在服务端生成的 OpenAPI spec 里存在。
  *
+ * ⭐⭐⭐ 用户 2026-09 定：**"后续 API 的事实来源与 api doc 为准"** ——
+ *     这条测试就是那句话的**执行者**：文档（spec）说没有的接口，客户端就不许调；
+ *     而 spec 是从 `createRoute` 声明生成的，所以"以文档为准"= "以声明为准"。
+ *
  * ⚠️⚠️ 为什么需要它（用户定的"接口工作做完再校准端侧"的**机器化**形式）：
  *     手工对齐靠记性 —— 服务端删一条路由（比如 `/api/schedules` 那次），
  *     客户端还照着调，直到真机上才报错。这里把它变成一条会红的测试。
@@ -40,16 +44,21 @@ function mountsOf() {
   const src = fs.readFileSync(INDEX, 'utf8')
   const identModule = new Map<string, string>()
   for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*'(\.\/routes\/[^']+)'/g)) {
-    const rel = m[2].replace(/^\.\//, '')
-    for (const raw of m[1].split(',')) {
+    // ⚠️ `m[1]` / `m[2]` 在类型上是可能 undefined 的（noUncheckedIndexedAccess）——
+    //    正则已保证有捕获组，这里显式兜一下，否则 `pnpm typecheck` 会红。
+    const rel = (m[2] ?? '').replace(/^\.\//, '')
+    for (const raw of (m[1] ?? '').split(',')) {
       const ident = raw.trim().split(/\s+as\s+/).pop()?.trim()
       if (ident) identModule.set(ident, rel)
     }
   }
   const out: { prefix: string; ident: string; module: string }[] = []
   for (const m of src.matchAll(/app\.route\(\s*'([^']+)'\s*,\s*(\w+)\s*\)/g)) {
-    const module = identModule.get(m[2])
-    if (module) out.push({ prefix: m[1], ident: m[2], module })
+    // ⚠️ 同上：类型层可能 undefined（正则已保证有值）
+    const prefix = m[1] ?? ''
+    const ident = m[2] ?? ''
+    const module = identModule.get(ident)
+    if (module) out.push({ prefix, ident, module })
   }
   return out
 }
@@ -89,8 +98,8 @@ function clientPaths(): { file: string; literal: string }[] {
       .replace(/^\s*\}?\s*from\s*['"][^'"]+['"]\s*$/gm, '')        // 多行 import 的收尾
       .replace(/require\(\s*['"][^'"]+['"]\s*\)/g, '')            // require('…/lib/api/x') 这种包路径
     for (const m of cleaned.matchAll(/['"`](\/(?:api|media)\/[^'"`\s]*)['"`]/g)) {
-      // 去掉查询串：接口按路径匹配，参数是运行时拼的
-      const literal = m[1].split('?')[0] ?? ''
+      // 去掉查询串：接口按路径匹配，参数是运行时拼的（类型层可能 undefined，兜一下）
+      const literal = (m[1] ?? '').split('?')[0] ?? ''
       const name = path.basename(file)
       const own = OWN_PREFIX[name]
       if (!literal) continue
