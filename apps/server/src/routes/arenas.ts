@@ -1,11 +1,13 @@
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { eq } from 'drizzle-orm'
-import { Hono } from 'hono'
 import { normalizeLevel, normalizeTags, today } from '@jushuo/shared'
 import type { ArenaDetail } from '@jushuo/shared'
 
 import { db } from '../db'
 import { articles } from '../db/schema'
 import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import { ArenaDetailSchema, errorResponse } from '../openapi/schemas'
 import { loadArticleContent } from '../services/content'
 import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
 import { standardAudioOf } from '../services/standard-audio-meta'
@@ -26,9 +28,25 @@ import { standardAudioOf } from '../services/standard-audio-meta'
  * ⚠️ 不校验 isActive：下架只是「不再排进每日挑战」，它的竞技场与成绩还在，
  *    用户从自己的参与记录点进来仍应看得到。
  */
-export const arenasRoutes = new Hono<{ Variables: Variables }>()
+export const arenasRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
-arenasRoutes.get('/:articleId', async (c) => {
+const arenaDetailRoute = createRoute({
+  method: 'get',
+  path: '/{articleId}',
+  tags: ['竞技场'],
+  summary: '竞技场详情（按句子寻址：榜单 + 统计）',
+  request: { params: z.object({ articleId: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ArenaDetailSchema } },
+      description: '成功',
+    },
+    400: errorResponse('articleId 不合法'),
+    404: errorResponse('这一句不存在'),
+  },
+})
+
+arenasRoutes.openapi(arenaDetailRoute, async (c) => {
   /** ⭐ 句子 id = 内容 hash（字符串），不再有「正整数」这一层校验 */
   const articleId = c.req.param('articleId')
   if (!articleId) {
@@ -66,5 +84,5 @@ arenasRoutes.get('/:articleId', async (c) => {
     theme: article.theme,
     leaderboard,
   }
-  return c.json({ ok: true, data: detail })
+  return c.json({ ok: true, data: detail }, 200)
 })

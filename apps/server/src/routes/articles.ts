@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { desc, eq } from 'drizzle-orm'
 import { normalizeLevel, normalizeTags, plainWordsOf, today } from '@jushuo/shared'
 import type { ArticleDetail, StandardAudio } from '@jushuo/shared'
@@ -9,8 +9,14 @@ import { latestArticleCards } from '../services/article-list'
 import { fileIdOf } from '../services/standard-audio'
 import { standardAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import {
+  ArticleDetailSchema,
+  errorResponse,
+  LatestCardsResponseSchema,
+} from '../openapi/schemas'
 
-export const articlesRoutes = new Hono<{ Variables: Variables }>()
+export const articlesRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
 /** 首页「最新上线」默认给几句、最多给几句 */
 const DEFAULT_LATEST = 6
@@ -28,7 +34,21 @@ const MAX_LATEST = 50
  * ⚠️ 与 `GET /api/articles/:id` 的分工：这条**瘦**，只够画一张卡片；
  *    词级数据（音标 / 释义 / 逐词音频）只在详情里给。
  */
-articlesRoutes.get('/', async (c) => {
+const latestCardsRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['句库'],
+  summary: '最新上线（句库按上线时间倒序的最新 N 句）',
+  request: { query: z.object({ latest: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: LatestCardsResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+articlesRoutes.openapi(latestCardsRoute, async (c) => {
   const requested = Number(c.req.query('latest'))
   // ⚠️ NaN 也要兜住：`?latest=abc` 会让 Math.min 返回 NaN，随后一条都不返回，
   //    表现出来是「最新空空」，而真正的原因是一个畸形参数。
@@ -36,7 +56,7 @@ articlesRoutes.get('/', async (c) => {
     ? Math.min(MAX_LATEST, Math.max(1, Math.trunc(requested)))
     : DEFAULT_LATEST
 
-  return c.json({ ok: true, data: { date: today(), items: await latestArticleCards(limit) } })
+  return c.json({ ok: true, data: { date: today(), items: await latestArticleCards(limit) } }, 200)
 })
 
 
@@ -48,7 +68,22 @@ articlesRoutes.get('/', async (c) => {
  *    而小程序没有 origin 概念，相对路径在 callContainer 通道下无从解析。
  *    等流水线把 contentJson 变成 CDN 绝对地址后，客户端可以直连、这条路由退化成透传甚至下线。
  */
-articlesRoutes.get('/:id', async (c) => {
+const articleDetailRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['句库'],
+  summary: '句子详情（全量，含词级数据）',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ArticleDetailSchema } },
+      description: '成功',
+    },
+    404: errorResponse('句子不存在'),
+  },
+})
+
+articlesRoutes.openapi(articleDetailRoute, async (c) => {
   const id = c.req.param('id')
   const [article] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
   if (!article) return c.json({ ok: false, error: '文章不存在' }, 404)
@@ -120,5 +155,5 @@ articlesRoutes.get('/:id', async (c) => {
     audio,
     theme: article.theme,
   }
-  return c.json({ ok: true, data: detail })
+  return c.json({ ok: true, data: detail }, 200)
 })

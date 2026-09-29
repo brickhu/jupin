@@ -1,11 +1,14 @@
 import { z } from '@hono/zod-openapi'
 
 import type {
+  ArenaDetail,
   ArenaRecord,
   ArenaRecordsResponse,
   ArticleCard,
+  ArticleDetail,
   ArticleRecordItem,
   ArticleRecordsResponse,
+  ArticleWordItem,
   ChallengeRecord,
   ChallengesResponse,
   EnergyLedgerItem,
@@ -505,6 +508,67 @@ export const ProfileUpdateResponseSchema = okEnvelope(
     .openapi('ProfileUpdateResponse'),
 )
 
+
+/* ---------- 句库详情 / 竞技场详情 ---------- */
+
+/** 词重音三档：-1 轻读 / 0 普通 / 1 句重音落点 */
+export const ArticleWordStressSchema = z
+  .union([z.literal(-1), z.literal(0), z.literal(1)])
+  .openapi('ArticleWordStress')
+
+/** 内容侧的词级数据（音标 / 释义 / 音节）—— 与运行时的 WordScore 是两回事 */
+export const ArticleWordItemSchema = z
+  .object({
+    text: z.string(),
+    stress: ArticleWordStressSchema,
+    syllables: z.array(z.string()),
+    ipa: z.string(),
+    meaning: z.string(),
+    tip: z.string(),
+  })
+  .openapi('ArticleWordItem')
+
+/** ⭐ 句子详情（**全量**）—— 阅读页要的那一份（含词级数据） */
+export const ArticleDetailSchema = okEnvelope(
+  z
+    .object({
+      id: z.string(),
+      text: z.string(),
+      translation: z.string(),
+      words: z.array(ArticleWordItemSchema),
+      links: z.array(z.string()),
+      difficulty: ArticleLevelSchema.nullable(),
+      challenge: z.string().nullable(),
+      advice: z.string().nullable(),
+      tags: z.array(z.string()),
+      audio: StandardAudioSchema.nullable(),
+      theme: ArticleThemeSchema.nullable(),
+    })
+    .openapi('ArticleDetail'),
+)
+
+/** ⭐ 竞技场详情 —— **按句子**寻址（同一句两次挑战看的是同一个场子） */
+export const ArenaDetailSchema = okEnvelope(
+  z
+    .object({
+      articleId: z.string(),
+      text: z.string(),
+      translation: z.string(),
+      difficulty: ArticleLevelSchema.nullable(),
+      tags: z.array(z.string()),
+      /** 从这里发起的挑战该记到哪一天（按句子寻址 = 服务端的今天） */
+      submissionDate: z.string(),
+      isToday: z.boolean(),
+      participantCount: z.number().int(),
+      topScore: z.number().nullable(),
+      lowestScore: z.number().nullable(),
+      audio: StandardAudioSchema.nullable(),
+      theme: ArticleThemeSchema.nullable(),
+      leaderboard: z.array(LeaderboardRowSchema),
+    })
+    .openapi('ArenaDetail'),
+)
+
 /* ---------- ⭐ 与共享 TS 类型的双向比对（漂移在这里报错） ---------- */
 
 /**
@@ -564,6 +628,12 @@ type _ProfileParity = Equal<
   z.infer<typeof ProfileUpdateResponseSchema>['data'],
   ProfileUpdateResponse
 >
+type _WordItemParity = Equal<z.infer<typeof ArticleWordItemSchema>, ArticleWordItem>
+type _ArticleDetailParity = Equal<
+  z.infer<typeof ArticleDetailSchema>['data'],
+  ArticleDetail
+>
+type _ArenaDetailParity = Equal<z.infer<typeof ArenaDetailSchema>['data'], ArenaDetail>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -594,5 +664,8 @@ const _parityChecks: [
   _StreakDayParity,
   _StreakRecParity,
   _ProfileParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+  _WordItemParity,
+  _ArticleDetailParity,
+  _ArenaDetailParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks
