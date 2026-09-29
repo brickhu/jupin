@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import type { Context } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
@@ -15,7 +15,10 @@ import { env } from '../env'
 import { playableBytesOf } from '../services/recording'
 import { getStorage } from '../storage'
 
-export const mediaRoutes = new Hono()
+export const mediaRoutes = new OpenAPIHono({ defaultHook })
+import { defaultHook } from '../openapi'
+import { errorResponse } from '../openapi/schemas'
+
 
 /**
  * ⭐ 标准音 —— **公开路由，刻意不在 /api 下面。**
@@ -40,7 +43,25 @@ export const mediaRoutes = new Hono()
  *    而那条**只在 STORAGE=local 时存在**。两者别混 ——
  *    把录音挂成一条无条件的公开路由会是一次真实的隐私事故（见那条路由的说明）。
  */
-mediaRoutes.get('/articles/:file', async (c) => {
+const mediaArticleAudioRoute = createRoute({
+  method: 'get',
+  path: '/articles/{file}',
+  tags: ['媒体'],
+  summary: '句子标准音（音频字节）',
+  description:
+    '⚠️ 这条**不返回 JSON 信封**，直接给音频字节（`Content-Type: audio/mpeg`）——' +
+    'InnerAudioContext 播的就是它（缺 Content-Type 时真机上直接不播、且不报错）。',
+  request: { params: z.object({ file: z.string() }) },
+  responses: {
+    200: {
+      content: { 'audio/mpeg': { schema: z.any().openapi({ type: 'string', format: 'binary' }) } },
+      description: '音频字节流',
+    },
+    404: errorResponse('音频不存在'),
+  },
+})
+
+mediaRoutes.openapi(mediaArticleAudioRoute, async (c) => {
   // 形如 <articleId>.mp3 —— articleId 是内容 hash（sha256 十六进制）
   const m = /^([0-9a-f]+)\.mp3$/.exec(c.req.param('file'))
   if (!m) return c.json({ ok: false, error: '音频不存在' }, 404)
@@ -64,7 +85,25 @@ mediaRoutes.get('/articles/:file', async (c) => {
  *    ⛔ 如果哪天要在云端也用它（比如给服务配了域名、进了白名单），
  *       **必须先把鉴权加回来**：那时它是一条任何人都能按 id 读录音的公开地址。
  */
-mediaRoutes.get('/recording/:id', async (c) => {
+const mediaRecordingRoute = createRoute({
+  method: 'get',
+  path: '/recording/{id}',
+  tags: ['媒体'],
+  summary: '用户录音（音频字节）',
+  description:
+    '⚠️ 这条**不返回 JSON 信封**，直接给音频字节（`Content-Type: audio/mpeg`）——' +
+    'InnerAudioContext 播的就是它（缺 Content-Type 时真机上直接不播、且不报错）。',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'audio/mpeg': { schema: z.any().openapi({ type: 'string', format: 'binary' }) } },
+      description: '音频字节流',
+    },
+    404: errorResponse('录音不存在 / 这种取法不支持'),
+  },
+})
+
+mediaRoutes.openapi(mediaRecordingRoute, async (c) => {
   if (env.STORAGE !== 'local') {
     return c.json({ ok: false, error: '录音暂不支持这种取法' }, 404)
   }

@@ -1,4 +1,12 @@
-import { Hono, type Context } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import type { Context } from 'hono'
+import { defaultHook } from '../openapi'
+import {
+  ChallengeShareResponseSchema,
+  PublicProfileResponseSchema,
+  SubmissionAudioResponseSchema,
+  errorResponse,
+} from '../openapi/schemas'
 import { eq } from 'drizzle-orm'
 import { SUBMISSION_ID_LENGTH } from '@jushuo/shared'
 
@@ -43,8 +51,9 @@ function viewerIsOwner(c: Context, ownerOpenid: string | null | undefined): bool
   return payload?.openid === ownerOpenid
 }
 
-export const challengeRoutes = new Hono<{ Variables: Variables }>()
-export const profileRoutes = new Hono<{ Variables: Variables }>()
+export const challengeRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+
+export const profileRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
 /**
  * ⭐ 分享出去的「一次挑战结果」 —— **不需要登录**。
@@ -64,7 +73,22 @@ export const profileRoutes = new Hono<{ Variables: Variables }>()
  *
  * ⛔ 不要为了「省一次查询」把它挂到 /api 下面 —— 那条路径上全是鉴权中间件。
  */
-challengeRoutes.get('/:sid', async (c) => {
+const challengeShareRoute = createRoute({
+  method: 'get',
+  path: '/:sid',
+  tags: ['挑战结果'],
+  summary: '分享出去的一次挑战结果（链接即凭据，无需登录）',
+  request: { params: z.object({ sid: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ChallengeShareResponseSchema } },
+      description: '成功',
+    },
+    404: errorResponse('这条挑战不存在'),
+  },
+})
+
+challengeRoutes.openapi(challengeShareRoute, async (c) => {
   const sid = c.req.param('sid')
   // ⚠️ 先按形状挡一道：不是 SUBMISSION_ID_LENGTH 位十六进制就不是提交 id，别去查库
   if (!RE_SUBMISSION_ID.test(sid)) {
@@ -134,7 +158,7 @@ challengeRoutes.get('/:sid', async (c) => {
       audio: await playbackRefOf(sid, row.audioKey),
       at: (row.scoredAt ?? row.createdAt).toISOString(),
     },
-  })
+  }, 200)
 })
 
 /**
@@ -146,7 +170,22 @@ challengeRoutes.get('/:sid', async (c) => {
  *    结果页反过来：它拿的是 /:sid 里那一份，不用再调这里。
  * ⚠️ 不判 isPublic、不校验归属 —— 理由见上面那条路由的隐私说明。
  */
-challengeRoutes.get('/:sid/audio', async (c) => {
+const challengeAudioRoute = createRoute({
+  method: 'get',
+  path: '/:sid/audio',
+  tags: ['挑战结果'],
+  summary: '单取一段录音的可播地址',
+  request: { params: z.object({ sid: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: SubmissionAudioResponseSchema } },
+      description: '成功',
+    },
+    404: errorResponse('这条挑战不存在'),
+  },
+})
+
+challengeRoutes.openapi(challengeAudioRoute, async (c) => {
   const sid = c.req.param('sid')
   // ⚠️ 先按形状挡一道：不是 SUBMISSION_ID_LENGTH 位十六进制就不是提交 id，别去查库
   if (!RE_SUBMISSION_ID.test(sid)) {
@@ -160,7 +199,7 @@ challengeRoutes.get('/:sid/audio', async (c) => {
     .limit(1)
   if (!row?.audioKey) return c.json({ ok: false, error: '录音不存在' }, 404)
 
-  return c.json({ ok: true, data: { audio: await playbackRefOf(sid, row.audioKey) } })
+  return c.json({ ok: true, data: { audio: await playbackRefOf(sid, row.audioKey) } }, 200)
 })
 
 /**
@@ -175,7 +214,22 @@ challengeRoutes.get('/:sid/audio', async (c) => {
  *
  * ⚠️ 被禁用的账号一律 404（不是 403）：不该告诉陌生人「这里有个人被封了」。
  */
-profileRoutes.get('/:id', async (c) => {
+const publicProfileRoute = createRoute({
+  method: 'get',
+  path: '/:id',
+  tags: ['个人主页'],
+  summary: '单人主页（公开）',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: PublicProfileResponseSchema } },
+      description: '成功',
+    },
+    404: errorResponse('这个主页不存在'),
+  },
+})
+
+profileRoutes.openapi(publicProfileRoute, async (c) => {
   const id = Number(c.req.param('id'))
   // ⚠️ 先按形状挡一道：不是正整数就别去查库
   if (!Number.isInteger(id) || id <= 0) {
@@ -228,5 +282,5 @@ profileRoutes.get('/:id', async (c) => {
       challengedRounds: stats.challengedRounds,
       growth,
     },
-  })
+  }, 200)
 })

@@ -1,3 +1,4 @@
+import type { VirtualPayData } from '@jushuo/shared'
 import { createHmac } from 'node:crypto'
 
 import { env } from '../env'
@@ -98,13 +99,15 @@ export function buildSignData(input: OrderSignInput): string {
 }
 
 /** 交给端侧 wx.requestVirtualPayment 的完整参数（端侧原样展开传进去） */
-export interface PayData {
-  mode: string
-  /** ⚠️ 是**字符串**不是对象（基础库要求 string 形式） */
-  signData: string
-  paySig: string
-  signature: string
-}
+/**
+ * ⭐ payData —— **直接用 shared 的那一份类型**（`VirtualPayData`）。
+ *
+ * ⚠️⚠️ 这里原来是本地复制的 interface，`mode` 写的是宽泛的 `string`，
+ *    而 shared 里是 `'short_series_goods' | 'short_series_coin'` 的联合 ——
+ *    **同一个事实两份定义**，于是响应 schema 与 handler 的返回类型对不上
+ *    （OpenAPI 迁移时当场暴露）。现在只留一处真相：shared 的类型。
+ */
+export type PayData = VirtualPayData
 
 /**
  * ⭐ 组装 payData。

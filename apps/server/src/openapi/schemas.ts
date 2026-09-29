@@ -10,10 +10,16 @@ import type {
   ArticleRecordsResponse,
   ArticleWordItem,
   ChallengeRecord,
+  ChallengeShareResponse,
+  SubmissionAudioResponse,
   ChallengesResponse,
   EnergyLedgerItem,
   EnergyResponse,
+  FavoriteItem,
+  FavoritesResponse,
   Gender,
+  GrowthRankResponse,
+  GrowthRankRow,
   MeResponse,
   ProfileUpdateResponse,
   ParticipationRecord,
@@ -25,10 +31,15 @@ import type {
   StreakDelta,
   StreakRecordDay,
   StreakRecordResponse,
+  ShopGoodsItem,
+  ShopGoodsResponse,
+  ShopOrderResponse,
   StreakView,
   SubmissionStatusResponse,
   SubmitResponse,
   TodayResponse,
+  TokenResponse,
+  VirtualPayData,
   WordScore,
 } from '@jushuo/shared'
 
@@ -643,6 +654,140 @@ export const AdminAudioUploadResponseSchema = okEnvelope(
     .openapi('AdminAudioUploadResponse'),
 )
 
+
+/* ---------- 身份 / 收藏 / 成长榜 / 商店 / 公开分享页 ---------- */
+
+/** 登录换到的凭据（`POST /api/auth/login`）—— 云端容器通道下不用它（网关注入身份） */
+export const TokenResponseSchema = okEnvelope(
+  z
+    .object({ token: z.string(), user: z.object({ id: z.number().int(), nickname: z.string().nullable() }) })
+    .openapi('TokenResponse'),
+)
+
+/** 收藏开关的结果（PUT / DELETE /api/user/favorites/:articleId） */
+export const FavoriteToggleResponseSchema = okEnvelope(
+  z.object({ articleId: z.string(), favorited: z.boolean() }).openapi('FavoriteToggleResponse'),
+)
+
+/** 收藏列表里的一条（带句子正文与我的战绩） */
+export const FavoriteItemSchema = z
+  .object({
+    articleId: z.string(),
+    text: z.string(),
+    translation: z.string(),
+    difficulty: ArticleLevelSchema.nullable(),
+    tags: z.array(z.string()),
+    theme: ArticleThemeSchema.nullable(),
+    favoritedAt: z.string(),
+    bestScore: z.number().nullable(),
+    attempts: z.number().int(),
+  })
+  .openapi('FavoriteItem')
+
+export const FavoriteListResponseSchema = okEnvelope(
+  z.object({ items: z.array(FavoriteItemSchema) }).openapi('FavoritesResponse'),
+)
+
+/** 成长榜一行（三个榜共用） */
+export const GrowthRankRowSchema = z
+  .object({
+    rank: z.number().int(),
+    nickname: z.string(),
+    avatarUrl: z.string().nullable(),
+    value: z.number(),
+    isMe: z.boolean(),
+  })
+  .openapi('GrowthRankRow')
+
+/** 三块成长榜（首页下方） */
+export const GrowthRankResponseSchema = okEnvelope(
+  z
+    .object({
+      self: z.array(GrowthRankRowSchema),
+      diligence: z.array(GrowthRankRowSchema),
+      standout: z.array(GrowthRankRowSchema),
+    })
+    .openapi('GrowthRankResponse'),
+)
+
+/** 商店商品一项 */
+export const ShopGoodsItemSchema = z
+  .object({
+    code: z.string(),
+    amount: z.number().int(),
+    priceFen: z.number().int(),
+    title: z.string(),
+    subtitle: z.string(),
+    badge: z.string().nullable(),
+    sellable: z.boolean(),
+  })
+  .openapi('ShopGoodsItem')
+
+export const ShopGoodsResponseSchema = okEnvelope(
+  z
+    .object({ items: z.array(ShopGoodsItemSchema), payEnv: z.number().int() })
+    .openapi('ShopGoodsResponse'),
+)
+
+/** 虚拟支付的签名数据（端侧把它交给 wx.requestVirtualPayment） */
+export const VirtualPayDataSchema = z
+  .object({
+    mode: z.enum(['short_series_goods', 'short_series_coin']),
+    signData: z.string(),
+    paySig: z.string(),
+    signature: z.string(),
+  })
+  .openapi('VirtualPayData')
+
+export const ShopOrderResponseSchema = okEnvelope(
+  z
+    .object({
+      outTradeNo: z.string(),
+      amountFen: z.number().int(),
+      points: z.number().int(),
+      mockPaid: z.boolean(),
+      payData: VirtualPayDataSchema,
+    })
+    .openapi('ShopOrderResponse'),
+)
+
+/** ⭐ 分享出去的「一次挑战结果」（`GET /api/challenge/:sid`）—— **链接即凭据**，无需登录 */
+export const ChallengeShareResponseSchema = okEnvelope(
+  z
+    .object({
+      owner: z.object({
+        id: z.number().int(),
+        nickname: z.string(),
+        avatarUrl: z.string().nullable(),
+      }),
+      result: SubmitResponseSchema,
+      /** null = 这段音频不在了（或作者关了公开） */
+      audio: SubmissionAudioRefSchema.nullable(),
+      at: z.string(),
+    })
+    .openapi('ChallengeShareResponse'),
+)
+
+/** ⭐ 单取一段录音的可播地址（`GET /api/challenge/:sid/audio`）—— audio 为 null = 音频不在了 */
+export const SubmissionAudioResponseSchema = okEnvelope(
+  z.object({ audio: SubmissionAudioRefSchema.nullable() }).openapi('SubmissionAudioResponse'),
+)
+
+/** 单人主页（`GET /api/profile/:id`）—— 公开，不含"我的"私有数据 */
+export const PublicProfileResponseSchema = okEnvelope(
+  z
+    .object({
+      id: z.number().int(),
+      nickname: z.string().nullable(),
+      avatarUrl: z.string().nullable(),
+      streakDays: z.number().int(),
+      conqueredCount: z.number().int(),
+      challengedRounds: z.number().int(),
+      growth: GrowthViewSchema,
+    })
+    .openapi('PublicProfileResponse'),
+)
+
 /* ---------- ⭐ 与共享 TS 类型的双向比对（漂移在这里报错） ---------- */
 
 /**
@@ -708,6 +853,29 @@ type _ArticleDetailParity = Equal<
   ArticleDetail
 >
 type _ArenaDetailParity = Equal<z.infer<typeof ArenaDetailSchema>['data'], ArenaDetail>
+type _TokenParity = Equal<z.infer<typeof TokenResponseSchema>['data'], TokenResponse>
+type _GrowthRowParity = Equal<z.infer<typeof GrowthRankRowSchema>, GrowthRankRow>
+type _GrowthResParity = Equal<
+  z.infer<typeof GrowthRankResponseSchema>['data'],
+  GrowthRankResponse
+>
+type _GoodsItemParity = Equal<z.infer<typeof ShopGoodsItemSchema>, ShopGoodsItem>
+type _GoodsResParity = Equal<z.infer<typeof ShopGoodsResponseSchema>['data'], ShopGoodsResponse>
+type _PayDataParity = Equal<z.infer<typeof VirtualPayDataSchema>, VirtualPayData>
+type _OrderParity = Equal<z.infer<typeof ShopOrderResponseSchema>['data'], ShopOrderResponse>
+type _ShareParity = Equal<
+  z.infer<typeof ChallengeShareResponseSchema>['data'],
+  ChallengeShareResponse
+>
+type _FavItemParity = Equal<z.infer<typeof FavoriteItemSchema>, FavoriteItem>
+type _FavResParity = Equal<
+  z.infer<typeof FavoriteListResponseSchema>['data'],
+  FavoritesResponse
+>
+type _SubAudioParity = Equal<
+  z.infer<typeof SubmissionAudioResponseSchema>['data'],
+  SubmissionAudioResponse
+>
 
 // ⚠️ 这两个常量是为了让上面三个类型别名**不被 TS 当成未使用而忽略**（noUnusedLocals 场景）。
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
@@ -741,5 +909,16 @@ const _parityChecks: [
   _WordItemParity,
   _ArticleDetailParity,
   _ArenaDetailParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+  _TokenParity,
+  _GrowthRowParity,
+  _GrowthResParity,
+  _GoodsItemParity,
+  _GoodsResParity,
+  _PayDataParity,
+  _OrderParity,
+  _ShareParity,
+  _FavItemParity,
+  _FavResParity,
+  _SubAudioParity,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

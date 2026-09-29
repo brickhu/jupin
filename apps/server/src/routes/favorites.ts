@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { normalizeLevel, normalizeTags } from '@jushuo/shared'
 import type { FavoriteItem, FavoritesResponse } from '@jushuo/shared'
 import { db } from '../db'
@@ -18,10 +18,33 @@ import { listFavorites, setFavorite } from '../services/favorites'
  * ⚠️ 开关的两头都**幂等**（重复收 / 取消没收藏过的都算成功），
  *    所以端侧可以乐观更新。
  */
-export const favoritesRoutes = new Hono<{ Variables: Variables }>()
+export const favoritesRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+import { defaultHook } from '../openapi'
+import {
+  FavoriteListResponseSchema,
+  FavoriteToggleResponseSchema,
+  errorResponse,
+} from '../openapi/schemas'
+
 
 /** 收藏 / 取消 —— PUT 收，DELETE 取消（同一个路径，语义就是"这个开关的值"） */
-favoritesRoutes.put('/:articleId', async (c) => {
+const favoriteAddRoute = createRoute({
+  method: 'put',
+  path: '/:articleId',
+  tags: ['句库'],
+  summary: '收藏这一句',
+  request: { params: z.object({ articleId: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: FavoriteToggleResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('articleId 不合法'),
+    404: errorResponse('句子不存在'),
+  },
+})
+
+favoritesRoutes.openapi(favoriteAddRoute, async (c) => {
   const userId = c.get('userId')
   const articleId = c.req.param('articleId')
   if (!articleId) return c.json({ ok: false, error: 'articleId 不合法' }, 400)
@@ -32,16 +55,31 @@ favoritesRoutes.put('/:articleId', async (c) => {
   if (!row) return c.json({ ok: false, error: '这一句不存在' }, 404)
 
   await setFavorite(userId, articleId, true)
-  return c.json({ ok: true, data: { articleId, favorited: true } })
+  return c.json({ ok: true, data: { articleId, favorited: true } }, 200)
 })
 
-favoritesRoutes.delete('/:articleId', async (c) => {
+const favoriteRemoveRoute = createRoute({
+  method: 'delete',
+  path: '/:articleId',
+  tags: ['句库'],
+  summary: '取消收藏',
+  request: { params: z.object({ articleId: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: FavoriteToggleResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('articleId 不合法'),
+  },
+})
+
+favoritesRoutes.openapi(favoriteRemoveRoute, async (c) => {
   const userId = c.get('userId')
   const articleId = c.req.param('articleId')
   if (!articleId) return c.json({ ok: false, error: 'articleId 不合法' }, 400)
 
   await setFavorite(userId, articleId, false)
-  return c.json({ ok: true, data: { articleId, favorited: false } })
+  return c.json({ ok: true, data: { articleId, favorited: false } }, 200)
 })
 
 /**
@@ -50,10 +88,23 @@ favoritesRoutes.delete('/:articleId', async (c) => {
  *    难度 / 标签也是**正文的属性**（articles 表只是索引）。
  * ⚠️ 我的战绩从**参与记录**取（一人一句一行），与竞技场卡片同一口径。
  */
-favoritesRoutes.get('/', async (c) => {
+const favoriteListRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['句库'],
+  summary: '我收藏的句子（只给 id）',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: FavoriteListResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+favoritesRoutes.openapi(favoriteListRoute, async (c) => {
   const userId = c.get('userId')
   const refs = await listFavorites(userId)
-  if (refs.length === 0) return c.json({ ok: true, data: { items: [] } })
+  if (refs.length === 0) return c.json({ ok: true, data: { items: [] } }, 200)
 
   const ids = refs.map((r) => r.articleId)
   const [metaRows, mineRows] = await Promise.all([
@@ -101,5 +152,5 @@ favoritesRoutes.get('/', async (c) => {
   }
 
   const data: FavoritesResponse = { items }
-  return c.json({ ok: true, data })
+  return c.json({ ok: true, data }, 200)
 })

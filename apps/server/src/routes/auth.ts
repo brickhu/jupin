@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { db } from '../db'
 import { users } from '../db/schema'
@@ -7,7 +7,15 @@ import { signToken } from '../lib/token'
 import { getOrCreateUserByOpenid } from '../services/user'
 import { WxLoginError, code2session, hasAppSecret, syntheticIdentity } from '../services/wx-login'
 
-export const authRoutes = new Hono()
+export const authRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+import type { Variables } from '../middleware/auth'
+import { defaultHook } from '../openapi'
+import {
+  TokenResponseSchema,
+  errorResponse,
+  okEnvelope,
+} from '../openapi/schemas'
+
 
 /**
  * 微信登录：wx.login 拿到的 code → openid → 签发 token。
@@ -74,7 +82,24 @@ async function resolveIdentity(
   return s
 }
 
-authRoutes.post('/login', async (c) => {
+const authLoginRoute = createRoute({
+  method: 'post',
+  path: '/login',
+  tags: ['身份'],
+  summary: '登录：用 wx.login 的 code 换 token（本地/公网通道用）',
+  request: { body: { content: { 'application/json': { schema: z.object({ code: z.string().optional(), as: z.string().optional() }) } } } },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: TokenResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('缺少 code / code 无效'),
+    401: errorResponse('code 换不到身份（登录失败）'),
+    500: errorResponse('微信接口异常 / 建号失败'),
+  },
+})
+
+authRoutes.openapi(authLoginRoute, async (c) => {
   const { code, as } = await c.req.json<{ code?: string; as?: string }>().catch(() => ({}) as {
     code?: string
     as?: string
@@ -96,7 +121,7 @@ authRoutes.post('/login', async (c) => {
     ok: true,
     // ⚠️ openid 必须一起签进 token —— 见 lib/token.ts 的说明
     data: { token: signToken(user.id, identity.openid), user: { id: user.id, nickname: user.nickname } },
-  })
+  }, 200)
 })
 
 /**
@@ -111,7 +136,25 @@ authRoutes.post('/login', async (c) => {
  *    所以它只能改**自己那一行**的 session_key。
  * ⚠️ 它不签发 token，也不回任何用户信息。
  */
-authRoutes.post('/session', async (c) => {
+const authSessionRoute = createRoute({
+  method: 'post',
+  path: '/session',
+  tags: ['身份'],
+  summary: '刷新 session_key（只为一个功能存在：虚拟支付的用户态签名）',
+  request: { body: { content: { 'application/json': { schema: z.object({ code: z.string().optional() }) } } } },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: okEnvelope(z.object({ refreshed: z.boolean() }).openapi('SessionRefreshResponse')) } },
+      description: '成功',
+    },
+    400: errorResponse('缺少 code'),
+    401: errorResponse('code 换不到身份（刷新失败）'),
+    500: errorResponse('微信接口异常'),
+    503: errorResponse('没配 AppSecret，刷不了'),
+  },
+})
+
+authRoutes.openapi(authSessionRoute, async (c) => {
   const { code } = await c.req.json<{ code?: string }>().catch(() => ({}) as { code?: string })
   if (!code) return c.json({ ok: false, error: '缺少 code' }, 400)
 
@@ -128,5 +171,5 @@ authRoutes.post('/session', async (c) => {
 
   const user = await getOrCreateUserByOpenid(identity.openid)
   await saveSessionKey(user.id, identity.sessionKey)
-  return c.json({ ok: true, data: { refreshed: true } })
+  return c.json({ ok: true, data: { refreshed: true } }, 200)
 })

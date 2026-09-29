@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { db } from '../db'
 import { users } from '../db/schema'
@@ -15,9 +15,29 @@ import { code2session } from '../services/wx-login'
  * ⚠️ 价格**不在端侧写死**，一律从 /goods 拿：小程序审核要 1–3 天，
  *    把价格绑在发版上，促销/调价就废了（见 docs/design/payment-and-purchase.md §2.4）。
  */
-export const shopRoutes = new Hono<{ Variables: Variables }>()
+export const shopRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+import { defaultHook } from '../openapi'
+import {
+  ShopGoodsResponseSchema,
+  ShopOrderResponseSchema,
+  errorResponse,
+} from '../openapi/schemas'
 
-shopRoutes.get('/goods', async (c) => {
+
+const shopGoodsRoute = createRoute({
+  method: 'get',
+  path: '/goods',
+  tags: ['我的'],
+  summary: '商品列表（价格从服务端来）',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ShopGoodsResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+shopRoutes.openapi(shopGoodsRoute, async (c) => {
   const items = await listGoods()
   return c.json({
     ok: true,
@@ -35,7 +55,7 @@ shopRoutes.get('/goods', async (c) => {
       /** 沙箱还是现网 —— 端侧在界面上标一下，免得测试时以为是真的 */
       payEnv: env.XPAY_ENV,
     },
-  })
+  }, 200)
 })
 
 /**
@@ -47,7 +67,24 @@ shopRoutes.get('/goods', async (c) => {
  *      · 不带且库里也没有 ⇒ 回 409 NEED_SESSION，端侧补一次 wx.login 再重试
  *    不这么做的话，用户会看到「支付失败」而原因其实是「我们没有他的 session_key」。
  */
-shopRoutes.post('/order', async (c) => {
+const shopOrderRoute = createRoute({
+  method: 'post',
+  path: '/order',
+  tags: ['我的'],
+  summary: '下单（返回虚拟支付签名数据）',
+  request: { body: { content: { 'application/json': { schema: z.object({ code: z.string() }) } } } },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ShopOrderResponseSchema } },
+      description: '成功',
+    },
+    400: errorResponse('商品不可售 / 参数不合法'),
+    401: errorResponse('未登录'),
+    409: errorResponse('订单已存在 / 状态冲突（带 code）'),
+  },
+})
+
+shopRoutes.openapi(shopOrderRoute, async (c) => {
   const userId = c.get('userId')
   const body = await c
     .req.json<{ goodsCode?: string; code?: string }>()
@@ -95,7 +132,7 @@ shopRoutes.post('/order', async (c) => {
         mockPaid: order.mockPaid,
         payData: order.payData,
       },
-    })
+    }, 200)
   } catch (err) {
     /** ⚠️ 可预期失败（商品下架 / 没配道具 / 签名缺配置）回 400 + 人话，不要 500 */
     const message = err instanceof OrderError ? err.message : (err as Error).message

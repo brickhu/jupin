@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { deliverOrder } from '../services/order'
 
@@ -19,7 +19,9 @@ import { deliverOrder } from '../services/order'
  * ⚠️ 响应格式**必须是** { ErrCode: 0 }（或 success / 空），否则平台按 2/4/8/16… 的间隔
  *    **最多重推 15 次**。所以这里的原则是：**只在我们自己写库失败时才返回非 0**。
  */
-export const payRoutes = new Hono()
+export const payRoutes = new OpenAPIHono({ defaultHook })
+import { defaultHook } from '../openapi'
+
 
 /** 从推送报文里取字段 —— 官方明确「部分字段名称有转译，请以例子的 key 为准」 */
 function pick(obj: Record<string, unknown>, ...keys: string[]): string | undefined {
@@ -64,7 +66,29 @@ export function parseNotify(raw: string): Record<string, unknown> {
   }
 }
 
-payRoutes.all('/notify', async (c) => {
+const payNotifyRoute = createRoute({
+  method: 'post',
+  path: '/notify',
+  tags: ['支付'],
+  summary: '虚拟支付发货推送（支付平台回调）',
+  description:
+    '⚠️ 这是全站**唯一一个公开的写接口**（故意不在 authMiddleware 后面）：' +
+    '支付平台要能直接打进来。身份靠推送内容里的签名，不靠登录态。\n\n' +
+    '⚠️ 响应形状由平台决定，**不是**本站的 { ok, data } 信封：' +
+    'XML 请求回 XML，JSON 请求回 { ErrCode, ErrMsg }。',
+  request: { body: { content: { 'application/json': { schema: z.any() }, 'text/xml': { schema: z.any() }, 'application/xml': { schema: z.any() } } } },
+  responses: {
+    200: {
+      description: '处理完成（平台只认 200 + 这个响应体）',
+      content: {
+        'application/json': { schema: z.object({ ErrCode: z.number(), ErrMsg: z.string() }) },
+        'text/xml': { schema: z.any().openapi({ type: 'string' }) },
+      },
+    },
+  },
+})
+
+payRoutes.openapi(payNotifyRoute, async (c) => {
   const raw = await c.req.text()
   const isXml = raw.trim().startsWith('<')
   const ok = () =>
