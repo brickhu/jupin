@@ -34,7 +34,12 @@ const BIN = resolve(ROOT, 'node_modules/.bin/wxcloud')
 
 // CLI 内部没有暴露对象存储命令，只有这个环境查询接口带着 Storages 字段
 const require = createRequire(resolve(ROOT, 'package.json'))
-const { DescribeWxCloudBaseRunEnvs, DescribeCloudBaseRunServer } = require(
+const {
+  DescribeWxCloudBaseRunEnvs,
+  DescribeCloudBaseRunServer,
+  // ⭐ 失败诊断用：拉平台侧的构建事件（见 waitForNewVersion 里那段说明）
+  DescribeCloudBaseRunProcessLog,
+} = require(
   resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/cloudapiDirect'),
 )
 const { setApiCommonParameters } = require(resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/common'))
@@ -480,7 +485,45 @@ async function waitForNewVersion(before) {
       console.log(`· ${v.VersionName} 状态：${v.Status}`)
     }
     if (v.Status === 'normal') return { ok: true, name: v.VersionName }
-    if (v.Status === 'create_failed' || v.Status === 'failed') return { ok: false, name: v.VersionName }
+    if (v.Status === 'create_failed' || v.Status === 'failed') {
+      /**
+       * ⭐⭐ 失败时**把平台的构建事件拉出来**（2026-09 加，起因是 CI 反复 create_failed）。
+       *
+       * ⚠️⚠️ 为什么要它：`create_failed` 有两种完全不同的成因，而它们**长得一样**：
+       *    ① 我们的 Dockerfile 构建失败 —— 构建日志里会有报错行；
+       *    ② **平台侧的「构建镜像」被创建出来之后卡住** —— 我们这边的构建日志
+       *       停在 `ZIP package extracted.` 之后一行都没有，什么线索都给不出来。
+       *    实测（jupin-084 / jupin-088）：进程日志只有
+       *      `create_build_image : creating` 一行，然后 **10 分钟后被平台判失败**。
+       *    不把这一行打出来，排查的人只会盯着我们的 Dockerfile 看 —— 而问题不在那儿。
+       */
+      try {
+        const detail = await DescribeCloudBaseRunServer({
+          EnvId: envId,
+          ServerName: SERVICE,
+          Offset: 0,
+          Limit: 20,
+        })
+        const full = (detail.VersionItems ?? []).find((x) => x.VersionName === v.VersionName)
+        if (full?.RunId) {
+          const proc = await DescribeCloudBaseRunProcessLog({ EnvId: envId, RunId: full.RunId })
+          const logs = (proc?.Logs ?? []).slice(-6)
+          if (logs.length) {
+            console.log(`· ${v.VersionName} 的平台构建事件：`)
+            for (const l of logs) console.log('    ' + String(l).trim())
+            if (String(logs.at(-1)).includes('create_build_image')) {
+              console.log(
+                '  ⚠️ 只见「创建构建镜像」、没有后续事件 ⇒ **平台侧卡住**，不是我们的 Dockerfile 失败\n' +
+                  '     （我们的镜像正常只要 ~80 秒：见同一服务里成功版本的构建日志）',
+              )
+            }
+          }
+        }
+      } catch {
+        /* 拉不到就算了：诊断信息不该把部署本身搞失败 */
+      }
+      return { ok: false, name: v.VersionName }
+    }
   }
   return { ok: false, name: '(超时未出结果)' }
 }
