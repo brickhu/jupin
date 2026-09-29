@@ -24,7 +24,7 @@ import { basename, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, inArray } from 'drizzle-orm'
 
 import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
@@ -100,6 +100,93 @@ function staleCodeWarning(): string | null {
     '结果可能不符合当前口径。重启（pnpm admin）后再跑一次。'
   )
 }
+/* ================================================================
+ * ⭐⭐ 服务端（唯一写入方）
+ * ================================================================
+ *
+ * ⚠️⚠️ **admin 不再直连数据库**（2026-09 用户定的分工）。两个理由，第二个更硬：
+ *    ① 连不上：dev/prod 的库没开外网地址（实测 `IsOpenPubNetAccess=false`），
+ *       本机只有 local 能连 —— 而"这个库在不在公网"是运维决定，不该是管理台的前置条件；
+ *    ② **两套写入逻辑**：admin 原来自己写 insert/update(articles)，服务端也写，
+ *       两份必然分叉（真实案例：标签顺序 —— admin 读关联表拿到字母序，保存时改掉了正文的顺序）。
+ *    ⇒ 写入全部走 `/api/admin/*`（服务端），admin 只是它的一个客户端。
+ *
+ * ⚠️ 读**暂时仍走库**（列表/详情/排期）：那是"看"，不是"改"——
+ *    先把**写入**收成一条路（分叉只发生在写入侧）。读的收口是下一步，不混在这次里。
+ *
+ * ⚠️ 令牌从 `.env.<mode>` 的 `ADMIN_TOKEN` 读（与服务端同一个值）。
+ *    地址：local/dev 是已知的（dev 的写在 AGENT.md 里），prod 由 `ADMIN_PROD_URL` 给 ——
+ *    **绝不猜**生产域名。
+ */
+function serverUrlOf(mode: Mode): string | null {
+  const vars = varsOf(mode)
+  if (mode === 'local') return vars.ADMIN_SERVER_URL ?? 'http://127.0.0.1:' + (vars.API_PORT ?? '8899')
+  if (mode === 'dev') {
+    return vars.ADMIN_DEV_URL ?? 'https://jupin-219743-12-1258596499.sh.run.tcloudbase.com'
+  }
+  return vars.ADMIN_PROD_URL ?? null
+}
+
+interface AdminApiResult {
+  ok: boolean
+  error?: string
+}
+
+/** 调一次 `/api/admin/*`：JSON 体 */
+async function adminApi(
+  mode: Mode,
+  method: 'GET' | 'PUT' | 'POST',
+  apiPath: string,
+  body?: unknown,
+): Promise<AdminApiResult> {
+  const base = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!base) throw new Error('这个环境没配服务端地址（.env.' + mode + ' 的 ADMIN_PROD_URL）')
+  if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN —— 与云上那个值要一致')
+
+  const res = await fetch(base + apiPath, {
+    method,
+    headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  })
+  const text = await res.text()
+  let json: { ok?: boolean; error?: string } = {}
+  try {
+    json = JSON.parse(text) as { ok?: boolean; error?: string }
+  } catch {
+    /* 非 JSON（比如网关的 502 页面）—— 下面按状态码报 */
+  }
+  if (res.ok && json.ok) return { ok: true }
+  return { ok: false, error: json.error ?? 'HTTP ' + res.status + '：' + text.slice(0, 200) }
+}
+
+/** 调一次 `/api/admin/*`：multipart 传音频 */
+async function adminApiUploadAudio(mode: Mode, id: string, bytes: Uint8Array): Promise<AdminApiResult> {
+  const base = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!base) throw new Error('这个环境没配服务端地址')
+  if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN')
+
+  const form = new FormData()
+  // ⚠️ 不写 `BlobPart` 这种 DOM 类型（这个 tsconfig 里没有 DOM lib）：
+  //    直接喂 Uint8Array 即可，Node 的 Blob 接受它
+  form.append('file', new Blob([bytes], { type: 'audio/mpeg' }), id + '.mp3')
+  const res = await fetch(base + '/api/admin/articles/' + id + '/audio', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token },
+    body: form,
+  })
+  const text = await res.text()
+  let json: { ok?: boolean; error?: string } = {}
+  try {
+    json = JSON.parse(text) as { ok?: boolean; error?: string }
+  } catch {
+    /* 非 JSON */
+  }
+  if (res.ok && json.ok) return { ok: true }
+  return { ok: false, error: json.error ?? 'HTTP ' + res.status + '：' + text.slice(0, 200) }
+}
+
 const STATE_FILE = join(HERE, '.state.json')
 
 const args = process.argv.slice(2)
@@ -431,17 +518,50 @@ async function serveFile(req: IncomingMessage, res: ServerResponse, abs: string)
  * 句库
  * ================================================================ */
 
-async function contentOf(id: string): Promise<Record<string, unknown> | null> {
-  const p = contentAbsPathOf(id)
-  if (!existsSync(p)) return null
-  try {
-    return JSON.parse(await readFile(p, 'utf8'))
-  } catch {
-    return null
+/**
+ * ⭐ 正文 —— **从 `articles` 表的列组装**（2026-09 用户定：内容只走 admin，一列 = 一个事实）。
+ *
+ * ⚠️ 这里以前是"按 id 推出一个文件路径、读本机仓库里那个 json"（`contentAbsPathOf`）。
+ *    那套的直接后果：**换台机器 / 在别的环境上打开 admin，详情页就报
+ *    「正文不在本机仓库里，改不了」** —— 因为"能不能改"取决于本机有没有那个文件，
+ *    而不是取决于库。
+ * ⚠️ 返回值的形状仍然是 `ArticleContent`（调用方不用改），
+ *    但 `id` 是**组装时补上的**（库里不重复存它）。
+ */
+async function contentOf(mode: Mode, id: string): Promise<Record<string, unknown> | null> {
+  const d = await dbOf(mode)
+  const [row] = await d
+    .select({
+      id: articles.id,
+      text: articles.text,
+      translation: articles.translation,
+      words: articles.words,
+      links: articles.links,
+      scores: articles.scores,
+      challenge: articles.challenge,
+      advice: articles.advice,
+      tags: articles.tags,
+      difficulty: articles.difficulty,
+    })
+    .from(articles)
+    .where(eq(articles.id, id))
+    .limit(1)
+  if (!row || row.text === null) return null
+  return {
+    id: row.id,
+    text: row.text,
+    translation: row.translation ?? '',
+    words: row.words ?? [],
+    ...(row.links ? { links: row.links } : {}),
+    ...(row.scores ? { scores: row.scores } : {}),
+    ...(row.challenge ? { challenge: row.challenge } : {}),
+    ...(row.advice ? { advice: row.advice } : {}),
+    ...(row.tags ? { tags: row.tags } : {}),
+    ...(row.difficulty !== null ? { difficulty: row.difficulty } : {}),
   }
 }
 
-/** 正文从**本机仓库**读（正文的真相在文件里），结构化字段从库读 */
+/** 列表：全部从库读（正文也已经是库里的列） */
 async function listArticles(mode: Mode, q: string, limit: number) {
   const d = await dbOf(mode)
   const rows = await d.select().from(articles).orderBy(desc(articles.createdAt)).limit(limit)
@@ -452,7 +572,7 @@ async function listArticles(mode: Mode, q: string, limit: number) {
    */
   const out = []
   for (const r of rows) {
-    const c = await contentOf(r.id)
+    const c = await contentOf(mode, r.id)
     out.push({
       id: r.id,
       isActive: r.isActive,
@@ -572,99 +692,73 @@ function validateWordTable(
  * ⚠️ 合并而不是覆盖：正文里还有 pipeline 写进去的 words / 未来可能加的字段，
  *    这个台子不该假装自己知道正文的完整形状。
  */
-async function writeContentFile(id: string, fields: Record<string, unknown>): Promise<void> {
-  const p = contentAbsPathOf(id)
-  const prev = existsSync(p) ? JSON.parse(await readFile(p, 'utf8')) : {}
-  const next: Record<string, unknown> = { ...prev, ...fields }
-  if (!Array.isArray(next.words)) next.words = []
-  if (!Array.isArray(next.links)) next.links = []
-  await writeFile(p, JSON.stringify(next, null, 2) + '\n')
+/**
+ * ⚠️⚠️ 这里原来是 `writeContentFile()` —— 把正文**写进本机仓库**的
+ *    `content/articles/<id>.json`。2026-09 已删除那套：
+ *    · 句子的真相现在在**服务端的 `articles` 表**（写入唯一走 `/api/admin/*`）；
+ *    · 写本机文件还会连带出"换台机器就改不了"（详情页报「正文不在本机仓库里」）。
+ *
+ * ⇒ 生成流程改成：**在内存里准备好内容 → 第③步一次性调接口入库**。
+ *   `writeContentFile` 这个名字保留成一个显式报错的桩，免得别处再顺手写文件。
+ */
+function writeContentFile(): never {
+  throw new Error(
+    'admin 不再写本机正文文件（2026-09）：内容只进服务端的 articles 表，走 /api/admin/*',
+  )
 }
 
+/**
+ * ⭐ 写入一条句子 —— **调服务端的 `/api/admin/articles/:id`**（2026-09 用户定的分工）。
+ *
+ * ⚠️⚠️ 这里以前是"写本机正文文件 + `insert(articles)` + 刷派生索引"三件事。
+ *    三件事现在都不在 admin 做了：
+ *    · 正文文件那套整个取消（句子的真相在服务端库里）；
+ *    · 写库改成调接口（**写入只剩服务端一条路**，不会再出现"两份 SQL 分叉"，
+ *      例如标签顺序：admin 读关联表拿到字母序、保存时改掉了正文里的顺序）；
+ *    · 派生索引由服务端的写入路径负责（difficulty/tags 由 scores 与 text 算出）。
+ *
+ * @returns 这次之后是不是"已发布"（供调用方写日志）
+ */
 async function upsertArticle(
   mode: Mode,
   input: {
     id: string
     text: string
     translation: string
-    /**
-     * ⭐ 三个判据分 [词汇, 发音, 长度]，各 1–5 —— **档位由它算出来**（见 shared/level.ts）。
-     * ⚠️ 刻意**不接受**调用方直接给 difficulty：那样正文里 difficulty 与 scores
-     *    就可能互相矛盾，而没有任何东西会发现（content-files.test.ts 会查）。
-     */
     scores: DifficultyScores
-    /** 给用户看的**第一句**：挑战宣言（兼分享卡标题，≤18 字）；可手改 */
     challenge: string
-    /** 给用户看的**第二句**：朗读建议（定义见 article-meta.ts 的 SYSTEM）；可手改 */
     advice: string
     tags: string[]
-    /**
-     * true = 发布，false = 下架，**undefined = 保持现状**。
-     * ⚠️ 三态而不是布尔：详情页的「保存」只改译文/标签/难度，
-     *    一条已发布的句子必须原样留在线上 —— 否则每次修个错别字都会把它悄悄下架。
-     */
-    publish: boolean | undefined
-    /** 词表（由流水线产出；这个台子目前只展示、不改） */
+    /** 不传 = 保持库里现状（与旧实现同语义） */
+    publish?: boolean
     words?: ArticleWordItem[]
-    /** 词间连读标注（长度 = words.length - 1） */
     links?: string[]
   },
 ): Promise<boolean> {
-  // ⭐ 档位**由判据分算出来**，绝不写传进来的值 —— 正文里两者永远自洽
-  const difficulty = difficultyFromScores(input.scores)
-  if (difficulty === null) throw new Error('三个判据分必须是 1–5 的三个整数')
-  // ⚠️ 不传 words：那是 pipeline 的产物，这里只负责译文/难度/判据分/建议及收益/标签这几个字段
-  await writeContentFile(input.id, {
-    id: input.id,
-    text: input.text,
-    translation: input.translation,
-    difficulty,
-    scores: input.scores,
-    // ⚠️ 这一行曾经漏了 —— 详情页改那句「建议」会**静默丢失**（文件里还是旧值），
-    //    而接口把新值回给了前端，看起来像保存成功。手动改的内容必须真的落盘。
-    challenge: input.challenge,
-    advice: input.advice,
-    tags: input.tags,
-    // ⚠️ 只在真的传了 words 时才写：不传就是「别动流水线产出的词表」
-    ...(input.words ? { words: input.words, links: input.links ?? [] } : {}),
-  })
-
+  // ⚠️ 发布状态要"以库里那一行为准"，所以这里**读一次**（读仍走库，见文件头说明）
   const d = await dbOf(mode)
-
-  // ⚠️ 发布状态以**库里那一行**为准：没有行（新句子）就是未发布
   const [cur] = await d
     .select({ isActive: articles.isActive })
     .from(articles)
     .where(eq(articles.id, input.id))
     .limit(1)
   const publish = input.publish === undefined ? Boolean(cur?.isActive) : input.publish
-  const justPublished = publish && !cur?.isActive
 
-  const row = {
-    id: input.id,
-    // ⚠️ 不再写 content_json：那一列已删，正文路径由 id 推导（services/content.ts 的 contentPathOf）
-    // ⚠️ 发布状态只有 is_active 一列（content_status 已删，迁移 0033）——
-    //    以前这里两列一起写，就得永远保证它们同步，而同步本身没有任何东西在检查。
+  const res = await adminApi(mode, 'PUT', '/api/admin/articles/' + input.id, {
+    text: input.text,
+    translation: input.translation,
+    scores: input.scores,
+    challenge: input.challenge,
+    advice: input.advice,
+    tags: input.tags,
+    ...(input.words ? { words: input.words, links: input.links ?? [] } : {}),
+    // ⚠️ 库里没有这一行时，服务端会按这个值建行；没有它服务端默认建**草稿**
     isActive: publish,
-    theme: themeFromHash(input.id),
-    standardAudio: audioKeyOf(input.id),
-    // ⚠️ 派生索引（真相在正文 JSON）—— 这里写，reindex 也会重写
-    difficulty,
-    /**
-     * ⭐ 发布时间只在**草稿 → 已发布**那一刻写，而且**只由这一处写**。
-     *
-     * ⚠️ 单纯改译文/标签不该刷新它（那会把「什么时候上的线」变成「最后一次编辑」）；
-     *    下架也不清空它（它记的是最近一次上线的时刻，草稿状态另有列表达）。
-     * ⚠️⚠️ 刻意**不接受客户端指定**（用户 2026-09 的决定）：能手改的话它就不再表示
-     *    「什么时候上的线」了。PUT 处理里对 publishedAt 是**明确拒收**，不是静默忽略 ——
-     *    免得以后有人加了字段却发现「怎么改了没反应」。
-     */
-    ...(justPublished ? { publishedAt: new Date() } : {}),
-  }
-  await d.insert(articles).values(row).onDuplicateKeyUpdate({ set: row })
-  await syncArticleIndex(input.id, d)
+  })
+  if (!res.ok) throw new Error('写入服务端失败：' + res.error)
   return publish
 }
+
 
 /**
  * ⭐ 生成任务：LLM 出译文/难度/标签 → fish 出标准音 → 词级区间落盘 → 建一条**草稿行**。
@@ -723,12 +817,26 @@ async function runSplit(job: Job, text: string): Promise<void> {
   const list = await gradeArticles(text)
   const items: SplitItem[] = []
   const seen = new Set<string>()
+  /**
+   * ⚠️ "这句库里有没有"的判据原来是看本机有没有那个正文文件。
+   *    文件那套取消之后改成**查库**（读仍走库，见文件头）——
+   *    一次查完这批 id，别在循环里逐条查。
+   */
+  const ids = list
+    .map((c) => articleIdOf(c.text))
+    .filter((id, i, arr) => arr.indexOf(id) === i)
+  const d = await dbOf(S.env)
+  const existingIds = new Set(
+    ids.length
+      ? (await d.select({ id: articles.id }).from(articles).where(inArray(articles.id, ids))).map((r) => r.id)
+      : [],
+  )
   for (const c of list) {
     const id = articleIdOf(c.text)
     // ⚠️ 批内去重：输入里同一句出现两次时只留一条（否则同一份音频会生成两次）
     if (seen.has(id)) continue
     seen.add(id)
-    items.push({ ...c, id, exists: existsSync(contentAbsPathOf(id)) })
+    items.push({ ...c, id, exists: existingIds.has(id) })
   }
   if (items.length === 0) throw new Error('模型没拆出任何句子 —— 输入是英文吗？')
   for (const it of items) {
@@ -771,11 +879,20 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
 
   // ① 落正文
   job.step = '① 落正文（' + items.length + ' 条）'
-  const prepared: Array<{ it: SplitItem; created: boolean }> = []
+  const prepared: Array<{ it: SplitItem; created: boolean; words: ArticleWordItem[]; links: string[] }> = []
   for (const it of items) {
-    if (existsSync(contentAbsPathOf(it.id))) {
+    /**
+     * ⚠️ 跳过判据：库里**已经有这一行且有正文** ⇒ 不重复生成（省一次 TTS 成本）。
+     *    原来这里是 `existsSync(contentAbsPathOf(id))`（看本机文件）。
+     */
+    const [already] = await (await dbOf(mode))
+      .select({ text: articles.text })
+      .from(articles)
+      .where(eq(articles.id, it.id))
+      .limit(1)
+    if (already?.text) {
       results.push({ ...base(it), status: 'skipped' })
-      job.log.push('⏭ 已存在，跳过（省一次生成）：' + it.id + '  ' + it.text.slice(0, 40))
+      job.log.push('⏭ 库里已有正文，跳过（省一次生成）：' + it.id + '  ' + it.text.slice(0, 40))
       continue
     }
     /**
@@ -787,7 +904,17 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
       job.log.push('❌ 缺少判据分：' + it.text.slice(0, 40))
       continue
     }
-    const created = !existsSync(contentAbsPathOf(it.id))
+    /**
+     * ⚠️ "是不是新建的"原来是 `!existsSync(contentAbsPathOf(id))`（看本机有没有那个文件）。
+     *    文件那套已经取消 ⇒ 改成问库（读仍走库，见文件头）：
+     *    库里没有这一行 = 新建。
+     */
+    const [existingRow] = await (await dbOf(mode))
+      .select({ id: articles.id })
+      .from(articles)
+      .where(eq(articles.id, it.id))
+      .limit(1)
+    const created = !existingRow
     /**
      * ⭐ 词表**按最终正文重算**，不用 split 那一步算好的那份：
      *    候选正文可以在界面上手改，而音节 / 音标 / 句重音 / 连读**都是从正文算出来的** ——
@@ -797,13 +924,11 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
      *        （用户 2026-09 发现：正文有，词表是 []）。实测就是这么翻的车。
      */
     const info = buildWordInfo({ text: it.text, meanings: it.meanings })
-    await writeContentFile(it.id, {
-      id: it.id, text: it.text, translation: it.translation,
-      difficulty: it.difficulty, scores: it.scores,
-      challenge: it.challenge, advice: it.advice, tags: it.tags,
-      words: info.words, links: info.links,
-    })
-    prepared.push({ it, created })
+    /**
+     * ⚠️ 这一步**不再落盘**（2026-09）：内容只进服务端的库。
+     *    算好的词表挂在 prepared 上，第③步连同其余字段一次性调接口写入。
+     */
+    prepared.push({ it, created, words: info.words, links: info.links })
   }
 
   // ② 批量 TTS
@@ -822,9 +947,13 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
        *    并按 DB 默认值（isActive 默认 true）插进库 —— 等于悄悄上线一句没音的句子。
        *    已有文件（重新生成同一句）不能删，那不是这次新建的。
        */
-      if (p.created) await unlink(contentAbsPathOf(p.it.id)).catch(() => {})
+      /**
+       * ⚠️ 这里原来会删掉"这次新建的本机正文文件"用来回滚。
+       *    文件那套已取消 ⇒ **没有东西需要回滚**：这一条还没入库（入库在第③步，
+       *    只处理音频成功的那批），所以失败就是"什么都没留下"。
+       */
       results.push({ ...base(p.it), status: 'failed', error: (err as Error).message })
-      job.log.push('❌ 生成失败（已回滚正文）：' + p.it.id + '  ' + (err as Error).message)
+      job.log.push('❌ 生成失败（未入库）：' + p.it.id + '  ' + (err as Error).message)
     }
   }
 
@@ -836,6 +965,8 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
         id: p.it.id, text: p.it.text, translation: p.it.translation,
         scores: p.it.scores!,
         challenge: p.it.challenge, advice: p.it.advice, tags: p.it.tags, publish: false,
+        // ⚠️ 词表必须一起写：它原来靠"第①步写文件"带进去，文件没了就得显式传
+        words: p.words, links: p.links,
       })
       results.push({ ...base(p.it), status: 'done' })
       job.log.push('✓ 入库（草稿）：' + p.it.id)
@@ -1080,7 +1211,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const d = await dbOf(S.env)
     const [row] = await d.select().from(articles).where(eq(articles.id, id)).limit(1)
     if (!row) return fail(res, '句库没有这一条', 404)
-    const c = await contentOf(id)
+    const c = await contentOf(S.env, id)
     const sched = await d
       .select({ date: schedules.date })
       .from(schedules)
@@ -1134,9 +1265,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (one && (req.method === 'PUT' || req.method === 'POST')) {
     const id = one[1]!
     const b = await body(req)
-    const c = await contentOf(id)
+    const c = await contentOf(S.env, id)
     if (!c) {
-      return fail(res, '这条句子的正文不在本机仓库里（content/articles/' + id + '.json 不存在），改不了')
+      return fail(res, '这条句子还没有正文（先在库里给它写上 text）')
     }
     const translation = String(b.translation ?? c.translation ?? '').trim()
     /**
