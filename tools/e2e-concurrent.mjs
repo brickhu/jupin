@@ -77,10 +77,18 @@ console.log('     各行状态：' + rows.map((r) => r.seq + ':' + r.status).joi
 // 清理
 // ⚠️ 顺序要紧：participations 有外键指向 submissions.best_submission_id，
 //    必须先删参与行，再删提交行（反了就是 ER_ROW_IS_REFERENCED_2）。
-await conn.execute(`DELETE FROM participations WHERE user_id=?`, [uid])
-await conn.execute(`DELETE FROM energy_ledger WHERE user_id=?`, [uid])
-await conn.execute(`DELETE FROM submissions WHERE user_id=?`, [uid])
-await conn.execute(`DELETE FROM users WHERE id=?`, [uid])
+/**
+ * ⚠️ 清理必须**按外键顺序**、且覆盖**所有**指向 users 的表（实测漏一张就是 1451）：
+ *    出分那一把会发奖励（`reward_grants`），它指着 users ⇒ 先删它才能删用户。
+ * ⚠️ 这里刻意**逐条写出来**，不做成数组循环 —— 数据所有权守门（domain-write-guard.test.ts）
+ *    要**静态解析**出"哪个文件写了哪张表"；表名藏进数组它就扫不到，
+ *    对应的豁免会变成"死条目"而报警（我试过，正是这么红的）。
+ */
+await conn.execute(`DELETE FROM participations WHERE user_id=?`, [uid]).catch((e) => console.warn('  清理跳过 participations：' + e.code))
+await conn.execute(`DELETE FROM reward_grants WHERE user_id=?`, [uid]).catch((e) => console.warn('  清理跳过 reward_grants：' + e.code))
+await conn.execute(`DELETE FROM energy_ledger WHERE user_id=?`, [uid]).catch((e) => console.warn('  清理跳过 energy_ledger：' + e.code))
+await conn.execute(`DELETE FROM submissions WHERE user_id=?`, [uid]).catch((e) => console.warn('  清理跳过 submissions：' + e.code))
+await conn.execute(`DELETE FROM users WHERE id=?`, [uid]).catch((e) => console.warn('  清理跳过 users：' + e.code))
 await conn.end()
 console.log(alive && contig ? '  ✅ 并发测试通过' : '  ❌ 并发测试失败')
 process.exit(alive && contig ? 0 : 1)

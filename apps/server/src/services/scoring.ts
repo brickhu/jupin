@@ -400,7 +400,15 @@ void previousBest
  * ⚠️ 导出给路由用 —— 「重跑次数用尽」是路由发现的，但它得走同一套收尾逻辑。
  */
 export async function markScoringFailed(submissionId: string, reason: string): Promise<void> {
-  return fail(submissionId, reason)
+  /**
+   * ⚠️⚠️ **kind 必须是 `'infra'`**（2026-09 定，别退回默认值）：
+   *    能走到这里只有两种情形 —— 进程崩了留下悬空行（sweep 判死）、或重跑次数用尽。
+   *    两种都**没有得到任何结论**（引擎从没返回过）⇒ 按"没触达"处理：
+   *    **整行删掉 + 退能量**，不给序号、不进历史。
+   *    ⚠️ 用默认的 `'invalid'` 会给这种行分配序号并显示成「未出分」——
+   *      那是在编造一个不存在的结论（而且白占一个号）。
+   */
+  return fail(submissionId, reason, 'infra')
 }
 
 /** 判失败：写状态、删音频（音频只在失败时删；成功永久保留） */

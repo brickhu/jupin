@@ -179,8 +179,70 @@ const [nullSeq] = await conn.execute(
 )
 check('没有"无号"的残留行（检测中/没触达都该被清掉）', nullSeq[0].n === 0, 'count=' + nullSeq[0].n)
 
-// ---- 清理 ----
-await conn.execute('UPDATE users SET energy = 0 WHERE id = ?', [uid])
+// ---- ⑩ 用户中途退出：提交后**谁都不问**，服务端该自己跑完 ----
+step('⑩', '用户中途退出（提交后不再轮询）⇒ 后台自己跑完并落号')
+const attemptX = req('node:crypto').randomBytes(16).toString('hex')
+const keyX = `audio/${articleId}/${uid}/${attemptX}.mp3`
+const formX = new FormData()
+formX.append('file', new Blob([readFileSync(ROOT + '/' + AUDIO)], { type: 'audio/mpeg' }), 'a.mp3')
+formX.append('articleId', articleId)
+formX.append('audioKey', keyX)
+const upX = await j(await fetch(BASE + '/api/user/uploads', { method: 'POST', headers: uploadHeaders, body: formX }))
+const subX = await j(await fetch(BASE + '/api/user/submissions', {
+  method: 'POST', headers: H,
+  body: JSON.stringify({ articleId, audioKey: upX?.data?.audioKey ?? keyX, attemptId: attemptX, scheduleDate }),
+}))
+const idX = subX?.data?.submissionId
+// ⚠️ 这里**故意不轮询**：完全模拟"用户提交完就退出小程序"
+let settledX = null
+for (let i = 0; i < 30; i++) {
+  await new Promise((r) => setTimeout(r, 2000))
+  const [r] = await conn.execute('SELECT status, seq FROM submissions WHERE id=?', [idX])
+  if (r.length === 0) { settledX = { status: 'deleted' }; break }
+  if (r[0].status !== 'scoring') { settledX = r[0]; break }
+}
+check(
+  '没有人轮询，后台也把这一把跑完了（有结论）',
+  settledX !== null && settledX.status !== 'scoring',
+  settledX ? 'status=' + settledX.status + ' seq=' + settledX.seq : '仍在 scoring（超时）',
+)
+if (settledX && settledX.status !== 'deleted') {
+  check('它拿到了序号（算一次挑战、会出现在历史里）', settledX.seq !== null, 'seq=' + settledX.seq)
+}
+
+// ---- ⑪ 进程崩了留下的悬空行 ⇒ 清扫时**整行删掉**（没触达，不该占号/进历史）----
+step('⑪', '悬空行（进程崩了）被清扫 ⇒ 整行删掉，不占号')
+const ghostId = 'zzsweep' + Date.now().toString(16).slice(-8)
+await conn.execute(
+  `INSERT INTO submissions (id, user_id, article_id, seq, schedule_date, status, heartbeat_at, attempts, attempt_id, audio_key, energy_state)
+   VALUES (?, ?, ?, NULL, ?, 'scoring', DATE_SUB(NOW(), INTERVAL 30 MINUTE), 1, ?, ?, 'held')`,
+  [ghostId, uid, articleId, scheduleDate, 'a'.repeat(31) + '0', `audio/${articleId}/${uid}/${'a'.repeat(31)}0.mp3`],
+)
+/**
+ * 任何 /api/user/* 请求都会**惰性**触发清扫（见 index.ts 的中间件），但它有**节流**：
+ *    · 悬空判定：心跳超过 3 分钟（STALE_MS）
+ *    · 触发节流：两次清扫间隔 60 秒（THROTTLE_MS）
+ * ⇒ 所以要**持续发请求**直到跨过节流窗口，而不是打一次就断言。
+ */
+let swept = false
+for (let i = 0; i < 18 && !swept; i++) {
+  await fetch(BASE + '/api/user/today', { headers: H }).catch(() => {})
+  await new Promise((r) => setTimeout(r, 5000))
+  const [r] = await conn.execute('SELECT COUNT(*) n FROM submissions WHERE id=?', [ghostId])
+  swept = r[0].n === 0
+}
+check('悬空行被整行删掉（不是标成"未出分"留在历史里）', swept, swept ? '已删' : '还在')
+
+// ---- 清理：把造出来的测试用户**整个删掉**（别每次跑都留一个孤儿账号）----
+//
+// ⚠️ 顺序按外键：出分那一把会发奖励（reward_grants.user_id → users.id），
+//    不先删它就会 1451（实测踩过）。这里刻意**逐条写出来**而不做成数组循环 ——
+//    数据所有权守门要静态解析"哪个文件写了哪张表"，表名藏进数组它就扫不到。
+await conn.execute('DELETE FROM participations WHERE user_id = ?', [uid]).catch(() => {})
+await conn.execute('DELETE FROM reward_grants WHERE user_id = ?', [uid]).catch(() => {})
+await conn.execute('DELETE FROM energy_ledger WHERE user_id = ?', [uid]).catch(() => {})
+await conn.execute('DELETE FROM submissions WHERE user_id = ?', [uid]).catch(() => {})
+await conn.execute('DELETE FROM users WHERE id = ?', [uid]).catch(() => {})
 console.log('\n' + (failed === 0 ? '✅ 端到端通过（测试用户 openid=' + OPENID + '）' : '❌ 有 ' + failed + ' 项没过'))
 await conn.end()
 process.exit(failed === 0 ? 0 : 1)

@@ -266,7 +266,12 @@ const EXEMPTIONS: Exemption[] = [
     {
       audit: '#10',
       file: 'tools/e2e-submission.mjs',
-      tables: ['users'],
+      /**
+       * ⚠️ 一个 (文件, 表) 一条。它既要造用户与提交，也要：
+       *    · **直接插一条悬空行**来测"进程崩了之后清扫会不会整行删掉"（那条路没法从接口造）；
+       *    · 跑完**把自己造的用户整个删掉**（按外键顺序，含出分发的奖励）。
+       */
+      tables: ['users', 'submissions', 'participations', 'energy_ledger', 'reward_grants'],
       why:
         '端到端业务流测试：对着真实服务跑一遍「上传→受理→检测→落库→历史卡」，' +
         '它要自己造一个测试用户并给能量（raw 写 users）—— 跑完把能量清零，' +
@@ -275,10 +280,21 @@ const EXEMPTIONS: Exemption[] = [
     {
       audit: '#10',
       file: 'tools/e2e-concurrent.mjs',
-      tables: ['users', 'submissions', 'participations', 'energy_ledger'],
+      // ⚠️ 它造用户 + 造提交（并发），跑完按外键顺序把所有指向 users 的表都清掉
+      /**
+       * ⚠️ 只登记它**真的会写**的那几张 —— 多写一张就要多一条豁免，
+       *    而守门会校验"豁免的表在 schema 里有 owner"（`likes`/`subscriptions` 没有 ⇒ 会崩）。
+       */
+      tables: [
+        'users',
+        'submissions',
+        'participations',
+        'energy_ledger',
+        'reward_grants',
+      ],
       why:
-        '并发撞号测试：同时提交 N 次，验证服务端不崩、序号恰好 1..N。' +
-        '它要自己造用户、造提交并清理（raw 写这四张表）。',
+        '并发撞号测试：同时提交 N 次，验证服务端不崩（撞唯一键不能让异常逃逸）' +
+        '且序号恰好 1..N。它自建用户、造提交，跑完按外键顺序清理（含出分发的奖励）。',
     },
     {
       audit: '#10',

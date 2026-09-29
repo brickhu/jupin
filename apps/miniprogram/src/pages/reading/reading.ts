@@ -1000,6 +1000,22 @@ Page({
             this.applyResult(st.result, false)
             return
           }
+          /**
+           * ⭐⭐ **上次那一把还在检测中** ⇒ 恢复成等待态**接着等**（用户 2026-09 问的"中途退出"）：
+           *
+           * ⚠️⚠️ 这里**绝不能**落到下面的"恢复录音成 s3"：那样用户看到的是「请再确认提交」，
+           *    而一点 ✓ 就是**第二次提交** —— 新 attemptId、再扣一次能量、历史里多一条
+           *    （服务端那条其实还在后台跑，也会出分）。一次朗读被算成两次挑战。
+           * ⚠️ 这正是服务端"受理后不写缓存"那个空档的另一半。
+           * ⚠️ 轮询会自己判超时与失败（见 pollResult），这里只负责把状态摆回等待态。
+           */
+          if (st.status === 'scoring') {
+            this.submissionId = pending.submissionId
+            // ⚠️ uploadPercent=100：上传早就完成了，弹窗该显示"AI 评测中"而不是进度条
+            this.setData({ phase: 'scoring', uploadPercent: 100 })
+            void this.pollResult(pending.submissionId)
+            return
+          }
         } catch (err) {
           // ⚠️ 只警告、不抛：这是一条**过期缓存**，下面清掉它，流程照常往下走
           console.warn('[reading] 恢复上次结果失败（按过期缓存清掉）：' + (err as Error).message)
@@ -1662,6 +1678,23 @@ Page({
       }
       // 幂等命中：这段音频早就打过分，结果直接就在包里
       // ⚠️ roll=true：用户刚点完提交、正盯着转圈 → 这就是「刚出分」那一刻
+        /**
+         * ⭐⭐ **立刻把"这一把正在进行"记到本地**（用户 2026-09 问的"中途退出怎么办"）。
+         *
+         * ⚠️⚠️ 为什么必须在这里写：原来只在**出分那一刻**（applyResult）才写缓存 ⇒
+         *    用户在"检测中"退出再进来，本地没有任何线索 ⇒ 页面回到 s3 并请他再确认一次，
+         *    而那一点 ✓ 就是**第二次提交**：新 attemptId、再扣一次能量、历史里多一条。
+         *    写上这一条之后，再进来会拿这个 submissionId **接着等**（见 loadContent 的恢复分支）。
+         * ⚠️ 它和"出分后的恢复"用的是**同一份缓存、同一个键**（句子 + 用户）——
+         *    所以一句话最多一条记录，不会被提交次数撑大。
+         */
+        if (this.recordingKey) {
+          saveLastResult(this.recordingKey, {
+            submissionId: task.submissionId,
+            articleId,
+            at: Date.now(),
+          })
+        }
       if (task.status === 'scored' && task.result) {
         this.applyResult(task.result, true)
         return
