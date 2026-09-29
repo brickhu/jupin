@@ -210,7 +210,7 @@ git switch main && git merge dev && git push && git switch dev   # 合主线
 | `pnpm db:up` / `pnpm db:down` | 只起 / 停 MySQL 容器 |
 | `pnpm db:generate` / `db:migrate` / `seed` / `seed:arena` | 生成迁移 / 跑迁移 / 灌种子 / 灌开发竞技场 |
 | `pnpm pipeline`（`… run --from 04 --to 09`） / `pnpm content:audio` | 内容流水线 / 本地补标准音 |
-| `pnpm admin` | 本地内容管理台 → `http://127.0.0.1:4983` |
+| `pnpm admin` | **内容管理台**（唯一的人工内容入口）→ `http://127.0.0.1:4983` |
 | `pnpm db:info` / `db:info:prod` | 查云库真实地址 / 版本 / 状态 |
 | `pnpm deploy:dev` / `deploy:prod` | 部署到云托管 dev / prod |
 | `pnpm seed:cloud` / `seed:cloud:prod` | 给云库灌种子（走外网地址，见 `4.6） |
@@ -317,32 +317,114 @@ apps/server/
 
 ⭐ `engines/` 是唯一花钱的地方：`score(audio, refText)` 的适配层，可整体替换。本地把 `ENGINE=mock`（见 [.env.local.example](.env.local.example)），不烧额度。
 
-## 1.3 内容流水线 `tools/pipeline/`
+## 1.3 内容流水线 `tools/pipeline/` —— ⚠️ **只有第 ④ 步（标准音）是真的**
 
 ```
-tools/pipeline/src/   cli.ts（pnpm pipeline run --from 04 --to 09） · steps/（一步一文件） · lib/（fishaudio · ecdict · llm · article-id · article-meta）
+tools/pipeline/src/   cli.ts · steps/（一步一文件） · lib/（fishaudio · ecdict · llm · article-id · article-meta · audio-assets）
 ```
-⭐ 做成可重复、可断点续跑的流水线：内容会持续生产，改第 ⑦ 步不该重跑 ①–⑥。
 
-## 1.4 本地内容管理台 `tools/admin/`
+⚠️⚠️ **现状要说清，别被"9 步流水线"这个说法误导**：`listSteps()` 里 ①–③ 与 ⑤–⑨
+**全是 `stub()`**（只 `console.log('TODO')`），真正有实现的只有 **④ 标准音**。
+而且第 ⑨ 步"入库"从来没建过 —— 这也是为什么历史上"入库"只能靠扫 `content/articles/*.json`。
+
+- **lib/ 才是这套东西的价值所在**，而它现在是 **admin 在用**：
+  `article-meta.ts`（LLM 出难度/判据分/两句话）· `word-info.ts`（词表）· `fishaudio.ts`（TTS）
+  · `audio-assets.ts`（生成整句标准音）。
+- ⇒ 所以内容生产的入口是 **`pnpm admin`**（见 §1.4），不是这个 CLI。
+  这个 CLI 里剩下的部分属于"待清理"（见 [plan.md](plan.md) 的 C12/C4）。
+
+## 1.4 本地内容管理台 `tools/admin/` —— **内容的唯一人工入口**
 
 ```
-tools/admin/   server.ts（node:http：接口 + 静态文件 + 登录） · web/（无构建） · .state.json（会话密钥 + 当前环境，gitignore）
+tools/admin/   server.ts（node:http：生成任务 + 静态文件 + 登录） · web/（无构建） · .state.json（会话密钥，gitignore）
 ```
-句库管理：列表 / 搜索 / **批量新增** / 编辑 / 排期。
-环境**在登录页选**（登录时真探一次库，选不可用的环境会当场失败并说明原因），不是登录后再切。
 
-**批量新增**（三步，刻意分开 —— 理由见 [spec.md](spec.md) 第九节）：
+句库管理：列表 / 搜索 / **批量新增（LLM + TTS）** / 编辑 / 发布 / 下架。
+环境**在登录页选**（`local` / `dev` / `prod`），选的是**服务端地址**，不是数据库地址。
+
+### ⭐⭐ 它怎么写入（2026-09 定的分工，别改回去）
+
+```
+admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准音 + 转码
+        │
+        └──▶ 调服务端接口：PUT /api/admin/articles/:id        写句子各列
+                          POST /api/admin/articles/:id/audio  传 mp3 → 服务端存对象存储 + 记 standard_audio
+```
+
+⚠️⚠️ **admin 不直连数据库**，两个理由，第二个更硬：
+1. **连不上**：dev/prod 的库没开外网地址（实测 `IsOpenPubNetAccess=false`），本机只有 local 能连 ——
+   而"这个库在不在公网"是运维决定，不该是管理台的前置条件；
+2. **两套写入逻辑**：它原来自己写 `insert/update(articles)`、还写本机 `content/articles/*.json`，
+   而服务端也写同一批表 —— 两份必然分叉（真实案例：标签顺序，admin 读关联表拿到字母序，
+   保存时把正文里的顺序改掉了）。
+
+⇒ **写入只有一条路：服务端**。admin 只是它的一个客户端。
+⚠️ 读（列表 / 详情）**仍走库**：那是"看"不是"改"，而分叉只发生在写入侧。
+   ⚠️ 排期那一处写入也已经随 `schedules` 表一起删掉了（见 §1.5）。
+
+### 鉴权：`ADMIN_TOKEN`（一把共享口令）
+
+- 服务端：`/api/admin/*` 用 `ADMIN_TOKEN` 做 Bearer 校验，**没配 = 503、配错 = 401**
+  （绝不"没配就放行"）；常数时间比较（`timingSafeEqual`）。
+- ⚠️ 它**不是**用户身份那套，也不进 `authMiddleware`：那是"某个用户"，这是"运营侧的一把口令"——
+  混在一起会让"谁能改全站内容"取决于某个用户的登录状态。
+- 令牌放 `.env.local` / `.env.dev` / `.env.prod`（**各用各的**，共用一个等于把本机口径带上去）。
+- ⚠️⚠️ **改动服务端环境变量时，必须同时改 `tools/deploy-cloud.mjs` 的 `params`** ——
+  那个脚本不是"把 .env 全量传给服务"（只显式列关键键）。漏掉的症状是"本机配好了、云上却是 503"
+  （`ADMIN_TOKEN` 与 `SEED_ON_START` 各踩过一次）。
+
+### 批量新增（三步，刻意分开 —— 理由见 [spec.md](spec.md) 第九节）
+
 ① **拆分并纠错** —— 拆段是**代码按空行**做的（`shared/paragraphs.ts`，一段 = 一条，接受超长句），
-   LLM 只负责**纠错 + 译文 + 三个判据分（词汇/发音/长度）与合成档位 + 两句给用户看的话（挑战宣言 challenge / 朗读建议 advice）**
-→ ② 候选列表**勾选 / 就地改**（已存在的条目默认不勾、生成时跳过）→ **生成入库（草稿）**（fish 出整句标准音）
+   LLM 只负责**纠错 + 译文 + 三个判据分（词汇/发音/长度）+ 两句给用户看的话（挑战宣言 challenge / 朗读建议 advice）**
+→ ② 候选列表**勾选 / 就地改**（库里已有正文的条目默认跳过）→ **生成入库（草稿）**（fish 出整句标准音）
 → ③ 入库列表（id + 链接 + 状态）**勾选后批量发布**。
 ⚠️ **TTS 是唯一按量花钱的一步**，所以放在人看过「拆得对不对」之后。
-⚠️ 只写本机仓库 + 某一个环境的库，不碰对象存储（音频进桶是部署那一步的事）。详见 [tools/admin/README.md](tools/admin/README.md)。
+⚠️ 生成出来的永远是**草稿**（`is_active=false`）：上线是另一个动作，要人点。
 
----
+详见 [tools/admin/README.md](tools/admin/README.md)。
 
-# 二、环境搭建
+## 1.5 句子的数据模型 —— **它是 `articles` 表上的一组列**
+
+⚠️ 这一节是 2026-09 拆列之后的事实。**拆之前**正文是一份 JSON
+（先在仓库的 `content/articles/*.json`，后来搬进 `articles.content` 一列）——
+那种"一份 JSON 混着源数据、派生值、甚至重复的 id"的形状已经取消。
+
+| 列 | 是源还是派生 | 说明 |
+|---|---|---|
+| `id` | — | 内容 hash（`sha256(text)` 前 16 位）。**不在别处重复存** |
+| `text` | **源** | 句子原文 —— 这道题的根，一切派生值的源头 |
+| `translation` | 源 | 译文 |
+| `scores` | **源** | 三个判据分 `[词汇, 发音, 长度]` |
+| `challenge` / `advice` | 源 | 给用户看的两句话（challenge 兼分享卡标题，≤18 字）|
+| `words` / `links` | 源（结构化）| 词表（逐词音标/重音/音节/技巧）与词间连读标注，与正文逐词对齐 |
+| `difficulty` | **派生** | `difficultyFromScores(scores)`。⚠️ 老注释曾把源写反（说"真相在正文的 difficulty 里"）|
+| `tags` | **派生** | 由 `text`/运营产出；顺序有意义（第一个最重要）|
+| `is_active` | **源** | 上线状态。⚠️ **全仓库唯一一个"列才是真相"的字段** |
+| `theme` | 派生 | `themeFromHash(id)` 纯函数；存列只为省一次计算 |
+| `standard_audio` | 派生 | 对象存储里的 key，由 `audioKeyOf(id)` 推导（见 services/standard-audio.ts）|
+
+写入方只有一处：`services/article-content.ts`（`contentColumnsOf` / `saveArticleContent`），
+由 `/api/admin/*` 与部署灌库共用 —— 由 `domain-write-guard` 机器守着。
+
+### 音频放哪
+
+- **标准音（参考音频）**：由 admin 在本机生成 → 经 `/api/admin/articles/:id/audio`
+  进**对象存储**；服务端按 `standard_audio` 这一列给 fileID。
+  ⚠️ 运行时**不再依赖仓库里的 `content/audio/`**（那只是历史内容的来源）。
+- **用户录音**：小程序直传对象存储（dev/prod）或 `/api/uploads`（local）。
+
+### 日期不是内容的一部分
+
+⚠️⚠️ `schedules` 表（"哪一天读哪一句"）**2026-09 已删除**，
+`GET /api/schedules/:date` 与 admin 的排期面板一起删了。替代它的是
+**`/api/user/today`**：以 **24 小时**为单位（`users.today_article_id` + `users.today_assigned_at`）、
+**按这个用户的难度档**推荐一句（`services/recommend.ts`）。
+
+- `/api/schedules` 这个**路径**还在，但它现在只回答一件事：**句库里最新上的几句是哪几句**
+  （数据源一直是 `articles`，从来不是排期表）。⚠️ 名字与内容已不符，待改名。
+- `submissions.schedule_date` 那一列**留着**：它记的是"这次提交**归到哪一天**"
+  （历史挑战必须归到那一天，否则昨天那张卡的数字会变）—— 归属信息 ≠ 排期。
 
 ## ⭐ 推荐路径：一条命令起全套（Docker / OrbStack）
 
@@ -743,10 +825,16 @@ dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在
 查法：`pnpm db:info`（调 CLI 内部的 `DescribeWxCloudBaseRunDBClusterDetail`，打印集群 ID / 版本 / 状态 / 内外网地址，并比对 `.env.<env>`）。
 修正只需改 `.env.dev` 的 `MYSQL_ADDRESS` 再 `pnpm deploy:dev`（本地文件的 `MYSQL_*` 覆盖服务配置；控制台改配置要求「没有部署任务在跑」，否则报 `ResourceInUse`）。
 
-## ⚠️ 正文路径由 id 推导，库里不存路径
+## ⚠️ 正文**不在文件里了** —— 它是 `articles` 表上的列
 
-`contentPathOf(id)` = `/content/articles/<id>.json`（`packages/shared/src/content-path.ts`，服务端消费在 `services/content.ts`）—— 里面本来就含 `content/`，所以解析基准是**仓库根**，不是 content 目录。踩过一次：当 content 目录后去找 `/app/content/content/articles/….json`，正文永远读不到。
-> `articles` 曾有一列 `content_json` 存这个路径，已删除（迁移 `0030`）：路径完全可由 id 推导，存下来只会跟 id 漂移。这是「重复即错误」的实例。
+⚠️⚠️ 2026-09 拆列之后，正文（原文 / 译文 / 判据分 / 两句话 / 词表）**全部是表上的列**，
+读取统一走 `services/content.ts` 的 `loadArticleContent()`（4 条路由都只经过它）。
+
+> 演进经历（读老注释时会遇到这三个名字，别被绕）：
+> ① `content/articles/<id>.json`（仓库文件，路径由 id 推导）→
+> ② `articles.content` 一整列 JSON → ③ **拆成列**（现在）。
+> `contentPathOf()` 现在只用于**音频**路径推导，与正文无关。
+> `content/articles/*.json` 只剩"历史内容的导入源"这一个角色，待清理。
 
 ---
 
