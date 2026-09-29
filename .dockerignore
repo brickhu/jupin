@@ -1,27 +1,60 @@
 # ⭐ 微信云托管会把「目标目录」整个打包上传 / 作为构建上下文。
 #    不排掉下面这些，上传量会从 ~1MB 膨胀到 300MB+
 #    （本仓库实测：.pnpm-home 176M + node_modules 139M）。
+#
+# ⚠️⚠️ 两条**踩过的坑**，改这份文件前必读（2026-09 实测 + 读 CLI 源码确认）：
+#
+#   ① **带点的目录必须写成 `dir/**`（或同时写裸名）**。
+#      CLI 打上传包走的是 `archiver.glob('**/*', {cwd, ignore})` → `readdir-glob`，
+#      而 ignore 数组由 `getDockerIgnore()`（gitignore-globs）生成：它对
+#      "含 `.` 的模式"当成**文件**处理，**不会**补 `/**`（`node_modules` 这种无点的
+#      才会被展开成 `**/node_modules/**`）。而 readdir-glob **只过滤条目、不剪枝目录** ——
+#      于是 `.git` / `.uploads` / `.pnpm-home` 这类"裸名"匹配不到 `.git/config`、`.uploads/x`，
+#      **目录里的东西全都会被传上去**。⇒ 凡是目录，一律连 `/**` 一起写。
+#   ② **通配不会自动补**：`.tmp` 匹配不到 `.tmp-ecdict`。
+#      （本机那些 `.tmp-*` 是本仓库的临时目录，实测 .tmp-ecdict 88M + 四个 .tmp-* 各 5~11M）
+#
+# ⚠️ 后果不是"包大一点"：上传包一旦撑到 ~100MB 量级，云端会以
+#    `create_failed` **静默失败**（构建日志里连一行报错都没有，见 plan.md C7）。
 
 node_modules
 **/node_modules
 .pnpm-home
+.pnpm-home/**
 .pnpm-store
+.pnpm-store/**
 .buildx
-.tmp
+.buildx/**
 .npm-cache
+.npm-cache/**
+.cache
+.cache/**
+.tmp
+.tmp/**
+# ⚠️ 这一条是坑②：`.tmp` 管不到 `.tmp-*`，两种写法都要有
+.tmp-*
+.tmp-*/**
 
 # 版本控制与 CI
 .git
+.git/**
 .github
+.github/**
 
 # 运行时产物
 dist
 **/dist
 .uploads
+.uploads/**
 *.log
+
+# ⚠️ worktree 目录（git worktree 用；内容与主工作区重复，且可能含别的分支的产物）
+.worktrees
+.worktrees/**
 
 # 文档与调研不参与服务端镜像
 docs
+**/docs/**
 
 # ⚠️ 刻意**不**整体排除 apps/miniprogram：
 #    Dockerfile 里 pnpm install --frozen-lockfile 需要它的 package.json，
@@ -31,10 +64,12 @@ apps/miniprogram/dist
 
 # 部署临时包（接近 100MB，绝不能进构建上下文）
 .cloudrun_*.zip
+.cloudrun_*.zip/**
 
 # 密钥绝不进镜像
-# ⚠️ 这里刻意**不写** `!.env.example` 这类否定规则：
-#    @wxcloud/cli 的 minimatchWithList 只要遇到一条未命中的 `!` 规则就整体返回“不忽略”，
-#    一条否定规则会让上面所有规则全部失效 —— 直接把 node_modules/.pnpm-home 全传上去。
+# ⚠️ 这里刻意**不写** `!.env.example` 这类否定规则（结论保留，但**理由修正**）：
+#    上传包这条路走的是 archiver/readdir-glob（见文件头 ①），**不是** minimatchWithList
+#    （那个只在 utils/jszip.js 里，被云函数上传用）。真正让"加了还照样传"的是 ① 的展开规则 ——
+#    所以：目录写 `dir/**`；至于 `!`，在没有确认安全之前同样别用。
 .env
 .env.*

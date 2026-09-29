@@ -22,6 +22,8 @@
  */
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -441,6 +443,162 @@ async function waitForNewVersion(before) {
   return { ok: false, name: '(超时未出结果)' }
 }
 
+/**
+ * ⭐⭐ 上传包体积闸门（2026-09 加，起因是一次真实的 `create_failed`）。
+ *
+ * 事故：CLI 会把**整个仓库根**打成 zip 传上去，而 `.dockerignore` 只管 Docker 构建上下文、
+ *      **管不到这个上传包**。本机的 pnpm store（`.pnpm-home` 487M）与一批 `.tmp-*`
+ *      临时目录（实测 .tmp-ecdict 88M）被一起打包 ⇒ 包撑到 ~90MB，
+ *      云端在"创建实例"那一步**静默失败**（`create_failed`，构建日志里一行报错都没有）。
+ *      当时的判断全被带偏：查 CI、查镜像、查配置，查了几小时。
+ *
+ * ⇒ 部署前先量一遍"按当前 .dockerignore 会传上去什么"，超过阈值**直接在此拦下**：
+ *    · > WARN  ：只警告（可能是正常的代码增长，人自己判断）
+ *    · > FAIL  ：不再往下走 —— 继续发也是大概率 create_failed，还把发布次数耗掉
+ *
+ * ⚠️ 量的是**未压缩总量**（不解压不压缩，快且稳定）：实测 6MB 级是健康值，
+ *    超过 40MB 基本就是有本机目录混进来了。
+ * ⚠️ 判据用 CLI **真正读的那个**函数（getDockerIgnore），不是我们自己的复制品 ——
+ *    否则闸门守的是一份"我们以为的规则"。
+ */
+const PKG_WARN_BYTES = 40 * 1024 * 1024
+const PKG_FAIL_BYTES = 80 * 1024 * 1024
+
+/**
+ * @param req 注入的 createRequire（**故意从参数进来**而不是函数里读 import.meta）：
+ *            这样这个函数能被单独抽出来测 —— 它上一版就是"抽出来测不了、
+ *            于是量错了也没人发现"。
+ */
+/**
+ * 把 `.dockerignore` 的模式匹配成"这个相对路径排没排掉"。
+ *
+ * ⚠️⚠️ 为什么不 require minimatch（第一版就是这么写的，两次都错）：
+ *    ① 这个仓库用 pnpm 的隔离布局，`require('minimatch')` 在根目录**解析不到**
+ *       （只有 .pnpm 里有一份 3/5/10 三个版本），于是闸门静默跳过 —— 等于没写；
+ *    ② 退化成手写 `===` 比较更糟：`.tmp-*` 这种**通配**规则永远匹配不到 `.tmp-ecdict`，
+ *       量出的包比真包大一倍多，把一个正常的部署直接拦死（假阳比漏报更坏）。
+ *    ⇒ 只支持这个文件真正用到的两种通配，自己实现，零依赖、可单独验证：
+ *       `**​/` 前缀（匹配任意层）与 `*`（不跨 `/`）。
+ */
+function ignoreHit(rel, pattern) {
+  let re = ''
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]
+    if (c === '*' && pattern[i + 1] === '*') {
+      if (pattern[i + 2] === '/') {
+        re += '(?:.*/)?'
+        i += 2
+      } else {
+        re += '.*'
+        i += 1
+      }
+    } else if (c === '*') {
+      re += '[^/]*'
+    } else {
+      re += c.replace(/[.+^${}()|[\]\\?]/, '\\$&')
+    }
+  }
+  return new RegExp('^' + re + '$').test(rel)
+}
+
+/**
+ * @param req 注入的 createRequire（**故意从参数进来**而不是函数里读 import.meta）：
+ *            这样这个函数能被单独抽出来测 —— 它上一版就是"抽出来测不了、
+ *            于是量错了也没人发现"。
+ */
+function measureUploadPayload(req) {
+  let getDockerIgnore
+  try {
+    getDockerIgnore = req('@wxcloud/cli/lib/functions/getDockerIgnore.js').getDockerIgnore
+  } catch {
+    // CLI 不在（CI 里可能是另一种安装布局）⇒ 不拦，只说明没量到
+    console.log('· （没找到 @wxcloud/cli 的 getDockerIgnore，跳过上传包体积检查）')
+    return null
+  }
+  const ignore = getDockerIgnore(ROOT) ?? []
+
+  /**
+   * ⚠️ 判据是**路径的每一级祖先**：readdir-glob 只按"条目路径"命中规则，
+   *    所以 `.tmp-ecdict/a/b` 之所以被排掉，是因为**祖先** `.tmp-ecdict` 命中了 `.tmp-*`。
+   *    （这也是 .dockerignore 里"目录必须写 dir/**"那条经验的来源。）
+   */
+  const ignored = (rel) => {
+    const parts = rel.split('/')
+    let prefix = ''
+    for (const p of parts) {
+      prefix = prefix ? prefix + '/' + p : p
+      if (ignore.some((pat) => ignoreHit(prefix, String(pat)))) return true
+    }
+    return false
+  }
+
+  let bytes = 0
+  let files = 0
+  const perDir = new Map()
+  const walk = (abs, rel) => {
+    let entries
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const r = rel ? rel + '/' + e.name : e.name
+      if (ignored(r)) continue
+      if (e.isDirectory()) walk(path.join(abs, e.name), r)
+      else if (e.isFile()) {
+        let st
+        try {
+          st = fs.statSync(path.join(abs, e.name))
+        } catch {
+          continue
+        }
+        files++
+        bytes += st.size
+        // ⚠️ 只统计"顶层目录"的占比，好让人一眼看出是谁把包撑起来的
+        const top = r.includes('/') ? r.slice(0, r.indexOf('/')) + '/' : r
+        perDir.set(top, (perDir.get(top) ?? 0) + st.size)
+      }
+    }
+  }
+  for (const e of fs.readdirSync(ROOT, { withFileTypes: true })) {
+    if (ignored(e.name)) continue
+    if (e.isDirectory()) walk(path.join(ROOT, e.name), e.name)
+    else if (e.isFile()) {
+      files++
+      try {
+        bytes += fs.statSync(path.join(ROOT, e.name)).size
+      } catch {
+        /* 忽略读不到的 */
+      }
+    }
+  }
+  return { bytes, files, perDir }
+}
+
+{
+  const m = measureUploadPayload(createRequire(import.meta.url))
+  if (m) {
+    const mb = (m.bytes / 1048576).toFixed(1)
+    console.log(`· 上传包内容：${m.files} 个文件 / ${mb} MB（未压缩；.dockerignore 生效后）`)
+    const heavy = [...m.perDir.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+    if (heavy.length) {
+      console.log('  最大的几块：' + heavy.map(([k, v]) => `${k} ${(v / 1048576).toFixed(1)}MB`).join(' · '))
+    }
+    if (m.bytes > PKG_FAIL_BYTES) {
+      console.error(
+        `\n❌ 上传包 ${mb}MB 太大（阈值 ${PKG_FAIL_BYTES / 1048576}MB）—— 继续发大概率 create_failed。\n` +
+          '   看上面"最大的几块"：多半是本机目录没被 .dockerignore 挡住。\n' +
+          '   ⚠️ 注意 `.dockerignore` 里**目录要写 dir/**（带点的目录不会被自动展开，见该文件头部说明）。',
+      )
+      process.exit(1)
+    }
+    if (m.bytes > PKG_WARN_BYTES) {
+      console.log(`⚠️ 上传包 ${mb}MB 偏大（健康值 6MB 级）—— 确认上面那几块是应该传的。`)
+    }
+  }
+}
+
 const MAX_ATTEMPTS = 3
 for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   const before = await versionNames()
@@ -450,6 +608,27 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     wxcloud(argv, { stdio: 'inherit', timeout: 14 * 60_000 })
   } catch (err) {
     cliError = err.message ?? ''
+  }
+
+  /**
+   * ⚠️ 量一下 CLI **真正打出来的那个 zip**（它自己会删，所以在这里抢读一次）。
+   *    与上面那个预估互为对照：预估算的是"该传什么"，这个是"实际传了多大"。
+   */
+  try {
+    const zip = fs
+      .readdirSync(ROOT)
+      .filter((f) => f.startsWith('.cloudrun_') && f.endsWith('.zip'))
+      .map((f) => ({ f, t: fs.statSync(path.join(ROOT, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t)[0]
+    if (zip) {
+      const mb = (fs.statSync(path.join(ROOT, zip.f)).size / 1048576).toFixed(1)
+      console.log(`· 实际上传包 ${zip.f}：${mb} MB（压缩后）`)
+      if (Number(mb) > 60) {
+        console.log('⚠️ 压缩后超过 60MB —— 下次很容易撞上 create_failed，去清本机目录或补 .dockerignore。')
+      }
+    }
+  } catch {
+    /* 读不到就算了，别因为一个诊断把部署搞失败 */
   }
 
   const result = await waitForNewVersion(before)
