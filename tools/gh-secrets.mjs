@@ -47,6 +47,22 @@ const ACCOUNT_LEVEL = [
   'XPAY_PRODUCT_ENERGY_10',
   'XPAY_PRODUCT_ENERGY_300',
   'XPAY_PRODUCT_ENERGY_3000',
+  /**
+   * ⭐⭐ 腾讯云**镜像仓库（CCR）访问凭证** —— `--image` 部署要用（2026-09-29 加）。
+   *
+   * ⚠️ 为什么需要它：平台侧的"源构建"会间歇性卡死在 `create_build_image`，
+   *    卡住时连版本都不产生，还会把该服务后续的构建一起堵死。
+   *    `--image` 把构建搬到 CI（docker build/push），平台只负责拉镜像 ——
+   *    所以必须有**推镜像的权限**。
+   *
+   * 去哪拿：腾讯云控制台 → 容器镜像服务 → 「访问凭证」（或"登录指令"）；
+   *    用户名形如 `1000xxxxxx`，密码是那串访问令牌。
+   * ⚠️ 账号级凭据（dev/prod 共用）。
+   * ⚠️ 没配的症状很明确：部署走到 `docker login` 就报错停在原地 ——
+   *    不会退回源构建（否则会让人误以为 `--image` 生效了）。
+   */
+  'CCR_USERNAME',
+  'CCR_PASSWORD',
 ]
 
 /** 环境级：dev 与 prod 不同，来自 .env.<target> */

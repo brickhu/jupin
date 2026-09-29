@@ -39,6 +39,8 @@ const {
   DescribeCloudBaseRunServer,
   // ⭐ 失败诊断用：拉平台侧的构建事件（见 waitForNewVersion 里那段说明）
   DescribeCloudBaseRunProcessLog,
+  // ⭐ `--image` 用：镜像地址只在**版本详情**里，列表接口不返回它（实测踩到）
+  DescribeCloudBaseRunServerVersion,
 } = require(
   resolve(ROOT, 'node_modules/@wxcloud/cli/lib/api/cloudapiDirect'),
 )
@@ -83,8 +85,68 @@ const remark =
 const detach = args.includes('--detach')
 /** ⚠️ --reset：一次性删库重建（无数据环境 schema 重构用，生产环境勿用） */
 const reset = args.includes('--reset')
+/**
+ * ⭐⭐ `--image`：**自己打镜像 + 按不可变 tag 发布**（2026-09-29 加）。
+ *
+ * ⚠️⚠️ 为什么要有这条路：平台侧的「源构建」会**间歇性卡死**在
+ *    `create_build_image : creating`（脚本注释里记过），卡住时**连版本记录都不产生**，
+ *    而且一次卡住会把该服务后续的构建一起堵死 —— 实测为此连续几次部署全部无版本产生。
+ *    `--image` 把"构建"这一步搬到我们这边（CI 的 ubuntu runner / 本机 Docker）：
+ *      1. 从当前服务的版本里**读出镜像仓库地址**（不写死，dev/prod 各自不同）；
+ *      2. `docker build` + `docker push`，tag 用**提交 SHA**（不可变，可回溯）；
+ *      3. `run:deploy --libraryImage <tag>`：平台只负责拉镜像起容器，不再自己构建。
+ *    ⇒ 构建失败会在我们自己的日志里、带完整报错；平台那步只剩"拉镜像+起容器"。
+ *
+ * ⚠️ 需要镜像仓库凭据（CCR_USERNAME / CCR_PASSWORD）——见 tools/gh-secrets.mjs。
+ */
+const useImage = args.includes('--image')
+const imageTagOverride = (() => {
+  const i = args.indexOf('--image-tag')
+  return i >= 0 ? args[i + 1] : undefined
+})()
+const USAGE = [
+  '用法：node tools/deploy-cloud.mjs [dev|prod] [选项]',
+  '',
+  '选项：',
+  '  --remark <说明>    版本备注（CI 传 "CI dev <sha>"；缺省用时间戳）',
+  '  --image            自己 build + push 镜像，再按不可变 tag 发布（推荐）',
+  '  --image-tag <tag>  直接指定镜像 tag（调试用，跳过 build/push）',
+  '  --detach           不等部署结果',
+  '  --reset            ⚠️ 删库重建（仅无数据环境）',
+  '  --help             看这段说明',
+].join('\n')
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(USAGE)
+  process.exit(0)
+}
+
+/**
+ * ⚠️⚠️ **未知参数一律报错退出**（2026-09-29 加，起因是一次真实的误操作）：
+ *    我拿 `--help` 试脚本（那时还没有 help），它被当成"没见过的参数"**静默忽略**，
+ *    于是脚本**真的开始部署 dev** —— 而当时工作区里有 26 个未提交的文件。
+ *    （那次侥幸没造成后果：进程在平台创建版本之前被我杀掉，云上版本数没变。）
+ *    ⇒ 部署脚本必须"只认自己认识的参数"：打错一个字应该**报错**，而不是默默发一次。
+ */
+const KNOWN_WITH_VALUE = ['--remark', '--image-tag']
+const KNOWN_FLAGS = ['--detach', '--reset', '--image']
+const unknown = []
+for (let i = 0; i < args.length; i++) {
+  const a = args[i]
+  if (!a.startsWith('--')) continue
+  if (KNOWN_WITH_VALUE.includes(a)) {
+    i++
+    continue
+  }
+  if (!KNOWN_FLAGS.includes(a)) unknown.push(a)
+}
+if (unknown.length) {
+  console.error(`❌ 不认识的参数：${unknown.join(' ')}（不会"忽略后继续"——那可能默默发一次部署）\n\n${USAGE}`)
+  process.exit(1)
+}
+
 if (!['dev', 'prod'].includes(target)) {
-  console.error('用法：node tools/deploy-cloud.mjs [dev|prod] [--remark 说明] [--detach]')
+  console.error(USAGE)
   process.exit(1)
 }
 
@@ -193,6 +255,97 @@ function wxcloud(argv, opts = {}) {
  */
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+/**
+ * ⭐ 跑一条外部命令（docker 用），把输出直接透到终端。
+ * ⚠️ 失败时**只抛出最后几行**（同 wxcloud 的理由：命令里可能带凭据，别整段回显）。
+ */
+function run(cmd, argv, opts = {}) {
+  try {
+    return execFileSync(cmd, argv, { cwd: ROOT, encoding: 'utf8', stdio: 'inherit', ...opts })
+  } catch (err) {
+    throw new Error(`${cmd} ${argv.slice(0, 3).join(' ')} … 失败（退出码 ${err.status ?? '?'}）`)
+  }
+}
+
+/**
+ * ⭐ 镜像仓库地址**从平台读**，不写死。
+ *    取最近一个版本的 ImageUrl，把 tag 去掉即得仓库（如
+ *    `ccr.ccs.tencentyun.com/tcb-xxxx/ca-yyyy_jupin`）——
+ *    dev 与 prod 的仓库路径不同，写死必然错一个。
+ */
+async function imageRepoOf() {
+  const fromEnv = (process.env.CCR_REPO ?? '').trim()
+  if (fromEnv) return fromEnv.replace(/:[^/:]+$/, '')
+  /**
+   * ⚠️⚠️ `ImageUrl` **只在版本详情接口里**（`DescribeCloudBaseRunServerVersion`），
+   *    列表接口 `DescribeCloudBaseRunServer` 不返回它 ——
+   *    一开始按列表写，实测直接抛"读不到镜像仓库地址"（服务明明有镜像）。
+   */
+  const r = await DescribeCloudBaseRunServer({ EnvId: envId, ServerName: SERVICE, Offset: 0, Limit: 30 })
+  const versions = [...(r.VersionItems ?? [])]
+    .filter((v) => typeof v.VersionName === 'string')
+    .sort((a, b) => String(b.CreatedTime).localeCompare(String(a.CreatedTime)))
+  let lastErr = ''
+  for (const v of versions.slice(0, 6)) {
+    try {
+      const d = await DescribeCloudBaseRunServerVersion({
+        EnvId: envId,
+        ServerName: SERVICE,
+        VersionName: v.VersionName,
+      })
+      const detail = d?.VersionItems?.[0] ?? d
+      const url = detail?.ImageUrl
+      if (typeof url === 'string' && url.includes('/')) return url.replace(/:[^/:]+$/, '')
+    } catch (e) {
+      /**
+       * ⚠️ 不要静默吞：我第一版就是 catch {} 什么都不留，
+       *    结果报出的是"没有 ImageUrl"——而真因是 `DescribeCloudBaseRunServerVersion is not defined`
+       *    （漏了 import）。**错误信息误导比报错更贵**。这里留住最后一条真实原因。
+       */
+      lastErr = String(e?.message ?? e ?? '').slice(0, 200)
+    }
+  }
+  throw new Error(
+    '读不到镜像仓库地址（该服务的版本里都没有 ImageUrl）—— 可用 CCR_REPO=<ccr.ccs.tencentyun.com/ns/repo> 显式指定' +
+      (lastErr ? `\n   最后一次查询的真实原因：${lastErr}` : ''),
+  )
+}
+
+/** 不可变 tag：提交 SHA 前 12 位（CI 用 GITHUB_SHA，本机用 git） */
+function imageTagOf(repo) {
+  if (imageTagOverride) return imageTagOverride
+  const sha = (process.env.GITHUB_SHA ?? '').trim()
+  const short = sha
+    ? sha.slice(0, 12)
+    : execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
+  return `${repo}:${short}`
+}
+
+/**
+ * 自己构建并推送镜像。
+ *
+ * ⚠️ 登录凭据来自 CCR_USERNAME / CCR_PASSWORD（腾讯云镜像仓库的访问凭证）。
+ *    没配就直接失败并说清怎么办 —— 不要退化成"静默走源构建"：
+ *    那会让人以为 `--image` 生效了，而实际上又踩回那个会卡的死路。
+ */
+function buildAndPushImage(tag) {
+  const user = (process.env.CCR_USERNAME ?? '').trim()
+  const pass = (process.env.CCR_PASSWORD ?? '').trim()
+  if (!user || !pass) {
+    throw new Error(
+      '镜像方式部署需要 CCR_USERNAME / CCR_PASSWORD（腾讯云「容器镜像服务 → 访问凭证」）。\n' +
+        '   CI 里把它们加成仓库 secrets；本机可以临时 export。',
+    )
+  }
+  const registry = tag.split('/')[0]
+  console.log(`· docker login ${registry} …`)
+  run('docker', ['login', registry, '-u', user, '--password-stdin'], { input: pass, stdio: 'inherit' })
+  console.log(`· docker build -f apps/server/Dockerfile -t ${tag} .`)
+  run('docker', ['build', '-f', 'apps/server/Dockerfile', '-t', tag, '.'])
+  console.log(`· docker push ${tag}`)
+  run('docker', ['push', tag])
 }
 
 // ---- 1. 读回当前服务配置（关键：保住 MySQL 连接信息）----
@@ -424,6 +577,18 @@ async function serviceHasVersion() {
 }
 const firstDeploy = !(await serviceHasVersion())
 
+/**
+ * ⭐⭐ 镜像模式：**先把镜像推上去，再让平台只负责拉**（2026-09-29 加，见 --image 的说明）。
+ *    ⚠️ 这一步放在 `run:deploy` 之前：镜像没推成功就根本不该去动服务。
+ */
+let imageTag = ''
+if (useImage) {
+  const repo = await imageRepoOf()
+  imageTag = imageTagOf(repo)
+  console.log(`· 镜像方式部署：${imageTag}`)
+  buildAndPushImage(imageTag)
+}
+
 const argv = [
   'run:deploy',
   '--envId', envId,
@@ -435,6 +600,12 @@ const argv = [
   '--envParamsJson', JSON.stringify(params),
   '--noConfirm',
 ]
+/**
+ * ⚠️ 镜像模式下必须**同时**给 --libraryImage 与 --targetDir/--dockerfile：
+ *    CLI 靠 libraryImage 决定"不构建、直接拉"，但缺了 targetDir 它会去问交互式问题
+ *    （CI 里没有 stdin ⇒ 卡到超时）。
+ */
+if (useImage) argv.push('--libraryImage', imageTag)
 if (firstDeploy) {
   console.log(`· ${SERVICE} 还没有任何版本 —— 首次部署，不带 --override`)
 } else {
@@ -727,7 +898,11 @@ function measureUploadPayload(req) {
   return { bytes, files, perDir }
 }
 
-{
+/**
+ * ⚠️ 镜像模式**跳过**上传包闸门：那条闸门管的是"源构建要传的 zip"，
+ *    镜像模式下我们推的是镜像、根本不传 zip —— 量它只会误导。
+ */
+if (!useImage) {
   const m = measureUploadPayload(createRequire(import.meta.url))
   if (m) {
     const mb = (m.bytes / 1048576).toFixed(1)

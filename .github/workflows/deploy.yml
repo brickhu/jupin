@@ -142,7 +142,21 @@ jobs:
           XPAY_PRODUCT_ENERGY_300: ${{ secrets.XPAY_PRODUCT_ENERGY_300 }}
           XPAY_PRODUCT_ENERGY_3000: ${{ secrets.XPAY_PRODUCT_ENERGY_3000 }}
           ENGINE: xfyun
-        run: node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
+          # ⭐⭐ 镜像仓库凭据（`--image` 用；见 tools/deploy-cloud.mjs 的 --image 说明）
+          CCR_USERNAME: ${{ secrets.CCR_USERNAME }}
+          CCR_PASSWORD: ${{ secrets.CCR_PASSWORD }}
+        run: |
+          # ⭐⭐ 优先走**镜像方式**：自己 build + push，平台只负责拉镜像。
+          #    ⚠️ 为什么：平台侧的"源构建"会间歇性卡死在 create_build_image ——
+          #       卡住时连版本都不产生，还会把该服务后续的构建一起堵死（2026-09-29 为此花了几小时）。
+          #    ⚠️ 没配 CCR 凭据时**明确警告并退回源构建**：不静默退回，也不让流水线直接变红。
+          if [ -n "$CCR_USERNAME" ] && [ -n "$CCR_PASSWORD" ]; then
+            echo "· 用镜像方式部署（docker build + push，tag = 提交 SHA）"
+            node tools/deploy-cloud.mjs dev --image --remark "CI dev ${{ github.sha }}"
+          else
+            echo "::warning::没配 CCR_USERNAME/CCR_PASSWORD —— 退回平台源构建；它可能卡住（见 tools/deploy-cloud.mjs）"
+            node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
+          fi
 
   # ----------------------------------------------------------------
   # main 分支 → prod 环境
@@ -234,4 +248,18 @@ jobs:
           #    首次部署 prod 时把仓库变量 SEED_ON_START 设为 true 跑一次，
           #    否则 prod 句库是空的 —— 朗读页读不到正文。
           SEED_ON_START: ${{ vars.SEED_ON_START }}
-        run: node tools/deploy-cloud.mjs prod --remark "CI prod ${{ github.sha }}"
+          # ⭐⭐ 镜像仓库凭据（`--image` 用；见 tools/deploy-cloud.mjs 的 --image 说明）
+          CCR_USERNAME: ${{ secrets.CCR_USERNAME }}
+          CCR_PASSWORD: ${{ secrets.CCR_PASSWORD }}
+        run: |
+          # ⭐⭐ 优先走**镜像方式**：自己 build + push，平台只负责拉镜像。
+          #    ⚠️ 为什么：平台侧的"源构建"会间歇性卡死在 create_build_image ——
+          #       卡住时连版本都不产生，还会把该服务后续的构建一起堵死（2026-09-29 为此花了几小时）。
+          #    ⚠️ 没配 CCR 凭据时**明确警告并退回源构建**：不静默退回，也不让流水线直接变红。
+          if [ -n "$CCR_USERNAME" ] && [ -n "$CCR_PASSWORD" ]; then
+            echo "· 用镜像方式部署（docker build + push，tag = 提交 SHA）"
+            node tools/deploy-cloud.mjs prod --image --remark "CI prod ${{ github.sha }}"
+          else
+            echo "::warning::没配 CCR_USERNAME/CCR_PASSWORD —— 退回平台源构建；它可能卡住（见 tools/deploy-cloud.mjs）"
+            node tools/deploy-cloud.mjs prod --remark "CI prod ${{ github.sha }}"
+          fi
