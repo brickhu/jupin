@@ -145,19 +145,22 @@ adminRoutes.get('/articles/:id', async (c) => {
  */
 adminRoutes.put('/articles/:id', async (c) => {
   const id = c.req.param('id')
-  const body = await c.req.json<{
-    text?: string
-    translation?: string
-    scores?: unknown
-    challenge?: string
-    advice?: string
-    words?: unknown
-    links?: unknown
-    tags?: unknown
-    isActive?: boolean
-  }>()
+  /** ⚠️ 用 `unknown` 收：下面要靠"字段在不在"区分"没传"与"传了 null" */
+  const body = await c.req.json<Record<string, unknown>>()
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
 
-  const text = (body.text ?? '').trim()
+  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  const isCreate = !existing
+
+  /**
+   * ⚠️⚠️ **合并语义**（2026-09 修的真实数据事故）：
+   *    这个接口原来是"整体覆盖"—— 调用方没传的列会被写成 null / 空数组。
+   *    一次只带 `{text, translation}` 的调用就把那条句子的 **scores / tags / challenge / advice
+   *    全清空了**（真发生在我自己的联调上）。危险的是**静默清空**，不是合并。
+   *    ⇒ 更新时：**没传的列沿用库里已有的值**（传了才覆盖，传 null 也算显式清空）。
+   *      新建时：只能按传进来的值建（没传就是空）。
+   */
+  const text = String(has('text') ? body.text ?? '' : existing?.text ?? '').trim()
   if (!text) return c.json({ ok: false, error: 'text（原文）不能为空' }, 400)
 
   /**
@@ -165,20 +168,13 @@ adminRoutes.put('/articles/:id', async (c) => {
    *
    * 为什么非要在这里拦（2026-09 真实踩到）：id 同时是主键、音频路径、客户端缓存 key，
    * 而**全仓库本该只有一处** `articleIdOf`（见 shared/article-id.ts 的说明）。
-   * 服务端原先**根本没有那个式子**、照单全收调用方给的 id ⇒
-   * 接口能建出 `zzdel358045`、`000000000000a568` 这种非哈希 id：
-   *   · 同一句文本用不同 id 能建两行（幂等破裂）；
-   *   · 管理台用 `articleIdOf(text)` 推 id ⇒ 详情页对它**报错**（校验 16 位 hex 不通过）。
-   * ⇒ 与其让各处"记得用同一个式子"，不如让服务端**拒绝**任何对不上的 id。
+   * 服务端原先**根本没有那个式子**、照单全收调用方给的 id ⇒ 接口能建出 `zzdel358045`
+   * 这种非哈希 id（同一句文本用不同 id 能建两行、管理台详情页对它报错）。
+   *
+   * ⚠️ **只有"新建"或"id 看起来规范"时才校验**：历史脏 id 的老行必须还能改、还能删，
+   *    否则永远清不掉（见 services/article-delete.ts 的说明）。
    */
   const expectedId = articleIdOf(text)
-  /**
-   * ⚠️ **只有"新建"要求 id 规范**：老行（含历史脏 id）允许继续用它原来的 id ——
-   *    否则那些行既改不了也删不掉，只能进数据库手改。
-   *    ⚠️ 但如果调用方**给了规范 id 却对不上正文**，仍然 400：那是客户端算错了。
-   */
-  const [existingRow] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
-  const isCreate = !existingRow
   const idLooksCanonical = /^[0-9a-f]{16}$/.test(id)
   if ((isCreate || idLooksCanonical) && id !== expectedId) {
     return c.json(
@@ -196,18 +192,19 @@ adminRoutes.put('/articles/:id', async (c) => {
    *    路由不自己算 difficulty、不自己整 tags（那正是"两套写入逻辑"的开始，
    *    也是 domain-write-guard 会拦下来的事情）。
    */
+  const pick = <T>(k: string, fallback: T): T => (has(k) ? (body[k] as T) : fallback)
   const cols = contentColumnsOf({
     text,
-    translation: body.translation,
-    scores: body.scores,
-    challenge: body.challenge,
-    advice: body.advice,
-    words: body.words,
-    links: body.links,
-    tags: body.tags,
+    translation: pick('translation', existing?.translation ?? ''),
+    scores: pick('scores', existing?.scores ?? null),
+    challenge: pick('challenge', existing?.challenge ?? null),
+    advice: pick('advice', existing?.advice ?? null),
+    words: pick('words', existing?.words ?? []),
+    links: pick('links', existing?.links ?? []),
+    tags: pick('tags', existing?.tags ?? []),
   })
 
-  const { created } = await saveArticleContent(id, cols, { isActive: body.isActive })
+  const { created } = await saveArticleContent(id, cols, { isActive: body.isActive as boolean | undefined })
   console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
   return c.json({ ok: true, data: { id, created } })
 })

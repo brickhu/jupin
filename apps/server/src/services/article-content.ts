@@ -90,12 +90,25 @@ export async function saveArticleContent(
   opts: { isActive?: boolean } = {},
 ): Promise<{ created: boolean }> {
   const [existing] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
+
   if (existing) {
-    // ⚠️ 更新时**不碰 is_active**：发布/下线是另一个动作（管理接口的 isActive 字段），
-    //    改一句译文不该顺手把它上线
-    await db.update(articles).set(cols).where(eq(articles.id, id))
+    /**
+     * ⚠️⚠️ 更新时 `is_active` **只在调用方明确给了才写** —— 2026-09 真实踩到的坑：
+     *
+     *    这里原来写的是「更新时**不碰** is_active（改译文不该顺手把它上线）」——
+     *    本意是对的，但**实现把它无条件丢掉了**，而管理台的「发布 / 下架」
+     *    **正是通过这个接口传 `isActive`** ⇒ 接口回 200、库里那一列纹丝不动，**静默失效**。
+     *
+     *    ⇒ 正确语义：`isActive === undefined` 才不碰（改译文不会顺手改发布状态）；
+     *      **显式给了就照写**（那正是「发布 / 下架」这个动作本身）。
+     */
+    await db
+      .update(articles)
+      .set(opts.isActive === undefined ? cols : { ...cols, isActive: opts.isActive })
+      .where(eq(articles.id, id))
     return { created: false }
   }
+
   await db.insert(articles).values({ id, ...cols, isActive: opts.isActive ?? false })
   return { created: true }
 }
