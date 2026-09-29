@@ -59,10 +59,16 @@ describe('兜底清扫（sweep）的接线', () => {
      */
     const grab = (src: string, re: RegExp) => {
       const m = re.exec(src)
-      expect(m, '读不到阈值定义').not.toBeNull()
-      const expr = (m as RegExpExecArray)[1].replace(/_/g, '')
+      // ⚠️ 不用 `expect(m).not.toBeNull()` 之后就 m[1]：TS 不会因此收窄类型
+      //    （strict 下报 "Object is possibly undefined"），而且那种写法在失败时
+      //    给的是"断言失败"而不是"读不到阈值"这句人话。这里显式判断 + 抛出。
+      if (!m?.[1]) throw new Error('读不到阈值定义（写法变了吗？）')
+      const expr = m[1].replace(/_/g, '')
       expect(/^[0-9 *]+$/.test(expr), `阈值表达式不可求值：${expr}`).toBe(true)
-      return expr.split('*').map((x) => Number(x.trim())).reduce((a, b) => a * b, 1)
+      return expr
+        .split('*')
+        .map((x) => Number(x.trim()))
+        .reduce((a, b) => a * b, 1)
     }
     // ⚠️ 必须锚在行首的 const：注释里也写着"30 秒"，不锚就会被注释骗到（本测试第一版就是这么错的）
     const sweepMs = grab(sweep, /^const STALE_MS = ([0-9_ *]+)/m)
