@@ -174,6 +174,40 @@ async function adminApi(
 }
 
 /**
+ * ⭐ 这个环境现在**能不能用**（登录时的准入判断）。
+ *
+ * @returns 不能用的原因；能用时返回 null
+ *
+ * ⚠️ 判据分环境（见 /api/login 里的说明）：`local` 探库 + 探服务端；
+ *    `dev` / `prod` **只探服务端** —— 那些库从本机连不上是设计如此（没有外网入口），
+ *    不该因此把管理台挡在门外（那正是用户报的那个故障）。
+ */
+async function envProblem(mode: Mode): Promise<string | null> {
+  // local：库和服务端都在本机，两个都值得探
+  if (mode === 'local') {
+    const t = await targetOf(mode)
+    const dbProblem = t.url ? t.error : t.note || '连不上'
+    if (dbProblem) return '本机库连不上：' + dbProblem
+  }
+
+  const api = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!api) return '.env.' + mode + ' 里没有 ADMIN_API_URL（管理台去哪找服务端）'
+  if (!token) return '.env.' + mode + ' 里没有 ADMIN_TOKEN（与服务端要同一个值）'
+  try {
+    const res = await fetch(api + '/api/admin/articles', {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    if (res.status === 401) return '服务端拒绝了令牌（ADMIN_TOKEN 与那个环境不一致）'
+    if (res.status === 503) return '那个环境的服务端没配 ADMIN_TOKEN（内容管理接口未启用）'
+    if (!res.ok) return '服务端返回 HTTP ' + res.status
+  } catch (err) {
+    return '连不上服务端 ' + api + '：' + (err as Error).message
+  }
+  return null
+}
+
+/**
  * ⭐ 读句子列表 —— 走服务端接口（**不再连库**）。
  *
  * ⚠️⚠️ 为什么读也必须走接口（用户实测的故障）：dev/prod 的库**没开外网地址**，
@@ -1142,8 +1176,19 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
      * ⚠️ 选定的环境写进 .state.json：下次登录默认还是它（登录页会预选）。
      */
     const wanted = modeOf(b.env) ?? S.env
-    const t = await targetOf(wanted)
-    const problem = t.url ? t.error : t.note || '连不上'
+    /**
+     * ⭐⭐ **准入条件 = 服务端接口能不能通**（2026-09 改；"切 dev 连不上"的第二个卡点）。
+     *
+     * ⚠️⚠️ 原来这里是"探一次库"（`targetOf` + `probeDatabase`）——
+     *    那是管理台**直连库**时代的判据。现在它全程走 HTTP、根本不碰库，
+     *    于是出现荒唐的结果：**服务端明明能用，却因为"本机连不上那个库"被拒绝登录**。
+     *    用户报的"admin 启动后无法连接 dev 环境" = 这里 + 读路径，两处一起造成的。
+     *
+     * ⇒ 按环境分层判断，每层只问它真正需要的东西：
+     *    · `local`：库与服务端都在本机，**两个都探**（哪个出问题都值得当场说清）；
+     *    · `dev` / `prod`：只问**服务端** —— 那些库从本机连不上是设计如此（无外网入口）。
+     */
+    const problem = await envProblem(wanted)
     if (problem) return fail(res, wanted + ' 这个环境用不了：' + problem)
 
     if (wanted !== S.env) {
@@ -1167,16 +1212,21 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (path === '/api/envs') {
     const labels: Record<string, string> = { local: '本机 Docker', dev: '云托管 dev', prod: '云托管 prod' }
     const list = []
-    for (const m of MODES) {
-      const t = await targetOf(m)
-      list.push({
-        mode: m,
-        label: labels[m],
-        /** ⚠️ 「能连上」≠「能用」：必须真查过一次才算可用 */
-        reachable: Boolean(t.url) && !t.error,
-        note: t.error ?? t.note,
-      })
-    }
+      /**
+       * ⚠️⚠️ 可用性判据与登录**同一套**（`envProblem`）—— 2026-09 改。
+       *    原来这里是"探库能不能连"，于是 dev/prod 在登录页上永远标着"用不了"，
+       *    而它们**其实能用**（管理台走服务端接口，不需要连库）。
+       *    ⚠️ 两处判据必须一致：列表说"可用"、点进去却被拒，是最让人困惑的组合。
+       */
+      for (const m of MODES) {
+        const problem = await envProblem(m)
+        list.push({
+          mode: m,
+          label: labels[m],
+          reachable: problem === null,
+          note: problem,
+        })
+      }
     return ok(res, { current: S.env, list })
   }
 
