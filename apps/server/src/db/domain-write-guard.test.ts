@@ -254,6 +254,15 @@ const EXEMPTIONS: Exemption[] = [
     tables: ['articles'],
     why: '一次性改名脚本，raw UPDATE articles.standard_audio；文件名改完就没用了。',
   },
+    {
+      audit: '#10',
+      file: 'tools/fix-article-ids.mjs',
+      tables: ['articles'],
+      why:
+        '一次性/运维入口：把**非哈希的句子 id** 改写成 sha256(正文) 前 16 位' +
+        '（服务端 2026-09 之前不校验 id 时期留下的行，例如 zzdev653288）。' +
+        '默认只看不改、只连 local；外键已去掉，所以改 id 不必联动别的表。',
+    },
   {
     audit: '#10',
     file: 'tools/dev-unlock.mjs',

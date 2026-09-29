@@ -117,6 +117,14 @@ adminRoutes.get('/articles', async (c) => {
 /** 详情：整条（admin 的编辑表单要全部字段） */
 adminRoutes.get('/articles/:id', async (c) => {
   const id = c.req.param('id')
+  /**
+   * ⚠️ 读取**不要求 id 是规范哈希**：历史脏行（服务端还不校验 id 时期建的，
+   *    例如 `zzdev653288`）必须**能打开、看清、删掉** —— 否则永远清不掉。
+   *    只有"**新建**"才要求规范（见下面 PUT）。
+   */
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) {
+    return c.json({ ok: false, error: 'id 形状不对（4–64 位字母数字下划线连字符）' }, 400)
+  }
   const [row] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
   if (!row) return c.json({ ok: false, error: '句子不存在' }, 404)
   /**
@@ -164,7 +172,15 @@ adminRoutes.put('/articles/:id', async (c) => {
    * ⇒ 与其让各处"记得用同一个式子"，不如让服务端**拒绝**任何对不上的 id。
    */
   const expectedId = articleIdOf(text)
-  if (id !== expectedId) {
+  /**
+   * ⚠️ **只有"新建"要求 id 规范**：老行（含历史脏 id）允许继续用它原来的 id ——
+   *    否则那些行既改不了也删不掉，只能进数据库手改。
+   *    ⚠️ 但如果调用方**给了规范 id 却对不上正文**，仍然 400：那是客户端算错了。
+   */
+  const [existingRow] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
+  const isCreate = !existingRow
+  const idLooksCanonical = /^[0-9a-f]{16}$/.test(id)
+  if ((isCreate || idLooksCanonical) && id !== expectedId) {
     return c.json(
       {
         ok: false,
@@ -206,6 +222,10 @@ adminRoutes.put('/articles/:id', async (c) => {
  */
 adminRoutes.delete('/articles/:id', async (c) => {
   const id = c.req.param('id')
+  // ⚠️ 删除同样不要求规范 id（理由见 GET 那条）—— 历史脏行必须删得掉
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) {
+    return c.json({ ok: false, error: 'id 形状不对（4–64 位字母数字下划线连字符）' }, 400)
+  }
   const [row] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
   if (!row) return c.json({ ok: false, error: '句子不存在' }, 404)
 

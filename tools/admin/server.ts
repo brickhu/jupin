@@ -563,7 +563,18 @@ const ADMIN = ensureAdminCredentials()
  *    写死就是第二个会漂的真相（上一版这里就是 4 处写死的 {64}）。
  */
 const ID_HEX = '[0-9a-f]{' + ARTICLE_ID_LENGTH + '}'
-const RE_ARTICLE = new RegExp('^/api/articles/(' + ID_HEX + ')$')
+/**
+ * ⚠️⚠️ 单条句子的路径**刻意不锁死十六进制**（2026-09 改）。
+ *
+ * 原来这里是 `^/api/articles/([0-9a-f]{16})$`，于是**非哈希 id 的历史行无法处理**：
+ * 读它 404（文案还是误导人的"没有这个接口"）、**删它也 404** ⇒ 数据永远清不掉。
+ * （真实案例：dev 上的 `zzdev653288`，是服务端还不校验 id 时期留下的。）
+ *
+ * ⇒ 形状校验放宽成"像 id 就行"（不做路径穿越）；**id 是否规范只对"新建"提要求** ——
+ *   写入时服务端自己算哈希、对不上就 400（见 apps/server/src/routes/admin.ts）。
+ *   这样历史脏行至少能被**打开、看清、删掉**。
+ */
+const RE_ARTICLE = new RegExp('^/api/articles/([A-Za-z0-9_-]{4,64})$')
 const RE_AUDIO = new RegExp('^/api/audio/(' + ID_HEX + ')\\.mp3$')
 
 /* ================================================================
@@ -1540,6 +1551,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
    *    而逐词音频已经不存在了；整句音频坏了重跑 pnpm content:audio 更干净。
    */
 
+  /**
+   * ⚠️⚠️ 兜底文案要说**两种可能**，"没有这个接口"只对了一半 ——
+   *    2026-09 真实踩到：访问 `/article/zzdev653288` 得到
+   *    「没有这个接口：/api/articles/zzdev653288」，
+   *    而真相是**句子的 id 不合法**（`z` 不是十六进制），路由正则当然不匹配。
+   *    ⚠️ 那种行是"服务端还不校验 id"时期留下的历史脏数据（现在写入口已经拦住）。
+   *    ⇒ 像 16 位、但含非十六进制字符的：直接说清"id 不合法"；
+   *      真正形状不对的（长度都不是 16）：仍然报"没有这个接口"。
+   */
+  const looksLikeArticle = /^\/api\/articles\/([^/]+)$/.exec(path)
+  if (looksLikeArticle && !/^[0-9a-f]{16}$/.test(looksLikeArticle[1]!)) {
+    return fail(
+      res,
+      '这个 id 不合法：' + looksLikeArticle[1] + '（句子的 id 必须是 16 位十六进制 = sha256(正文) 前 16 位）' +
+        '。这类行是服务端还不校验 id 时期留下的历史数据 —— 用 `node tools/fix-article-ids.mjs` 扫一遍即可。',
+      404,
+    )
+  }
   return fail(res, '没有这个接口：' + path, 404)
 }
 
