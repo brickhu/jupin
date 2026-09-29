@@ -5,6 +5,7 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
 import { contentColumnsOf, saveArticleContent } from '../services/article-content'
+import { articleRefsOf, deleteArticle } from '../services/article-delete'
 import { storeStandardAudio } from '../services/standard-audio'
 
 /**
@@ -168,6 +169,38 @@ adminRoutes.put('/articles/:id', async (c) => {
   const { created } = await saveArticleContent(id, cols, { isActive: body.isActive })
   console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
   return c.json({ ok: true, data: { id, created } })
+})
+
+/**
+ * ⭐ **删除一条句子**（管理台的功能）。
+ *
+ * ⚠️⚠️ **有历史就拒绝**（409 + 引用数）—— 详见 `services/article-delete.ts` 顶部的理由：
+ *    participations 要自足（存 text 快照）而快照取自 articles ⇒ 硬删会让新记录取不到内容；
+ *    更要紧的是用户的"已挑战"历史会指向不存在的东西。
+ *    ⇒ 日常用**下架**（`PUT` 带 `isActive:false`）；删除只用于"刚建错、还没人碰过"的句子。
+ */
+adminRoutes.delete('/articles/:id', async (c) => {
+  const id = c.req.param('id')
+  const [row] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id)).limit(1)
+  if (!row) return c.json({ ok: false, error: '句子不存在' }, 404)
+
+  const { deleted, refs } = await deleteArticle(id)
+  if (!deleted) {
+    /**
+     * ⚠️ 409 而不是 400：这不是"请求写错了"，是"当前状态不允许" ——
+     *    带上引用数，界面才能说清"这句有 11 条成绩，删不得，要下线请用下架"。
+     */
+    return c.json(
+      {
+        ok: false,
+        error: '这条句子已经有用户数据（成绩 / 参与 / 收藏），不能删除。要让它不再出现请用「下架」。',
+        data: { refs },
+      },
+      409,
+    )
+  }
+  console.log(`[admin] 删除句子 id=${id}（无任何用户数据）`)
+  return c.json({ ok: true, data: { id, refs } })
 })
 
 /**

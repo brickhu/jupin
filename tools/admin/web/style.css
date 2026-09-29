@@ -73,6 +73,13 @@ button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); bac
 button:hover { border-color: #37404f; }
 button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
 button.primary:hover { background: var(--brand-2); border-color: var(--brand-2); }
+
+/**
+ * ⚠️ 危险动作（删除）—— 与其它 ghost 按钮区分开。
+ *    它不该长得跟「详情」一样：点错一次是不可逆的。
+ */
+button.ghost.danger { color: #f0a0a0; border-color: #4a2b2b; }
+button.ghost.danger:hover { background: #2a1b1b; border-color: #7a3b3b; }
 button.ghost { background: transparent; }
 button:disabled { opacity: .5; cursor: default; }
 

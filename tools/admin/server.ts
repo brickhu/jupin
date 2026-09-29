@@ -148,7 +148,7 @@ interface AdminApiResult {
 /** 调一次 `/api/admin/*`：JSON 体 */
 async function adminApi(
   mode: Mode,
-  method: 'GET' | 'PUT' | 'POST',
+  method: 'GET' | 'PUT' | 'POST' | 'DELETE',
   apiPath: string,
   body?: unknown,
 ): Promise<AdminApiResult> {
@@ -246,6 +246,37 @@ async function fetchArticles(
     throw new Error(json.error ?? 'HTTP ' + res.status + '（读句子列表失败）')
   }
   return json.data?.items ?? []
+}
+
+/**
+ * ⭐ **删一条句子**（走服务端接口）。
+ *
+ * ⚠️ 服务端**有用户数据就拒绝**（成绩/参与/收藏）并返回 409 + 引用数 ——
+ *    这里把引用数**原样带回给界面**，让人看清"这句挂着多少条历史"。（没有 force：
+ *    拒绝就是拒绝 —— 要让它不再出现，正确的动作是**下架**。）
+ *
+ * @returns `{ ok, refs, error }`；`refs` 只在"需要 force"时有值
+ */
+async function deleteArticle(
+  mode: Mode,
+  id: string,
+): Promise<{ ok: boolean; refs?: Record<string, number>; error?: string }> {
+  const base = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!base) throw new Error('.env.' + mode + ' 里没有 ADMIN_API_URL')
+  if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN')
+
+  const res = await fetch(base + '/api/admin/articles/' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token },
+  })
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean
+    error?: string
+    data?: { refs?: Record<string, number> }
+  }
+  if (res.ok && json.ok) return { ok: true }
+  return { ok: false, refs: json.data?.refs, error: json.error ?? 'HTTP ' + res.status }
 }
 
 /** ⭐ 读一条句子（整条）—— 走服务端接口 */
@@ -543,8 +574,17 @@ function ok(res: ServerResponse, data: unknown): void {
   send(res, 200, { ok: true, data })
 }
 
-function fail(res: ServerResponse, err: unknown, status = 400): void {
-  send(res, status, { ok: false, error: err instanceof Error ? err.message : String(err) })
+/**
+ * @param data 附加数据（可选）—— 给"错误但客户端需要细节"的情况用。
+ *    ⚠️ 目前唯一用处：删除被拒（409）时把**引用数**带回去，
+ *    界面才能说出"这句挂着 11 条成绩"，而不是笼统一句"删不了"。
+ */
+function fail(res: ServerResponse, err: unknown, status = 400, data?: unknown): void {
+  send(res, status, {
+    ok: false,
+    error: err instanceof Error ? err.message : String(err),
+    ...(data === undefined ? {} : { data }),
+  })
 }
 
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -1374,6 +1414,27 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       difficultyWeights: DIFFICULTY_WEIGHTS,
       difficultyBands: DIFFICULTY_BANDS,
     })
+  }
+
+  /**
+   * ---- 删除 ----
+   *
+   * ⚠️ 与「下架」（PUT 带 isActive:false）分工：下架留历史，删除**不可逆**；
+   *    而**有用户数据时服务端直接拒绝**（409 + 引用数）——
+   *    因为 participations 存的是原文快照（取自 articles），删了句子新记录就没处取内容了。
+   * ⚠️ 409 的 `data.refs` **原样透传**给界面：人得看清"这句挂着 11 条成绩"再决定。
+   */
+  if (one && req.method === 'DELETE') {
+    const id = one[1]!
+    try {
+      const r = await deleteArticle(S.env, id)
+      if (!r.ok) {
+        return fail(res, r.error ?? '删除失败', r.refs ? 409 : 400, r.refs ? { refs: r.refs } : undefined)
+      }
+      return ok(res, { id, refs: r.refs })
+    } catch (e) {
+      return fail(res, (e as Error).message, 500)
+    }
   }
 
   // ---- 保存 / 发布 ----

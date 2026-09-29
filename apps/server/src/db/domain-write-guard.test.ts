@@ -57,6 +57,7 @@ const P = {
   articleIndex: 'apps/server/src/services/article-index.ts',
   standardAudio: 'apps/server/src/services/standard-audio.ts',
   articleContent: 'apps/server/src/services/article-content.ts',
+  articleDelete: 'apps/server/src/services/article-delete.ts',
   scoring: 'apps/server/src/services/scoring.ts',
   submissionsRoute: 'apps/server/src/routes/submissions.ts',
   favorites: 'apps/server/src/services/favorites.ts',
@@ -84,9 +85,15 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   // 能量：流水是真相，users.energy 只是缓存，两者必须**同事务**写（docs 1.11 / 越界 #1#2）
   energy_ledger: { owners: [P.energy], note: 'topUp / hold / release / addEnergy 全在 services/energy.ts' },
   // 战绩派生索引：一人一句一行，只能由同一份 computeParticipation 重算（docs 1.5）
-  participations: { owners: [P.participations], note: 'syncParticipation / rebuildParticipations' },
+  participations: {
+    owners: [P.participations, P.articleDelete],
+    note: 'syncParticipation / rebuildParticipations；article-delete 在删句子时清掉引用',
+  },
   // 收藏：主键 (user_id, article_id)，两个方向都幂等（docs 1.9）
-  favorites: { owners: [P.favorites], note: 'setFavorite' },
+  favorites: {
+    owners: [P.favorites, P.articleDelete],
+    note: 'setFavorite；article-delete 在删句子时清掉引用',
+  },
   // 每日排期：轮转与运营排期都走同一模块（docs 1.7 的两套之一）
   goods: { owners: [P.goods], note: 'services/goods.ts' },
   payments: { owners: [P.order], note: 'services/order.ts 下单 / 支付回调' },
@@ -97,7 +104,7 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   unfreeze_cards: { owners: [P.unfreeze], note: 'grantUnfreezeCard / claimUnfreezeCards / useUnfreezeCards' },
   // 一次朗读 + 一次评测（同一行）：受理/可见性在路由，评测列在 scoring（docs 1.2 / 1.3）
   submissions: {
-    owners: [P.scoring, P.submissionsRoute],
+    owners: [P.scoring, P.submissionsRoute, P.articleDelete],
     note: '评测列 scoring.ts；受理 insert 与 is_public 在 routes/submissions.ts',
   },
   // users 是多概念共用一张表：身份/profile、连战、能量缓存、成长值、推荐窗口…
@@ -120,11 +127,12 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   // articles 的正文真相在 content/articles/*.json，这里只是可 SQL 筛选的索引。
   // difficulty/tags 与 standard_audio 各有一个唯一写入方（docs 1.1 / 1.8）。
   articles: {
-    owners: [P.articleIndex, P.standardAudio, P.articleContent],
+    owners: [P.articleIndex, P.standardAudio, P.articleContent, P.articleDelete],
     note:
       'difficulty → article-index；standard_audio → standard-audio；' +
       '正文各列（text/translation/scores/challenge/advice/words/links/tags）→ article-content；' +
-      '发布面（is_active 等）见 COLUMN_OWNERS',
+      '发布面（is_active 等）见 COLUMN_OWNERS；' +
+      '**删除**（连同成绩/参与/收藏三张引用表）→ article-delete',
   },
 }
 

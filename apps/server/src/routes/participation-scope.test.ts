@@ -43,6 +43,14 @@ const ARENA_WIDE_ALLOWED: Array<{ file: string; nth: number; why: string }> = [
     why: 'rebuildParticipations：把派生索引从 submissions 重建，必须读全表的行再按 userId:articleId 归位 —— ' +
       '它没有任何"我的"语义，也不对外返回单个用户的画像',
   },
+  {
+    file: 'services/article-delete.ts',
+    nth: 1,
+    why:
+      '删句子时清掉**这一句所有人**的参与记录（外键要求）。' +
+      '它按 articleId 而不是 userId 过滤，但**不读、不返回**任何用户数据 ——' +
+      '是「删除这一句的引用」，不是「看谁的记录」。',
+  },
 ]
 
 function files(): string[] {

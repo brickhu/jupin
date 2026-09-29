@@ -1,0 +1,1 @@
+ALTER TABLE `participations` ADD `words` json;

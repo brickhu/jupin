@@ -1,7 +1,9 @@
 import { and, asc, count, desc, eq, max, min } from 'drizzle-orm'
 
 import { db } from '../db'
-import { participations, submissions } from '../db/schema'
+import type { ArticleWordItem } from '@jushuo/shared'
+
+import { articles, participations, submissions } from '../db/schema'
 
 /**
  * ⭐⭐ **参与记录的唯一写入方**。
@@ -39,6 +41,19 @@ export interface ParticipationRow {
   lastScheduleDate: string | null
   bestSubmissionId: string
   reachedAt: Date
+  /**
+   * ⭐ 这一句的**原文快照**（用户 2026-09 要求）—— 参与列表靠它自足：
+   *    句子没上线 / 内容改过 / 被删，列表照样显示「我当时读的是哪句」。
+   *    ⚠️ 只在重算时刷新；句子查不到时退回表里已有的值（见 computeParticipation）。
+   */
+  text: string | null
+  /**
+   * ⭐ 这一句的**词表快照**（用户 2026-09 要求：「participation 应该快照的（是）words」）。
+   * ⚠️ 参与列表的「多少个词」原来靠 `plainWordsOf(text).length` 回查 ——
+   *    切词规则一改、或内容改了，历史卡片的词数就跟着变，而用户当时读的是旧那一份。
+   * ⚠️ 与 text 同源：重算时读一次 articles.words 落下来（形状同 articles.words）。
+   */
+  words: ArticleWordItem[] | null
 }
 
 /** 只算这一句上「已出分」的那批挑战 —— 全文件共用，别在别处各写一遍口径 */
@@ -112,7 +127,30 @@ async function computeParticipation(
     )
   }
 
+    /**
+     * ⭐ 取这一句的原文（快照的**取数来源**）。
+     * ⚠️ 句子查不到（只有"没有任何用户数据"时才允许被删）时**不报错**，
+     *    这一次给 null —— `upsertOne` 走的是 upsert，但为了不把历史快照抹成 NULL，
+     *    这里沿用表里已有的值（见下面的 existingText）。
+     */
+    const [art] = await database
+      .select({ text: articles.text, words: articles.words })
+      .from(articles)
+      .where(eq(articles.id, articleId))
+      .limit(1)
+
+    /**
+     * ⚠️ 句子查不到时**就写 null**（不报错）：这种行不该出现 ——
+     *    有用户数据的句子**不允许被删**（见 services/article-delete.ts），
+     *    所以 `articles` 那行一定在。真查不到时记 null 比编一个快照诚实。
+     */
+    const text = art?.text ?? null
+    /** ⚠️ 与 text 同源、同一次读取：词表快照 */
+    const words = art?.words ?? null
+
   return {
+      text,
+      words,
     userId,
     articleId,
     attempts: Number(agg.attempts),
@@ -143,6 +181,8 @@ async function upsertOne(row: ParticipationRow, database: Database): Promise<voi
         lastScheduleDate: row.lastScheduleDate,
         bestSubmissionId: row.bestSubmissionId,
         reachedAt: row.reachedAt,
+        text: row.text,
+        words: row.words,
       },
     })
 }
@@ -192,6 +232,9 @@ function flat(row: ParticipationRow | null): Record<string, string> | null {
     lastScheduleDate: String(row.lastScheduleDate),
     bestSubmissionId: String(row.bestSubmissionId),
     reachedAt: row.reachedAt.toISOString(),
+    // ⚠️ 两个快照列也进对账：重建前后不一致要报出来（"派生索引"的验收判据）
+    text: String(row.text ?? ''),
+    words: JSON.stringify(row.words ?? null),
   }
 }
 
@@ -228,6 +271,10 @@ export async function rebuildParticipations(
       lastScheduleDate: participations.lastScheduleDate,
       bestSubmissionId: participations.bestSubmissionId,
       reachedAt: participations.reachedAt,
+      // ⚠️ 两个快照列必须在这里也选出来：漏了的话对账会拿 undefined 去比，
+      //    报出"expected 有值 / actual 空"的假不一致（我第一次就漏了）
+      text: participations.text,
+      words: participations.words,
     })
     .from(participations)
 
@@ -242,6 +289,8 @@ export async function rebuildParticipations(
       lastScheduleDate: String(r.lastScheduleDate),
       bestSubmissionId: String(r.bestSubmissionId),
       reachedAt: r.reachedAt.toISOString(),
+      text: String(r.text ?? ''),
+      words: JSON.stringify(r.words ?? null),
     })
   }
 

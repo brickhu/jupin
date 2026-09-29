@@ -390,7 +390,14 @@ export const submissions = mysqlTable('submissions', {
    */
   id: varchar('id', { length: SUBMISSION_ID_LENGTH }).primaryKey(),
   userId: int('user_id').notNull().references(() => users.id),
-  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
+  /**
+   * ⚠️ **不再 REFERENCES articles**（迁移 0047 去掉）：删句子时**留用户数据**，
+   *    而外键约束与「留历史」互斥（`ERROR 1451`）。三条理由见 services/article-delete.ts：
+   *    ① id 是内容哈希 ⇒ 同一句加回来历史自动接回；
+   *    ② 指向已删句子的行**不会出现在界面上**（列表都走 innerJoin(articles)）；
+   *    ③ 留历史比删用户的成绩安全得多。
+   */
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
   /** 该用户在该文章的第几次提交，从 1 开始 */
   seq: int('seq').notNull(),
 
@@ -673,7 +680,34 @@ export const submissions = mysqlTable('submissions', {
  */
 export const participations = mysqlTable('participations', {
   userId: int('user_id').notNull().references(() => users.id),
-  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
+  /**
+   * ⚠️ **不再 REFERENCES articles**（迁移 0047 去掉）：外键与「句子下线/内容变更后历史仍留得住」互斥
+   *    （`ERROR 1451`）。⚠️ 但**去外键不等于允许硬删** —— 有用户数据时删除仍被拒绝，
+   *    判据在 services/article-delete.ts（约束松了，判据就写进代码）。
+   */
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
+  /**
+   * ⭐⭐ **这一句的原文快照**（用户 2026-09 要求：「participations 中最好能够记录下句子中的 text 信息」）。
+   *
+   * ⚠️⚠️ 为什么必须存快照、而不是 join 回 articles：
+   *    · 参与列表是**用户的历史**，历史必须**自足** —— 句子没上线 / 内容改过 / 被删，
+   *      列表都得能显示「我当时读的是哪句」（原来走 `innerJoin(articles)`，关联不上整行消失）；
+   *    · 它也是「句子不许硬删」的原因之一：快照取自 articles，硬删之后**新记录取不到内容**。
+   * ⚠️ 写入方只有一个：`services/participations.ts`（与其它列同源，重算式）。
+   * ⚠️ 随**重算**刷新（每次结算现读一次 articles）⇒ 内容改了这里跟着更新。
+   *    它记的是「参与」而不是「内容副本」⇒ 只存 text 与 words，不存译文/难度/标签。
+   */
+  text: text('text'),
+  /**
+   * ⭐⭐ **这一句的词表快照**（用户 2026-09 要求：「participation 应该快照的（是）words」）。
+   *
+   * ⚠️ 为什么连词表也要快照：参与列表上显示的是「多少个词」，而那个数**原来靠回查**
+   *    （`plainWordsOf(text).length`）—— 切词规则一改、或内容改了，历史卡片的词数跟着变，
+   *    而用户当时读的是**旧的那一份**。存下来才算「历史」。
+   * ⚠️ 与 `text` 同源同写入方：`services/participations.ts` 在重算时读一次 articles 落下来。
+   *    形状与 `articles.words` 一致（词 / 音标 / 重音 / 音节 / 技巧 / 句中释义）。
+   */
+  words: json('words').$type<ArticleWordItem[]>(),
 
   /** 已出分的挑战次数（与参与人数同一口径） */
   attempts: int('attempts').notNull(),
@@ -843,7 +877,14 @@ export const payments = mysqlTable('payments', {
  */
 export const favorites = mysqlTable('favorites', {
   userId: int('user_id').notNull().references(() => users.id),
-  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull().references(() => articles.id),
+  /**
+   * ⚠️ **不再 REFERENCES articles**（迁移 0047 去掉）：删句子时**留用户数据**，
+   *    而外键约束与「留历史」互斥（`ERROR 1451`）。三条理由见 services/article-delete.ts：
+   *    ① id 是内容哈希 ⇒ 同一句加回来历史自动接回；
+   *    ② 指向已删句子的行**不会出现在界面上**（列表都走 innerJoin(articles)）；
+   *    ③ 留历史比删用户的成绩安全得多。
+   */
+  articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 }, (t) => [
   /** ⭐ 一人一句一行 —— 收藏是个开关 */

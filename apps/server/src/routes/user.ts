@@ -64,7 +64,7 @@ userRoutes.get('/challenges', async (c) => {
        *    两边切法不一致就会整行错位，而界面上完全看不出来。
        *    这条切词规则同时被内容流水线、服务端拼 fileID、朗读页共用。
        */
-      const text = await loadArticleRefText(r.articleId)
+        const text = await loadArticleRefText(r.articleId)
       const words = plainWordsOf(text)
 
       return {
@@ -217,37 +217,56 @@ userRoutes.get('/participations', async (c) => {
       worst: participations.worstScore,
       lastAt: participations.lastAt,
       lastScheduleDate: participations.lastScheduleDate,
-      theme: articles.theme,
+        /**
+        * ⭐ **这一句的原文快照**（participations.text，用户 2026-09 要求）——
+        *    历史必须自足：句子没上线 / 内容改过，列表照样显示「我当时读的是哪句」。
+        * ⚠️ 这也让下面那个 `loadArticleRefText()` 回查变得不必要（原来那一步在句子
+        *    关联不上时会拿到空串 ⇒ 卡片上是一片空白）。
+        */
+        text: participations.text,
+        /** ⚠️ 词表快照：词数用它，不再拿 text 现算（见下面 words 那行的说明） */
+        words: participations.words,
+        theme: articles.theme,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))
     .where(eq(participations.userId, userId))
     .orderBy(desc(participations.lastAt))
 
-  const items = await Promise.all(
-    rows.map(async (r) => {
-      const text = await loadArticleRefText(r.articleId)
-      const rankInfo = await getRank(r.articleId, userId)
-      return {
-        articleId: r.articleId,
-        text,
-        words: plainWordsOf(text).length,
-        attempts: Number(r.attempts ?? 0),
-        bestScore: Number(r.best ?? 0),
-        worstScore: Number(r.worst ?? 0),
-        rank: rankInfo.rank,
-        participantCount: rankInfo.participantCount,
-        lastAt: new Date(r.lastAt as unknown as string).toISOString(),
+    const items = await Promise.all(
+      rows.map(async (r) => {
         /**
-         * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
-         * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
-         *    而不是端侧算今天：用户参与的可能是几天前那一场。
-         * ⚠️ 它随参与记录一起物化（写入时算好），不再逐行回查 submissions。
+         * ⚠️ **原文取自快照**（`participations.text`，用户 2026-09 要求）——
+         *    历史必须自足：句子没上线 / 内容改过，列表照样显示「我当时读的是哪句」。
+         *    原来这里回查文章正文，关联不上就是一片空白。
          */
-        lastScheduleDate: r.lastScheduleDate ?? '',
-        theme: r.theme,
-      }
-    }),
+        const text = r.text ?? ''
+        const rankInfo = await getRank(r.articleId, userId)
+        return {
+          articleId: r.articleId,
+          text,
+          /**
+           * ⚠️ 词数用**快照**（`participations.words`），不再拿 text 现算 ——
+           *    现算的话切词规则一改，历史卡片的词数就跟着变（而用户当时读的是旧那一份）。
+           *    没有快照的老记录退回现算，别让卡片显示 0。
+           */
+          words: Array.isArray(r.words) ? r.words.length : plainWordsOf(text).length,
+          attempts: Number(r.attempts ?? 0),
+          bestScore: Number(r.best ?? 0),
+          worstScore: Number(r.worst ?? 0),
+          rank: rankInfo.rank,
+          participantCount: rankInfo.participantCount,
+          lastAt: new Date(r.lastAt as unknown as string).toISOString(),
+          /**
+           * ⭐ 最近这一次挑战属于哪一天 —— 卡片点进**竞技场**要用它。
+           * ⚠️ 竞技场是按日期取场次的，所以取「最近那次挑战的 schedule_date」，
+           *    而不是端侧算今天：用户参与的可能是几天前那一场。
+           * ⚠️ 它随参与记录一起物化（写入时算好），不再逐行回查 submissions。
+           */
+          lastScheduleDate: r.lastScheduleDate ?? '',
+          theme: r.theme,
+        }
+      }),
   )
 
   return c.json({ ok: true, data: { items } })

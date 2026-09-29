@@ -337,6 +337,39 @@ async function loadList() {
   }
 }
 
+/**
+ * ⭐ **删除一条句子**（走服务端接口 `DELETE /api/admin/articles/:id`）。
+ *
+ * ⚠️⚠️ 服务端**有用户数据就拒绝**（409 + 引用数）—— 这句历史里有成绩/参与/收藏。
+ *    这里把那句话说清楚，并**引导去下架**（那才是日常该用的动作：留历史、不进首页）。
+ * ⚠️ 二次确认是必须的：删除不可逆，而这个台子上大部分人是在生产库上操作。
+ */
+async function removeArticle(row) {
+  const label = String(row.text || row.id).slice(0, 40)
+  if (!window.confirm("确定删除这一句？\n\n" + label + "\n\n删除不可逆；要只是让它不再出现，请用「下架」。")) return
+  try {
+    await api("/api/articles/" + encodeURIComponent(row.id), { method: "DELETE" })
+    toast("已删除")
+    await loadList()
+  } catch (e) {
+    /**
+     * ⚠️ 409 = "有用户数据，不能删"（不是出错）。把服务端的说法原样给出，
+     *    并把引用数摊开 —— 让人知道有多少条历史挂在这句上。
+     */
+    if (e.status === 409) {
+      const r = (e.data && e.data.refs) || {}
+      toast(
+        e.message + "（成绩 " + (r.submissions || 0) + " / 参与 " + (r.participations || 0) +
+          " / 收藏 " + (r.favorites || 0) + "）",
+        true,
+      )
+      return
+    }
+    toast(e.message, true)
+  }
+}
+
+
 function renderList() {
   const tbody = $("#rows")
   tbody.textContent = ""
@@ -384,6 +417,17 @@ function renderList() {
     detailBtn.textContent = "详情"
     detailBtn.addEventListener("click", function () { navigate("/article/" + row.id) })
     actTd.appendChild(detailBtn)
+      /**
+       * ⭐ 删除（用户 2026-09 要求"句子管理缺少删除功能"）。
+       * ⚠️ 与「发布 / 下架」并列：日常用**下架**（留历史），删除只给"刚建错、还没人碰过"的句子。
+       *    有用户数据的句子服务端会拒绝（409 + 引用数），这里把那句话原样告诉人。
+       */
+      const delBtn = document.createElement("button")
+      delBtn.type = "button"
+      delBtn.className = "ghost danger"
+      delBtn.textContent = "删除"
+      delBtn.addEventListener("click", function () { removeArticle(row) })
+      actTd.appendChild(delBtn)
     tr.appendChild(actTd)
 
     tbody.appendChild(tr)
