@@ -209,12 +209,13 @@ interface Exemption {
 }
 
 const EXEMPTIONS: Exemption[] = [
-  {
-    audit: '#3',
-    file: P.admin,
-    tables: ['articles'],
-    why: 'admin 的 upsertArticle 整行写 articles，difficulty / standard_audio 顺手带过；要收敛得先有一个发布服务层，暂不动发布面。',
-  },
+  /**
+   * ⚠️⚠️ 这里**曾经有一条豁免**：`tools/admin/server.ts` 整行写 `articles`
+   *    （它的 upsertArticle 自己拼 difficulty / standard_audio 一起写）。
+   *    2026-09 删除：管理台改成**全程走 HTTP**（`/api/admin/*`），
+   *    写入统一由服务端的 `services/article-content.ts` 负责 ⇒ 豁免不再需要。
+   *    那条豁免本身就是「两套写入逻辑」的证据 —— 它消失，说明那件事做完了。
+   */
   {
     audit: '审计外',
     file: 'apps/server/scripts/import-content-files.ts',

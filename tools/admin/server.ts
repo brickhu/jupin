@@ -24,14 +24,14 @@ import { basename, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-import { desc, eq, inArray } from 'drizzle-orm'
 
-import { type Db, createDb, probeDatabase } from '../../apps/server/src/db'
+// ⚠️ 只留 probeDatabase（登录页探环境用）；createDb / Db 随连接池一起删了
+import { probeDatabase } from '../../apps/server/src/db'
 import { mp3DurationMs } from '../../apps/server/src/services/mp3-duration'
 import { readStaticFile } from '../../apps/server/src/services/content'
 import type { ArticleWordItem, ArticleWordStress, DifficultyScores } from '../../packages/shared/src/types/content'
 import { MODES, ROOT, envFileOf, loadEnv, parseEnvFile, writeEnvVar } from '../env.mjs'
-import { articles } from '../../apps/server/src/db/schema'
+// ⚠️ 不再 import db/schema：管理台全程走 HTTP，不直接碰表（见 dbOf 被删的那段说明）
 import { syncArticleIndex } from '../../apps/server/src/services/article-index'
 import { audioKeyOf } from '../../apps/server/src/services/standard-audio'
 import { parseRange } from '../../apps/server/src/lib/http-range'
@@ -171,6 +171,62 @@ async function adminApi(
   }
   if (res.ok && json.ok) return { ok: true }
   return { ok: false, error: json.error ?? 'HTTP ' + res.status + '：' + text.slice(0, 200) }
+}
+
+/**
+ * ⭐ 读句子列表 —— 走服务端接口（**不再连库**）。
+ *
+ * ⚠️⚠️ 为什么读也必须走接口（用户实测的故障）：dev/prod 的库**没开外网地址**，
+ *    admin 直连只会超时 —— 症状是"管理台打不开某个环境"，而真正的边界是
+ *    "这台机器能不能连到那个库"。走接口之后，管理台只需要服务端地址 + 令牌。
+ *
+ * @param q      搜索词（服务端筛；客户端只拿到最近 200 条，自己筛会漏）
+ * @param opts.activeOnly 只要上线的
+ * @param opts.ids       只要这些 id（拆句时"这句库里有没有"用）
+ */
+async function fetchArticles(
+  mode: Mode,
+  q = '',
+  opts: { activeOnly?: boolean; ids?: string[] } = {},
+): Promise<Array<Record<string, unknown>>> {
+  const base = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!base) throw new Error('.env.' + mode + ' 里没有 ADMIN_API_URL（管理台去哪找服务端）')
+  if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN —— 与云上那个值要一致')
+
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  if (opts.activeOnly) params.set('active', '1')
+  if (opts.ids?.length) params.set('ids', opts.ids.join(','))
+  const qs = params.toString()
+
+  const res = await fetch(base + '/api/admin/articles' + (qs ? '?' + qs : ''), {
+    headers: { Authorization: 'Bearer ' + token },
+  })
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean
+    error?: string
+    data?: { items?: Array<Record<string, unknown>> }
+  }
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error ?? 'HTTP ' + res.status + '（读句子列表失败）')
+  }
+  return json.data?.items ?? []
+}
+
+/** ⭐ 读一条句子（整条）—— 走服务端接口 */
+async function fetchArticle(mode: Mode, id: string): Promise<Record<string, unknown> | null> {
+  const base = serverUrlOf(mode)
+  const token = varsOf(mode).ADMIN_TOKEN
+  if (!base) throw new Error('.env.' + mode + ' 里没有 ADMIN_API_URL')
+  if (!token) throw new Error('.env.' + mode + ' 里没有 ADMIN_TOKEN')
+  const res = await fetch(base + '/api/admin/articles/' + encodeURIComponent(id), {
+    headers: { Authorization: 'Bearer ' + token },
+  })
+  if (res.status === 404) return null
+  const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; data?: Record<string, unknown> }
+  if (!res.ok || !json.ok) throw new Error(json.error ?? 'HTTP ' + res.status + '（读句子失败）')
+  return json.data ?? null
 }
 
 /** 调一次 `/api/admin/*`：multipart 传音频 */
@@ -334,18 +390,17 @@ async function targetOf(mode: Mode): Promise<Target> {
  *
  * ⚠️ 走 apps/server 的 createDb 而不是在这里 createPool：池参数（timezone/bigint）
  *    必须和线上服务逐字一致，抄一份迟早会漂。见 db/index.ts 的注释。
+/**
+ * ⚠️⚠️ 这里**曾经有一组连接池**（`pools` + `dbOf(mode)`），2026-09 删除。
+ *
+ *    原因：管理台改成**全程走 HTTP**（`/api/admin/*`）—— 它不再需要连任何库。
+ *    而「能不能连上那个库」曾经是「管理台能不能用某个环境」的隐藏前置条件：
+ *    dev/prod 的库没有外网入口 ⇒ 切过去就报连不上（用户实测的故障）。
+ *
+ *    ⚠️ 只留下 `probeDatabase`（登录页选环境时**探一次**能不能连上）——
+ *    它是「看」，用单连接、不建池；用途是告诉人「这个环境的库现在通不通」，
+ *    不是拿来跑业务查询的。
  */
-const pools = new Map<Mode, Db>()
-
-async function dbOf(mode: Mode): Promise<Db> {
-  const hit = pools.get(mode)
-  if (hit) return hit
-  const t = await targetOf(mode)
-  if (!t.url) throw new Error('这个环境连不上：' + t.note)
-  const d = createDb(t.url)
-  pools.set(mode, d)
-  return d
-}
 
 /* ================================================================
  * 会话（签名 cookie，无状态；密钥落 .state.json，重启不掉线）
@@ -541,24 +596,14 @@ async function serveFile(req: IncomingMessage, res: ServerResponse, abs: string)
  *    但 `id` 是**组装时补上的**（库里不重复存它）。
  */
 async function contentOf(mode: Mode, id: string): Promise<Record<string, unknown> | null> {
-  const d = await dbOf(mode)
-  const [row] = await d
-    .select({
-      id: articles.id,
-      text: articles.text,
-      translation: articles.translation,
-      words: articles.words,
-      links: articles.links,
-      scores: articles.scores,
-      challenge: articles.challenge,
-      advice: articles.advice,
-      tags: articles.tags,
-      difficulty: articles.difficulty,
-    })
-    .from(articles)
-    .where(eq(articles.id, id))
-    .limit(1)
-  if (!row || row.text === null) return null
+  /**
+   * ⚠️ 走服务端接口（`GET /api/admin/articles/:id`）—— 2026-09 改成"全程 HTTP"。
+   *    之前这里是"按 id 查库 + 组装"，而 dev/prod 的库没有外网入口 ⇒
+   *    管理台切到那些环境就**连不上**（用户实测的故障）。
+   *    返回的形状仍是 `ArticleContent`（调用方不用改），`id` 由服务端一并给出。
+   */
+  const row = await fetchArticle(mode, id)
+  if (!row || row.text === null || row.text === undefined) return null
   return {
     id: row.id,
     text: row.text,
@@ -569,54 +614,48 @@ async function contentOf(mode: Mode, id: string): Promise<Record<string, unknown
     ...(row.challenge ? { challenge: row.challenge } : {}),
     ...(row.advice ? { advice: row.advice } : {}),
     ...(row.tags ? { tags: row.tags } : {}),
-    ...(row.difficulty !== null ? { difficulty: row.difficulty } : {}),
   }
 }
 
 /** 列表：全部从库读（正文也已经是库里的列） */
 async function listArticles(mode: Mode, q: string, limit: number) {
-  const d = await dbOf(mode)
-  const rows = await d.select().from(articles).orderBy(desc(articles.createdAt)).limit(limit)
   /**
-   * ⚠️ 标签**从正文取**（2026-09 起没有 `article_tags` 表了，见 apps/server/src/db/schema.ts）。
-   *    ⚠️ 顺序因此也对了：以前读索引会按字母排序，而正文里第一个标签最重要 ——
-   *      那正是"详情页要专门绕开索引"的原因，现在不需要绕了。
+   * ⚠️ 列表**走服务端接口**（`GET /api/admin/articles`）—— 不连库。
+   *    以前这里是"查库 + 用 contentOf 逐条读正文"，而那条链在 dev/prod 上根本走不通
+   *    （库没有外网入口）⇒ 管理台切环境就报"连不上"。这就是用户实测的那个故障。
+   *
+   * ⚠️ 搜索交给**服务端**（`?q=`）：客户端只拿最近 200 条，自己筛会漏掉更老的句子，
+   *    而那种错看起来像"数据丢了"。
+   * ⚠️ `limit` 现在只是**本机再截一刀**（服务端固定回最多 200 条）。
    */
-  const out = []
-  for (const r of rows) {
-    const c = await contentOf(mode, r.id)
-    out.push({
-      id: r.id,
-      isActive: r.isActive,
-      // ⭐ 难度对外只有一个档位（库列只是派生索引，真相在正文 JSON）
+  const rows = await fetchArticles(mode, q, {})
+  const out = rows.slice(0, limit).map((r) => {
+    const scores = normalizeScores(r.scores)
+    return {
+      id: String(r.id),
+      isActive: Boolean(r.isActive),
+      // ⭐ 难度：服务端已经按判据分算好并存在派生列里，直接用
       difficulty: r.difficulty ?? null,
       /**
        * ⭐ 三个判据分 [词汇, 发音, 长度] + 加权总分 —— **只给运营看**。
-       *    ⚠️ 它们只在正文 JSON 里（库里没有列）：读正文顺手带出来，
-       *       列表上「高级 3.1」比只有一个「高级」更能看出这一档是怎么来的。
+       *    列表上「高级 3.1」比只有一个「高级」更能看出这一档是怎么来的。
        */
-      scores: normalizeScores(c?.scores),
-      score: weightedScoreOf(c?.scores),
+      scores,
+      score: weightedScoreOf(scores),
       /** ⭐ 发布时间（草稿为 null）—— 列表里替代原来的标签列展示 */
-      publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+      publishedAt: typeof r.publishedAt === 'string' ? r.publishedAt : null,
       standardAudio: r.standardAudio ?? null,
-      text: typeof c?.text === 'string' ? c.text : null,
-      translation: typeof c?.translation === 'string' ? c.translation : null,
+      text: typeof r.text === 'string' ? r.text : null,
+      translation: typeof r.translation === 'string' ? r.translation : null,
       /**
-       * ⚠️ 标签读 **articles.tags 这一列**（与 difficulty 同一个来源：由 syncArticleIndex
-       *    从正文物化的派生值，见 db/schema.ts）。
-       * ⚠️ 不要 .sort()：顺序有意义（第一个标签最重要），列里存的就是正文那份顺序。
+       * ⚠️ 标签用服务端给的那一列（`articles.tags`，由正文物化）。
+       * ⚠️ 不要 .sort()：顺序有意义（第一个标签最重要）。
        */
-      tags: Array.isArray(r.tags) ? r.tags : [],
-      words: Array.isArray(c?.words) ? c.words : [],
-    })
-  }
-  const needle = q.trim().toLowerCase()
-  if (!needle) return out
-  return out.filter(
-    (r) =>
-      (r.text ?? '').toLowerCase().includes(needle) || (r.translation ?? '').toLowerCase().includes(needle),
-  )
+      tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
+      words: Array.isArray(r.words) ? r.words : [],
+    }
+  })
+  return out
 }
 
 /**
@@ -747,13 +786,8 @@ async function upsertArticle(
     links?: string[]
   },
 ): Promise<boolean> {
-  // ⚠️ 发布状态要"以库里那一行为准"，所以这里**读一次**（读仍走库，见文件头说明）
-  const d = await dbOf(mode)
-  const [cur] = await d
-    .select({ isActive: articles.isActive })
-    .from(articles)
-    .where(eq(articles.id, input.id))
-    .limit(1)
+  // ⚠️ 发布状态要"以服务端那一行为准"，所以这里**读一次**（走接口，不连库）
+  const cur = await fetchArticle(mode, input.id)
   const publish = input.publish === undefined ? Boolean(cur?.isActive) : input.publish
 
   const res = await adminApi(mode, 'PUT', '/api/admin/articles/' + input.id, {
@@ -837,11 +871,12 @@ async function runSplit(job: Job, text: string): Promise<void> {
   const ids = list
     .map((c) => articleIdOf(c.text))
     .filter((id, i, arr) => arr.indexOf(id) === i)
-  const d = await dbOf(S.env)
+  /**
+   * ⚠️ "这句库里有没有"改走接口（`?ids=` 一次问一批）—— 不连库。
+   *    原来这里查 dev/prod 的库，而那条路在这些环境上根本通不了。
+   */
   const existingIds = new Set(
-    ids.length
-      ? (await d.select({ id: articles.id }).from(articles).where(inArray(articles.id, ids))).map((r) => r.id)
-      : [],
+    ids.length ? (await fetchArticles(S.env, '', { ids })).map((r) => String(r.id)) : [],
   )
   for (const c of list) {
     const id = articleIdOf(c.text)
@@ -897,12 +932,12 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
      * ⚠️ 跳过判据：库里**已经有这一行且有正文** ⇒ 不重复生成（省一次 TTS 成本）。
      *    原来这里是 `existsSync(contentAbsPathOf(id))`（看本机文件）。
      */
-    const [already] = await (await dbOf(mode))
-      .select({ text: articles.text })
-      .from(articles)
-      .where(eq(articles.id, it.id))
-      .limit(1)
-    if (already?.text) {
+    /**
+     * ⚠️ 跳过判据：服务端那边**已经有这一行且有正文** ⇒ 不重复生成（省一次 TTS 成本）。
+     *    原来查库（dev/prod 连不上），现在走接口。
+     */
+    const alreadyRows = await fetchArticles(mode, '', { ids: [it.id] })
+    if (alreadyRows[0]?.text) {
       results.push({ ...base(it), status: 'skipped' })
       job.log.push('⏭ 库里已有正文，跳过（省一次生成）：' + it.id + '  ' + it.text.slice(0, 40))
       continue
@@ -921,12 +956,8 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
      *    文件那套已经取消 ⇒ 改成问库（读仍走库，见文件头）：
      *    库里没有这一行 = 新建。
      */
-    const [existingRow] = await (await dbOf(mode))
-      .select({ id: articles.id })
-      .from(articles)
-      .where(eq(articles.id, it.id))
-      .limit(1)
-    const created = !existingRow
+      const existingRow = (await fetchArticles(mode, '', { ids: [it.id] }))[0]
+      const created = !existingRow
     /**
      * ⭐ 词表**按最终正文重算**，不用 split 那一步算好的那份：
      *    候选正文可以在界面上手改，而音节 / 音标 / 句重音 / 连读**都是从正文算出来的** ——
@@ -1005,33 +1036,45 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
  *    反复发布会把它刷成「最后一次编辑时间」，那就答非所问了。
  * ⚠️ 顺手刷一次派生索引：正文可能被手工改过（难度 / 标签）。
  */
-async function setPublishedBatch(
-  mode: Mode,
-  ids: string[],
-  publish: boolean,
-): Promise<Array<{ id: string; ok: boolean; error?: string }>> {
-  const d = await dbOf(mode)
-  const out: Array<{ id: string; ok: boolean; error?: string }> = []
-  for (const id of ids) {
-    try {
-      const [cur] = await d
-        .select({ isActive: articles.isActive })
-        .from(articles)
-        .where(eq(articles.id, id))
-        .limit(1)
-      if (!cur) { out.push({ id, ok: false, error: '句库没有这一条' }); continue }
-      await d
-        .update(articles)
-        .set({ isActive: publish, ...(publish && !cur.isActive ? { publishedAt: new Date() } : {}) })
-        .where(eq(articles.id, id))
-      await syncArticleIndex(id, d)
-      out.push({ id, ok: true })
-    } catch (err) {
-      out.push({ id, ok: false, error: (err as Error).message })
+  async function setPublishedBatch(
+    mode: Mode,
+    ids: string[],
+    publish: boolean,
+  ): Promise<Array<{ id: string; ok: boolean; error?: string }>> {
+    /**
+     * ⚠️ 走接口（**读一条 → 原样写回、只改 `isActive`**）—— 不连库。
+     *
+     * ⚠️⚠️ 为什么必须"原样写回"：`PUT /api/admin/articles/:id` 是**按列覆盖**的，
+     *    只传 isActive 会把正文清空 ⇒ 先把整条读出来再盖上发布位。
+     *    （发布状态只有 `is_active` 一列；`published_at` 由服务端在
+     *      "草稿 → 上线"那一刻自己写，所以这里不传时间。）
+     */
+    const out: Array<{ id: string; ok: boolean; error?: string }> = []
+    for (const id of ids) {
+      try {
+        const row = await fetchArticle(mode, id)
+        if (!row) {
+          out.push({ id, ok: false, error: '句子不存在' })
+          continue
+        }
+        const res = await adminApi(mode, 'PUT', '/api/admin/articles/' + id, {
+          text: row.text,
+          translation: row.translation ?? '',
+          scores: row.scores ?? null,
+          challenge: row.challenge ?? '',
+          advice: row.advice ?? '',
+          tags: row.tags ?? [],
+          words: row.words ?? [],
+          links: row.links ?? [],
+          isActive: publish,
+        })
+        out.push(res.ok ? { id, ok: true } : { id, ok: false, error: res.error })
+      } catch (err) {
+        out.push({ id, ok: false, error: (err as Error).message })
+      }
     }
+    return out
   }
-  return out
-}
 
 /**
  * ⚠️ 这里**曾经有 runRegenerateAudio**（「重做标准音」的异步任务）——
@@ -1220,10 +1263,19 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const one = RE_ARTICLE.exec(path)
   if (one && req.method === 'GET') {
     const id = one[1]!
-    const d = await dbOf(S.env)
-    const [row] = await d.select().from(articles).where(eq(articles.id, id)).limit(1)
-    if (!row) return fail(res, '句库没有这一条', 404)
+    /**
+     * ⚠️ 不再直接查库：整条从**服务端接口**读（`contentOf` 已经走 `/api/admin/articles/:id`）。
+     *    服务端返回的就是那一行，所以也不必再单独取一次。
+     */
     const c = await contentOf(S.env, id)
+      /**
+       * ⚠️ 整条也从**接口**读（原来在这里自查库拿 `row`）—— 要的是几个列上的字段：
+       *    `isActive` / `difficulty` / `publishedAt` / `theme`。
+       *    `contentOf` 给的是正文那一份，两者互补。
+       */
+      const row = await fetchArticle(S.env, id)
+      if (!row) return fail(res, '句库没有这一条', 404)
+    if (!c) return fail(res, '句库没有这一条', 404)
     /**
      * ⚠️ 这里原来会查"这一句被排在哪些天"（`schedules` 表）。
      *    2026-09 排期表整体删除：句子归哪天由 `/api/user/today` 的 24 小时窗口决定，
@@ -1244,13 +1296,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       challenge: typeof c?.challenge === 'string' ? c.challenge : null,
       advice: typeof c?.advice === 'string' ? c.advice : null,
       /** ⭐ 详情页也要显示发布时间（列表里有，详情里没有会很奇怪） */
-      publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      publishedAt: typeof row.publishedAt === 'string' ? row.publishedAt : null,
       /**
        * ⭐ 朗读卡的配色。
        * ⚠️ 在这里就把 null 解析掉，前端不重算：配色算法只允许有一份实现
        *    （shared/theme.ts），浏览器端拿不到 @jushuo/shared（那是 TS）。
        */
-      theme: row.theme ?? themeFromHash(row.id),
+        theme: (row.theme as string | null) ?? themeFromHash(String(row.id)),
       standardAudio: row.standardAudio ?? null,
       text: typeof c?.text === 'string' ? c.text : null,
       translation: typeof c?.translation === 'string' ? c.translation : '',
