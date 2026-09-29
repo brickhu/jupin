@@ -25,7 +25,7 @@
  *
  *    竞技数据的单位永远是句子：排名、参与人数、最高分、我的最好成绩，
  *    全部跟着**那一段文本**走。日期只是排期表上的一个格子（见 db/schema.ts
- *    的 schedules），它答完「今天展示哪一句」就没它的事了。
+ *     的公开列表），它答完「今天展示哪一句」就没它的事了。
  *
  *    这条写错过一次，代价是一整类查不出来的 bug：
  *      · 同一句被排在多天，按日期存就会把**同一份战绩复制好几份**，
@@ -52,7 +52,7 @@
 import type {
   MeResponse,
   ProfileUpdateResponse,
-  SchedulesResponse,
+  LatestCardsResponse,
   StreakDelta,
   StreakView,
 } from '@jushuo/shared'
@@ -104,24 +104,24 @@ export interface MeState {
    * ⚠️⚠️ 它是**公开内容**的缓存，与上面那些「我的」数据分开：内容只有拉到才有，
    *    而云托管缩容到 0 时第一次请求要硬等 9~25 秒（见 client.ts 的 LAUNCH_BUDGET_MS），
    *    那段时间首屏不该是一片空白。
-   * ⚠️ 用它之前**必须校验日期**（见 cachedSchedules）：跨天的排期是错的，
+   * ⚠️ 用它之前**必须校验日期**（见 cachedLatestCards）：跨天的列表是错的，
    *    把昨天那句当「今日挑战」画出来比空着更糟。
    */
-  schedules: SchedulesResponse | null
+  latestCards: LatestCardsResponse | null
 }
 
 /**
  * 存储键 —— 带版本号。
  * ⚠️ 结构变了必须换键：拿旧结构去解新代码，症状是「缓存里的数据永远读不出来」，
  *    而没有任何东西报错。v2 → v3 就是把 `profile` 换成了 `userInfo`。
- * ⚠️ 但**加一个可选字段不需要换**（v3 加 schedules 就是这种）：旧缓存里没有它，
+ * ⚠️ 但**加一个可选字段不需要换**（v3 加那一份公开列表就是这种）：旧缓存里没有它，
  *    读回时 `?? null` 兜住即可。换键会让所有人的战绩缓存白丢一次，
  *    换来的只是「更整齐」—— 判据是**拿旧数据会不会解错**，不是字段有没有变。
  */
 const STORAGE_KEY = 'me_state_v3'
 
 function emptyState(): MeState {
-  return { serverDate: null, arena: {}, userInfo: null, session: 'pending', schedules: null }
+  return { serverDate: null, arena: {}, userInfo: null, session: 'pending', latestCards: null }
 }
 
 /** 一份零值 streak —— 只在「还没拿到 /me、但已经发生了一件需要账号的事」时临时用 */
@@ -273,7 +273,7 @@ export function hydrate(): void {
         serverDate: raw.serverDate ?? null,
         arena: raw.arena,
         userInfo: raw.userInfo ?? null,
-        schedules: raw.schedules ?? null,
+        latestCards: raw.latestCards ?? null,
         // ⚠️ 缓存里有 userInfo 就直接算「已解析」（头像秒出，不必先转一圈 spinner）；
         //    没有就仍算 pending —— 本机也没记住我是谁，得等这次登录问回来。
         session: raw.userInfo ? 'ready' : 'pending',
@@ -324,29 +324,32 @@ function ensureUserInfo(): MeResponse {
 }
 
 /**
- * 用排期列表接口（**公开**）的返回值刷新。
+ * 用「最新上线」列表接口（**公开**，`GET /api/articles?latest=N`）的返回值刷新。
+ *
+ * ⚠️ 它原来是 `applySchedules`（`GET /api/schedules`）—— 那条接口与 `schedules` 排期表
+ *    一起删了（用户 2026-09 定）。现在这个包只回答「最近上线了哪几句」。
  *
  * ⚠️⚠️ 这里刻意**不碰** arena 与 userInfo —— 公开接口不带「我的」字段了：
  *    · 「我在这句上的战绩」→ applyArenaRecords（鉴权接口 /api/user/arena-records）
  *    · 「连续天数 / 解冻卡」→ /api/user/me（写 userInfo 的是 applyProfile）
  *    一份数据一个写入方，才不会有「两个来源对不上」。
  */
-export function applySchedules(res: SchedulesResponse): void {
+export function applyLatestCards(res: LatestCardsResponse): void {
   // ⚠️ 其余字段原样带着走（各有各的写入方，见上）
-  // ⭐ 整份存下来 —— 它同时是「首屏缓存」（见 MeState.schedules）
-  commit({ ...state, serverDate: res.date, schedules: res })
+  // ⭐ 整份存下来 —— 它同时是「首屏缓存」（见 MeState.latestCards）
+  commit({ ...state, serverDate: res.date, latestCards: res })
 }
 
 /**
  * ⭐ 冷启动首屏用：把上次那一屏卡片取回来 —— **只在还是同一天时**。
  *
- * ⚠️⚠️ 跨天一律返回 null：缓存里存的是**那一天**的排期，
+ * ⚠️⚠️ 跨天一律返回 null：缓存里存的是**那一天**的列表，
  *    拿昨天的当「今日挑战」画出来，点进去还是昨天那句 —— 错的比空着更糟。
  * ⚠️ 判据用客户端自己的「今天」（shared 的 today()）——
  *    与切自然日用的是同一条规则，不会出现「端说同一天、服务端说不同天」。
  */
-export function cachedSchedules(): SchedulesResponse | null {
-  const s = state.schedules
+export function cachedLatestCards(): LatestCardsResponse | null {
+  const s = state.latestCards
   return s && s.date === today() ? s : null
 }
 
@@ -355,7 +358,7 @@ export function cachedSchedules(): SchedulesResponse | null {
  *
  * ⚠️⚠️ 这是「我的」数据的**唯一来源**：公开接口（首页列表 / 竞技场）不含「我的」字段，
  *    端侧拿公开那一份渲染内容、拿这一份渲染「我读过没有 / 最好多少分 / 我第几名」。
- * ⚠️ 保守合并（理由同 applySchedules）：端侧可能已经有更高的分（刚打完分那次
+ * ⚠️ 保守合并（理由同 applyLatestCards）：端侧可能已经有更高的分（刚打完分那次
  *    applySubmissionResult 先落了地），不能被一次旧快照盖回去。
  */
 export function applyArenaRecords(

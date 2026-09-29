@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { createApp, mountOpenApiDocs } from './openapi'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { serve } from '@hono/node-server'
@@ -17,7 +17,6 @@ import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
-import { schedulesRoutes } from './routes/schedules'
 import { todayRoutes } from './routes/today'
 import { favoritesRoutes } from './routes/favorites'
 import { shopRoutes } from './routes/shop'
@@ -25,7 +24,7 @@ import { arenasRoutes } from './routes/arenas'
 import { leaderboardsRoutes } from './routes/leaderboards'
 import { payRoutes } from './routes/pay'
 
-const app = new Hono()
+const app = createApp()
 
 app.use('*', logger())
 app.use('*', cors({
@@ -148,7 +147,6 @@ app.route('/media', mediaRoutes)
  *    那会让没登录的人打不开首页。
  */
 // ⭐ 首页那一次请求：最新上线（**纯公开**）—— 今日那张卡是端侧兜底，随后被推荐替换
-app.route('/api/schedules', schedulesRoutes)
 // ⭐ 竞技场：**按句子**寻址（日期只是编辑精选的容器，和竞技场无关）
 app.route('/api/arenas', arenasRoutes)
 // ⭐ 公开页面：个人主页 /api/profile/:id、挑战详情 /api/challenge/:sid
@@ -227,6 +225,13 @@ app.use('/api/leaderboards/*', optionalAuthMiddleware)
 app.route('/api/leaderboards', leaderboardsRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
+/**
+ * ⭐⭐ **OpenAPI 文档**（`/api/openapi.json` + `/api/docs`）——
+ *    必须在**所有路由注册完之后**挂（文档是按注册表现算的）。
+ *    ⚠️ 迁移未完成的阶段：普通 `new Hono()` 子应用依然工作，只是**不进文档**。
+ */
+mountOpenApiDocs(app)
+
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`[server] 监听 http://0.0.0.0:${info.port}  engine=${env.ENGINE}`)
   if (envError) console.error(`[server] ⚠️ 配置有问题，详情见 /health：${envError}`)

@@ -1,3 +1,13 @@
+import { desc, eq } from 'drizzle-orm'
+import { normalizeLevel, normalizeTags } from '@jushuo/shared'
+import type { ArticleCard } from '@jushuo/shared'
+
+import { db as database } from '../db'
+import { articles } from '../db/schema'
+import { hasContent, loadArticleContent } from './content'
+import { getArenaStatsBatch } from './leaderboard'
+import { standardAudioOf } from './standard-audio-meta'
+
 /**
  * ⭐ 首页「最新上线」那一段怎么挑 —— 纯函数，规则单独放这里（有单测）。
  *
@@ -65,6 +75,76 @@ export function pickLatestArticles<T extends LatestCandidate>(
     if (todayArticleId !== null && r.articleId === todayArticleId) continue // ①
     out.push(r)
     if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
+ * ⭐⭐ **首页「最新上线」那一段的数据**（句库里按上线时间倒序的最新 N 句，含竞技统计）。
+ *
+ * ⚠️⚠️ **它是 `/api/user/today` 的一部分**（用户 2026-09 定：删掉 schedules 表与接口后，
+ *    首页要的东西**统一由 today 这一个接口给**）—— 所以这里不是"另一个接口的实现"，
+ *    而是 today 内部的一段取数。别为它再开一条路由（那正是之前那轮混乱的来源）。
+ *
+ * ⚠️ 只列 `isActive`；**正文读不到的句子直接丢掉**（给一张空卡片比不显示更糟）。
+ * ⚠️ `excludeArticleId` 用来避开"今天推荐的那一句"，别让同一句在首屏出现两次。
+ */
+export async function latestArticleCards(
+  limit: number,
+  excludeArticleId: string | null = null,
+): Promise<ArticleCard[]> {
+  // 取多一点（3 倍）再过滤 —— 过滤掉的是"没有正文"的行
+  const rows = await database
+    .select({
+      id: articles.id,
+      // ⚠️ text 必须选出来：`hasContent()` 的判据就是它（"这句有没有正文"）
+      text: articles.text,
+      theme: articles.theme,
+      standardAudio: articles.standardAudio,
+      publishedAt: articles.publishedAt,
+      createdAt: articles.createdAt,
+    })
+    .from(articles)
+    .where(eq(articles.isActive, true))
+    .orderBy(desc(articles.publishedAt), desc(articles.createdAt))
+    .limit(limit * 3)
+
+  const withContent = rows.filter((r) => hasContent(r))
+  const picked = pickLatestArticles(
+    withContent.map((r) => ({
+      articleId: r.id,
+      theme: r.theme,
+      standardAudio: r.standardAudio,
+      publishedAt: r.publishedAt,
+      createdAt: r.createdAt,
+    })),
+    excludeArticleId,
+    limit,
+  )
+
+  const articleIds = picked.map((r) => r.articleId)
+  /** 竞技统计（参与人数 / 最高 / 最低）—— 卡片上那行「N 人参与」用它 */
+  const stats = await getArenaStatsBatch(articleIds, 0)
+
+  const out: ArticleCard[] = []
+  for (const row of picked) {
+    const src = withContent.find((r) => r.id === row.articleId)
+    if (!src) continue
+    const content = await loadArticleContent(row.articleId)
+    const st = stats.get(row.articleId)
+    out.push({
+      articleId: row.articleId,
+      text: content?.text ?? '',
+      translation: content?.translation ?? '',
+      // ⚠️ 内容可能比代码旧 ⇒ 一律过规范化，认不出就是 null / []，**不补默认档位**
+      difficulty: normalizeLevel(content?.difficulty),
+      tags: normalizeTags(content?.tags),
+      participantCount: st?.participantCount ?? 0,
+      topScore: st?.topScore ?? null,
+      lowestScore: st?.lowestScore ?? null,
+      audio: await standardAudioOf({ id: src.id, standardAudio: src.standardAudio }),
+      theme: src.theme,
+    })
   }
   return out
 }

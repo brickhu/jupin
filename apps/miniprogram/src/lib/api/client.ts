@@ -10,9 +10,8 @@ import type {
   ProfileUpdateResponse,
   UserProfileResponse,
   ArenaRecordsResponse,
-  ScheduleDetail,
   ChallengeShareResponse,
-  SchedulesResponse,
+  LatestCardsResponse,
   TodayResponse,
   FavoritesResponse,
   ArticleRecordsResponse,
@@ -332,7 +331,7 @@ async function httpRequest<T>(path: string, options: RequestOptions): Promise<T>
    *    页面请求往往先跑，这时要么还没有 token、要么还是上一次的旧 token，
    *    于是首屏必然先吃一个 401（再靠自动重登补救）—— 控制台一片红，还白跑一轮。
    *    这里等同一个 loginInFlight，首屏就直接用刚签发的 token。
-   * ⚠️ 只等 /api/user/*（鉴权路径）：/api/schedules 这类公开路径不该被登录拖慢。
+   * ⚠️ 只等 /api/user/*（鉴权路径）：公开路径（如 /api/articles）不该被登录拖慢。
    * ⚠️ /api/auth/* 自己就是登录，绝不能再等它，否则递归。
    */
   if (path.startsWith('/api/user/')) {
@@ -707,31 +706,28 @@ async function doLogin(): Promise<void> {
 }
 
 /**
- * ⭐ 每日挑战列表 —— 首页**只需要这一个请求**。
+ * ⭐ **最新上线** —— 句库里按上线时间倒序的最新 N 句（首页下半段那一段）。
  *
- * 今日挑战、最新上线、streak 都在同一个响应里：
- * 做减法之后首页就是这一页列表，拆成多个请求只会让首屏出现几段先后到达的空白。
+ * ⚠️⚠️ 它与「今天挑战」（`fetchToday`）是**两个接口**（用户 2026-09 明确）：
+ *    · 这条：**公开**、对所有人一样，按 `articles.published_at` 倒序；
+ *    · today：**按人**，答「你今天适合读哪一句」（24 小时窗口 + 我的难度档）。
+ *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口**整体删除**了，
+ *    `schedules` 这个名字（表 / 接口 / 概念）都不该再出现。
  *
- * ⚠️ 不带任何参数：两段数据由服务端按各自的口径取（见 routes/schedules.ts）——
- *    · today  = 今天的**排期**那一条（端侧的兜底；首页随后会用 /api/user/today 的推荐替换）
- *    · latest = **句库**里按上线时间（articles.published_at）倒序的最新 N 句，
- *               并剔除与今日重复的那一句
- *    端侧不该用「列几天」这种参数去描述它 —— 它是「最新上线了哪几句」，不是天数。
- *
- * ⚠️ 首页是**公开页面**：这一份对所有人一样，**不含任何「我的」字段**
- *    （我的成绩/次数走 /api/user/arena-records，端侧按 articleId 融合）。
+ * ⚠️ 首页是**公开页面**：这一份不含任何「我的」字段（我的成绩走
+ *    `/api/user/arena-records`，端侧按 articleId 融合）。
  */
-export function fetchSchedules(): Promise<SchedulesResponse> {
+export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
-  return request<SchedulesResponse>('/api/schedules', { budgetMs: LAUNCH_BUDGET_MS })
+  return request<LatestCardsResponse>('/api/articles?latest=' + limit, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 /**
  * ⭐⭐ **今日推荐** —— 首页那张"今日挑战"卡的数据源（鉴权）。
  *
- * ⚠️ 与 fetchSchedules 的分工：那个给「最新上线」（公开、对所有人一样），
+ * ⚠️ 与 fetchLatestCards 的分工：那个给「最新上线」（公开、对所有人一样），
  *    这个给「你今天适合读哪一句」（按我的参与记录分场，见 services/recommend.ts）。
- * ⚠️ 首页不 await 它（拿不到就退回排期里今天那一条，卡片不能空着）。
+ * ⚠️ 首页**不 await 它**（拿不到就少一张今日卡，其余照常画 —— 卡片不能空着整页）。
  */
 export function fetchToday(): Promise<TodayResponse> {
   return request<TodayResponse>('/api/user/today', { budgetMs: LAUNCH_BUDGET_MS })
@@ -843,14 +839,14 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
  * ⚠️⚠️ 这才是竞技场的正经地址：日期只是「编辑精选的容器」，和竞技场无关
  *    （排名 / 人数 / 最高分 / 我的最好成绩全部按 article_id 查）。
  * ⚠️ 与首页同理：竞技场也是**公开页面**，登录与否只影响「我的名次」那几格。
- * ⚠️ 与 fetchScheduleDetail 的分工：
- *    · 这个：我看**这一句**的竞技场 —— 挑战它算**今天**（用响应里的 submissionDate）
- *    · 那个：回到**某一天**的挑战再读一次 —— 挑战它算**那一天**
+ * ⚠️ 竞技场**只按句子寻址**（`/api/arenas/:articleId`）：`GET /api/schedules/:date`
+ *    已随 schedules 一起删除 —— 两次挑战同一句，看的是**同一个场子**。
+ *    「这次挑战记到哪一天」由响应里的 `submissionDate` 说了算（按句子寻址时是今天）。
  */
 /**
  * ⭐ 成长榜 —— 三个成长指标各 TOP10（首页最下面那三块）。
  *
- * ⚠️ 它**不在** /api/schedules 那个包里：那是「今天读哪一句」，这是全站累计的排行，
+ * ⚠️ 它**不在**首页那个包里：那是「今天读哪一句」，这是全站累计的排行，
  *    两件事共用一个响应只会让两边都变重。首页本来就是并发拉的，多一个请求不多一次往返。
  */
 export function fetchGrowthBoards(): Promise<GrowthRankResponse> {
@@ -924,16 +920,6 @@ export function saveProfile(input: ProfileUpdate): Promise<ProfileUpdateResponse
   })
 }
 
-/**
- * ⭐ 某一天那一场的详情（完整榜单 + 我的名次）—— 与 fetchArenaDetail 同一个页面，
- *    只是入口不同：这个是「回到那一天的挑战再读一次」。
- *
- * @param date 'YYYY-MM-DD' —— 由调用页面**原样带过来**，不要在客户端重算「今天」
- * ⚠️ 同样走公开路径：挑战详情页/竞技场页都是公开页面（见 /api/schedules 的说明）。
- */
-export function fetchScheduleDetail(date: string): Promise<ScheduleDetail> {
-  return request<ScheduleDetail>('/api/schedules/' + date)
-}
 
 /**
  * 提交检测。

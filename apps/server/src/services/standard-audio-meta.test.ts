@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { scheduleAudioOf, standardAudioMs } from './standard-audio-meta'
+import { standardAudioOf, standardAudioMs } from './standard-audio-meta'
 
 /**
  * ⚠️⚠️ 这条用例的唯一目的：**守住那段路径**。
@@ -32,19 +32,19 @@ describe('标准音时长', () => {
 })
 
 /**
- * ⭐ `scheduleAudioOf` —— 列表接口与**详情接口**共用它。
+ * ⭐ `standardAudioOf` —— 列表接口与**详情接口**共用它。
  *
  * ⚠️ 朗读页顶行的 `▶ 00:23` 就靠它带出来的 durationMs：
  *    之前详情接口只给 `{ full, kind }`（AudioRef），于是那个时长永远空着
  *    （界面上是"少了 00:23"，不报错、也不明显）。两个接口必须同一个形状。
  */
-describe('scheduleAudioOf —— 可播引用 + 时长（阅读页顶行那个 00:23）', () => {
+describe('standardAudioOf —— 可播引用 + 时长（阅读页顶行那个 00:23）', () => {
   it('有标准音时带上 durationMs（形状与列表接口一致）', async () => {
     const dir = fileURLToPath(new URL('../../../../content/audio', import.meta.url))
     const file = readdirSync(dir).find((f) => f.endsWith('.mp3')) as string
     const id = file.replace(/\.mp3$/, '')
 
-    const audio = await scheduleAudioOf({ id, standardAudio: `content/audio/${id}.mp3` })
+    const audio = await standardAudioOf({ id, standardAudio: `content/audio/${id}.mp3` })
     expect(audio, '标准音列有值却拿不到引用 —— 先看 audioRefOf 的判据').not.toBeNull()
     expect(typeof audio?.full).toBe('string')
     expect(['cloud', 'http']).toContain(audio?.kind)
@@ -53,6 +53,6 @@ describe('scheduleAudioOf —— 可播引用 + 时长（阅读页顶行那个 0
   })
 
   it('没有标准音时是 null（客户端据此隐藏播放入口，而不是给个点了 404 的按钮）', async () => {
-    expect(await scheduleAudioOf({ id: '99999', standardAudio: null })).toBeNull()
+    expect(await standardAudioOf({ id: '99999', standardAudio: null })).toBeNull()
   })
 })

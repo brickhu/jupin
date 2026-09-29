@@ -177,8 +177,8 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
    ⚠️ 判据是「用户刚点了一下、界面上什么都没有」—— 这类请求才配 50 秒。
 
 10. ✅ **标准音时长（顶行那个 `▶ 00:23`）**：详情接口 `/api/articles/:id` 的 `audio`
-   从 `AudioRef` 改成 **`ScheduleAudio`**（= AudioRef + durationMs），
-   服务端与列表接口**共用** `scheduleAudioOf`（同一个事实只有一处实现）；
+   从 `AudioRef` 改成 **`StandardAudio`**（= AudioRef + durationMs），
+   服务端与列表接口**共用** `standardAudioOf`（同一个事实只有一处实现）；
    端侧按可选字段读，读不到就**不渲染那几个字**（不是 00:00）。
    落地：`types/api.ts` 的 `ArticleDetail.audio` + `routes/articles.ts` + `reading.ts` 的
    `readStdDurationMs`；契约由 `services/standard-audio-meta.test.ts` 守着。

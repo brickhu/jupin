@@ -355,8 +355,8 @@ Page({
     /**
      * ⭐ 顶行标准音那颗圆钮右边的 `00:23`。
      *
-     * ⚠️ 数据来自详情接口的 audio.durationMs（= shared 的 ScheduleAudio，
-     *    服务端用同一个 scheduleAudioOf 拼，与列表接口同源）。
+     * ⚠️ 数据来自详情接口的 audio.durationMs（= shared 的 StandardAudio，
+     *    服务端用同一个 standardAudioOf 拼，与列表接口同源）。
      *    拿不到（老服务端 / 文件缺失 / 解析失败）就是空串，WXML 据此**不渲染那几个字** ——
      *    不是显示 00:00（那看着像音频坏了）。
      */
@@ -2129,8 +2129,8 @@ Page({
 /**
  * ⭐ 从内容接口的 audio 上读**标准音时长**（毫秒）。
  *
- * ⚠️ 现在详情接口的 audio 就是 shared 的 **ScheduleAudio**（= AudioRef + durationMs）——
- *    与列表接口同一套（服务端走同一个 scheduleAudioOf）。所以顶行那个 `00:23` 有值了。
+ * ⚠️ 现在详情接口的 audio 就是 shared 的 **StandardAudio**（= AudioRef + durationMs）——
+ *    与列表接口同一套（服务端走同一个 standardAudioOf）。所以顶行那个 `00:23` 有值了。
  * ⚠️ 仍然按**可选**读，且 <= 0 / NaN 一律当"没有"：
  *    · 老服务端（没带这个字段）；
  *    · 音频文件缺失 / MP3 解析不出时长（服务端会老实给 null）。

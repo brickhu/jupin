@@ -116,7 +116,7 @@ export interface ArticleContent {
    *    没有任何地方会报错）。
    * ⚠️ 一律走 normalizeScores 收口，认不出就是 undefined（绝不补默认分）；
    *    老正文没有这个字段很正常，**不许**因为它缺失就退回某个档位。
-   * ⚠️ 它**不进公开 API**：ArticleDetail / ArticleListItem 都不带它 ——
+   * ⚠️ 它**不进公开 API**：ArticleDetail / ArticleCard 都不带它 ——
    *    对外只有 difficulty + advice（怎么公开是 shared/types/api.ts 的决定）。
    */
   scores?: DifficultyScores

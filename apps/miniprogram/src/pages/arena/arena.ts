@@ -1,6 +1,6 @@
 import { startButtonLabel } from '@jushuo/shared'
-import type { ArenaDetail, ArticleTheme, ScheduleAudio, ScheduleDetail } from '@jushuo/shared'
-import { fetchArenaDetail, fetchArenaRecords, fetchScheduleDetail, setFavorite } from '../../lib/api/client'
+import type { ArenaDetail, ArticleTheme, LeaderboardRow, StandardAudio } from '@jushuo/shared'
+import { fetchArenaDetail, fetchArenaRecords, setFavorite } from '../../lib/api/client'
 import { formatScore } from '@jushuo/shared'
 
 import { attachAvatarSrc } from '../../lib/cloud-file'
@@ -60,7 +60,7 @@ Page({
       text: string
       translation: string
       theme: ArticleTheme | null
-      audio: ScheduleAudio | null
+      audio: StandardAudio | null
       /** ⚠️ 卡片头的播放钮要用它把时长格式化成 00:05（见 arena-card 的 Entry） */
       durationMs: number | null
     } | null,
@@ -102,19 +102,19 @@ Page({
     /** '立即朗读，参与挑战' / '重新朗读，再次冲榜' —— 来自 startButtonLabel，与首页共用 */
     action: '',
 
-    leaderboard: [] as ScheduleDetail['leaderboard'],
+    leaderboard: [] as LeaderboardRow[],
     /** 榜上没有头像时用它（与 nav-bar / user-sheet 同一张本地占位图） */
     avatarPlaceholder: '/assets/avatar-placeholder.png',
   },
 
   /** 服务端给的详情；「我」的部分渲染时从 store 取 */
-  detail: null as ScheduleDetail | ArenaDetail | null,
+  detail: null as ArenaDetail | null,
 
   /**
    * ⭐ 页面是**从哪条路进来的**（见文件头那段）：
    *    重新加载必须沿同一条路，否则 submissionDate 会被算错。
    */
-  entry: { articleId: '', date: '' },
+  entry: { articleId: '' },
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
@@ -123,8 +123,8 @@ Page({
     /** ⭐ 优先按句子（正路）；没有 article 才退回按日期（老入口） */
     // ⭐ articleId 是内容 hash（字符串）—— 原样取，**不再 Number()**
     const articleId = query.article ?? ''
-    const date = query.date ?? ''
-    this.entry = articleId ? { articleId, date: '' } : { articleId: '', date }
+
+      this.entry = { articleId }
     this.setData({ navTop: navPadTop() })
     // ⭐ 订阅全局「我的记录」：在朗读页打完分，回到这里名次与成绩立刻是新的
     this.unsubStore = me.subscribe(() => this.render())
@@ -157,14 +157,14 @@ Page({
    * 拉详情。⚠️ 用 `this.entry` 决定走哪条路 —— 不传参，免得调用方漏掉（见文件头）。
    */
   async load() {
-    const { articleId, date } = this.entry
-    if (!articleId && !date) {
+      const { articleId } = this.entry
+      if (!articleId) {
       this.setData({ loading: false, error: '缺少竞技场地址' })
       return
     }
     this.setData({ loading: true, error: '' })
     try {
-      const d = articleId ? await fetchArenaDetail(articleId) : await fetchScheduleDetail(date)
+        const d = await fetchArenaDetail(articleId)
       /**
        * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
        *    公开详情里**不含**我的成绩与名次。

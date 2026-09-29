@@ -8,7 +8,7 @@ import { articles } from '../db/schema'
 import type { Variables } from '../middleware/auth'
 import { loadArticleContent } from '../services/content'
 import { getArenaStatsBatch, getTopLeaderboard } from '../services/leaderboard'
-import { scheduleAudioOf } from '../services/standard-audio-meta'
+import { standardAudioOf } from '../services/standard-audio-meta'
 
 /**
  * ⭐⭐ 竞技场详情 —— **按句子**寻址。
@@ -18,7 +18,7 @@ import { scheduleAudioOf } from '../services/standard-audio-meta'
  *    而「日期只是一个编辑精选的容器，和竞技场无关」。
  *    排名 / 参与人数 / 最高分 / 我的最好成绩，全部按 article_id 查。
  *
- * ⚠️ 与 GET /api/schedules/:date 的分工：
+ * ⚠️ 竞技场**只按句子寻址**（原来那条 `GET /api/schedules/:date` 随排期一起删了）：
  *    · 这个：`我看这一句的竞技场` —— 挑战它算**今天**
  *    · 那个：`回到某一天的挑战再读一次` —— 挑战它算**那一天**
  *      （历史挑战的「再次挑战」必须归到那一天，否则昨天那张卡片的数字会变）
@@ -61,8 +61,8 @@ arenasRoutes.get('/:articleId', async (c) => {
     participantCount: stats?.participantCount ?? 0,
     topScore: stats?.topScore ?? null,
     lowestScore: stats?.lowestScore ?? null,
-    // ⭐ 参考音频：与 /api/articles/:id、/api/schedules 共用同一个 scheduleAudioOf
-    audio: await scheduleAudioOf({ id: article.id, standardAudio: article.standardAudio }),
+    // ⭐ 参考音频：与 /api/articles/:id 共用同一个 standardAudioOf
+    audio: await standardAudioOf({ id: article.id, standardAudio: article.standardAudio }),
     theme: article.theme,
     leaderboard,
   }

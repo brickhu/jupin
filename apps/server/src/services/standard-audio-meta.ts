@@ -49,7 +49,7 @@ export async function standardAudioMs(articleId: string): Promise<number | null>
  * ⚠️ 没有标准音时返回 null —— 客户端据此**不渲染播放入口**，
  *    而不是渲染一个点了 404 的按钮（同 audioRefOf 的约定）。
  */
-export async function scheduleAudioOf(article: {
+export async function standardAudioOf(article: {
   id: string
   standardAudio: string | null
 }): Promise<{ full: string; kind: 'cloud' | 'http'; durationMs: number | null } | null> {

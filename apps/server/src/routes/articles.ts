@@ -1,60 +1,44 @@
 import { Hono } from 'hono'
 import { desc, eq } from 'drizzle-orm'
-import { normalizeLevel, normalizeTags, plainWordsOf } from '@jushuo/shared'
-import type { ArticleDetail, ArticleListItem, ScheduleAudio } from '@jushuo/shared'
+import { normalizeLevel, normalizeTags, plainWordsOf, today } from '@jushuo/shared'
+import type { ArticleDetail, StandardAudio } from '@jushuo/shared'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { loadArticleContent } from '../services/content'
+import { latestArticleCards } from '../services/article-list'
 import { fileIdOf } from '../services/standard-audio'
-import { scheduleAudioOf } from '../services/standard-audio-meta'
+import { standardAudioOf } from '../services/standard-audio-meta'
 import type { Variables } from '../middleware/auth'
 
 export const articlesRoutes = new Hono<{ Variables: Variables }>()
 
+/** 首页「最新上线」默认给几句、最多给几句 */
+const DEFAULT_LATEST = 6
+const MAX_LATEST = 50
+
 /**
- * ⭐⭐ 句库 —— **公开接口**：谁来都拿到同一份，不含任何「我的」数据。
+ * ⭐ **最新上线** —— 句库里按上线时间倒序的最新 N 句（首页下半段那一段）。
  *
- * ⚠️⚠️ 两个概念**分清楚**，别混成一条：
- *    · GET /api/articles      → **列表**：瘦，只够画一张卡片
- * *（id / 正文 / 译文 / 难度 / 标签 / 标准音引用与时长）*
- *    · GET /api/articles/:id  → **详情**：全量，阅读页要的那一份（含词级数据）
- *    把词级数据塞进列表，首屏就要为全站句子付一遍音标/释义/逐词音频的代价。
+ * ⚠️⚠️ 它和「今天挑战」（`GET /api/user/today`）是**两个接口**（用户 2026-09 明确）：
+ *    · 这条：**公开**、对所有人一样，答「最近上线了哪几句」，按 `articles.published_at` 排；
+ *    · today：**按人**，答「你今天适合读哪一句」，按 24 小时窗口 + 我的难度档。
+ *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除
+ *    （schedules 表/接口都不再有，别让那个名字回来）。
  *
- * ⚠️ 只列 isActive 的（下架的句子仍能按 id 打开详情：成绩还在，见 arenas.ts）。
+ * ⚠️ 与 `GET /api/articles/:id` 的分工：这条**瘦**，只够画一张卡片；
+ *    词级数据（音标 / 释义 / 逐词音频）只在详情里给。
  */
 articlesRoutes.get('/', async (c) => {
-  const rows = await db
-    .select({
-      id: articles.id,
-      standardAudio: articles.standardAudio,
-      theme: articles.theme,
-    })
-    .from(articles)
-    .where(eq(articles.isActive, true))
-    .orderBy(desc(articles.id))
+  const requested = Number(c.req.query('latest'))
+  // ⚠️ NaN 也要兜住：`?latest=abc` 会让 Math.min 返回 NaN，随后一条都不返回，
+  //    表现出来是「最新空空」，而真正的原因是一个畸形参数。
+  const limit = Number.isFinite(requested)
+    ? Math.min(MAX_LATEST, Math.max(1, Math.trunc(requested)))
+    : DEFAULT_LATEST
 
-  const items = (
-    await Promise.all(
-      rows.map(async (a): Promise<ArticleListItem | null> => {
-        const content = await loadArticleContent(a.id)
-        // ⚠️ 正文读不到就**丢掉这一条**（而不是给一张空卡片）：见 services/content.ts
-        if (!content) return null
-        return {
-          id: a.id,
-          text: content.text,
-          translation: content.translation,
-          // ⭐ 难度只有一个档位（词汇 / 发音 / 长度是判据，合成出来的一个值）
-          difficulty: normalizeLevel(content.difficulty),
-          tags: normalizeTags(content.tags),
-          audio: await scheduleAudioOf({ id: a.id, standardAudio: a.standardAudio }),
-          theme: a.theme,
-        }
-      }),
-    )
-  ).filter((x): x is ArticleListItem => x !== null)
-
-  return c.json({ ok: true, data: { items } })
+  return c.json({ ok: true, data: { date: today(), items: await latestArticleCards(limit) } })
 })
+
 
 /**
  * ⭐ 详情（**全量**）—— 阅读页要的那一份。
@@ -99,18 +83,18 @@ articlesRoutes.get('/:id', async (c) => {
    */
   /**
    * ⭐ 标准音引用 + **时长**（阅读页顶行那个 `00:23`）。
-   * ⚠️ 走 scheduleAudioOf 这一个入口，不要在这里自己 audioRefOf + 算时长：
+   * ⚠️ 走 standardAudioOf 这一个入口，不要在这里自己 audioRefOf + 算时长：
    *    列表接口用的就是它，两处各写一遍迟早出现"列表有 00:23、详情没有"。
    */
   /**
-   * ⚠️ 没有标准音时 `scheduleAudioOf` 返回 **null**（不是 `{ full: null }`）：
-   *    客户端据此隐藏播放入口。与 ArticleListItem.audio / SubmissionAudioResponse.audio
+   * ⚠️ 没有标准音时 `standardAudioOf` 返回 **null**（不是 `{ full: null }`）：
+   *    客户端据此隐藏播放入口。与 StandardAudio / SubmissionAudioResponse.audio
    *    同一个约定 —— 同一个事实（「这段音频存不存在」）在三个接口里必须是同一种表达。
    * ⚠️⚠️ 这里**以前还拼一份逐词音频地址数组**（audio.words），已删除（2026-09）：
    *    点词播放改走微信 TTS。逐词音频从来没有独立文件，是服务端从整句切出来的；
    *    现在正文里也没有时间戳了（见 types/content.ts 的 ArticleWordItem）。
    */
-  const audio: ScheduleAudio | null = await scheduleAudioOf(article)
+  const audio: StandardAudio | null = await standardAudioOf(article)
 
   /**
    * ⚠️⚠️ **逐个字段列出**，不再 `{ ...content }`。

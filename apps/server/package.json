@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@hono/swagger-ui": "^0.6.1",
+    "@hono/zod-openapi": "^0.19.10",
     "@jushuo/shared": "workspace:*",
     "cos-nodejs-sdk-v5": "^2",
     "drizzle-orm": "^0.38.3",

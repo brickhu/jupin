@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { onlineAtOf, pickLatestArticles } from './schedule-shape'
+import { onlineAtOf, pickLatestArticles } from './article-list'
 
 /** 造一条候选：publishedAt 传 null 表示老数据（走 createdAt 兜底） */
 function row(articleId: string, publishedAt: string | null, createdAt = '2026-01-01T00:00:00Z') {
@@ -12,7 +12,7 @@ function row(articleId: string, publishedAt: string | null, createdAt = '2026-01
 }
 
 /**
- * ⚠️ 这些用例守的是首页「最新上线」那一段的规则（见 schedule-shape.ts）。
+ * ⚠️ 这些用例守的是首页「最新上线」那一段的规则（见 article-list.ts）。
  *    写错的后果都是静默的：多一张卡、少一张卡、或者顺序不对 ——
  *    页面照常渲染，只有人盯着看才发现。
  */

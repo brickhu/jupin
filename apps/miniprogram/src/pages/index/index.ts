@@ -4,11 +4,11 @@ import type {
   GrowthRankResponse,
   GrowthRankRow,
   MeResponse,
-  ScheduleEntry,
-  SchedulesResponse,
+  ArticleCard,
+  LatestCardsResponse,
   StreakView,
 } from '@jushuo/shared'
-import { fetchArenaRecords, fetchGrowthBoards, fetchSchedules, fetchToday } from '../../lib/api/client'
+import { fetchLatestCards, fetchArenaRecords, fetchGrowthBoards, fetchToday } from '../../lib/api/client'
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -313,11 +313,11 @@ Page({
    *    不需要先把整张列表重新拉一遍。
    */
   /**
-   * ⚠️ `today` **可空**：公开列表接口（`/api/schedules`）**不再返回它**
+   * ⚠️ `today` **可空**：公开列表接口（`/api/articles?latest=N`）**不返回它**
    *    （2026-09 随 `schedules` 表一起删）—— 今日那一句只由鉴权推荐接口
    *    `/api/user/today` 给。首屏先只画 `latest`，今日卡等推荐回来再填。
    */
-  cards: null as { today: ScheduleEntry | null; latest: ScheduleEntry[] } | null,
+  cards: null as { today: ArticleCard | null; latest: ArticleCard[] } | null,
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
@@ -350,16 +350,16 @@ Page({
      * ⚠️ 为什么：云托管缩容到 0 之后，第一次请求要硬等 9~25 秒
      *    （见 client.ts 的 LAUNCH_BUDGET_MS）。那段时间不该是一片空白 ——
      *    卡片内容本身一天只变一次，把上次那一屏先画出来几乎总是对的。
-     * ⚠️ 跨天的缓存会被 cachedSchedules() 丢掉（见它的说明），
+     * ⚠️ 跨天的缓存会被 cachedLatestCards() 丢掉（见它的说明），
      *    所以这里拿到的要么是当天的、要么是 null。
      */
-    const cached = me.cachedSchedules()
+    const cached = me.cachedLatestCards()
     if (cached) {
       /**
-       * ⚠️ 缓存里**没有** `today`（公开列表接口不再返回它，见 SchedulesResponse 的说明）：
+       * ⚠️ 缓存里**没有** `today`（公开列表接口不返回它，见 LatestCardsResponse 的说明）：
        *    今日那一张由 `/api/user/today` 填，这里先留空。
        */
-      this.cards = { today: null, latest: cached.latest ?? [] }
+      this.cards = { today: null, latest: cached.items ?? [] }
       this.setData({ loading: false })
       this.render()
     }
@@ -427,7 +427,7 @@ Page({
    *
    * ⚠️⚠️ 它是**独立的一小块热区**，WXML 那边用 catchtap 吃掉事件 ——
    *    不 catch 的话会冒泡到整张卡片，变成「点播放却进了详情页」。
-   *    （这正是这个入口当初没做的原因，见 ScheduleEntry.audio 的注释。）
+   *    （这正是这个入口当初没做的原因，见 ArticleCard.audio 的注释。）
    * ⚠️ 再点一次 = 停：同一句的按钮就是开关，不需要额外的停止控件。
    * ⚠️ 走**和朗读页同一条**取音路径（ensureLocalAudio 优先本地），
    *    所以同一句第二次点会是秒出声。
@@ -528,23 +528,23 @@ Page({
     if (!this.cards) this.setData({ loading: true })
     this.setData({ error: '' })
     try {
-      const d = await fetchSchedules()
+      const d = await fetchLatestCards()
       // ⭐ 先把「我的记录」写进 store（广播给所有页面），再本地重画一次
-      me.applySchedules(d)
+      me.applyLatestCards(d)
       /**
        * ⚠️⚠️ **服务端可能比端侧旧** —— 这里必须容错，不能直接 d.latest.map()。
        *
-       *    真实事故（2026-09-28 真机预览）：这个字段在 09-28 那次改口径时
-       *    从 `history` 改名成 `latest`（服务端 schedules 路由），而 dev 云托管上
-       *    还跑着 09-25 的旧版本 —— 旧服务端返回的是 `{ date, today, history }`。
+       *    真实事故（2026-09-28 真机预览）：服务端把那个列表字段改过名
+       *    （`history` → `latest`，后来又并成 `items`），而 dev 云托管上
+       *    还跑着旧版本 —— 旧包里根本没有端侧要读的那个字段。
        *    于是 `d.latest.map(...)` 当场抛 **「undefined is not an object」**：
        *      · 报错信息里一个字都没提字段名与版本，看着像我们自己的代码坏了；
        *      · 开发者工具里一切正常（它打的是本机 Docker，那份是当前代码），
        *        只有真机（打云托管 dev）才炸 —— 极易被误判成「真机特有问题」。
        *    ⇒ 端侧发版与服务端发版是**两条独立的节奏**，端侧对新增字段一律当**可选**，
-       *      缺了就少一段列表，页面照常可用（见下面 latest 的兜底）。
+       *      缺了就少一段列表，页面照常可用（见下面 items 的兜底）。
        */
-      const latest = d.latest ?? []
+      const latest = d.items ?? []
       /**
        * ⭐⭐ 「我的」那一份**单独取**（个人接口 /api/user/arena-records）：
        *    myBest / myAttempts 属于「我的」，按页面模型走鉴权接口，端侧按 articleId
@@ -667,7 +667,7 @@ Page({
   },
 
   /** 卡片 → 展示视图 */
-  toView(card: ScheduleEntry): CardView {
+  toView(card: ArticleCard): CardView {
     // ⭐ 「我」的部分一律来自 store
     const mine = me.arenaOf(card.articleId)
     return {

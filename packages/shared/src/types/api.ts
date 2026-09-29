@@ -418,7 +418,7 @@ export interface StreakDelta {
  *    **那个句子**的数据。同一句被排在多天时，那几张卡片会显示同一份数字 ——
  *    这是对的：它们本来就是同一个竞技场。
  *
- *    ⚠️ 唯一按日期算的是连续天数（streak），它在 SchedulesResponse 里单列。
+ *    ⚠️ 连续天数（streak）不在公开列表接口里 —— 它在 `/api/user/me` 上（按自然日算）。
  */
 /**
  * ⭐ 卡片上的标准音。
@@ -428,31 +428,13 @@ export interface StreakDelta {
  *    · http  → 服务端路径，加 BASE_URL 前缀直接用
  * ⚠️ durationMs 可能是 null（算不出来）—— 那时端侧只显示按钮、不显示时长。
  */
-export interface ScheduleAudio extends AudioRef {
+export interface StandardAudio extends AudioRef {
   durationMs: number | null
 }
 
-/**
- * ⭐ 句库**列表**里的一条（瘦）—— GET /api/articles。
- *
- * ⚠️ 刻意**不含词级数据**（音标 / 释义 / 逐词音频）：那是详情页的事
- *    （GET /api/articles/:id）。要塞进列表，首屏就得为全站句子付一遍这个代价。
- */
-export interface ArticleListItem {
-  id: string
-  text: string
-  translation: string
-  /** ⭐ 朗读难度（三个判据按权重合成的一个档位，见 shared/level.ts） */
-  difficulty: ArticleLevel | null
-  tags: string[]
-  /** 标准音（可播引用 + 时长）；这一句没有标准音时是 null ⇒ 端侧不画播放入口 */
-  audio: ScheduleAudio | null
-  /** ⭐ 视觉主题（背景/前景/配图）；老内容为 null ⇒ 端侧按 id 复算（见 shared/theme.ts） */
-  theme: ArticleTheme | null
-}
 
 /**
- * ⭐ 详情里那一段标准音 —— 比卡片上的 ScheduleAudio 多一份**逐词音频地址**。
+ * ⭐ 详情里那一段标准音 —— 比卡片上的 StandardAudio 多一份**逐词音频地址**。
  *
  * ⚠️ 以前这里多一个 words: 逐词音频地址的数组（下标对应 plainWordsOf）——
  *    已经删除：点词播放改走微信 TTS，正文与接口都不再存逐词音频。
@@ -470,7 +452,7 @@ export interface ArticleListItem {
  *    · audio / theme 由服务端**按当前环境**拼出来 ——
  *      fileID 里带环境 ID 与桶名，绝不能写进仓库里的那份 JSON。
  * ⚠️ 没有标准音时 audio 是 **null**（不是给一个 full=null 的壳）——
- *    与 ArticleListItem.audio / SubmissionAudioResponse.audio 同一个约定。
+ *    与 StandardAudio / SubmissionAudioResponse.audio 同一个约定。
  * ⚠️ 难度、challenge 与 advice 用 `| null`：正文里没写（老 JSON）就是 null，**不补默认值**。
  */
 export interface ArticleDetail {
@@ -495,13 +477,13 @@ export interface ArticleDetail {
   tags: string[]
   /**
    * ⭐ 标准音 —— 阅读页顶行要显示 `▶ 00:23`，所以**时长跟着一起来**。
-   * ⚠️ 用 ScheduleAudio（= AudioRef + durationMs）而不是 AudioRef：
+   * ⚠️ 用 StandardAudio（= AudioRef + durationMs）而不是 AudioRef：
    *    同一个事实（"这段音频多长"）在列表接口、详情接口、结果页三处
    *    必须是**同一种表达**，否则客户端要按接口各写一套解析。
    * ⚠️ durationMs 可能是 null（算不出来）—— 那时端侧**只显示按钮、不显示时长**，
    *    不能显示 00:00（那看着像音频坏了）。
    */
-  audio: ScheduleAudio | null
+  audio: StandardAudio | null
   theme: ArticleTheme | null
 }
 
@@ -622,7 +604,7 @@ export interface ArenaRecordsResponse {
  *    所以那三个字段对整个历史列表都没有意义。
  *    ⇒ 点进竞技场一律按 **articleId** 寻址（/api/arenas/:articleId），不再用日期。
  */
-export interface ScheduleEntry {
+export interface ArticleCard {
   /**
    * 这一条**排给哪一天** 'YYYY-MM-DD'（北京时间）。
    * ⚠️ 只有今日那一张有（历史卡片来自句库，与日期无关）。
@@ -649,7 +631,7 @@ export interface ScheduleEntry {
    * ⚠️ 为 null = 这句没有标准音 ⇒ 端侧**不渲染播放入口**
    *    （渲染一个点了 404 的按钮比不渲染更糟）。
    */
-  audio: ScheduleAudio | null
+  audio: StandardAudio | null
   /**
    * 这条句子是不是**运营专门排给那一天**的（false = 从池子按天轮转来的）。
    * ⚠️ 只有今日那一张有。
@@ -670,8 +652,8 @@ export interface ScheduleEntry {
 /**
  * ⭐⭐ **今日推荐** —— 「你今天适合读哪一句」（GET /api/user/today）。
  *
- * ⚠️ 与 `/api/schedules` 的 `today` **不是一回事**，别再混：
- *   · `/api/schedules` 的 today 走**排期**（运营排的 / 按天轮转）—— 对所有人一样，
+ * ⚠️ **它是"今天读哪一句"的唯一来源**（原来那条 `/api/schedules` 的排期口径已删）：
+ *   · 公开列表（`/api/articles?latest=N`）只回答"最近上线了哪几句"，与"今天"无关；
  *     它只剩「端侧兜底」和「这次提交记到哪一天」两个用途。
  *   · 这个走**我的参与记录**：同一档位的用户拿到同一句（保住竞技场），
  *     不同档位的人拿到不同的句子。
@@ -686,7 +668,7 @@ export interface ScheduleEntry {
  */
 export interface TodayResponse {
   /** 卡片要的那一份（形状与排期卡片一致 ⇒ 端侧不用为它写第二套渲染） */
-  entry: ScheduleEntry
+  entry: ArticleCard
   /** 我原本的档位（0–3） */
   myLevel: ArticleLevel
   /** 实际用了哪一档 —— 与 myLevel 不同说明这一档还没有句子，就近换了 */
@@ -705,48 +687,6 @@ export interface TodayResponse {
   myAttempts: number
 }
 
-/**
- * 单个挑战的详情 —— 从首页卡片点进来。
- *
- * ⚠️ 与 ScheduleEntry 的分工：卡片是「一眼扫过去」，详情是「看进去」。
- *    所以这里多出**完整榜单**与**我的名次**（列表里 7 天各算一次名次太贵）。
- */
-export interface ScheduleDetail {
-  date: string
-  articleId: string
-  /**
-   * ⭐ 从这里发起的挑战该**记到哪一天**。
-   * ⚠️ 按日期寻址时就是那个日期（历史挑战的「再次挑战」必须归到那一天，
-   *    否则昨天那张卡片的数字会变）；按句子寻址时是**今天**（见 ArenaDetail）。
-   */
-  submissionDate: string
-  text: string
-  translation: string
-  /** ⭐ 朗读难度（三个判据按权重合成的一个档位，见 shared/level.ts） */
-  difficulty: ArticleLevel | null
-  /** ⭐ 标签（服务端已规范化；空数组 = 这一句没有标签） */
-  tags: string[]
-  isScheduled: boolean
-  isToday: boolean
-  participantCount: number
-  topScore: number | null
-  /**
-   * ⭐ 全场**最低分**（同一人只算最好那次）—— 「这个场子现在什么水平」的下限。
-   * ⚠️ 没人参与时是 **null**，不是 0（0 会被读成"有人拿了 0 分"）。
-   * ⚠️ 与 topScore 一定同时有值或同时为 null（服务端同一条 SQL 取出来的）。
-   */
-  lowestScore: number | null
-  /**
-   * ⭐ 标准音（参考音频）—— 句子卡左上那颗播放钮要它。
-   * ⚠️ 为 null = 这句没灌标准音 ⇒ 端侧**整颗播放钮都不渲染**
-   *    （渲染一个点了 404 的按钮比不渲染更糟，同 ArticleDetail.audio 的约定）。
-   */
-  audio: ScheduleAudio | null
-  /** ⭐ 视觉主题（背景/前景/配图） */
-  theme: ArticleTheme | null
-  /** 完整榜单（从头往下数，最多 20 条） */
-  leaderboard: LeaderboardRow[]
-}
 
 /**
  * ⭐⭐ 竞技场详情 —— **按句子**寻址（`/api/arenas/:articleId`）。
@@ -755,7 +695,7 @@ export interface ScheduleDetail {
  *    只是一个按日组织的展示层」，**日期只是编辑精选的容器，和竞技场无关** ——
  *    排名 / 参与人数 / 最高分 / 我的最好成绩，全部按 article_id 查。
  *
- * ⚠️ 与 ScheduleDetail 的差别只有「日期」那一块：
+ * ⚠️ 它原来还有一个"按日期寻址"的兄弟（`GET /api/schedules/:date`），随排期一起删了：
  *    按句子进来的挑战**算今天**（submissionDate = 服务端的今天），
  *    页面也据此显示「今天读一句，连战就接上了」。
  *    而按日期进来的是「回到那一天再挑战一次」，submissionDate 就是那一天。
@@ -785,47 +725,28 @@ export interface ArenaDetail {
    * ⚠️ 为 null = 这句没灌标准音 ⇒ 端侧**整颗播放钮都不渲染**
    *    （渲染一个点了 404 的按钮比不渲染更糟，同 ArticleDetail.audio 的约定）。
    */
-  audio: ScheduleAudio | null
+  audio: StandardAudio | null
   /** ⭐ 视觉主题（背景/前景/配图） */
   theme: ArticleTheme | null
   /** 完整榜单（从头往下数，最多 20 条） */
   leaderboard: LeaderboardRow[]
 }
 
-export interface SchedulesResponse {
-  /** 服务端认定的「今天」（端侧用它对齐自然日，见 store 的 serverDate） */
-  date: string
-  /**
-   * ⚠️⚠️ 这里**曾经有** `today`（"今天的排期那一条"）—— 2026-09 随 `schedules` 表一起删除。
-   *
-   *    删它的原因：那个概念已经被 **`/api/user/today`（24 小时窗口 + 按我的难度档）** 取代，
-   *    而这个公开接口**对所有人一样**，做不出"按人推荐"—— 留着只会让端侧多一条错的路。
-   *
-   *    ⚠️ **端侧发版与服务端发版是两条独立的节奏**（这一页的血泪教训）：
-   *    服务端删字段、端侧还在读 ⇒ `d.today.articleId` 当场抛「undefined is not an object」，
-   *    而**报错信息里一个字都没提字段名与版本**（历史上反过来也踩过一次：
-   *    服务端把 history 改名 latest，端侧读 d.latest 同样炸）。
-   *    ⇒ 端侧对**新增**字段一律当可选；服务端删字段时**必须同一批改端侧**。
-   */
-  /**
-   * ⭐ **最新上线**：句库里按上线时间倒序的最新 N 句。
-   *
-   * ⚠️ 它与 today 是**两个不同的来源**（不是同一个列表切两半）：
-   *    · today  —— 今天的**排期**那一条
-   *    · latest —— **articles 表**（句库）：竞技数据的单位永远是句子，
-   *                排期只是「哪一天展示哪一句」的展示层（见 db/schema.ts）
-   * ⚠️⚠️ 字段名**从 history 改成了 latest**（用户 2026-09 的口径）：
-   *    这一段现在回答「最近上线了哪些句子」，不再是「过去哪几天的排期」。
-   *    旧名字留着会让人以为它还是按日期取的历史。
-   * ⚠️ 排序键是 articles.published_at（上线时间；为 null 的老数据用 createdAt 兜底）。
-   * ⚠️ 不会和 today 那句重复。
-   * ⚠️ 端侧**不消费日期**：点进去走按句子寻址的 /api/arenas/:articleId。
-   *    规则与单测见 services/schedule-shape.ts。
-   */
-  latest: ScheduleEntry[]
-}
 
 /* ---------- 其他 ---------- */
+
+/** ⭐ **最新上线**（`GET /api/articles?latest=N`）—— 公开接口，对所有人一样。
+ *
+ * ⚠️⚠️ 它与「今天挑战」（`/api/user/today`）是**两个接口**（用户 2026-09 明确）：
+ *    一个对所有人一样（按 `articles.published_at` 倒序），一个按人（24 小时窗口 + 我的难度档）。
+ *    两者原来是同一个 `/api/schedules` 返回的两段 —— 那条接口已整体删除。
+ */
+export interface LatestCardsResponse {
+  /** 服务端认定的「今天」（端侧用它对齐自然日，见 store 的 serverDate） */
+  date: string
+  /** 按上线时间倒序的最新 N 句（正文读不到的已剔除） */
+  items: ArticleCard[]
+}
 
 export interface TokenResponse {
   token: string

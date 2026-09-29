@@ -51,13 +51,15 @@ function entry(date: string, articleId: string, myBest: number | null = null, my
 }
 
 /**
- * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/schedules`）自 2026-09 起
- *    **不返回 `today`**（今日那一句由鉴权接口 `/api/user/today` 给，见 SchedulesResponse）。
+ * ⚠️ 夹具要**照着契约**来：公开列表接口（`/api/articles?latest=N`）
+ *    **不含「今日」那一句**（它由鉴权接口 `/api/user/today` 给，见 LatestCardsResponse）。
  *    这里曾经塞过 `today`，而 `as never` 把类型检查绕过去了 ——
  *    夹具"模仿了一个不存在的契约"，最容易误导后来人。
  */
-function listResponse(latest: unknown[] = []) {
-  return { date: '2026-09-21', streak: STREAK, latest } as never
+function listResponse(items: unknown[] = []) {
+  // ⚠️ 形状跟着接口走：`GET /api/articles?latest=N` → `{ date, items }`
+  //    （原来是 `/api/schedules` 的 `{ date, streak, latest }`，那条接口已删除）
+  return { date: '2026-09-21', items } as never
 }
 
 beforeEach(() => {
@@ -90,8 +92,8 @@ describe('applyArenaRecords —— 「我的战绩」由个人接口喂（按句
     expect(store.arenaOf('3')).toEqual({ myBest: 80, myAttempts: 1 })
   })
 
-  it('⭐ 公开列表接口（applySchedules）不再碰 arena / streak —— 它只带公开数据', () => {
-      store.applySchedules(listResponse([entry('2026-09-21', '3')]))
+  it('⭐ 公开列表接口（applyLatestCards）不再碰 arena / streak —— 它只带公开数据', () => {
+      store.applyLatestCards(listResponse([entry('2026-09-21', '3')]))
     expect(store.getState().arena).toEqual({})
     expect(store.getState().userInfo?.streak ?? null).toBeNull()
   })
@@ -207,20 +209,20 @@ describe('订阅', () => {
   })
 })
 
-describe('cachedSchedules —— 冷启动首屏的缓存（跨天必须丢掉）', () => {
+describe('cachedLatestCards —— 冷启动首屏的缓存（跨天必须丢掉）', () => {
   it('同一天能把上次那一屏取回来', () => {
-    const res = { date: today(), latest: [] } as never
-    store.applySchedules(res)
-    expect(store.cachedSchedules()).toEqual(res)
+    const res = { date: today(), items: [] } as never
+    store.applyLatestCards(res)
+    expect(store.cachedLatestCards()).toEqual(res)
   })
 
   it('⚠️ 跨天一律 null —— 拿昨天那句当「今日挑战」画出来，点进去还是昨天那句', () => {
-    store.applySchedules({ date: '2000-01-01', latest: [] } as never)
-    expect(store.cachedSchedules()).toBeNull()
+    store.applyLatestCards({ date: '2000-01-01', items: [] } as never)
+    expect(store.cachedLatestCards()).toBeNull()
   })
 
   it('从没拉到过也是 null', () => {
-    expect(store.cachedSchedules()).toBeNull()
+    expect(store.cachedLatestCards()).toBeNull()
   })
 })
 

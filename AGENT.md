@@ -26,6 +26,7 @@
 | [prd.md](prd.md) | **唯一的业务与需求来源** | 业务名词、概念、需求 |
 | **AGENT.md**（本文件） | 工程**架构索引 + 上下文索引** | 只回答「去哪看」与「怎么跑起来」 |
 | [spec.md](spec.md) | 技术决策记录（已降级） | 为什么这样选型；不再承载表结构（指向 `schema.ts`） |
+| **`/api/openapi.json` + `/api/docs`** | **接口清单（代码生成的 OpenAPI）** | ⚠️ 不是手写的：每个路由用 `createRoute()` 声明（见 `apps/server/src/openapi.ts`），运行时产出 spec 与 Swagger UI。改接口 = 改 `createRoute` 的声明。**迁移中**：老写法（`routes.get(...)`）仍工作但不进文档 |
 | [docs/](docs/README.md) | 调研 · 实验 · 设计稿 · 归档 | 需要依据与背景时 |
 
 **元规则：重复即错误。** 同一事实出现在第二个地方，即使当下一致，也已经是 bug 的种子；改一处必须删掉/改掉别处。
@@ -422,15 +423,18 @@ admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准
 
 ### 日期不是内容的一部分
 
-⚠️⚠️ `schedules` 表（"哪一天读哪一句"）**2026-09 已删除**，
-`GET /api/schedules/:date` 与 admin 的排期面板一起删了。替代它的是
-**`/api/user/today`**：以 **24 小时**为单位（`users.today_article_id` + `users.today_assigned_at`）、
-**按这个用户的难度档**推荐一句（`services/recommend.ts`）。
+⚠️⚠️ `schedules` 表与**接口**（"哪一天读哪一句"）**2026-09 全部删除**：
+`GET /api/schedules/:date`、admin 的排期面板、以及 `GET /api/schedules` 这个**路径**都删了。
+替代关系只有两条，别再往回长：
 
-- `/api/schedules` 这个**路径**还在，但它现在只回答一件事：**句库里最新上的几句是哪几句**
-  （数据源一直是 `articles`，从来不是排期表）。⚠️ 名字与内容已不符，待改名。
-- `submissions.schedule_date` 那一列**留着**：它记的是"这次提交**归到哪一天**"
-  （历史挑战必须归到那一天，否则昨天那张卡的数字会变）—— 归属信息 ≠ 排期。
+- **"今天读哪一句"** → `/api/user/today`：以 **24 小时**为单位
+  （`users.today_article_id` + `users.today_assigned_at`）、**按这个用户的难度档**推荐一句
+  （`services/recommend.ts`）。
+- **"最近上线了哪几句"** → `GET /api/articles?latest=N`（**公开**，数据源一直是 `articles` 句库，
+  与排期无关）。⚠️ 它原来就叫 `/api/schedules` —— 名字与内容不符，已随排期一起改名。
+
+⚠️ `submissions.schedule_date` 那一列**留着**：它记的是"这次提交**归到哪一天**"
+（历史挑战必须归到那一天，否则昨天那张卡的数字会变）—— 归属信息 ≠ 排期。
 
 ## ⭐ 推荐路径：一条命令起全套（Docker / OrbStack）
 
