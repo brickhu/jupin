@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { eq } from 'drizzle-orm'
 import { SUBMISSION_ID_LENGTH } from '@jushuo/shared'
 
@@ -9,6 +9,7 @@ import { describe } from '../services/submission-view'
 import { getTotalConquered } from '../services/conquest'
 import { challengeStats } from '../services/submission'
 import { readGrowth } from '../services/growth'
+import { verifyToken } from '../lib/token'
 import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
 
@@ -21,6 +22,27 @@ const RE_SUBMISSION_ID = new RegExp('^[0-9a-f]{' + SUBMISSION_ID_LENGTH + '}$')
 /** ⭐⭐ 公开页面两条路由 —— 分别挂在 /api/challenge 与 /api/profile。
  * ⚠️ 只给公开数据：「我的」那部分走 /api/user/* 下的鉴权接口，端侧按 id 融合。
  */
+/**
+ * ⭐ 这次请求的观众**是不是拥有者本人**（公开路由专用）。
+ *
+ * ⚠️ 刻意**不建用户行、也不查库**：只看 Bearer token 里的凭据与拥有者的
+ *    openid 是否一致。公开接口不该有"访问一下就给你建个账号"的副作用，
+ *    也没必要为了一个"要不要标「你」"去多查一次库。
+ * ⚠️ 认不出来（没带 token / token 过期 / 没凭据）⇒ false ⇒ 谁都不标「你」。
+ *    这正是我们要的：宁可少标一个「你」，也不能把别人的成绩标成你的。
+ */
+function viewerIsOwner(c: Context, ownerOpenid: string | null | undefined): boolean {
+  if (!ownerOpenid) return false
+  // ① 云托管内网调用（与 middleware/auth.ts 的路径①同一套判据，别让两条路分叉）
+  const fromGateway = c.req.header('x-wx-openid') ?? c.req.header('x-wx-from-openid')
+  if (c.req.header('x-wx-source') && fromGateway) return fromGateway === ownerOpenid
+  // ② Bearer token
+  const header = c.req.header('Authorization')
+  if (!header?.startsWith('Bearer ')) return false
+  const payload = verifyToken(header.slice(7))
+  return payload?.openid === ownerOpenid
+}
+
 export const challengeRoutes = new Hono<{ Variables: Variables }>()
 export const profileRoutes = new Hono<{ Variables: Variables }>()
 
@@ -65,7 +87,7 @@ challengeRoutes.get('/:sid', async (c) => {
   //    「还没出分」的状态走 /api/user/submissions/:id（鉴权，只有本人拿得到）
 
   const [owner] = await db
-    .select({ nickname: users.nickname, avatarUrl: users.avatarUrl })
+    .select({ nickname: users.nickname, avatarUrl: users.avatarUrl, openid: users.openid })
     .from(users)
     .where(eq(users.id, row.userId))
     .limit(1)
@@ -76,7 +98,20 @@ challengeRoutes.get('/:sid', async (c) => {
     avatarUrl: owner?.avatarUrl ?? null,
   }
 
-  const status = await describe(row.userId, sid)
+  /**
+   * ⭐⭐ **观众是谁**（2026-09 加，修的是"分享链接里别人的成绩被标成「你」"）。
+   *
+   * ⚠️ 这条路由是公开的（没有鉴权中间件），所以这里自己认一次观众：
+   *    · **刻意不建用户行** —— 只看 token 里的凭据（openid）与拥有者是否同一个；
+   *      公开接口不该有"访问一下就给你建个账号"的副作用。
+   *    · 认不出来 / 不是本人 ⇒ 传 0（`leaderboard` 里 `userId === 0` 永不命中任何人）
+   *      ⇒ 榜上谁都不标「你」，也没有哪一行被额外加粗。
+   * ⚠️ 之前这里传的是**拥有者**的 id（因为同一个参数既当"榜心"又当"标签"）——
+   *    于是任何访客看到的榜上都有一行写着「你」，而那是别人的成绩。
+   *    两个语义现在拆开了（见 services/submission-view.ts 的 describe 签名）。
+   */
+  const viewerUserId = viewerIsOwner(c, owner?.openid) ? row.userId : 0
+  const status = await describe(row.userId, sid, viewerUserId)
 
   /**
    * ⚠️⚠️ 未出分时**只有本人**拿得到状态，别人一律 404：

@@ -226,11 +226,19 @@ export async function getTopLeaderboard(
   }))
 }
 
-/** 榜心：我的上下各两条 */
+/**
+ * 榜心：**焦点用户**上下各两条。
+ *
+ * ⚠️ `labelUserId` 是"正在看这一屏的人"，只决定那一行标不标「你」/isMe。
+ *    分享页（public.ts）必须传**观众**自己的 id（陌生访客传 0）—— 传焦点用户
+ *    会让"别人的成绩"在分享链接里显示成「你」（2026-09 修的真实缺陷）。
+ *    缺省 = 焦点用户本人（自看场景）。
+ */
 export async function getLeaderboardAround(
   articleId: string,
   userId: number,
   limit = 5,
+  labelUserId: number = userId,
 ): Promise<LeaderboardRow[]> {
   const [mine] = await db
     .select({ best: participations.bestScore, reachedAt: participations.reachedAt })
@@ -295,10 +303,11 @@ export async function getLeaderboardAround(
 
   return ordered.slice(0, limit).map((row, i) => ({
     rank: startRank + i,
-    nickname: row.userId === userId ? '你' : (row.nickname ?? '挑战者'),
+    // ⚠️ 与 `userId`（榜心）刻意分开：分享页里"榜心是他、标签不是你"是正常状态
+    nickname: row.userId === labelUserId ? '你' : (row.nickname ?? '挑战者'),
     avatarUrl: row.avatarUrl ?? null,
     score: Number(row.score),
-    isMe: row.userId === userId,
+    isMe: row.userId === labelUserId,
   }))
 }
 

@@ -123,9 +123,50 @@ const REASON_MESSAGE: Record<'anonymous' | 'expired' | 'gone', string> = {
   gone: '用户不存在',
 }
 
+/**
+ * ⭐ **可选身份**：认得出就带上 userId，认不出就按 0（匿名）—— **绝不 401**。
+ *
+ * ⚠️ 给"公开但想知道看的人是谁"的接口用（现在只有 /api/leaderboards/growth）：
+ *    首页那三块成长榜对所有人开放，但认得出我的时候应该把我那一行标出来。
+ *    ⚠️ 之前那条路由读的是 `c.get('userId')`，而它挂在公开前缀上
+ *      （守卫只管 /api/user/*）⇒ 拿到的一直是 undefined ⇒ `isMe` 恒 false、
+ *      昵称永远是真实昵称 —— 类型注释和 service 注释都承诺了"自己显示「你」"。
+ * ⚠️ 复用 resolveUser 而不是另写一套：认身份的规则必须只有一处（安全边界）。
+ */
+export const optionalAuthMiddleware = createMiddleware<{ Variables: Variables }>(async (c, next) => {
+  const id = await resolveUser(c)
+  if (id.ok) {
+    c.set('userId', id.user.id)
+    c.set('user', id.user)
+  } else {
+    // ⚠️ 0 = 匿名（榜单里 `userId === 0` 永不命中任何人，所以谁都不会被标成「你」）
+    c.set('userId', 0)
+  }
+  await next()
+})
+
 export const authMiddleware = createMiddleware<{ Variables: Variables }>(async (c, next) => {
   const id = await resolveUser(c)
-  if (!id.ok) return c.json({ ok: false, error: REASON_MESSAGE[id.reason] }, 401)
+  if (!id.ok) {
+    /**
+     * ⭐ 401 带上**错误码**（2026-09 加）。
+     *
+     * ⚠️ 客户端 `lib/auth.ts` 一直按 `code === 'AUTH_EXPIRED'` 判"服务端明确说认不出我"，
+     *    但那个 code **两端都不存在**（服务端只给 error 文案，客户端抛的
+     *    AuthExpiredError 也没有 code 字段）⇒ 那条分支是死代码：
+     *    token 失效时界面画的是「重新连接」而不是「加入」，用户点重试还是失败。
+     * ⚠️ 两个 reason 都映射到同一个 code：对客户端而言"没凭据"与"凭据过期"是同一件事
+     *    —— 都表示"你得重新登录/加入一次"。（具体原因仍在 error 文案里，供人排查。）
+     */
+    return c.json(
+      {
+        ok: false,
+        error: REASON_MESSAGE[id.reason],
+        code: id.reason === 'gone' ? 'AUTH_EXPIRED' : 'AUTH_REQUIRED',
+      },
+      401,
+    )
+  }
 
   // ⚠️ Hono 的 Variables 类型必须显式声明，否则 c.get('userId') 会报 TS2769
   c.set('userId', id.user.id)

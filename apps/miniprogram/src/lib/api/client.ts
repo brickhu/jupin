@@ -179,9 +179,22 @@ class StillScoringError extends Error {
  *       （本项目就真实发生过一次：清测试数据时把开发账号一起删了。）
  */
 class AuthExpiredError extends Error {
-  constructor() {
+  /**
+   * ⭐ 401 的**错误码** —— 客户端判"服务端明确说认不出我"就靠它
+   *    （见 lib/auth.ts 的 isAuthError）。
+   *
+   * ⚠️ 2026-09 之前这个字段**根本不存在**：auth.ts 判的是 `e.code === 'AUTH_EXPIRED'`，
+   *    而这里没赋值、服务端 401 也没给 ⇒ 那条分支是**死代码**：
+   *    token 失效时界面画的是「重新连接」而不是「加入」，用户点重试还是失败。
+   * ⚠️ 现在两端都给了：服务端 401 带 `code`（AUTH_EXPIRED / AUTH_REQUIRED），
+   *    这里兜底成同一个值 —— 只认 401 这一条路径（其余错误码一律当"没问到"）。
+   */
+  code = 'AUTH_EXPIRED'
+
+  constructor(code?: string) {
     super('登录已过期')
     this.name = 'AuthExpiredError'
+    if (code) this.code = code
   }
 }
 
@@ -275,7 +288,9 @@ function handleResponse<T>(
     //    交给 request() 去重新登录一次（见 AuthExpiredError 的注释）。
     token = ''
     wx.removeStorageSync('token')
-    reject(new AuthExpiredError())
+    // ⚠️ 把服务端给的 code 带上（它区分"凭据过期"与"没带凭据"，对界面是同一件事，
+    //    但排查时能看出是哪一种）；没给就退回默认值
+    reject(new AuthExpiredError((body as { code?: string })?.code))
     return
   }
   // ⚠️ 5xx，或者 2xx 但拿到的不是我们的信封 —— 两种都指向「还没打到我们的服务」，

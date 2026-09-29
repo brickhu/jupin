@@ -22,12 +22,17 @@ import type { SubmissionStatusResponse } from '@jushuo/shared'
  *    「比这篇文章里**其它**提交都高」，而不是「刚才写入时是不是新高」——
  *    后者每轮询一次就变一次，结果页的「个人最好」会忽有忽无。
  *
- * @param viewerUserId 名次/榜单**按谁**算。看自己的传自己；
- *        分享页必须传**拥有者**的 id（看的是「他排第几」，不是「你排第几」）。
+ * ⚠️⚠️ **两个用户不是一回事**（2026-09 拆开，修的是分享页的「你」）：
+ *    · `focusUserId`  —— 名次 / 榜心**按谁**算。看自己的传自己；分享页传**拥有者**
+ *      （那一屏回答的是"他排第几"）。
+ *    · `viewerUserId` —— **正在看这一屏的人**是谁，只决定榜单里那行标不标「你」/ isMe。
+ *      陌生访客传 **0**（永不命中任何人 ⇒ 谁都不标「你」）。
+ *    原来只有一个参数、两份语义共用一个值 ⇒ 分享链接里**别人的成绩被标成「你」**。
  */
 export async function describe(
-  viewerUserId: number,
+  focusUserId: number,
   submissionId: string,
+  viewerUserId: number = focusUserId,
 ): Promise<SubmissionStatusResponse | null> {
   const [row] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
   if (!row) return null
@@ -48,9 +53,9 @@ export async function describe(
   //    见 services/leaderboard.ts 的说明。
   const articleId = row.articleId
   const [rankInfo, leaderboard, previous, article] = await Promise.all([
-    getRank(articleId, viewerUserId),
-    getLeaderboardAround(articleId, viewerUserId),
-    getBestExcluding(articleId, viewerUserId, submissionId),
+    getRank(articleId, focusUserId),
+    getLeaderboardAround(articleId, focusUserId, 5, viewerUserId),
+    getBestExcluding(articleId, focusUserId, submissionId),
     // ⭐ 参考原文：详情/分享页要拿它给逐词上色（见 SubmitResponse.text 的说明）
     db
       .select({ id: articles.id, theme: articles.theme })

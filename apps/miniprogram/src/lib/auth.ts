@@ -132,11 +132,18 @@ export async function requireIdentity(): Promise<void> {
 
 /**
  * ⚠️ 怎么判"服务端明确说认不出我"：只有 401（`handleResponse` 会把它转成
- *    `AuthExpiredError`，`code` 是 AUTH_EXPIRED —— 见 client.ts）。
- *    其余一切（超时、5xx、信封坏了）都是"没问到"。
+ *    `AuthExpiredError`，并带上服务端给的 code —— 见 client.ts）。
+ *
+ * ⚠️ 服务端现在给两个 code，**对界面是同一件事**（都得重新登录/加入一次），
+ *    所以两个都算：
+ *      · `AUTH_EXPIRED`  —— token 过期 / 老 token 里的账号已经不在了
+ *      · `AUTH_REQUIRED` —— 压根没带凭据
+ *    区分它们只有排查价值（在 error 文案里）。
+ * ⚠️ 其余一切（超时、5xx、信封坏了）都是"没问到" —— **绝不能**跳到加入页，
+ *    否则一次断网就会把有账号的人当成没账号（这条是 B31 定下的）。
  */
 function isAuthError(e: ApiError): boolean {
-  return e.code === 'AUTH_EXPIRED' || e.code === 'UNAUTHORIZED'
+  return e.code === 'AUTH_EXPIRED' || e.code === 'AUTH_REQUIRED' || e.code === 'UNAUTHORIZED'
 }
 
 /** 去加入页 —— **只有这一处**（auth 判成"未加入"之后的统一去处） */

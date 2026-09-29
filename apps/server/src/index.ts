@@ -8,7 +8,7 @@ import { probeStorage } from './storage'
 import { probeContent } from './services/content'
 import { probeStandardAudio } from './services/standard-audio'
 import { goodsPriceMap, productIdStatus } from './services/goods'
-import { authMiddleware } from './middleware/auth'
+import { authMiddleware, optionalAuthMiddleware } from './middleware/auth'
 import { authRoutes } from './routes/auth'
 import { articlesRoutes } from './routes/articles'
 import { submissionsRoutes } from './routes/submissions'
@@ -210,6 +210,12 @@ app.route('/api/user/uploads', uploadsRoutes)
 // ⭐ 商店：商品列表 + 下单（价格从服务端来，端侧不写死）—— 下单是我的行为
 app.route('/api/user/shop', shopRoutes)
 // ⭐ 成长榜：三个成长指标各 TOP10（首页那三块）
+/**
+ * ⚠️ 成长榜是**公开**的（谁都能看榜），但它想知道"看的人是谁"——
+ *    所以挂**可选**身份解析（认不出按 0，绝不 401），而不是 authMiddleware：
+ *    挂了它，未加入的人打开首页就会 401，而首页本来就该给所有人看。
+ */
+app.use('/api/leaderboards/*', optionalAuthMiddleware)
 app.route('/api/leaderboards', leaderboardsRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
