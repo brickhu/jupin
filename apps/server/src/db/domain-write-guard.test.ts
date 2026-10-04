@@ -234,6 +234,16 @@ const EXEMPTIONS: Exemption[] = [
       '交给发布服务层反而要求那个服务先能读文件，等于把要删掉的那条依赖留在原地。',
   },
   {
+    audit: '#17',
+    file: 'apps/server/src/services/participations.ts',
+    tables: ['submissions'],
+    why:
+      '`rebuildParticipations` 顺带核对/修复派生列 `submissions.participation_id`（用户 2026-09 加的关联字段）——' +
+      '它按 shared 的 participationIdOf 现算，只在这条维护路径（`pnpm db:participations`）上跑。' +
+      '⚠️ 这一列**没有外键兜底**（提交先于参与行存在，加外键就写不进去），' +
+      '所以"写歪了只能靠重建修回来"是它的设计，而不是绕开 scoring/routes 的写入方。',
+  },
+  {
     audit: '#5 / #6',
     file: 'apps/server/src/db/seed-articles.ts',
     tables: ['articles'],

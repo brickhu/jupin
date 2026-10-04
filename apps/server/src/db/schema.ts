@@ -4,6 +4,7 @@ import {
 } from 'drizzle-orm/mysql-core'
 import {
   ARTICLE_ID_LENGTH,
+  PARTICIPATION_ID_LENGTH,
   SUBMISSION_ID_LENGTH,
   type ArticleTheme,
   type ArticleWordItem,
@@ -430,6 +431,18 @@ export const submissions = mysqlTable('submissions', {
    *    ③ 留历史比删用户的成绩安全得多。
    */
   articleId: varchar('article_id', { length: ARTICLE_ID_LENGTH }).notNull(),
+  /**
+   * ⭐⭐ **这一条属于哪一行参与**（`participations.id`）—— 用户 2026-09 要求加这个关联字段。
+   *
+   * ⚠️⚠️ **刻意不加外键**（与 `participations.article_id` 去掉外键同一个理由）：
+   *    提交行是**先**建出来的（status = scoring），参与行要等**出分结算**时才由
+   *    `syncParticipation` 写 —— 加外键会让"第一次挑战某一句"的插入直接失败（ERROR 1452）。
+   *    约束松了，判据就写进代码：这一列由 `participationIdOf(userId, articleId)` 现算，
+   *    不依赖参与行是否存在；`rebuildParticipations` 会按同一个式子核对并修复全表。
+   * ⚠️ 它与 `participations.id` 是**同一个派生函数**的两个落点（shared 的 participationIdOf，
+   *    全项目只允许一处实现），所以两边不可能漂。
+   */
+  participationId: varchar('participation_id', { length: PARTICIPATION_ID_LENGTH }).notNull(),
   /** 该用户在该文章的第几次提交，从 1 开始 */
 
   /**
@@ -652,6 +665,8 @@ export const submissions = mysqlTable('submissions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   scoredAt: datetime('scored_at', { mode: 'date', fsp: 3 }),
 }, (t) => [
+  /** ⭐ 按参与行取它的逐次提交（`submissions.participation_id` 的读者） */
+  index('submissions_participation_idx').on(t.participationId),
   /**
    * ⭐ 幂等 + 防刷：一次录音只能产生一条提交。
    *    没有它的话：网络重试会多插一条重复记录（还白扣一次冷却），
@@ -709,6 +724,22 @@ export const submissions = mysqlTable('submissions', {
  *    「音频读不出来 / 引擎判无效」那几次不算参与（否则会出现「你已挑战 3 次」却只有一条成绩）。
  */
 export const participations = mysqlTable('participations', {
+  /**
+   * ⭐⭐ **这一行的公开地址**：`id = sha256(userId + ':' + articleId)` 的前 24 位十六进制。
+   *
+   * ⚠️ 为什么要有它：这一行的**领域身份**是 `(user_id, article_id)`（下面那条复合主键），
+   *    但对外需要一个"一个字段就能寻址"的地址（`GET /api/participation/{id}`）——
+   *    榜单点一行进来、分享链接、日志排查都要它。
+   *
+   * ⚠️⚠️ **必须是派生值，不能是自增**：这张表是**重算式**的（rebuildParticipations 会整表重建），
+   *    自增 id 一重建就换号 ⇒ 已经发出去的链接全部指向别人。哈希出来的是**同一个值**，
+   *    重建前后逐行相等 —— 这正是"重建前后必须一模一样"那条验收判据要的。
+   *
+   * ⚠️ 输入用 `:` 分隔，别直接拼：`(12, '3x')` 与 `(123, 'x')` 拼起来会是同一个串。
+   * ⚠️ SQL 侧的回填与 TS 侧必须**逐字符**一致：`LEFT(SHA2(CONCAT(user_id, ':', article_id), 256), 24)`
+   *    见迁移 0057（24 位十六进制 = 96 bit，这个量级撞不上）。
+   */
+  id: varchar('id', { length: 24 }).notNull(),
   userId: int('user_id').notNull().references(() => users.id),
   /**
    * ⚠️ **不再 REFERENCES articles**（迁移 0047 去掉）：外键与「句子下线/内容变更后历史仍留得住」互斥
@@ -747,6 +778,25 @@ export const participations = mysqlTable('participations', {
   bestScore: decimal('best_score', { precision: 5, scale: 1 }).notNull(),
   /** 最低分（参与场次列表展示用） */
   worstScore: decimal('worst_score', { precision: 5, scale: 1 }).notNull(),
+
+  /**
+   * ⭐⭐ **这一句上累计拿到的成长值**（三维，与 `users.growth_*` 同一套口径）——
+   *    用户 2026-09 要求：「用户在一次 participation 下可能有多次 submissions，
+   *    每次都能增加一点成长值，希望他们能够累计到 participations 中」。
+   *
+   * ⚠️ 它是**派生聚合**，与 attempts / bestScore 同类（不是第二份真相）：
+   *    每一项都等于这条参与下**已出分** submissions 的对应列之和
+   *    （`SUM(growth_self)` … over `status = 'scored'`），写入方仍只有
+   *    services/participations.ts 的 computeParticipation（重算式，可整表重建）。
+   * ⚠️ 口径与 attempts 一致：**只算 scored**。没出分的那次本来就没加成长值
+   *    （成长值在 settle 时才写进 submissions），把它算进来会凭空多出 0 或旧值。
+   * ⚠️ 于是有一个可验证的不变量：对某个用户，
+   *    `SUM(participations.growth_*)` 应当等于 `users.growth_*`（两处同源）——
+   *    它是我验收这次改动用的判据（见迁移 0058 的说明）。
+   */
+  growthSelf: int('growth_self').notNull(),
+  growthDiligence: int('growth_diligence').notNull(),
+  growthStandout: int('growth_standout').notNull(),
   /** 第一次 / 最近一次已出分挑战的时刻（列表按 last_at 倒序） */
   firstAt: datetime('first_at', { mode: 'date', fsp: 3 }).notNull(),
   lastAt: datetime('last_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -776,6 +826,8 @@ export const participations = mysqlTable('participations', {
    *    列序与 orderBy 一致（best_score desc, reached_at asc, user_id asc）——
    *    连「同分同刻再比 id」的兜底键都在里面，所以它同时是排序索引。
    */
+  /** ⭐ 按地址取一行（公开接口 `/api/participation/{id}`）—— 派生值，所以唯一 */
+  uniqueIndex('participations_id_idx').on(t.id),
   index('participations_arena_idx').on(t.articleId, t.bestScore, t.reachedAt, t.userId),
   /** 「我参与过哪些句子」——按最近参与倒序 */
   index('participations_user_time_idx').on(t.userId, t.lastAt),

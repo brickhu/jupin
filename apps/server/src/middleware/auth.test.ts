@@ -118,12 +118,18 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  *          `/api/profile/:id` 与 `/api/user/me` 一直只给本人。这里是 **2026-09 用户
  *          明确要求**公开的（"这个公开，含 energy"）。
  *          ⇒ 别把它当先例：往别的公开前缀加"我的"字段之前，先问一句"用户真的要公开它吗"。
+ *    · /api/article      —— **单数根**：一条句子及其子资源（详情 / 参与者 / 榜单）。
+ *      ⚠️ 与复数根 `/api/articles`（句库集合查询）是**两个前缀**：单数 = 一条句子，
+ *         复数 = 集合。两者都是公开内容，都不带"我的"字段。
+ *    · /api/stats        —— 按 ids 批量的**聚合统计**（参与统计 / 收藏总量）。
+ *      ⚠️ 收藏总量答的是"大家"（对所有人一样），所以必须公开 ——
+ *         加了 security 反而是在说谎。它与鉴权的 `/api/user/favorites` 是两件事。
  *
  * ⚠️ 往 /api/pay 下加业务接口 = 直接开一个免鉴权的洞，要加就另开前缀。
  */
 // ⚠️ 2026-09 删掉 `/api/arenas`（那条"大而全"的竞技场接口拆成了
 //    /api/articles/{id} + /api/participations + /api/participations/stats + 两条鉴权接口）
-const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/leaderboards', '/api/participations', '/api/profile', '/api/challenge', '/api/admin', '/api/users'])
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/article', '/api/stats', '/api/leaderboards', '/api/profile', '/api/challenge', '/api/admin', '/api/users', '/api/participation', '/api/tags'])
 const EXPECTED_PUBLIC = [...PUBLIC_PREFIXES].sort()
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {

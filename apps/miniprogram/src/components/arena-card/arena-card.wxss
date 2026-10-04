@@ -3,6 +3,15 @@
 
 .ac-card {
   border-radius: 20rpx;
+  /**
+   * ⚠️⚠️ **每张句子卡都有的一圈前景色边框**（用户 2026-09 定）。
+   *    用 currentColor = 根节点内联的 color: {{fg}} ⇒ 深色主题配浅边、浅色主题配深边，
+   *    不必为每套主题各写一条规则。
+   * ⚠️ 它是"卡片形状"的一部分，**不再承担"我读过没有"**（那个由右下角 .ac-check 表达）。
+   */
+  border: 2rpx solid currentColor;
+  /* ⚠️ 角标要绝对定位到卡片右下角 ⇒ 根节点必须是定位上下文 */
+  position: relative;
 }
 
 /* 今日卡：p-5（40rpx） */
@@ -16,9 +25,24 @@
   margin-bottom: 24rpx;
 }
 
-/* 参与过的卡：当前前景色描边（原来是品牌色，现在跟主题走） */
-.ac-joined {
-  box-shadow: 0 0 0 3rpx currentColor;
+/**
+ * ⭐ **已参与角标** —— 右下角浮动的圆形勾（见 wxml 的说明）。
+ * ⚠️ 位置/尺寸刻意压在卡片 padding 里：featured 卡底部 padding 是 40rpx，
+ *    角标 36rpx + 6rpx 偏移 ⇒ 顶边约 42rpx，**刚好不盖住 CTA 的点击区**（按钮底边在 40rpx 处）。
+ * ⚠️ 填充 / 勾的颜色由 wxml 内联给（前景填充、背景做勾），这里不写死颜色。
+ */
+.ac-check {
+  position: absolute;
+  right: 6rpx;
+  bottom: 6rpx;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  line-height: 1;
 }
 
 /* 层次：只调透明度，颜色永远是 currentColor。

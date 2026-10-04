@@ -1,8 +1,1 @@
-{
-  "navigationBarTitleText": "连战记录",
-  "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark",
-  "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar"
-  }
-}
+{"navigationBarTitleText":"连战记录","enablePullDownRefresh":true,"backgroundTextStyle":"dark","usingComponents":{"nav-bar":"/components/nav-bar/nav-bar","ui-icon":"/components/ui-icon/ui-icon"}}

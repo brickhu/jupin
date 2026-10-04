@@ -18,18 +18,18 @@
   <nav-bar id="nav" title="参与场次" />
 
   <!-- ── 加载中 ────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
+  <view class="card p-5" wx:if="{{loading}}">
     <text class="text-28rpx text-muted">正在取参与记录…</text>
   </view>
 
   <!-- ── 连不上（且一条都还没有）───────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5" wx:elif="{{error && rows.length === 0}}">
+  <view class="card p-5" wx:elif="{{error && rows.length === 0}}">
     <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
     <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
   </view>
 
   <!-- ── 一场都没参与过 ────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 px-5 py-10 text-center" wx:elif="{{empty}}">
+  <view class="card px-5 py-10 text-center" wx:elif="{{empty}}">
     <text class="text-56rpx block">🎯</text>
     <text class="text-30rpx text-ink font-medium block mt-3">还没有参与过</text>
   </view>
@@ -43,13 +43,13 @@
 
     <!-- ⚠️ 卡片是**竖向两段**：上段「句子 + 箭头」，下段「四个数」。
          别把两段塞进同一个 flex 行里 —— 那样四个数会挤在句子右边当第三列。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3" wx:for="{{rows}}" wx:key="articleId"
+    <view class="card p-4 mb-3" wx:for="{{rows}}" wx:key="articleId"
           data-i="{{index}}" bindtap="onOpen">
 
       <view class="flex items-start">
         <text class="text-32rpx leading-[1.5] text-ink flex-1">{{item.text}}</text>
         <!-- 箭头是「整张卡可点」的唯一提示 -->
-        <text class="text-32rpx text-faint ml-2 shrink-0 leading-[1.2] iconfont icon-chevron-right"></text>
+        <ui-icon class="text-32rpx text-faint ml-2 shrink-0 leading-[1.2]" name="mdi:chevron-right" />
       </view>
 
       <!-- 四个数：挑战 / 最高 / 位列 / 最低 -->

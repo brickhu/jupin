@@ -71,19 +71,52 @@
    竞技场详情、收藏列表、朗读页详情；「参与场次」列表本身就是参与记录，直接批量回填 store。
    ⚠️ 未加入句拼时**不发请求**、整批按"没参与过"落库；"问不到"保持未知（**绝不写成 null**）。
 
-**竞技场 / 参与数据的分层**（用户 2026-09 定，替代了原来那条 `/api/arenas/{articleId}`）：
-- **句子内容** `GET /api/articles/{id}` —— 纯内容（正文 / 词表 / 难度 / 标签 / 主题 / 标准音），
-  端侧做**会话级缓存**（`store.articleDetail`，不落 storage）；
-- **参与统计** `GET /api/participations/stats?ids=a,b,c` —— 人数 / 最高 / 最低（批量、零值补齐），
-  客户端 `lib/article-stats.ts` 取数、写 `store.articleStats`。⚠️ 统计是 `participations` 的
-  **聚合派生值**，**不挂在 article / ArticleCard / ArticleDetail 上**：挂上去会出现
-  "会话缓存把人数冻住"与"句子一删统计跟着没"；
-- **参与者 / 榜单** `GET /api/participations?articleId=&sort=time|score&limit=&offset=` ——
-  每行带 `rank`（按最高分算的**全局**名次，与 sort 无关）、`userId`、昵称、头像、次数、
-  最高分、最新参与时间；`total` 用于分页与"共 N 人参与"；
-- **我的** `GET /api/user/participation/{articleId}`、`GET /api/user/is-favorite` —— 保留不变。
-- ⚠️⚠️ 参与资源**自立根路径**（`/api/participations`）、**不挂在 article 下**、也**不要求句子还在**：
-  句子下架 / 内容换版之后，参与记录与统计照样读得到（记录自带 words/links 快照）。
+**句子 / 统计的分层**（用户 2026-09 定，替代了原来那条 `/api/arenas/{articleId}`；
+⚠️ 路由形状在 2026-09 又收拢过一次，见下面两条"根"）：
+
+- **单数根 `/api/article/*` = 一条句子及其子资源**（公开）：
+  · **句子内容** `GET /api/article/{id}` —— 纯内容（正文 / 词表 / 难度 / 标签 / 主题 / 标准音），
+    端侧做**会话级缓存**（`store.articleDetail`，不落 storage）；
+  · **参与者 / 榜单** `GET /api/article/{id}/participations?sort=time|score&limit=&offset=` ——
+    每行带 `rank`（按最高分算的**全局**名次，与 sort 无关）、`userId`、昵称、头像、次数、
+    最高分、最新参与时间；`total` 用于分页与"共 N 人参与"；
+  · ⚠️ 这两条**从来不校验句子是否存在**（只查 `participations`，`article_id` 不挂外键）——
+    句子下架 / 内容换版之后照样读得到（记录自带 words/links 快照）。
+- **复数根 `/api/articles/*` = 句库的集合查询**（公开）：查询 / `latest` / `today`。
+  ⚠️ 详情**不在**这里（谁把 `/{id}` 挪回复数根，`articles-today-route.test.ts` 会红）。
+- **标签名录 `/api/tags`**（公开）= 句库里所有标签 + 各有多少篇：
+  · 排序**服务端定死**（文章数降序 → 标签升序），端侧不要再排；
+  · `count` 与 `GET /api/articles` **同一口径**（只算已上线且正文读得到的），
+    所以"标签说 7 篇、点进去就是 7 篇"（本地实测对过）；
+  · 搜索**不在服务端做**：标签只有几十个，tags 页本地过滤（省一次往返）。
+- **句库查询 `GET /api/articles` 支持翻页**：`?offset=` + 响应里的 `total`
+  （`offset + items.length < total` 就还有下一页）。服务端是**先全局排序、再切页**，
+  所以翻页不会串页 —— 见 services/article-list.ts 的 queryArticleCards。
+- **统计根 `/api/stats/*` = 按 ids 批量的聚合**（公开，与句子内容分开）：
+  · `GET /api/stats/participation?ids=a,b,c` —— 人数 / 最高 / 最低（零值补齐），
+    客户端 `lib/stats.ts` 取数、写 `store.articleStats`；
+  · `GET /api/stats/favorite-count?ids=a,b,c` —— 每句被多少人收藏（同形、零值补齐）。
+  ⚠️ 统计是**聚合派生值**，**不挂在 ArticleCard / ArticleDetail 上**：挂上去会出现
+  "会话缓存把人数冻住"与"句子一删统计跟着没"。
+  ⚠️⚠️ **两块统计都进全局 store、都是响应式的**（用户 2026-09 定）：取数统一走
+  `lib/stats.ts`（`ensureStats(ids)` 两条接口并发拉、各自独立成败），
+  存 `store.articleStats` / `store.articleFavoriteCounts`（**都不落 storage**：值会变），
+  页面从 store 读（`statsOf(articleId)`）、靠 `me.subscribe` 广播重画 ——
+  **页面不许在本地再存一份**（那就是两份真相的起点）。
+  ⚠️ `null`（还没拉到）与 `0`（确实是 0）必须分开：把"没问到"画成 0 是在下结论。
+  ⚠️⚠️ 加第三种统计就**照这两条再来一条**（`/api/stats/xxx`），**不要**做成 `?type=` 分发器 ——
+  那会让响应形状变成 oneOf，而 `openapi/schemas.ts` 的 parity 检查要求"schema 与 TS 类型逐字段相等"。
+- **我的** `GET /api/user/participation/{articleId}`、`GET /api/user/favorited` —— 按用户寻址，要身份。
+- **别人的** `GET /api/participation/{id}`（公开）—— 一条参与记录的详情，从榜单点某一行进去看
+  （落点是公开的个人主页 `pages/profile?u=&pid=`）。
+  ⚠️⚠️ `{id}` 就是 **`participations.id`**，而它是**派生地址**：
+  `sha256(userId + ':' + articleId)` 的前 24 位十六进制（`services/participation-id.ts`，
+  回填见迁移 0057）。**为什么不能自增**：这张表是重算式派生索引，`rebuildParticipations`
+  会整表重写 —— 自增 id 一重建就换号，发出去的链接会指到别人；哈希值重建前后逐行相等。
+  ⚠️ 表的主键仍然是 `(user_id, article_id)`（领域身份）；`id` 是唯一索引上的对外地址。
+  ⚠️ 这一行还**累计三维成长值**（`growth_self/diligence/standout`）= 它下面**已出分** submissions
+  的对应列之和（与 `attempts` 同一口径，写入方仍是 `services/participations.ts`）；
+  `submissions.participation_id` 是同一件事的反向链接（**刻意无外键**：提交先于参与行存在）。
 - 竞技场页五块**各自异步 + 各自骨架**：句子卡 / 参与概要 / 我的参与 / 排行榜 / 收藏。
 
 **句子不可修改**（用户 2026-09 定）：
@@ -272,6 +305,10 @@ git switch main && git merge dev && git push && git switch dev   # 合主线
 | `pnpm dev:docker` | 起 db + api（`docker compose --profile full up -d --build`，自动迁移 + 种子） |
 | `pnpm dev:docker:logs` / `:ps` / `:down` / `:reset` | 跟日志 / 看状态 / 停 / 推倒重来（删卷重建） |
 | `pnpm dev:mp` / `pnpm dev` | 小程序 esbuild --watch / 本机直跑后端（配合 `pnpm db:up`） |
+| `pnpm --filter @jushuo/miniprogram build` | 构建小程序产物 → `dist/`。⚠️⚠️ **必须走 `build-atomic.mjs`**（先建到 `dist.tmp`，成功才同步进 `dist/`）——
+| | 它同时守住两件事：① 失败时 `dist/` 原样保留（**不留半成品**，否则工具会报 `path ./uno.wxss not found` 这种指向源码的假错）；
+| | ② **原地逐文件同步，不换目录**（先建后换目录会让开发者工具的监听绑到一个已被删除的 inode 上 ⇒ **改了源码、重新编译，界面一模一样**，2026-09 查了很久）。 |
+| | 平时**根本不用手动构建**：工具点「编译」会自动跑 `beforeCompile: node build-atomic.mjs`。 |
 | `pnpm db:up` / `pnpm db:down` | 只起 / 停 MySQL 容器 |
 | `pnpm db:generate` / `db:migrate` / `seed` / `seed:arena` | 生成迁移 / 跑迁移 / 灌种子 / 灌开发竞技场 |
 | `pnpm pipeline`（`… run --from 04 --to 09`） / `pnpm content:audio` | 内容流水线 / 本地补标准音 |
@@ -308,7 +345,7 @@ jupin/
     ├── admin/                # 本地内容管理台（句库管理 · 127.0.0.1:4983）
     ├── deploy-cloud.mjs  cloud-db-info.mjs  seed-cloud.mjs  gh-secrets.mjs  dev-unlock.mjs  wipe-history.mjs
     ├── env.mjs               # ⭐ 环境变量分层加载（唯一入口）
-    └── iconfont/
+    └── iconfont/              # 图标生成器（Iconify → CSS mask 图标，产物 src/icons.wxss）
 ```
 
 ## 1.1 小程序端 `apps/miniprogram/`
@@ -319,9 +356,10 @@ apps/miniprogram/
 ├── build.mjs                    # esbuild 打包 + UnoCSS 生成 + 静态拷贝 + es2017 守卫
 ├── uno.config.mjs  wxss-lint.mjs  wxml-handlers.mjs
 └── src/
-    ├── app.ts / app.json / app.wxss / iconfont.wxss
+    ├── app.ts / app.json / app.wxss / icons.wxss   # icons.wxss 由 tools/iconfont/build.mjs 生成
     ├── pages/                   # index · reading · arena · challenge · join · profile
     │                            #   me/{streak,energy,challenges,participations,edit-user}
+    ├── pages/tags · pages/browse # 标签名录 / 浏览句库（公开：标签+难度切换 + 无限滚动）
     ├── components/              # nav-bar · user-sheet · arena-card · submission-card · audio-button · profile-form
     ├── lib/                     # api/ · audio/ · content/ · store.ts · join.ts · nav.ts …
     └── typings/
@@ -533,7 +571,12 @@ admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准
   · `GET /api/user/participation/{articleId}` —— **这一句**的参与记录（没参与过 = `data: null`）；
   · `GET /api/user/participation/{articleId}/submissions` —— 这一句的**逐次提交**
     （原 `/api/user/article-records?article=`，已删/改名）；
-  · `GET /api/user/is-favorite?articleId=` —— **这一句我收藏了吗**，独立一条。
+  · `GET /api/user/favorited?articleId=` —— **这一句我收藏了吗**，独立一条。
+  · `GET /api/stats/favorite-count?ids=`（**公开**，不带身份）—— **这一句被多少人收藏**。
+    ⚠️ 前缀与 `/api/user/favorites`（我的收藏，鉴权）只差一个 `user/`，别混。
+    ⚠️ 它是 `favorites` 的**现算 COUNT**（不是冗余计数列，所以不需要 ±1 与对账）；
+    靠 `favorites.article_id` 上那个**遗留索引**才快（0039 建外键时自动建、0047 删外键没删索引，
+    且**没登记进 schema.ts** —— 见 `services/favorites.ts` 的说明，清索引前先看那里）。
   ⚠️⚠️ **收藏刻意不掺进参与记录**：收藏与"参与"是两件事（**没读过也能收藏**，
     那时 participation 是 null）；混在一起就会出现"按钮变空心、用户以为收藏丢了"。
   ⚠️ 已删 `/api/user/arena-records`（批量「我在这几句上的战绩」）：战绩按句子走

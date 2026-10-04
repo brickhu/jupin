@@ -52,6 +52,16 @@ Component({
     showFavorite: { type: Boolean, value: false },
     /** 当前收没收藏这一句（页面从鉴权接口取的，不是卡片自己猜的） */
     favorite: { type: Boolean, value: false },
+    /**
+     * ⭐ 收藏按钮**旁边那个数字**（多少人收藏了这一句）—— 来自公开的
+     *    `GET /api/stats/favorite-count`，由页面写进全局 store、再传进来。
+     *
+     * ⚠️ 0（或还没拉到）**不画**：一颗心旁边挂个 `0` 是噪音，
+     *    与参与概要那条"0 人参与时写实话、不写 0"同一个口径。
+     * ⚠️ 只有 `showFavorite` 时才会渲染 —— 首页那些卡没有收藏按钮，
+     *    自然也没有这个数（它们的 showFavorite 是 false）。
+     */
+    favoriteCount: { type: Number, value: 0 },
   },
 
   data: {

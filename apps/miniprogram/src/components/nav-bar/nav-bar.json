@@ -1,6 +1,1 @@
-{
-  "component": true,
-  "usingComponents": {
-    "user-sheet": "/components/user-sheet/user-sheet"
-  }
-}
+{"component":true,"usingComponents":{"ui-icon":"/components/ui-icon/ui-icon","user-sheet":"/components/user-sheet/user-sheet"}}

@@ -1,0 +1,7 @@
+/* ⭐ 图标组件：宿主自己当"一格"用，不额外撑开排版。
+   ⚠️ 图标本体（.ui-icon）的样式在生成的 icons.wxss 里；这里只管**宿主**这一格怎么摆。
+   ⚠️ 颜色与尺寸都靠**继承**从宿主进来：调用方在 <ui-icon> 上写 text-32rpx / ac-faint 就够。 */
+:host {
+  display: inline-flex;
+  align-items: center;
+}

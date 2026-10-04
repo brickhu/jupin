@@ -17,10 +17,13 @@ import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
 import { challengeRoutes, profileRoutes } from './routes/public'
-import { favoritesRoutes, isFavoriteRoutes } from './routes/favorites'
+import { favoritesRoutes, favoritedRoutes } from './routes/favorites'
+import { articleRoutes } from './routes/article'
+import { statsRoutes } from './routes/stats'
+import { tagsRoutes } from './routes/tags'
 import { shopRoutes } from './routes/shop'
 import { leaderboardsRoutes } from './routes/leaderboards'
-import { participationsRoutes } from './routes/participations'
+import { participationRoutes } from './routes/participation'
 import { usersRoutes } from './routes/users'
 import { payRoutes } from './routes/pay'
 
@@ -146,14 +149,32 @@ app.route('/media', mediaRoutes)
  *    所有「我的」数据自然查不到。所以这里**绝不能**换成 authMiddleware：
  *    那会让没登录的人打不开首页。
  */
-// ⭐ 首页那一次请求：最新上线（**纯公开**）—— 今日那张卡是端侧兜底，随后被推荐替换
-// ⚠️ 2026-09：`/api/arenas/:articleId` 那条"大而全"的接口**已删除**，拆成四条：
-//    `/api/articles/:id`（**纯句子内容**，可会话缓存）、
-//    `/api/participations?articleId=`（参与者/榜单）、
-//    `/api/participations/stats?ids=`（参与统计，批量），
-//    以及鉴权侧的 `/api/user/participation/:articleId`、`/api/user/is-favorite`。
-//    ⚠️ 参与数据自立根路径：句子下架/换版之后，参与记录与统计照样读得到。
-app.route('/api/participations', participationsRoutes)
+/**
+ * ⭐⭐ **句子资源**（`/api/article/*`，公开，**单数 = 一条句子及其子资源**）：
+ *    · `GET /api/article/{id}`                —— 句子详情（全量，含词级数据）
+ *    · `GET /api/article/{id}/participations` —— 谁参与过这一句（榜单 / 最近来过）
+ *
+ * ⚠️ 与 `/api/articles`（**复数 = 句库的集合查询**：查询 / latest / today）是两个根。
+ * ⚠️ 2026-09 用户改口径：原来参与数据**自立根路径**（`/api/participations`），
+ *    理由是"不把可读性绑在内容行上"——但实现上从来没校验过句子是否存在，
+ *    所以那条理由没成立；现在按**阅读视角**收进句子的子资源（见 routes/article.ts）。
+ */
+app.route('/api/article', articleRoutes)
+/**
+ * ⭐⭐ **统计资源**（`/api/stats/*`，公开）—— 按 ids 批量的聚合，与句子内容分开：
+ *    · `GET /api/stats/participation?ids=`  —— 参与统计（人数 / 最高 / 最低）
+ *    · `GET /api/stats/favorite-count?ids=` —— 收藏总量
+ *
+ * ⚠️ 两条形状一样、都零值补齐；加第三种就再来一条，
+ *    别做成 `?type=` 分发器（响应类型会变成 oneOf，parity 检查失效）。
+ */
+app.route('/api/stats', statsRoutes)
+/**
+ * ⭐ **全部标签**（`/api/tags`，公开）—— tags 页的名录。
+ * ⚠️ 放在 `/api/articles` 之外是**故意**的：`/api/articles/tags` 会和
+ *    "`/api/articles/{id}` 将来可能回来"的歧义绑在一起；标签是句库的**目录**，不是某一篇的子资源。
+ */
+app.route('/api/tags', tagsRoutes)
 // ⭐ 公开页面：个人主页 /api/profile/:id、挑战详情 /api/challenge/:sid
 app.route('/api/challenge', challengeRoutes)
 app.route('/api/profile', profileRoutes)
@@ -226,13 +247,13 @@ app.route('/api/users', usersRoutes)
 // ⭐ 我的收藏：收/取消一个句子 + 列表（挂在 /api/user/* 下 ⇒ 自动受鉴权保护）
 app.route('/api/user/favorites', favoritesRoutes)
 /**
- * ⭐ **"这一句我收藏了吗"**（`GET /api/user/is-favorite?articleId=`）—— 独立一条查询。
+ * ⭐ **"这一句我收藏了吗"**（`GET /api/user/favorited?articleId=`）—— 独立一条查询。
  *
  * ⚠️ 为什么单独挂：它与 `/api/user/favorites/{id}`（PUT/DELETE 设开关）语义不同，
  *    也刻意不掺进 participation 的响应 —— 收藏与"参与"是两件事
  *    （没读过也能收藏，那时 participation 回 null，端侧判不出收藏状态）。
  */
-app.route('/api/user', isFavoriteRoutes)
+app.route('/api/user', favoritedRoutes)
 app.route('/api/user', userRoutes)
 app.route('/api/user/submissions', submissionsRoutes)
 app.route('/api/user/uploads', uploadsRoutes)
@@ -246,6 +267,15 @@ app.route('/api/user/shop', shopRoutes)
  */
 app.use('/api/leaderboards/*', optionalAuthMiddleware)
 app.route('/api/leaderboards', leaderboardsRoutes)
+
+/**
+ * ⭐ **参与详情**（`/api/participation/{userId}?articleId=`，公开）。
+ *
+ * ⚠️ 为什么是公开：它给的是**榜上那一行的详情**（分数 / 次数 / 时间 / 句子快照），
+ *    而榜单本来就是公开的（见 routes/leaderboards.ts 的说明）——
+ *    从榜单点人进去看，却在门口要登录，是自相矛盾。
+ */
+app.route('/api/participation', participationRoutes)
 
 // ⭐⭐ 先监听，再初始化数据库 —— 顺序不能反，理由见 db/index.ts 的 initDatabase 注释。
 /**

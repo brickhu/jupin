@@ -1,0 +1,5 @@
+<!--
+  ⭐ 图标：一个 1em 的 <view>，用 CSS mask 剪出图标（.ui-icon + .ui-icon-<名字>，见 icons.wxss）。
+  ⚠️ 里面**不要**写任何样式：颜色走 currentColor、尺寸走 1em（跟宿主字号），都在生成好的基类里。
+-->
+<view class="ui-icon {{cls}}"></view>

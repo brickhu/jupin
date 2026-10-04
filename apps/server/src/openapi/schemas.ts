@@ -9,6 +9,8 @@ import type {
   ArticleStatsResponse,
   ArticleParticipationRow,
   ArticleParticipationsResponse,
+  TagCount,
+  TagsResponse,
   ParticipationSubmissionItem,
   ParticipationSubmissionsResponse,
   ArticleWordItem,
@@ -20,7 +22,9 @@ import type {
   EnergyResponse,
   FavoriteItem,
   FavoritesResponse,
-  IsFavoriteResponse,
+  FavoritedResponse,
+  ArticleFavoriteCount,
+  ArticleFavoriteCountsResponse,
   Gender,
   GrowthRankResponse,
   GrowthRankRow,
@@ -151,7 +155,25 @@ export const errorResponse = (description: string) => ({
  *    那个 date **只用于端侧按天做缓存失效**，不参与成绩归属。
  */
 export const ArticleListResponseSchema = okEnvelope(
-  z.object({ items: z.array(ArticleCardSchema) }).openapi('ArticleListResponse'),
+  z
+    .object({
+      items: z.array(ArticleCardSchema),
+      /** ⭐ 命中总数（分页之前）—— 无限滚动的判据 */
+      total: z.number().int(),
+    })
+    .openapi('ArticleListResponse'),
+)
+
+/**
+ * ⭐ **一个标签 + 文章数**（`GET /api/tags`）。
+ * ⚠️ 与 `GET /api/articles` 同一口径：只算已上线且正文读得到的文章。
+ */
+export const TagCountSchema = z
+  .object({ tag: z.string(), count: z.number().int() })
+  .openapi('TagCount')
+
+export const TagsResponseSchema = okEnvelope(
+  z.object({ items: z.array(TagCountSchema) }).openapi('TagsResponse'),
 )
 
 /**
@@ -238,10 +260,19 @@ export const ArticleWordItemSchema = z
   })
   .openapi('ArticleWordItem')
 
+/** 成长值快照（这一把各加了多少） */
+export const GrowthViewSchema = z
+  .object({ self: z.number(), diligence: z.number(), standout: z.number() })
+  .openapi('GrowthView')
+
 /** ⭐ 「参与场次」一条（一句一行 = 一个竞技场） */
 export const ParticipationRecordSchema = z
   .object({
+    /** ⭐ 这一行的地址（派生值：sha256(`userId:articleId`) 前 24 位） */
+    id: z.string(),
     articleId: z.string(),
+    /** ⭐ 这条参与累计带来的成长值（已出分 submissions 之和） */
+    growth: GrowthViewSchema,
     /**
      * ⭐⭐ 词表快照（与 ArticleDetail.words 同形）—— **它同时就是原文**：
      *    `words[].text` 含标点，拼起来即原句。所以这里**没有 text 字段**（2026-09 删）。
@@ -379,11 +410,6 @@ export const StreakDeltaSchema = z
   })
   .openapi('StreakDelta')
 
-/** 成长值快照（这一把各加了多少） */
-export const GrowthViewSchema = z
-  .object({ self: z.number(), diligence: z.number(), standout: z.number() })
-  .openapi('GrowthView')
-
 /* ---------- 我的：连战与个人资料 ---------- */
 
 /** ⭐ 连战展示视图（服务端算好、端侧只显示 —— 不让端侧重算"今天读没读"） */
@@ -435,6 +461,9 @@ export const ClaimRewardsResponseSchema = okEnvelope(
 export const LeaderboardRowSchema = z
   .object({
     rank: z.number().int(),
+    userId: z.number().int(),
+    /** ⭐ 点进参与详情要它（`GET /api/participation/{participationId}`） */
+    participationId: z.string(),
     nickname: z.string(),
     /** ⚠️ 云存储 fileID（cloud://…），端侧要换址后才能进 <image src> */
     avatarUrl: z.string().nullable(),
@@ -610,12 +639,14 @@ export const ArticleStatsResponseSchema = okEnvelope(
  *
  * ⚠️ 它替代了原来那条"大而全"的 `/api/arenas/{articleId}`（2026-09 拆掉）：
  *    句子数据走 `/api/articles/{id}`、榜单/参与者走这一条、我的参与走
- *    `/api/user/participation/{articleId}`、收藏走 `/api/user/is-favorite`。
+ *    `/api/user/participation/{articleId}`、收藏走 `/api/user/favorited`。
  */
 export const ArticleParticipationRowSchema = z
   .object({
     /** 名次：按最高分全序算，与 `sort` 无关 */
     rank: z.number().int(),
+    /** ⭐ 参与记录的地址（`participations.id`）—— 点这一行看详情 */
+    participationId: z.string(),
     userId: z.number().int(),
     nickname: z.string(),
     avatarUrl: z.string().nullable(),
@@ -734,11 +765,27 @@ export const FavoriteToggleResponseSchema = okEnvelope(
 )
 
 /**
- * ⭐ **"这一句我收藏了吗"**（`GET /api/user/is-favorite`）—— 独立的一次查询。
+ * ⭐ **"这一句我收藏了吗"**（`GET /api/user/favorited`）—— 独立的一次查询。
  * ⚠️ 只有 `favorited` 一个字段：它只回答这一个问题（见 routes/favorites.ts 的说明）。
  */
-export const IsFavoriteResponseSchema = okEnvelope(
-  z.object({ favorited: z.boolean() }).openapi('IsFavoriteResponse'),
+export const FavoritedResponseSchema = okEnvelope(
+  z.object({ favorited: z.boolean() }).openapi('FavoritedResponse'),
+)
+
+/** ⭐ 某一句的收藏总量（`GET /api/stats/favorite-count` 的一项） */
+export const ArticleFavoriteCountSchema = z
+  .object({
+    articleId: z.string(),
+    favoriteCount: z.number().int(),
+  })
+  .openapi('ArticleFavoriteCount')
+
+/**
+ * ⭐ **"这些句子各被多少人收藏"**（`GET /api/stats/favorite-count?ids=`，**公开**）。
+ * ⚠️ 与参与统计（`ArticleStatsResponse`）同形：按请求的 ids **零值补齐**。
+ */
+export const ArticleFavoriteCountsResponseSchema = okEnvelope(
+  z.object({ items: z.array(ArticleFavoriteCountSchema) }).openapi('ArticleFavoriteCountsResponse'),
 )
 
 /** 收藏列表里的一条（带句子正文与我的战绩） */
@@ -900,6 +947,8 @@ type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
 /** 每一对都得是 `true`；写成 `false` 时 TS 会在这里报错 */
 type _CardParity = Equal<z.infer<typeof ArticleCardSchema>, ArticleCard>
+type _TagCountParity = Equal<z.infer<typeof TagCountSchema>, TagCount>
+type _TagsResponseParity = Equal<z.infer<typeof TagsResponseSchema>['data'], TagsResponse>
 type _ArticleListParity = Equal<
   z.infer<typeof ArticleListResponseSchema>['data'],
   ArticleListResponse
@@ -998,8 +1047,13 @@ type _FavResParity = Equal<
   FavoritesResponse
 >
 type _IsFavParity = Equal<
-  z.infer<typeof IsFavoriteResponseSchema>['data'],
-  IsFavoriteResponse
+  z.infer<typeof FavoritedResponseSchema>['data'],
+  FavoritedResponse
+>
+type _FavCountItemParity = Equal<z.infer<typeof ArticleFavoriteCountSchema>, ArticleFavoriteCount>
+type _FavCountsParity = Equal<
+  z.infer<typeof ArticleFavoriteCountsResponseSchema>['data'],
+  ArticleFavoriteCountsResponse
 >
 type _SubAudioParity = Equal<
   z.infer<typeof SubmissionAudioResponseSchema>['data'],
@@ -1010,6 +1064,8 @@ type _SubAudioParity = Equal<
 //    它们没有任何运行期意义，但删掉会让上面的漂移检查静默失效。
 const _parityChecks: [
   _CardParity,
+  _TagCountParity,
+  _TagsResponseParity,
   _ArticleListParity,
   _LatestParity,
   _TodayArticleParity,
@@ -1054,6 +1110,8 @@ const _parityChecks: [
   _FavItemParity,
   _FavResParity,
   _IsFavParity,
+  _FavCountItemParity,
+  _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

@@ -3,7 +3,7 @@
   ⚠️ 布局/字号/字重与改造前的「今日卡 / 历史卡」逐项一致，只把颜色换成
      currentColor + 透明度（theme 缺失时用品牌色兜底）。
 -->
-<view class="ac-card {{mode === 'list' ? 'ac-list' : 'ac-featured'}} {{entry.joined ? 'ac-joined' : ''}}"
+<view class="ac-card {{mode === 'list' ? 'ac-list' : 'ac-featured'}}"
       style="background:{{bg}};color:{{fg}}">
   <!-- 卡片头：左（播放 + 时长）· 右（人数 + 箭头）—— 父容器 justify-between -->
   <view wx:if="{{entry.header}}" class="flex items-center justify-between {{mode === 'list' ? 'mb-2' : 'mb-3'}}" bindtap="onOpen">
@@ -16,21 +16,32 @@
     </view>
     <view class="flex items-center">
       <text wx:if="{{entry.stat}}" class="text-22rpx shrink-0 ac-faint">{{entry.stat}}</text>
+      <!-- ⭐ 收藏数（在心的**左边**，见 arena-card.ts 的 favoriteCount）：
+           ⚠️ 0 / 还没拉到都不画（favoriteCount > 0 才渲染）—— 空心旁边挂个 0 是噪音。
+           ⚠️ 同样 catchtap 拦住冒泡：点数字也该是"切换收藏"，而不是被送进详情页。 -->
+      <text wx:if="{{showFavorite && favoriteCount > 0}}"
+            class="shrink-0 leading-[1] text-24rpx ac-faint ml-2"
+            catchtap="onFavorite">{{favoriteCount}}</text>
       <!-- ⭐ 收藏（只在朗读挑战页画，见 arena-card.ts 的 showFavorite）：
            ⚠️ catchtap 拦住冒泡 —— 否则点收藏会顺手把人送进详情页。
-           ⚠️⚠️ 字形只有 **heart-outline** 一个（iconfont 子集里没有实心心，
-              见 tools/iconfont/build.mjs 的 ICONS）⇒ "已收藏"用 **描边 + 不透明**、
-              "未收藏"用 **描边 + 半透明**来区分，而不是假装有个实心字形。
+           ⭐ 两个状态 = **两个真字形**（用户 2026-09 指定 Clarity 的那两颗心）：
+              未收藏 = icon-favorite-line（空心，弱化成 ac-faint）、
+              已收藏 = icon-favorite-solid（实心，全色）。
+              ⚠️ 原来只有 MDI 的 heart-outline 一个字形，靠"不透明度"假装两种状态 ——
+                 那样两颗心**视觉重量一样**，"收了没"要靠猜（而且注释还得解释这件事）。
+              ⚠️ 字形定义在 tools/iconfont/build.mjs 的 ICONS 里（自建子集）；
+                 往 WXML 写一个不在子集里的 icon-xxx，表现是**整颗都不画**（不是画个方框）。
            ⚠️ 不用 emoji ❤：emoji 的颜色不受主题前景色控制，在 currentColor 卡片上会跳出来。 -->
-      <text wx:if="{{showFavorite}}"
-            class="shrink-0 leading-[1] iconfont icon-heart-outline ml-2 {{favorite ? '' : 'ac-faint'}} {{mode === 'list' ? 'text-32rpx' : 'text-40rpx'}}"
-            catchtap="onFavorite"></text>
+      <ui-icon wx:if="{{showFavorite}}"
+            class="shrink-0 leading-[1] ml-2 {{favorite ? '' : 'ac-faint'}} {{mode === 'list' ? 'text-32rpx' : 'text-40rpx'}}"
+            name="{{favorite ? 'clarity:favorite-solid' : 'clarity:favorite-line'}}"
+            catchtap="onFavorite" />
       <!-- ⚠️ 那颗 › 在**朗读挑战页**（showFavorite）不画：用户 2026-09 要求"去掉收藏后面的 >"。
            卡片整张仍然是「点进详情」的目标，箭头只是"这里可以点进去"的提示 ——
            而这一页进来的人已经在一句的详情里了，没有"再进去"可去。
            ⚠️ 首页那几张卡（showFavorite 为 false）照旧画，那里的箭头是真有去处（竞技场）。 -->
-      <text wx:if="{{!showFavorite}}"
-            class="shrink-0 leading-[1] ac-faint ml-2 iconfont icon-chevron-right {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}"></text>
+      <ui-icon wx:if="{{!showFavorite}}" name="mdi:chevron-right"
+            class="shrink-0 leading-[1] ac-faint ml-2 {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}" />
     </view>
   </view>
 
@@ -50,4 +61,15 @@
           style="background:{{fg}};color:{{bg}}" bindtap="onStart">{{entry.action}}</view>
     <text wx:if="{{entry.hint}}" class="text-22rpx block text-center mt-2.5 ac-faint">{{entry.hint}}</text>
   </block>
+
+  <!-- ⭐ **已参与角标** — 右下角浮动的圆形勾（用户 2026-09 定）。
+       ⚠️ 卡片边框现在是**每张都有**的前景色描边（见 wxss 的 .ac-card），
+          所以"我读过没有"改由这个角标表达（原来是给整张卡再加一圈描边）。
+       ⚠️ 填充用卡片**前景色**、勾用卡片**背景色**（反色小徽章）—— 任何主题下都清楚，
+          且不用 emoji（emoji 的颜色不受主题控制）。
+       ⚠️ 它是**状态标记、不是按钮**：挂在卡根节点下（不在 CTA 里），
+          位置压在卡片 padding 里、不盖住按钮的点击区。 -->
+  <view wx:if="{{entry.joined}}" class="ac-check" style="background:{{fg}};color:{{bg}}">
+    <ui-icon name="mdi:check" />
+  </view>
 </view>

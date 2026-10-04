@@ -1,0 +1,82 @@
+<!--
+  ⭐ 「参与详情」—— 一条参与记录（participations 表的一行）的完整一屏。
+
+  ⚠️ 这一屏**只画接口给的那一条**（GET /api/participation/{id}）：
+     句子 / 最高分 / 最低分 / 挑战次数 / 名次 / 成长值 / 词表快照，全部来自它。
+     页面不加工、不补算、也不去别处凑数 —— 榜上那一行是什么，这里就是什么。
+  ⚠️ 公开页：从分享链接进来的陌生人看的是同一屏（与挑战结果页同一套口径）。
+  ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），这里不要再写 pt-3 —— 见 lib/nav.ts
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <boot-overlay />
+  <nav-bar id="nav" title="参与详情" />
+
+  <!-- ── 加载中 / 出错 ─────────────────────────────────────── -->
+  <view class="card p-5" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取这条参与记录…</text>
+  </view>
+
+  <view class="card p-5" wx:elif="{{error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:elif="{{view}}">
+    <!-- ① 句子（词表快照拼出来的原文；内容缺口时是服务端兜底的 text） -->
+    <view class="card p-5">
+      <text class="text-34rpx text-ink font-medium leading-[1.7]">{{view.sentence}}</text>
+    </view>
+
+    <!-- ② 这一句的三个数（与榜单同一份口径） -->
+    <view class="card p-4 mt-3">
+      <view class="flex items-center">
+        <view class="flex-1 text-center">
+          <text class="text-44rpx font-bold text-ink">{{view.bestText}}</text>
+          <text class="text-22rpx text-faint block mt-1">最高分</text>
+        </view>
+        <view class="w-[1rpx] h-[64rpx] bg-line"></view>
+        <view class="flex-1 text-center">
+          <text class="text-44rpx font-bold text-ink">{{view.worstText}}</text>
+          <text class="text-22rpx text-faint block mt-1">最低分</text>
+        </view>
+        <view class="w-[1rpx] h-[64rpx] bg-line"></view>
+        <view class="flex-1 text-center">
+          <text class="text-44rpx font-bold text-ink">{{view.attempts}}</text>
+          <text class="text-22rpx text-faint block mt-1">挑战次数</text>
+        </view>
+      </view>
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
+        <text class="text-24rpx text-body block">{{view.rankText}}</text>
+        <text class="text-22rpx text-faint block mt-1">{{view.lastText}}</text>
+      </view>
+    </view>
+
+    <!-- ③ 这一句累计带来的成长值（三项明细，不只给总分） -->
+    <view class="card p-4 mt-3">
+      <view class="flex items-baseline">
+        <text class="text-26rpx text-body flex-1">这一句的成长值</text>
+        <text class="text-40rpx font-bold text-ink">+{{view.growthTotal}}</text>
+      </view>
+      <text class="text-22rpx text-faint block mt-1">{{view.growthText}}</text>
+    </view>
+
+    <!-- ④ 词表快照：接口原样给的那些词（音标 / 句中释义有就画） -->
+    <view class="card p-4 mt-3" wx:if="{{view.words.length > 0}}">
+      <text class="text-26rpx font-semibold text-ink">这一句的词</text>
+      <view class="mt-2" wx:for="{{view.words}}" wx:key="index">
+        <view class="flex items-baseline py-[10rpx]">
+          <text class="text-28rpx text-ink font-medium">{{item.text}}</text>
+          <text class="text-22rpx text-faint ml-2">{{item.ipa}}</text>
+        </view>
+        <text class="text-22rpx text-muted block leading-[1.6]" wx:if="{{item.meaning}}">{{item.meaning}}</text>
+      </view>
+    </view>
+
+    <!-- ⑤ 去这一句的竞技场（公开页，匿名也能看榜 / 听标准音） -->
+    <view class="mt-4 text-center py-[24rpx] rounded-full bg-brand text-white text-30rpx" bindtap="onOpenArena">
+      去这一句的竞技场
+    </view>
+  </block>
+
+</view>

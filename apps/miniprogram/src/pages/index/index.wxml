@@ -20,7 +20,7 @@
   <skeleton wx:if="{{statusMode === 'loading'}}" variant="stats" />
 
   <view wx:else
-        class="bg-white rounded-2.5 py-3.5 mb-3 flex items-center box-border min-h-[144rpx]">
+        class="card py-3.5 mb-3 flex items-center box-border min-h-[144rpx]">
     <block wx:if="{{statusMode === 'data' && stats}}">
       <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。 -->
       <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
@@ -78,7 +78,7 @@
   <skeleton wx:if="{{todayLoading}}" variant="card" />
 
   <!-- ⚠️ 错误只在本块**没有内容**时占位；有缓存卡就照常画（刷新失败不该让内容消失） -->
-  <view wx:elif="{{todayError && !today}}" class="bg-white rounded-2.5 p-5">
+  <view wx:elif="{{todayError && !today}}" class="card p-5">
     <text class="text-28rpx text-bad block leading-[1.6]">{{todayError}}</text>
     <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
           bindtap="onRetryToday">重试</view>
@@ -99,12 +99,17 @@
           /api/user/participation/{id}）—— list 形态用 joined 画一圈描边，
           不占位、也不跟句子抢眼。 -->
   <view class="pt-6 pb-2 px-1" wx:if="{{latestLoading || latest.length > 0}}">
-    <text class="text-28rpx font-semibold text-ink">最新上线</text>
+    <view class="flex items-center">
+      <text class="text-28rpx font-semibold text-ink flex-1">最新上线</text>
+      <!-- ⭐ 去浏览句库（公开页）：按标签 / 难度翻整个句库，入口就挂在这一段的标题右边 ——
+           这里列的是"最新几句"，想看更多自然往这儿点。 -->
+      <text class="text-24rpx text-brand" bindtap="onOpenBrowse">浏览句库 ›</text>
+    </view>
   </view>
 
   <skeleton wx:if="{{latestLoading}}" variant="list" rows="3" />
 
-  <view wx:elif="{{latestError && latest.length === 0}}" class="bg-white rounded-2.5 p-5">
+  <view wx:elif="{{latestError && latest.length === 0}}" class="card p-5">
     <text class="text-28rpx text-bad block leading-[1.6]">{{latestError}}</text>
     <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
           bindtap="onRetryLatest">重试</view>
@@ -116,6 +121,17 @@
               loading="{{loadingArticle === item.articleId}}"
               bind:open="onOpenDetail" bind:play="onPlayAudio" />
 
+  <!-- ⭐ 这一串之后跟一个**去看全部标签**的入口（用户 2026-09 要求）：
+       上面是"最近上了哪几句"，看完自然想知道"句库按主题都有哪些" ——
+       标签名录就是那个目录，从它点进具体标签再落到浏览页。
+       ⚠️ 只在真有卡片时画（空列表下面挂"看全部标签"会显得这一屏坏了）。 -->
+  <view class="card mt-3 py-[26rpx] flex items-center justify-center"
+        wx:if="{{latest.length > 0}}"
+        bindtap="onOpenTags" hover-class="active__opacity-60">
+    <ui-icon class="text-28rpx text-brand shrink-0 mr-1" name="mdi:tag-outline" />
+    <text class="text-26rpx text-brand">看全部标签</text>
+  </view>
+
   <!-- ══ 块 ④：荣誉榜 ═══════════════════════════════════════
        ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板那三个数**完全一致**。
        ⚠️ 单独一个接口、单独一块加载态：它最重（30 行 + 头像换址），
@@ -126,7 +142,7 @@
 
   <skeleton wx:if="{{boardsLoading}}" variant="rank" rows="3" />
 
-  <view wx:elif="{{boardsError && boardList.length === 0}}" class="bg-white rounded-2.5 p-5">
+  <view wx:elif="{{boardsError && boardList.length === 0}}" class="card p-5">
     <text class="text-28rpx text-bad block leading-[1.6]">{{boardsError}}</text>
     <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
           bindtap="onRetryBoards">重试</view>
@@ -134,7 +150,7 @@
 
   <block wx:else>
     <!-- ⭐ 三个指标**共用一个位置**，用等宽药丸切换（三块平铺 = 最多 30 行，会把首页拖长）。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3">
+    <view class="card p-4 mb-3">
       <view class="flex items-center">
         <view class="flex-1 text-center py-2 rounded-full {{activeBoard === i ? 'bg-brand' : ''}}"
               wx:for="{{boardList}}" wx:for-item="tab" wx:for-index="i" wx:key="key"

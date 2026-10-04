@@ -1,8 +1,1 @@
-{
-  "navigationBarTitleText": "朗读挑战者",
-  "enableShareAppMessage": true,
-  "enableShareTimeline": true,
-  "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar"
-  }
-}
+{"navigationBarTitleText":"朗读挑战者","enableShareAppMessage":true,"enableShareTimeline":true,"usingComponents":{"nav-bar":"/components/nav-bar/nav-bar","ui-icon":"/components/ui-icon/ui-icon"}}

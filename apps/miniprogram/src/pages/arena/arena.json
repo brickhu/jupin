@@ -2,7 +2,6 @@
   "navigationBarTitleText": "朗读竞技场",
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "arena-card": "/components/arena-card/arena-card",
-    "ui-button": "/components/ui-button/ui-button"
+    "arena-card": "/components/arena-card/arena-card"
   }
 }

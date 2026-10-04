@@ -1,0 +1,78 @@
+<!--
+  ⭐ 「浏览句库」—— 顶部切标签 / 难度，下面无限滚动的句子列表。
+
+  ⚠️ 筛选是**单选 + 再点一次取消**（不是条件编辑器）：这一页要的是"切换"。
+  ⚠️ 列表卡片只画句子（不给 header）：听 / 看榜 / 开始挑战都在点进去那一页，
+     列表这一屏少一层交互就少一处误触（见 browse.ts 的文件头）。
+  ⚠️ 翻页判据是「已加载条数 < total」（服务端给的命中总数），不是"这页满没满"。
+  ⚠️ 触底加载用页面级 onReachBottom（页面本身滚动），不是 scroll-view。
+  ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），不要再写 pt-3 —— 见 lib/nav.ts
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="浏览句库" />
+
+  <!-- ── 顶部筛选：标签（横滑）+ 难度 ─────────────────────── -->
+  <view class="card p-3">
+    <!-- 标签条：选中态高亮；最后一个「全部标签」去 tags 页 -->
+    <scroll-view scroll-x enable-flex class="whitespace-nowrap" show-scrollbar="{{false}}">
+      <view class="inline-flex items-center">
+        <view class="shrink-0 px-3 py-[10rpx] mr-2 rounded-full text-24rpx {{tag === '' ? 'bg-brand text-white' : 'text-body bg-line'}}"
+              data-tag="" bindtap="onPickTag">全部</view>
+        <view wx:for="{{tagChips}}" wx:key="tag"
+              class="shrink-0 px-3 py-[10rpx] mr-2 rounded-full text-24rpx {{tag === item.tag ? 'bg-brand text-white' : 'text-body bg-line'}}"
+              data-tag="{{item.tag}}" bindtap="onPickTag">{{item.tag}}</view>
+        <view class="shrink-0 px-3 py-[10rpx] rounded-full text-24rpx text-brand border-[1rpx] border-solid border-brand"
+              bindtap="onOpenTags">全部标签 ›</view>
+      </view>
+    </scroll-view>
+
+    <!-- 难度：与 shared 的 LEVEL_ORDER / LEVEL_LABEL 一一对应（不另写映射） -->
+    <view class="flex items-center mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
+      <view class="shrink-0 px-3 py-[10rpx] mr-2 rounded-full text-24rpx {{level === null ? 'bg-brand text-white' : 'text-body bg-line'}}"
+            data-level="{{null}}" bindtap="onPickLevel">全部难度</view>
+      <view wx:for="{{levels}}" wx:key="level"
+            class="shrink-0 px-3 py-[10rpx] mr-2 rounded-full text-24rpx {{level === item.level ? 'bg-brand text-white' : 'text-body bg-line'}}"
+            data-level="{{item.level}}" bindtap="onPickLevel">{{item.label}}</view>
+    </view>
+  </view>
+
+  <view class="px-1 mt-2">
+    <text class="text-22rpx text-faint">共 {{total}} 句{{tag ? ' · 标签「' + tag + '」' : ''}}{{level === null ? '' : ' · ' + levels[level].label}}</text>
+  </view>
+
+  <!-- ── 第一页加载 / 出错 ─────────────────────────────────── -->
+  <view class="card p-5 mt-3" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取句子…</text>
+  </view>
+
+  <view class="card p-5 mt-3" wx:elif="{{error && items.length === 0}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <!-- ── 一句都没有（筛得太窄 / 句库空） ───────────────────── -->
+  <view class="card p-5 mt-3" wx:elif="{{items.length === 0}}">
+    <text class="text-28rpx text-muted">这个条件下还没有句子 —— 换个标签或难度试试。</text>
+  </view>
+
+  <!-- ── 列表（无限滚动） ──────────────────────────────────── -->
+  <block wx:else>
+    <arena-card wx:for="{{items}}" wx:key="articleId" mode="list" entry="{{item}}"
+                bind:open="onOpenArticle" />
+
+    <!-- 底部状态：还有 → 触底自动加载；没有 → 明说"到底了" -->
+    <view class="py-[28rpx] text-center" wx:if="{{items.length < total}}">
+      <text class="text-24rpx text-faint">{{loadingMore ? '正在加载…' : '上滑加载更多'}}</text>
+    </view>
+    <view class="py-[28rpx] text-center" wx:else>
+      <text class="text-24rpx text-faint">到底了 · 共 {{total}} 句</text>
+    </view>
+
+    <!-- ⚠️ 追加失败只说一句，**不清空已经拿到的那些**（见 browse.ts） -->
+    <view class="py-[6rpx] text-center" wx:if="{{error && items.length > 0}}">
+      <text class="text-22rpx text-bad" bindtap="onRetry">{{error}} · 点这里重试</text>
+    </view>
+  </block>
+
+</view>

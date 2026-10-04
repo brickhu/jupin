@@ -31,6 +31,22 @@ export const ARTICLE_ID_LENGTH = 16
  */
 export const SUBMISSION_ID_LENGTH = 16
 
+/**
+ * ⭐ **参与记录地址（`participations.id`）的长度**（十六进制字符数）。
+ *
+ * id = sha256(`<userId>:<articleId>`) 的十六进制**前 N 位**。取 24 位 = **96 bit**：
+ * 这个量级上碰撞概率可以忽略，而且比内容/提交 id（16 位 = 64 bit）留了更多余量 ——
+ * 因为它**没有"撞了会报错"的保护**：地址撞了就是两行参与互认，谁都不会红。
+ *
+ * ⚠️⚠️ 它必须是**派生值**，不是自增：`participations` 是重算式派生索引
+ *    （`rebuildParticipations` 会整表重写）—— 自增一重建就换号，发出去的链接会指到别人。
+ *    哈希出来的值重建前后逐行相等（这条是"重建前后必须一模一样"那个验收判据的一部分）。
+ *
+ * ⚠️ 同时被三处用到，所以放在 shared：派生函数（本包 participation-id.ts）、
+ *    列的宽度（apps/server 的 schema）、以及接口里校验地址的正则（routes/participation.ts）。
+ */
+export const PARTICIPATION_ID_LENGTH = 24
+
 /** 核心常量。
  * ⚠️ 所有阈值只在这里定义一处，前后端共用，不允许多处硬编码。
  */

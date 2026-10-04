@@ -1,0 +1,60 @@
+<!--
+  ⭐ 「全部标签」—— 句库的目录：每个标签 + 它有多少篇，按篇数降序（服务端排好）。
+
+  ⚠️ 搜索是**本地过滤**（见 tags.ts 的文件头）：输入框每敲一下都发请求既慢又费。
+  ⚠️ 点一行 = 去浏览页看那个标签下的句子（browse 顶部会把当前标签高亮）。
+  ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），不要再写 pt-3 —— 见 lib/nav.ts
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="全部标签" />
+
+  <!-- 搜索 + 计数 -->
+  <view class="card p-3 flex items-center">
+    <ui-icon class="text-32rpx text-faint shrink-0 mr-2" name="mdi:magnify" />
+    <input class="flex-1 text-28rpx text-ink" value="{{query}}" placeholder="搜索标签"
+           placeholder-class="text-faint" bindinput="onSearch" confirm-type="search" />
+    <view wx:if="{{query}}" class="shrink-0 pl-2 py-1" bindtap="onClearSearch">
+      <ui-icon class="text-28rpx text-faint" name="mdi:close" />
+    </view>
+  </view>
+
+  <view class="px-1 mt-2 flex items-center">
+    <text class="text-22rpx text-faint flex-1">共 {{total}} 个标签{{query ? '（筛出 ' + shown.length + ' 个）' : ''}}</text>
+    <text class="text-22rpx text-brand" bindtap="onOpenBrowse">随便看看 ›</text>
+  </view>
+
+  <!-- 加载中 / 出错 -->
+  <view class="card p-5 mt-3" wx:if="{{loading}}">
+    <text class="text-28rpx text-muted">正在取标签…</text>
+  </view>
+
+  <view class="card p-5 mt-3" wx:elif="{{error}}">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:else>
+    <!-- 一个都没有（句库还没上线内容） -->
+    <view class="card p-5 mt-3" wx:if="{{total === 0}}">
+      <text class="text-28rpx text-muted">句库里还没有标签 —— 等内容上线后这里就有了。</text>
+    </view>
+
+    <!-- 搜索没命中 -->
+    <view class="card p-5 mt-3" wx:elif="{{shown.length === 0}}">
+      <text class="text-28rpx text-muted">没有匹配「{{query}}」的标签。</text>
+    </view>
+
+    <!-- 标签列表：一行一个（标签 + 篇数 + 可点提示） -->
+    <view class="card mt-3" wx:else>
+      <view class="flex items-center px-4 py-[26rpx] {{index > 0 ? 'border-t-[1rpx] border-t-solid border-t-line' : ''}}"
+            wx:for="{{shown}}" wx:key="tag"
+            data-tag="{{item.tag}}" bindtap="onOpenTag" hover-class="active__opacity-60">
+        <text class="text-30rpx text-ink flex-1">{{item.tag}}</text>
+        <text class="text-24rpx text-faint">{{item.count}} 篇</text>
+        <ui-icon class="text-24rpx text-faint ml-2 shrink-0" name="mdi:chevron-right" />
+      </view>
+    </view>
+  </block>
+
+</view>

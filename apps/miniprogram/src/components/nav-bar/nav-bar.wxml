@@ -34,8 +34,8 @@
         <view wx:elif="{{sessionUnknown}}" class="nv-login">{{joinBusy ? '连接中' : '重新连接'}}</view>
         <view wx:else class="nv-login">{{joinBusy ? '加入中' : '加入'}}</view>
       </block>
-      <text wx:elif="{{leftMode === 'home'}}" class="nv-glyph iconfont icon-home"></text>
-      <text wx:else class="nv-glyph nv-glyph-back iconfont icon-chevron-left"></text>
+      <ui-icon wx:elif="{{leftMode === 'home'}}" class="nv-glyph" name="mdi:home" />
+      <ui-icon wx:else class="nv-glyph nv-glyph-back" name="mdi:chevron-left" />
     </view>
 
     <text class="nv-title">{{title}}</text>

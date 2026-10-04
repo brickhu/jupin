@@ -30,7 +30,7 @@ import { defaultHook } from '../openapi'
 import {
   FavoriteListResponseSchema,
   FavoriteToggleResponseSchema,
-  IsFavoriteResponseSchema,
+  FavoritedResponseSchema,
   errorResponse,
 } from '../openapi/schemas'
 
@@ -167,7 +167,7 @@ favoritesRoutes.openapi(favoriteListRoute, async (c) => {
 })
 
 /**
- * ⭐⭐ **"这一句我收藏了吗"** —— `GET /api/user/is-favorite?articleId=`。
+ * ⭐⭐ **"这一句我收藏了吗"** —— `GET /api/user/favorited?articleId=`。
  *
  * ⚠️⚠️ 它**只回答这一个问题**（用户 2026-09 定），刻意**不掺进别的响应**：
  *    · 塞进 `/api/user/participation/{articleId}` 不行 —— 收藏与"参与"是两件事：
@@ -179,12 +179,14 @@ favoritesRoutes.openapi(favoriteListRoute, async (c) => {
  *
  * ⚠️ 路径为什么不是 `/api/user/favorites/{articleId}`：那是 PUT/DELETE 的**设开关**，
  *    而这里是一次**查询**；两者语义不同，混在一条路径上会让"GET 回什么"变得含糊。
+ * ⚠️ 名字为什么是 `favorited`（而不是原来的 `is-favorite`）：**用户 2026-09 改的** ——
+ *    它读出来就是"收藏了吗"这一个状态，且与响应字段 `{ favorited: boolean }` 同名。
  */
-export const isFavoriteRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
+export const favoritedRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
-const isFavoriteRoute = createRoute({
+const favoritedRoute = createRoute({
   method: 'get',
-  path: '/is-favorite',
+  path: '/favorited',
   tags: ['我的'],
   summary: '这一句我收藏了吗',
   security: [{ userToken: [] }],
@@ -193,14 +195,14 @@ const isFavoriteRoute = createRoute({
   },
   responses: {
     200: {
-      content: { 'application/json': { schema: IsFavoriteResponseSchema } },
+      content: { 'application/json': { schema: FavoritedResponseSchema } },
       description: '成功',
     },
     400: errorResponse('缺 articleId 参数'),
   },
 })
 
-isFavoriteRoutes.openapi(isFavoriteRoute, async (c) => {
+favoritedRoutes.openapi(favoritedRoute, async (c) => {
   const userId = c.get('userId')
   const articleId = (c.req.query('articleId') ?? '').trim()
   if (!articleId) return c.json({ ok: false, error: '缺 articleId 参数' }, 400)

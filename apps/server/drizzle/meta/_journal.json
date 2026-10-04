@@ -393,6 +393,20 @@
       "when": 1790699353089,
       "tag": "0056_heavy_mindworm",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "5",
+      "when": 1790750815796,
+      "tag": "0057_hard_warhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1790751655275,
+      "tag": "0058_ambitious_stranger",
+      "breakpoints": true
     }
   ]
 }

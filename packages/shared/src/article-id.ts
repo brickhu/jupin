@@ -22,8 +22,13 @@ export function articleIdOf(text: string): string {
   return sha256Hex(text.trim()).slice(0, ARTICLE_ID_LENGTH)
 }
 
-/** sha256 的十六进制摘要（小写）—— 纯实现，见上面关于"为什么不用 node:crypto"的说明 */
-function sha256Hex(input: string): string {
+/**
+ * sha256 的十六进制摘要（小写）—— 纯实现，见上面关于"为什么不用 node:crypto"的说明。
+ *
+ * ⚠️ 它**不是**给业务用的：只在包内被 `articleIdOf` / `participationIdOf` 这类
+ *    "id = 某个哈希的前 N 位"的派生函数复用（单测会拿 node:crypto 逐字节对拍）。
+ */
+export function sha256Hex(input: string): string {
   const bytes = utf8Bytes(input)
   const bitLen = bytes.length * 8
 

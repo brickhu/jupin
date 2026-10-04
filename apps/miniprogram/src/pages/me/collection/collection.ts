@@ -4,6 +4,7 @@ import type { FavoriteItem } from '@jushuo/shared'
 import { listFavorites, setFavorite } from '../../../lib/api/client'
 import { ensureParticipation } from '../../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
+import { noteMyFavoriteToggle } from '../../../lib/stats'
 import { ROUTES, goPublic } from '../../../lib/route'
 import * as me from '../../../lib/store'
 
@@ -172,6 +173,8 @@ Page({
     this.raw = prevRaw.filter((r) => r.articleId !== row.articleId)
     try {
       await setFavorite(row.articleId, false)
+      // ⭐ 收藏总量跟着减一（store 是全局的：别的页面读到的也是这个数）
+      noteMyFavoriteToggle(row.articleId, false)
       wx.showToast({ title: '已取消收藏', icon: 'none', duration: 1200 })
       if (this.data.rows.length === 0) this.setData({ empty: true })
     } catch (err) {

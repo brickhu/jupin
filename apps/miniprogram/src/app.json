@@ -11,7 +11,10 @@
     "pages/me/streak/streak",
     "pages/me/energy/energy",
     "pages/profile/profile",
-    "pages/challenge/challenge"
+    "pages/challenge/challenge",
+    "pages/participation/participation",
+    "pages/tags/tags",
+    "pages/browse/browse"
   ],
   "window": {
     "navigationStyle": "custom",

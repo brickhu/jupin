@@ -1,6 +1,1 @@
-{
-  "component": true,
-  "usingComponents": {
-    "ui-button": "/components/ui-button/ui-button"
-  }
-}
+{"component":true,"usingComponents":{"ui-button":"/components/ui-button/ui-button","ui-icon":"/components/ui-icon/ui-icon"}}

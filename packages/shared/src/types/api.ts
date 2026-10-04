@@ -211,6 +211,13 @@ export interface SubmitResponse {
 
 export interface LeaderboardRow {
   rank: number
+  /** 这一行是谁 */
+  userId: number
+  /**
+   * ⭐⭐ **这一行参与记录的地址** —— 从榜单点进去看详情就是 `GET /api/participation/{participationId}`。
+   *    它等于 `participations.id = sha256(userId + ':' + articleId)` 前 24 位（见 db/schema.ts）。
+   */
+  participationId: string
   nickname: string
   /**
    * 头像 —— ⚠️ 是**云存储 fileID**（cloud://…），不是 http 地址：
@@ -565,14 +572,36 @@ export interface FavoritesResponse {
 }
 
 /**
- * ⭐ **"这一句我收藏了吗"** —— `GET /api/user/is-favorite?articleId=`（鉴权）。
+ * ⭐ **"这一句我收藏了吗"** —— `GET /api/user/favorited?articleId=`（鉴权）。
  *
  * ⚠️ 独立的一条查询（用户 2026-09 定）：**不掺进** participation 的响应，也不依附
  *    已删的 `arena-records`。收藏与"参与"是两件事 —— **没读过也能收藏**，
  *    混在一起就会出现"只收藏没读过 ⇒ 按钮变空心"那种 bug。
  */
-export interface IsFavoriteResponse {
+export interface FavoritedResponse {
   favorited: boolean
+}
+
+/**
+ * ⭐ **某一句被多少人收藏**（`GET /api/stats/favorite-count?ids=` 的一项，**公开**）。
+ *
+ * ⚠️ 它是 `favorites`（一人一句一行）的**现算聚合**，不是冗余计数列 ——
+ *    所以永远准、不需要 ±1、也就不需要重建与对账。
+ *    （对比 `submissions.like_count`：那一列是为了**排序**才存的；收藏不参与排序。）
+ * ⚠️ 与「我收藏了吗」（`/api/user/favorited`）是两件事：
+ *    那个答"我"，这个答"大家" —— 前者要身份、后者谁都能问。
+ * ⚠️ 与参与统计（`ArticleStats`）**同形**：都是按句的公开聚合、都按 ids 零值补齐，
+ *    只是一个数参与、一个数收藏 —— 所以它们并排放在 `/api/stats` 下。
+ */
+export interface ArticleFavoriteCount {
+  articleId: string
+  /** 多少人收藏了这一句；没人收藏是 0（**不是 null** —— "零"就是这个数的答案） */
+  favoriteCount: number
+}
+
+/** `GET /api/stats/favorite-count` 的响应（按请求的 ids 零值补齐） */
+export interface ArticleFavoriteCountsResponse {
+  items: ArticleFavoriteCount[]
 }
 
 /**
@@ -748,6 +777,11 @@ export interface ArticleStatsResponse {
 export interface ArticleParticipationRow {
   /** ⭐ 名次（按最高分全序算；同分按"谁先拿到"再按 uid，与榜单口径一致） */
   rank: number
+  /**
+   * ⭐⭐ **这一行参与记录的地址**（`participations.id`）—— 点这一行看 TA 的参与详情用它：
+   *    `GET /api/participation/{participationId}`（见那个接口的说明）。
+   */
+  participationId: string
   /** ⭐ 用户 id（本库自增主键）—— 端侧拿它跟自己的 id 比，也是个人主页的地址 */
   userId: number
   nickname: string
@@ -788,6 +822,30 @@ export interface ArticleParticipationsResponse {
 export interface ArticleListResponse {
   /** 命中的句子（正文读不到的已剔除；顺序由请求的 `sort` 决定） */
   items: ArticleCard[]
+  /**
+   * ⭐ **命中总数**（标签 / 难度筛完之后、分页之前）—— 无限滚动靠它判断"还有没有下一页"：
+   *    `offset + items.length < total` 就还有。⚠️ 不含"正文读不到被剔除"的那些。
+   */
+  total: number
+}
+
+/**
+ * ⭐ **一个标签 + 它被多少篇文章用着**（`GET /api/tags`）。
+ * ⚠️ 数与列表接口**同一口径**：只算已上线且正文读得到的文章 ——
+ *    否则会出现"标签上写 3 篇、点进去只看到 1 篇"。
+ */
+export interface TagCount {
+  tag: string
+  count: number
+}
+
+/**
+ * ⭐ **全部标签**（`GET /api/tags`）—— tags 页要的那一份。
+ * ⚠️ 排序由服务端定死：**文章数降序 → 标签升序**（少了第二键，同数量的标签顺序会漂）。
+ * ⚠️ 搜索**不在服务端做**：标签总量是这个量级里的几十个，端侧本地过滤更快、也不用多一次往返。
+ */
+export interface TagsResponse {
+  items: TagCount[]
 }
 
 /**
@@ -1032,7 +1090,21 @@ export interface SubmissionAudioResponse {
  *    同一句读十次，这里仍然只是一条（次数在 attempts 里）。
  */
 export interface ParticipationRecord {
+  /**
+   * ⭐ **这一行的地址** = `sha256(userId + ':' + articleId)` 前 24 位十六进制（见 db/schema.ts）。
+   * ⚠️ 它是**派生值**，所以整表重建后不变 —— 分享出去的链接不会指到别人身上。
+   */
+  id: string
   articleId: string
+  /**
+   * ⭐⭐ **这一句累计带来的成长值**（三维，与 `users.growth_*` / `/api/profile/:id` 同一套口径）。
+   *
+   * ⚠️ 它是这条参与下**已出分** submissions 的对应列之和（口径与 `attempts` 一致）——
+   *    用户 2026-09 要求：「一次 participation 下可能有多次 submissions，每次都能增加一点成长值，
+   *    希望他们能够累计到 participations 中」。
+   * ⚠️ 公开接口也带着它：成长值本来就是公开数据（个人主页就展示这三项）。
+   */
+  growth: GrowthView
   /**
    * ⭐⭐ **词表快照**（与 `ArticleDetail.words` 同形：原词含标点 + 音标 / 重音 / 音节 / 释义 / 技巧）。
    *

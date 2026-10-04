@@ -7,12 +7,12 @@
   <nav-bar id="nav" title="参与挑战" />
 
   <!-- ── 句子加载中 ────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && !error}}">
+  <view class="card p-3.5 mb-3" wx:if="{{phase === 'loading' && !error}}">
     <text class="text-28rpx text-muted">正在加载句子…</text>
   </view>
 
   <!-- ── 句子加载失败 ──────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3" wx:if="{{phase === 'loading' && error}}">
+  <view class="card p-3.5 mb-3" wx:if="{{phase === 'loading' && error}}">
     <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
     <view class="mt-3">
       <ui-button variant="outline" color="default" width="full" bind:press="onReload">重试</ui-button>
@@ -24,7 +24,7 @@
        ⚠️⚠️ 提交之后的三个态（上传中 / 评测中 / s5 / s6）**不在这张卡里** ——
           用户 2026-09 把它们整体搬进了 components/eval-dialog 的浮层：
           等待期天然禁止点击，结果也不再和句子挤在同一屏。 -->
-  <view class="bg-white rounded-2.5 p-3.5 mb-3"
+  <view class="card p-3.5 mb-3"
         wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
 
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
@@ -211,7 +211,7 @@
          ⚠️⚠️ 它与下面「历史挑战」的行**口径不同**：这张卡说的是"我在这一句上的全部"
             （含当前这一把），行那一列免掉"当前这一次" —— 见 lib/article-history.ts 的说明。
          ⚠️ 只在真的拿到过数据时画（historyReady）：否则会先闪一张全是「—」的卡。 -->
-    <view class="bg-white rounded-2.5 p-4 mb-3" wx:if="{{historyReady}}">
+    <view class="card p-4 mb-3" wx:if="{{historyReady}}">
       <view class="flex">
         <view class="flex-1">
           <text class="text-22rpx text-faint block">挑战</text>
@@ -232,7 +232,7 @@
       </view>
     </view>
 
-    <view class="bg-white rounded-2.5">
+    <view class="card">
       <!-- ── 正在取（首次进入）────────────────────────────────── -->
       <view class="p-5" wx:if="{{historyLoading}}">
         <text class="text-28rpx text-muted">正在取历史记录…</text>
@@ -291,8 +291,8 @@
             <!-- ⭐ 分数后面这颗 › =「点得进去」的提示（用户 2026-09 要求）。
                  ⚠️ 整行本来就 bindtap 进那一次的结果屏（见 onOpenHistory）——
                     没有它的时候这一行看起来只是一条只读记录，点了会跳是"猜"出来的。
-                 ⚠️ 与「我的挑战」列表里那颗箭头是同一个字形（iconfont 的 icon-chevron-right）。 -->
-            <text class="text-32rpx text-faint ml-1 leading-[1] iconfont icon-chevron-right"></text>
+                 ⚠️ 与「我的挑战」列表里那颗箭头是同一个图标（都走 <ui-icon name="mdi:chevron-right">）。 -->
+            <ui-icon class="text-32rpx text-faint ml-1 leading-[1]" name="mdi:chevron-right" />
           </view>
         </view>
       </block>

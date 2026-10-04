@@ -58,6 +58,28 @@ const NEXT_FRAME_MS = 20
  *    · 战绩 / 解冻卡 —— 全局 store 的 streak（服务端算好的视图）
  *    · 头像 / 昵称 / 已征服数 —— store 的 profile
  */
+/**
+ * 用户面板的菜单（顺序即显示顺序）。
+ *
+ * ⚠️ icon 写 **iconify 名**（唯一名单：lib/icon-names.ts）—— 这样"有哪些图标"
+ *    只有一处，不在页面里手写字体类名。
+ */
+const MENU = [
+    { key: 'participations', icon: 'mdi:target', label: '参与场次' },
+    // ⭐ 收藏排在「参与场次」后面：都是「我收藏/我参与过的东西」这一类的入口
+    // ⚠️ 用**星**（clarity:favorite-line）而不是心：用户 2026-09 定的口径是
+    //    「收藏 = clarity 的 favorite」，而 Clarity 的 favorite 画的是**五角星**。
+    //    这里原来挂 mdi:heart-outline（心）—— 同一个概念在一处是星、一处是心，说不通。
+    { key: 'collection', icon: 'clarity:favorite-line', label: '我的收藏' },
+    { key: 'challenges', icon: 'mdi:clipboard-text-outline', label: '我的挑战' },
+    // ⭐ 连战记录排在这三个战绩入口的最后：它和它们是同一类 ——
+    //    「我走到哪了」。⚠️ 别把它塞进「我的主页」里面当二级入口：
+    //    那一页是**给别人看**的（对外展示），连战日历只给自己看。
+    { key: 'streak', icon: 'mdi:fire', label: '连战记录' },
+    { key: 'home', icon: 'mdi:home', label: '我的主页' },
+    { key: 'notice', icon: 'mdi:bell-outline', label: '通知' },
+  ] as const
+
 Component({
   properties: {
     show: {
@@ -103,21 +125,12 @@ Component({
      * ⭐ 菜单项。
      * ⚠️ 「通知」暂时没有页面 —— 点了给一句「敬请期待」，
      *    而不是留一个点了没反应的死链接（那看起来就像坏了）。
-     * ⚠️ icon 是 **iconfont 的类名**（不是 emoji）：彩色 emoji 在深浅底上会打架，
-     *    图标字体跟随文字颜色。可用字形见 tools/iconfont/build.mjs 的 ICONS。
+     * ⚠️ 图标写的是 **iconify 名**（不是 emoji）：彩色 emoji 在深浅底上会打架，
+     *    图标字体跟随文字颜色。名单见 lib/icon-names.ts（自动生成）。
+     *    ⚠️ 直接把名字交给 <ui-icon name="…"> 渲染 —— wxml 拿不到 TS 函数，
+     *      所以这里不能存"类名"，只能存名字。
      */
-    menu: [
-      { key: 'participations', icon: 'icon-target', label: '参与场次' },
-      // ⭐ 收藏排在「参与场次」后面：都是「我收藏/我参与过的东西」这一类的入口
-      { key: 'collection', icon: 'icon-heart-outline', label: '我的收藏' },
-      { key: 'challenges', icon: 'icon-clipboard', label: '我的挑战' },
-      // ⭐ 连战记录排在这三个战绩入口的最后：它和它们是同一类 ——
-      //    「我走到哪了」。⚠️ 别把它塞进「我的主页」里面当二级入口：
-      //    那一页是**给别人看**的（对外展示），连战日历只给自己看。
-      { key: 'streak', icon: 'icon-fire', label: '连战记录' },
-      { key: 'home', icon: 'icon-home', label: '我的主页' },
-      { key: 'notice', icon: 'icon-bell', label: '通知' },
-    ],
+    menu: MENU,
   },
 
   lifetimes: {

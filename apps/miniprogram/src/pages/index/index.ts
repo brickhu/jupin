@@ -14,11 +14,12 @@ import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
-import { ensureArticleStats } from '../../lib/article-stats'
+import { ensureStats } from '../../lib/stats'
 import { ensureParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
+import type { SessionState } from '../../lib/store'
 import * as me from '../../lib/store'
 
 /**
@@ -355,6 +356,12 @@ Page({
   unsubStore: null as (() => void) | null,
 
   /**
+   * 上一次见到的身份状态 —— 用来把"该补一次参与状态"钉在**状态跃迁**上，
+   * 而不是"每次广播"（那会自激，见 onLoad 里订阅那段说明）。
+   */
+  lastSession: 'pending' as SessionState,
+
+  /**
    * 页面已销毁 —— 「开始挑战」里那次确认身份是异步的（见 onStart），
    * 回来时页面可能已经没了（用户跳走 / 退出）。判活用，别往销毁的页面上写。
    */
@@ -371,14 +378,27 @@ Page({
      */
     wx.showShareMenu?.({ menus: ['shareAppMessage', 'shareTimeline'] })
 
-    // ⭐ 订阅全局「我的记录」：朗读页打完分写进去，这里立刻重画。
-    //    ⚠️ 这是「提交完返回首页不更新」的根治手段 ——
-    //       它不依赖 onShow 的时机，也不要求首页还在页面栈里。
-    //    ⚠️ 顺带补一次「这一屏句子的参与状态」：身份解析与卡片是**两条并发线**，
-    //       卡片先回来时那次拉取会因为"还不知道我是谁"而空转（见 fillCardData）。
-    this.unsubStore = me.subscribe(() => {
+    /**
+     * ⭐ 订阅全局「我的记录」：朗读页打完分写进去，这里立刻重画。
+     *    ⚠️ 这是「提交完返回首页不更新」的根治手段 ——
+     *       它不依赖 onShow 的时机，也不要求首页还在页面栈里。
+     *
+     * ⚠️⚠️⚠️ **回调里绝不取数**（2026-09 真实踩过，无限请求 `/api/stats/*`）：
+     *    这里原来还调了 `fillCardData()`，而它调的 `ensureStats` **每次都重新拉**、
+     *    且写完 store 就 `commit` ⇒ 广播 → 回调 → 再拉 → 再广播 …… 一条自激风暴。
+     *    （`ensureParticipation` 有 `loaded` 短路所以那一半没事，统计那一半没有。）
+     *    ⇒ 订阅只负责**重画**；取数一律由明确的加载路径负责（onLoad / onShow / 卡片刷新）。
+     *
+     * ⚠️ 唯一需要的"补一次"是**身份刚解析出来**那一次：卡片与 `/me` 是两条并发线，
+     *    卡片先回来时那次参与状态拉取会因为"还不知道我是谁"而空转（见 fillCardData）。
+     *    ⇒ 判据是 **session 变了**，不是"广播了" —— 这样它一辈子只可能多跑一次。
+     */
+    this.unsubStore = me.subscribe((s) => {
       this.render()
-      this.fillCardData()
+      if (this.lastSession !== s.session) {
+        this.lastSession = s.session
+        if (s.session === 'ready') this.fillCardData()
+      }
     })
 
     /**
@@ -662,7 +682,7 @@ Page({
    * ⭐⭐ 把**这一屏句子**的两份"我的/全场"数据补上 —— **幂等、可反复调**。
    *
    *   · 我的参与状态（`lib/participation` → `/api/user/participation/{id}`，写 store）
-   *   · 全场参与统计（`lib/article-stats` → `/api/participations/stats?ids=`，写 store）
+   *   · 全场参与统计（`lib/stats` → `/api/stats/participation` + `/api/stats/favorite-count`，写 store）
    *
    * ⚠️⚠️ 为什么需要它（真实竞态）：身份解析（`/me`）与卡片列表是两条并发网络线，
    *    **卡片可能先回来**。那一刻 `store.session` 还是 'pending'，`ensureParticipation`
@@ -682,7 +702,9 @@ Page({
     void ensureParticipation(ids).then(() => {
       if (!this.gone) this.render()
     })
-    void ensureArticleStats(ids).then(() => {
+    // ⚠️ 一次拿齐这一屏的**全部统计**（参与 + 收藏）：两条接口都是按 ids 批量、
+    //    形状一样，所以合成一次调用（见 lib/stats.ts）。读完靠 store 广播重画。
+    void ensureStats(ids).then(() => {
       if (!this.gone) this.render()
     })
   },
@@ -789,7 +811,7 @@ Page({
     const joined = !!mine?.record
     /**
      * ⚠️⚠️ 「N 人参与」**不在卡片上**（用户 2026-09 定：L1 解耦）——
-     *    它来自 `GET /api/participations/stats`，见 lib/article-stats 与 store 的 articleStats。
+     *    它来自 `GET /api/stats/participation`，见 lib/stats 与 store 的 articleStats / articleFavoriteCounts。
      *    没拉到就按 0 画（= 那行字不出现），拉到之后 store 广播会重画。
      */
     const stats = me.getArticleStats(card.articleId)
@@ -826,6 +848,16 @@ Page({
   },
 
   /** 块 ③ 自己的重试（最新上线的错误卡上那颗按钮） */
+  /** ⭐ 去浏览句库（公开页）—— 「最新上线」那一段标题右边的入口 */
+  onOpenBrowse() {
+    goPublic(ROUTES.browse.url)
+  },
+
+  /** ⭐ 去看全部标签（公开页）—— 「最新上线」那串卡片底下的入口 */
+  onOpenTags() {
+    goPublic(ROUTES.tags.url)
+  },
+
   onRetryLatest() {
     void this.loadLatest()
   },

@@ -271,6 +271,80 @@ describe('参与状态（participation）—— 按句子存 /api/user/participa
   })
 })
 
+/**
+ * ⭐⭐ 统计（`/api/stats/*`）在 store 里的两格 —— **参与统计 + 收藏总量**。
+ *
+ * ⚠️⚠️ 这一组的重点是**"全局响应式"**：取数写进 store，订阅者（= 页面）
+ *    立刻拿到新值并自己重画 —— 页面**不需要**在本地存一份。
+ *    两个写入口（applyArticleStats / applyFavoriteCounts）走的是同一个 commit，
+ *    所以"谁能响应"这件事对两块是同一套机制。
+ */
+describe('统计（stats）—— 全局 store + 广播', () => {
+  it('⭐ 收藏总量：写进去、读回来（`0` 是答案，不是"没拿到"）', () => {
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 0 }])
+    expect(store.getFavoriteCount('3')).toBe(0)
+  })
+
+  it('⚠️ 没拉到与"0 人收藏"必须分开：键不存在回 null', () => {
+    expect(store.getFavoriteCount('999')).toBeNull()
+  })
+
+  it('⭐⭐ 写入会广播给订阅者（页面据此重画 —— 这就是"全局响应式"）', () => {
+    const seen: (number | null)[] = []
+    const off = store.subscribe((s) => seen.push(s.articleFavoriteCounts['3'] ?? null))
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 5 }])
+    // ⚠️ 一次 commit 一次通知，值就是新的那个
+    expect(seen).toEqual([5])
+    off()
+  })
+
+  it('⭐ 参与统计同一套机制：写进去就能读到', () => {
+    store.applyArticleStats([
+      { articleId: '3', participantCount: 7, topScore: 90, lowestScore: 61 },
+    ] as never)
+    expect(store.getArticleStats('3')?.participantCount).toBe(7)
+  })
+
+  /**
+   * ⭐⭐⭐ 这条是**自激循环的结构性防线**（2026-09 真实事故：
+   *    首页在 store 订阅回调里调 `ensureStats` → 写 store → `commit` → 广播 →
+   *    回调 → 再拉 …… 无限请求 `/api/stats/*`）。
+   *
+   *    ⇒ 写入端必须做到：**值一模一样就不 commit、不广播**。
+   *      于是"每次都重新拉"的统计在"拉回来发现没变"（常态）时不会激起下一轮。
+   *    ⚠️ 但它只是**防线**，不是许可证：值真的变了照样广播，
+   *      所以"订阅回调里不许取数"那条铁律仍然要守（见 store 的 subscribe 注释）。
+   */
+  it('⭐⭐⭐ 值没变就不广播；值变了照常广播', () => {
+    const stats = { articleId: '3', participantCount: 7, topScore: 90, lowestScore: 61 }
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 5 }])
+    store.applyArticleStats([stats] as never)
+
+    const fn = vi.fn()
+    const off = store.subscribe(fn)
+    // 同样的一组值再写一遍 —— 一次广播都不该有
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 5 }])
+    store.applyArticleStats([stats] as never)
+    expect(fn, '值没变却广播了 —— 订阅里取数就会自激').not.toHaveBeenCalled()
+
+    // 值真的变了 → 照常广播（各一次）
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 6 }])
+    store.applyArticleStats([{ ...stats, participantCount: 8 }] as never)
+    expect(fn).toHaveBeenCalledTimes(2)
+    off()
+  })
+
+  it('⚠️ 两块统计都**不落 storage**（会话级：值会随别人参与 / 收藏而变）', () => {
+    store.applyFavoriteCounts([{ articleId: '3', favoriteCount: 5 }])
+    store.applyArticleStats([
+      { articleId: '3', participantCount: 7, topScore: 90, lowestScore: 61 },
+    ] as never)
+    const raw = memory.get('me_state_v3') as Record<string, unknown>
+    expect(raw.articleFavoriteCounts, '收藏统计不该被持久化').toBeUndefined()
+    expect(raw.articleStats, '参与统计不该被持久化').toBeUndefined()
+  })
+})
+
 describe('hydrate —— 冷启动读回上次的战绩', () => {
   it('读回后订阅者立刻拿到数据，首帧不必等网络', async () => {
     store.applyLatestCards(listResponse([entry('3')]))

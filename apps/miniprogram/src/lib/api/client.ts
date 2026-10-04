@@ -3,6 +3,7 @@ import type {
   ArticleParticipationsResponse,
   ArticleStatsResponse,
   ChallengesResponse,
+  TagsResponse,
   EnergyResponse,
   GrowthRankResponse,
   MeResponse,
@@ -11,7 +12,8 @@ import type {
   ProfileUpdate,
   ProfileUpdateResponse,
   UserProfileResponse,
-  IsFavoriteResponse,
+  ArticleFavoriteCountsResponse,
+  FavoritedResponse,
   ChallengeShareResponse,
   ArticleListResponse,
   LatestCardsResponse,
@@ -759,12 +761,18 @@ export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
 export interface ArticleLibraryQuery {
   /** 逗号分隔也行；数组会被拼成 `a,b`。**任一命中**（OR） */
   tags?: string | string[]
-  /** 难度档 0-3，逗号分隔也行；**任一命中** */
-  difficulty?: string | number[]
+  /**
+   * 难度档 0-3；**任一命中**。
+   * ⚠️ 单个数字、逗号分隔的字符串、数组都收（实现里统一拼成 `a,b`）——
+   *    browse 页只选一档，传单个数字最自然。
+   */
+  difficulty?: string | number | number[]
   /** `date`（默认，上线时间倒序）| `participants`（参与人数倒序） */
   sort?: 'date' | 'participants'
   /** 1..100，默认 50 */
   limit?: number
+  /** 从第几条开始（翻页；默认 0）—— 无限滚动用 */
+  offset?: number
 }
 
 /**
@@ -774,6 +782,16 @@ export interface ArticleLibraryQuery {
  *    那个是首页那一段的固定口径（最新上线、默认 6 条）。
  * ⚠️ 公开接口：不需要鉴权，返回的也是纯句子数据。
  */
+/**
+ * ⭐ **全部标签 + 各自几篇**（`GET /api/tags`，公开）—— tags 页的名录。
+ *
+ * ⚠️ 排序由服务端定死（文章数降序 → 标签升序），端侧**不要**再排。
+ * ⚠️ 搜索在端侧做：标签总量是几十个，本地过滤更快，也不用为每个输入字符发请求。
+ */
+export function fetchTags(): Promise<TagsResponse> {
+  return request<TagsResponse>('/api/tags')
+}
+
 export function fetchArticleLibrary(q: ArticleLibraryQuery = {}): Promise<ArticleListResponse> {
   const params: string[] = []
   const tags = Array.isArray(q.tags) ? q.tags.join(',') : q.tags
@@ -784,6 +802,7 @@ export function fetchArticleLibrary(q: ArticleLibraryQuery = {}): Promise<Articl
   }
   if (q.sort) params.push('sort=' + q.sort)
   if (q.limit !== undefined) params.push('limit=' + q.limit)
+  if (q.offset !== undefined) params.push('offset=' + q.offset)
   return request<ArticleListResponse>('/api/articles' + (params.length ? '?' + params.join('&') : ''))
 }
 
@@ -814,6 +833,19 @@ export function fetchToday(): Promise<TodayArticleResponse> {
  */
 export function fetchParticipation(articleId: string): Promise<ParticipationRecord | null> {
   return request<ParticipationRecord | null>('/api/user/participation/' + articleId)
+}
+
+/**
+ * ⭐ **一条参与记录的详情**（公开）—— 从榜单点某一行进去看。
+ *
+ * ⚠️ `participationId` 就是 `participations.id`：`sha256(userId + ':' + articleId)` 的前 24 位
+ *    （服务端派生，见 db/schema.ts）—— **整表重建后不变**，所以链接可以分享出去。
+ * ⚠️ 记录不存在时服务端回 `data: null`（不是 404）。
+ */
+export function fetchParticipationDetail(
+  participationId: string,
+): Promise<ParticipationRecord | null> {
+  return request<ParticipationRecord | null>('/api/participation/' + participationId)
 }
 
 /**
@@ -956,7 +988,7 @@ export function fetchUsers(q: UserDirectoryQuery = {}): Promise<UserListResponse
 }
 
 /**
- * ⭐ **这一句我收藏了吗** —— `GET /api/user/is-favorite?articleId=`（鉴权）。
+ * ⭐ **这一句我收藏了吗** —— `GET /api/user/favorited?articleId=`（鉴权）。
  *
  * ⚠️⚠️ 它与「我在这句上的战绩」**是两条互不相干的查询**（用户 2026-09 定）：
  *    收藏与参与无关 —— **没读过也能收藏**。所以它既不在
@@ -964,11 +996,28 @@ export function fetchUsers(q: UserDirectoryQuery = {}): Promise<UserListResponse
  *    也不该由"战绩"接口顺带回答。
  * ⚠️ 于是一次只问一句（竞技场页的一次性状态，不进 store、不需要缓存）。
  */
-export function fetchIsFavorite(articleId: string): Promise<boolean> {
-  return request<IsFavoriteResponse>(
-    '/api/user/is-favorite?articleId=' + encodeURIComponent(articleId),
+export function fetchFavorited(articleId: string): Promise<boolean> {
+  return request<FavoritedResponse>(
+    '/api/user/favorited?articleId=' + encodeURIComponent(articleId),
     { budgetMs: LAUNCH_BUDGET_MS },
   ).then((r) => r.favorited)
+}
+
+/**
+ * ⭐ **这几句各被多少人收藏** —— `GET /api/stats/favorite-count?ids=`（**公开**）。
+ *
+ * ⚠️ 与参与统计（fetchArticleStats）**同形同源**：都是按 ids 批量、都零值补齐 ——
+ *    两句话并排放在 `/api/stats` 下（用户 2026-09 定）。
+ * ⚠️ 它**不需要身份**（答的是"大家"）—— 别把它和 `fetchFavorited`（答"我"，要身份）混：
+ *    那两个连路径前缀都不同（`/api/stats` vs `/api/user`）。
+ */
+export function fetchFavoriteCounts(ids: string[]): Promise<ArticleFavoriteCountsResponse> {
+  const list = [...new Set(ids.filter((id) => !!id))]
+  if (list.length === 0) return Promise.resolve({ items: [] })
+  return request<ArticleFavoriteCountsResponse>(
+    '/api/stats/favorite-count?ids=' + encodeURIComponent(list.join(',')),
+    { budgetMs: LAUNCH_BUDGET_MS },
+  )
 }
 
 /**
@@ -1017,17 +1066,20 @@ export interface ArticleParticipationsQuery {
 }
 
 /**
- * ⭐⭐ **某一句的参与记录**（`GET /api/participations?articleId=…`，公开）。
+ * ⭐⭐ **某一句的参与记录**（`GET /api/article/{id}/participations`，公开）。
  *
  * 用户 2026-09：原来那条"大而全"的 `/api/arenas/:articleId` **已删除**，拆成四条：
- *   · 句子数据 → [fetchArticleContent]（`/api/articles/{id}`，端侧做会话级缓存）
+ *   · 句子数据 → [fetchArticleContent]（`/api/article/{id}`，端侧做会话级缓存）
  *   · **参与者 / 榜单 → 就是这一条**（`sort=score` 是榜单，`sort=time` 是"最近谁来过"）
- *   · 参与统计 → [fetchArticleStats]（`/api/participations/stats`）
+ *   · 参与统计 → [fetchArticleStats]（`/api/stats/participation`）
  *   · 我的参与 → [fetchParticipation]（`/api/user/participation/{articleId}`）
- *   · 我的收藏 → [fetchIsFavorite]（`/api/user/is-favorite`）
+ *   · 我的收藏 → [fetchFavorited]（`/api/user/favorited`）
  *
- * ⚠️⚠️ 它挂在**参与资源**下（`/api/participations`），**不挂在 article 下面**：
- *    参与数据是用户资产，句子下架 / 内容换版之后照样要读得到。
+ * ⚠️⚠️ 它挂在**句子的子资源**下（`/api/article/{id}/participations`）—— 2026-09 用户改口径：
+ *    一个句子的详情 / 榜单 / 参与者都是一条句子的子集，统一收在**单数根** `/api/article` 下。
+ *    （原来它自立根路径，理由是"别把可读性绑在内容行上"；但那条接口从来不校验句子是否存在，
+ *     所以那个理由在实现上并不成立。）
+ *    ⚠️ **与句子无关的聚合统计**不在这里 —— 那些在 `/api/stats/*`（按 ids 批量、零值补齐）。
  * ⚠️ 每一行都带 `rank`：按最高分算的**全局**名次，**与 sort 无关**。
  *    `total` 是参与者总数（分页判据）。
  */
@@ -1035,21 +1087,22 @@ export function fetchArticleParticipations(
   articleId: string,
   q: ArticleParticipationsQuery = {},
 ): Promise<ArticleParticipationsResponse> {
-  const params: string[] = ['articleId=' + encodeURIComponent(articleId)]
+  const params: string[] = []
   if (q.sort) params.push('sort=' + q.sort)
   if (q.limit !== undefined) params.push('limit=' + q.limit)
   if (q.offset !== undefined) params.push('offset=' + q.offset)
-  return request<ArticleParticipationsResponse>('/api/participations?' + params.join('&'), {
+  const path = '/api/article/' + encodeURIComponent(articleId) + '/participations'
+  return request<ArticleParticipationsResponse>(path + (params.length ? '?' + params.join('&') : ''), {
     budgetMs: LAUNCH_BUDGET_MS,
   })
 }
 
 /**
- * ⭐⭐ **参与统计**（`GET /api/participations/stats?ids=a,b,c`，公开）—— 批量。
+ * ⭐⭐ **参与统计**（`GET /api/stats/participation?ids=a,b,c`，公开）—— 批量。
  *
  * 用户 2026-09 定的结构（L1 解耦）：人数 / 最高 / 最低**不挂在句子卡片上** ——
  * 它是 `participations` 的聚合派生值，每次现算。列表页拿这一屏的 id 调**一次**
- * 这个接口，再按 articleId 合并（见 lib/article-stats.ts 与 store 的 articleStats）。
+ * 这个接口，再按 articleId 合并（见 lib/stats.ts 与 store 的 articleStats）。
  *
  * ⚠️ 服务端按请求的 ids **零值补齐**（没人参与 ⇒ `participantCount: 0`），
  *    所以调用方可以直接按 id 取。
@@ -1058,7 +1111,7 @@ export function fetchArticleStats(ids: string[]): Promise<ArticleStatsResponse> 
   const list = [...new Set(ids.filter((id) => !!id))]
   if (list.length === 0) return Promise.resolve({ items: [] })
   return request<ArticleStatsResponse>(
-    '/api/participations/stats?ids=' + encodeURIComponent(list.join(',')),
+    '/api/stats/participation?ids=' + encodeURIComponent(list.join(',')),
     { budgetMs: LAUNCH_BUDGET_MS },
   )
 }

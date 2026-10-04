@@ -9,7 +9,7 @@ import { participations, users } from '../db/schema'
  *
  * 用户 2026-09 定：原来那条"大而全"的 `/api/arenas/{articleId}` 拆掉 ——
  *    句子数据走 `/api/articles/{id}`、**参与者/榜单走这一条**、
- *    我的参与走 `/api/user/participation/{articleId}`、收藏走 `/api/user/is-favorite`。
+ *    我的参与走 `/api/user/participation/{articleId}`、收藏走 `/api/user/favorited`。
  *
  * 同一条查询两种用法（`sort`）：
  *   · `sort=score`（榜单）：按最高分倒序 —— 名次就是顺序（rank 由窗口函数给）；
@@ -51,6 +51,8 @@ export async function listArticleParticipations(
     db
       .select({
         rank: rankExpr,
+        /** ⭐ 这一行的地址（派生值）—— 竞技场那张榜点一行看详情要用它 */
+        participationId: participations.id,
         userId: participations.userId,
         nickname: users.nickname,
         avatarUrl: users.avatarUrl,
@@ -73,6 +75,7 @@ export async function listArticleParticipations(
   const items: ArticleParticipationRow[] = rows.map((r) => ({
     // ⚠️ 窗口函数回来的是 BIGINT（mysql2 可能给 number 也可能给 string）——统一成数字
     rank: Number(r.rank),
+    participationId: r.participationId,
     userId: r.userId,
     // ⚠️ 与榜单同一条兜底：没起名字的人显示成「挑战者」，不在服务端编昵称
     nickname: r.nickname ?? '挑战者',

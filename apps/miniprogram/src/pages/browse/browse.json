@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "浏览句库",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/nav-bar",
+    "arena-card": "/components/arena-card/arena-card",
+    "ui-icon": "/components/ui-icon/ui-icon"
+  }
+}

@@ -42,7 +42,7 @@ export async function fetchArticleContent(id: string): Promise<ArticleDetail> {
    *      12 秒掐断更划算（省流量、快速失败）。
    *    ⚠️ 服务端那条路节点少（一次查库 + 读正文 + 拼 fileID），冷启动之后是毫秒级。
    */
-  const content = await request<ArticleDetail>('/api/articles/' + encodeURIComponent(id), {
+  const content = await request<ArticleDetail>('/api/article/' + encodeURIComponent(id), {
     budgetMs: LAUNCH_BUDGET_MS,
   })
   me.applyArticleDetail(content)

@@ -1,0 +1,2 @@
+/* ⭐ 「全部标签」—— 样式一律用 UnoCSS 工具类写在 WXML 上（见 docs/research/styling-decision.md）。
+   ⚠️ 保留空文件是因为小程序要求页面四件套齐全。 */

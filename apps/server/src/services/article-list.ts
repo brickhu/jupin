@@ -46,6 +46,21 @@ export interface ArticleQuery {
   sort?: ArticleSort
   /** 最多几条（调用方已用 clampLimit 收窄） */
   limit: number
+  /**
+   * 从第几条开始（翻页用，默认 0）。
+   * ⚠️ 排序是**全局**的（先排完再切页），所以翻页不会出现"两条一样的"或漏条。
+   */
+  offset?: number
+}
+
+/** 句库查询的结果：一页 + 命中总数（端侧据此判断"还有没有下一页"） */
+export interface ArticleQueryResult {
+  items: ArticleCard[]
+  /**
+   * ⭐ **命中总数**（标签 / 难度筛完之后、分页之前）—— 无限滚动靠它 |
+   * ⚠️ 不含"正文读不到被剔除"的那些（那些本来就不该出现）。
+   */
+  total: number
 }
 
 /* ---------- 查询参数解析（纯函数，有单测） ---------- */
@@ -100,6 +115,19 @@ export function clampLimit(raw: string | undefined, def: number, max: number = M
   return Math.min(max, Math.max(1, Math.trunc(n)))
 }
 
+/**
+ * 翻页起点：非负整数，默认 0。
+ * ⚠️ 与 `clampLimit` 同一套宽容口径（坏值退回默认而不是 400）：列表接口被随手拼参数很正常，
+ *    给 400 会让"翻到最后一页再多滑一下"直接变成报错页，而退回 0 至少还能看到第一页。
+ * ⚠️ 上限给得很宽（10 万）：它只是"跳过多少条"，真正的边界由 `total` 决定。
+ */
+export function clampOffset(raw: string | undefined, max = 100_000): number {
+  if (raw === undefined || raw.trim() === '') return 0
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(max, Math.max(0, Math.trunc(n)))
+}
+
 /* ---------- 筛选 / 排序（纯函数，有单测） ---------- */
 
 /**
@@ -113,6 +141,47 @@ export function clampLimit(raw: string | undefined, def: number, max: number = M
 export function filterByTags<T extends { tags: string[] | null }>(rows: T[], tags: string[]): T[] {
   if (tags.length === 0) return rows
   return rows.filter((r) => (r.tags ?? []).some((t) => tags.includes(t)))
+}
+
+/**
+ * ⭐ **按"包含多少篇文章"统计标签**（`GET /api/tags` 用）—— 纯函数，有单测。
+ *
+ * ⚠️ 只数**给进来的行**（调用方已经滤掉未上线 / 正文读不到的）——
+ *    这样标签上的数就是"点进去真能看到几篇"，不会出现"显示 3 篇、列表只有 1 篇"。
+ * ⚠️ 同一个标签在一篇文章里出现两次只算一次（tag 是集合，不是多重集）。
+ * ⚠️ 排序是**两键全序**：数量降序 → 标签升序。少第二键的话，数量相同的标签
+ *    顺序会随查询计划漂移，界面上就是"刷新一下顺序变了"。
+ */
+export function countTags(rows: Array<{ tags: string[] | null }>): Array<{ tag: string; count: number }> {
+  const counts = new Map<string, number>()
+  for (const r of rows) {
+    for (const tag of new Set(r.tags ?? [])) {
+      const t = tag.trim()
+      if (t === '') continue
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => (b.count - a.count !== 0 ? b.count - a.count : a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
+}
+
+/**
+ * ⭐ 全部标签 + 各自的文章数（`GET /api/tags`）。
+ *
+ * ⚠️ 为什么在内存里数：标签是 `articles.tags` 这个 **JSON 列**，SQL 侧要数得靠
+ *    `JSON_TABLE` 展开；而句库这个量级（10³～10⁵）读一遍 id+tags 比写一段只在
+ *    MySQL 8 上成立的方言 SQL 更简单、也更好测 —— 与上面 `filterByTags` 在内存里筛
+ *    是同一个取舍。
+ * ⚠️ 口径与列表接口**逐条对齐**：只要 `isActive` 且正文读得到的文章
+ *    （否则标签上的数会比点进去看到的多）。
+ */
+export async function listTagCounts(): Promise<Array<{ tag: string; count: number }>> {
+  const rows = await database
+    .select({ id: articles.id, text: articles.text, tags: articles.tags })
+    .from(articles)
+    .where(eq(articles.isActive, true))
+  return countTags(rows.filter((r) => hasContent(r)))
 }
 
 /** 参与排序需要的列 —— 调用方从 articles 取 */
@@ -192,8 +261,8 @@ export function pickLatestArticles<T extends LatestCandidate>(
  * ⚠️ 参与人数排序必须**先拿到全部候选的人数**再截断（不能先截断再排）——
  *    否则「参与人数最多的一句」如果在截断窗口之外，就永远排不上来。
  */
-export async function queryArticleCards(q: ArticleQuery): Promise<ArticleCard[]> {
-  const { tags = [], levels = [], sort = 'date', limit } = q
+export async function queryArticleCards(q: ArticleQuery): Promise<ArticleQueryResult> {
+  const { tags = [], levels = [], sort = 'date', limit, offset = 0 } = q
 
   const rows = await database
     .select({
@@ -234,9 +303,14 @@ export async function queryArticleCards(q: ArticleQuery): Promise<ArticleCard[]>
      */
     const stats = await getArenaStatsBatch(candidates.map((c) => c.articleId), 0)
     const counts = new Map([...stats].map(([id, st]) => [id, st.participantCount]))
-    picked = sortByParticipants(candidates, counts).slice(0, limit)
+    picked = sortByParticipants(candidates, counts).slice(offset, offset + limit)
   } else {
-    picked = pickLatestArticles(candidates, null, limit)
+    /**
+     * ⚠️ `pickLatestArticles` 只支持"取前 N 条"，所以要它先给到 `offset + limit` 再切掉前 offset ——
+     *    顺序仍是**全局**的（先排完再切），翻页不会串页。
+     *    没给那个纯函数加 offset 参数是**故意**的：它被单测钉着，语义越简单越不容易写歪。
+     */
+    picked = pickLatestArticles(candidates, null, offset + limit).slice(offset)
   }
 
   const out: ArticleCard[] = []
@@ -255,5 +329,5 @@ export async function queryArticleCards(q: ArticleQuery): Promise<ArticleCard[]>
       theme: src.theme,
     })
   }
-  return out
+  return { items: out, total: candidates.length }
 }

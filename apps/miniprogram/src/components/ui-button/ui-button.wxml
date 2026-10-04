@@ -7,6 +7,6 @@
   catchtap="onTap"
 >
   <!-- ⚠️ 图标位始终存在（loading 时换成转圈）—— 否则加载态会让按钮文字横向跳一下 -->
-  <text wx:if="{{iconCls}}" class="iconfont {{iconCls}} ub-icon"></text>
+  <ui-icon wx:if="{{iconName}}" name="{{iconName}}" class="ub-icon {{loading ? 'ub-spin' : ''}}" />
   <slot />
 </view>

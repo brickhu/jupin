@@ -4,6 +4,7 @@ import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
 
 import { unfreezeCards, users } from './schema'
 import { RULE_CODE } from '../services/rewards'
+import { participationIdOf } from '@jushuo/shared'
 import { rebuildParticipations } from '../services/participations'
 
 /**
@@ -222,6 +223,8 @@ async function main(): Promise<void> {
         id: makeSubmissionId(attemptIdOf(userId, articleId, at)),
         userId,
         articleId,
+        /** ⭐ 与真实写入同一条口径：链接由派生函数现算（不是 join 出来的） */
+        participationId: participationIdOf(userId, articleId),
         scheduleDate: date,
         status: 'scored',
         // ⚠️ DECIMAL 列要字符串（见 schema 里的说明）

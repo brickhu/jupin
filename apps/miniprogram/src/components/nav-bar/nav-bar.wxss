@@ -10,8 +10,6 @@
  *
  *    页面里的样式照旧用工具类，这两者不冲突。
  */
-/* ⚠️ 本组件是 isolated（见上），app.wxss 里的 .iconfont 进不来，必须自己引一份 */
-@import "../../iconfont.wxss";
 
 .nv-root {
   position: fixed;
@@ -111,7 +109,7 @@
   font-weight: 500;
 }
 
-/* ⚠️ 换成图标字体后字号要重新定：MDI 是 24 网格，字形自带留白，
+/* ⚠️ 字号是按"图标自带留白"定的：图标是 1em 的盒子、墨水在里面（mask 按 viewBox 撑满），
    home 只占约 83%、chevron 只占 50% —— 值按视觉高度反推，不是随手加的 */
 .nv-glyph {
   font-size: 38rpx;

@@ -16,15 +16,15 @@
 | # | 业务概念 | 真相在哪 | 唯一写入方 | 派生物 / 对账 | 主要读者 |
 |---|---|---|---|---|---|
 | 0 | 一个用户（账号） | `users` 一行；**凭据是 openid，身份是 `users.id`** | ⭐⭐ **唯一建行点**：`POST /api/auth/register`（用户在「加入句拼」页按下「确认加入」）→ `createUserByOpenid`（`services/user.ts`）。⚠️ 2026-09 起**注册不能自动**：`authMiddleware` 与 `/api/auth/login` **只查不建**（`findUserByOpenid`），未注册回 403 `NOT_REGISTERED`；`getOrCreateUserByOpenid` 已删除 | 无 | `/api/user/me` 及所有 `/api/user/*` |
-| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles`（通用查询）、`/api/articles/latest`、`/api/articles/:id`、`/api/articles/today`、`/api/participations`、`/api/participations/stats` |
+| 1 | 金句（正文 / 难度 / 标签 / 主题 / 上线状态） | **`articles` 表上的列**（2026-09 拆列：text / translation / scores / challenge / advice / words / links / tags / difficulty / is_active，见 AGENT.md §1.5） | `services/article-content.ts`（唯一写入方，机器守着） | `tags` / `difficulty` 由 `text`+`scores` 派生并物化到列；主题是 id 的纯函数 | `/api/articles`（通用查询）、`/api/articles/latest`、`/api/article/{id}`、`/api/articles/today`、`/api/stats` + `/api/article/{id}/participations`、`/api/stats/participation` |
 | 2 | 一次朗读（录音） | 对象存储里的音频；索引在 `submissions`（`audio_key` / `audio_url` / `bytes` / `duration_ms` / `is_public`） | **无** —— 3 个写点（受理 insert、评测 update、可见性 update） | 失败时对象被删；成功时归档成 mp3 并改 `audio_key` | `GET /api/challenge/:sid/audio`、`/api/user/challenges` |
 | 3 | 一次评测（分数 / 逐词 / 点评） | `submissions` 的 `score` / `word_scores` / `dimensions` / `score_parts` / `ai_comment` / `ai_advice` | 唯一模块 `services/scoring.ts`；**函数级不唯一**（`runScoring` / `fail`） | `participations`（比分）；`users.growth_*`（结算） | `GET /api/user/submissions/:id`、`GET /api/challenge/:sid`、`/api/user/challenges` |
 | 4 | 一次奖励结算（成长值 / 连战 / 能量） | `submissions`（快照）+ `users`（累计/连战/能量）+ `energy_ledger` + `unfreeze_cards` + `reward_grants` | 唯一入口 `services/settle.ts:47`；**但内部跨 4+ 个独立事务** | `submissions.growth_*` / `streak_delta` 是快照 | 结果页 `SubmitResponse.growth` / `.streak`、`/api/user/me` |
-| 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/participation/{articleId}`（+ 子资源 `/submissions`）、首页卡片 |
-| 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/participations?articleId=&sort=score`、`/api/user/submissions/:id` |
+| 5 | 我的战绩（best / attempts / 名次） | `submissions`（聚合） | `syncParticipation`（`services/participations.ts:155`，由 `scoring.ts:299` 调） | `participations`（一人一句一行；对外地址 `id = sha256(userId:articleId)` 前 24 位 —— **派生值，整表重建后不变**，见 `services/participation-id.ts` 与迁移 0057）；重建/对账 `pnpm db:participations --apply` | `/api/user/participations`、`/api/user/participation/{articleId}`（+ 子资源 `/submissions`）、**`/api/participation/{id}`**（公开：按地址看任意一条，从榜单点进去）、首页卡片 |
+| 6 | 金句榜 | 无表，直接读 `participations` | 无写入（纯查询） | 不物化；排序键三键全序 | `/api/article/{id}/participations?sort=score`、`/api/user/submissions/:id` |
 | 7 | 今日挑战（24 小时窗口） | `users.today_article_id` + `today_assigned_at` | `recommendToday`（`services/recommend.ts:330`） | 无 | `GET /api/articles/today?uid=`（uid 可省略 = 匿名，走 `pickAnonymousArticle`） |
 | 8 | 难度档位 | **`articles.scores`**（三个判据分才是源）；`articles.difficulty` 由它算出 | `services/article-content.ts`（写 scores 时一并算 difficulty） | `articles.difficulty`（派生列，供 SQL 筛选） | 端侧展示读 `difficulty`；SQL 筛选读同一列 |
-| 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/is-favorite`（只回答"这句收藏了吗"） |
+| 9 | 收藏 | `favorites`（user_id, article_id） | `setFavorite`（`services/favorites.ts:23`） | 无 | `/api/user/favorites`、`/api/user/favorited`（我收藏了吗）、`/api/stats/favorite-count`（大家收了多少） |
 | 10 | 连战 | `users.streak_days` / `streak_best` / `last_read_date` | `recordRead`（`services/streak.ts:83`）——**但被 `unfreeze.ts:183` 绕过一处** | 连战日历现算（`services/streak-record.ts`） | `/api/user/me`、`/api/user/streak-record` |
 | 10b | 解冻卡 | `unfreeze_cards`（一张卡一行，有效期/领取/使用都在行上） | 发放 `grantUnfreezeCard`（`unfreeze.ts:98`）、领取 `claimUnfreezeCards`（`unfreeze.ts:75`）、使用 `useUnfreezeCards`（`unfreeze.ts:131`）——三个动作各有唯一函数 | 无 | `/api/user/me`、`/api/user/claim`、`/api/user/unfreeze` |
 | 11 | 能量 | `energy_ledger`（流水=真相），`users.energy` 是缓存 | `services/energy.ts`（`topUp/hold/release/addEnergy`）——**但 `services/user.ts:53/75` 直接写缓存** | 缓存 + 流水**同事务**写；**无对账命令** | `/api/user/me`、`/api/user/energy`、提交接口 429 |
@@ -55,7 +55,7 @@
 - 自洽检查在正文层：`services/content-files.test.ts:54` 验 `difficulty === difficultyFromScores(scores)`（**不查库**）。
 - `is_active` / `published_at`：**没有对账命令**。
 
-**④ 读它的地方。** `GET /api/articles`（通用查询：标签/难度筛选 + 排序）与 `GET /api/articles/latest`（最新上线，共用 `services/article-list.ts`）、`GET /api/articles/:id`、`GET /api/articles/today?uid=`（`routes/articles.ts` 的 today 路由）、`GET /api/participations?articleId=`（**参与者/榜单**）与 `GET /api/participations/stats?ids=`（**统计**，`routes/participations.ts`）。⚠️ 2026-09 起参与资源**自立根路径**、与句子行无关（旧 `/api/arenas/:articleId` 已删）；它不校验 isActive，也**不要求 article 存在**。
+**④ 读它的地方。** `GET /api/articles`（通用查询：标签/难度筛选 + 排序）与 `GET /api/articles/latest`（最新上线，共用 `services/article-list.ts`）、`GET /api/article/{id}`、`GET /api/articles/today?uid=`（`routes/articles.ts` 的 today 路由）、`GET /api/article/{id}/participations`（**参与者/榜单**）与 `GET /api/stats/participation?ids=`（**统计**，`routes/article.ts` / `routes/stats.ts`）。⚠️ 这两条参与读路径**不校验句子存在与否**（只查 `participations`），句子下架 / 换版照样返回（旧 `/api/arenas/:articleId` 已删）。
 
 ### 1.2 一次朗读（录音）
 
@@ -129,7 +129,7 @@
 **③ 派生物 / 对账。** 同 1.5（`participations` 的重建命令）。
 成长值三榜是另一套：直接读 `users.growth_*`（`services/growth-rank.ts:31-38`），**不**参与 `participations` 重建。
 
-**④ 读它的地方。** `getTopLeaderboard`（`leaderboard.ts:190`）、`getLeaderboardAround`（`:230`）、`getRank`（`:133`）、`getArenaStatsBatch`（`:324`）、`getMyBest`（`:62`）、`getBestExcluding`（`:87`）；接口 `/api/participations?articleId=&sort=score`、`/api/user/submissions/:id`、`/api/user/participation/{articleId}`（名次/参与人数）；成长榜 `/api/leaderboards/growth`（`routes/leaderboards.ts`，**按需取**：`?self` / `?diligence` / `?standout`，都不带 = 三块全给；读 `users.growth_*` 的三个降序索引）。
+**④ 读它的地方。** `getTopLeaderboard`（`leaderboard.ts:190`）、`getLeaderboardAround`（`:230`）、`getRank`（`:133`）、`getArenaStatsBatch`（`:324`）、`getMyBest`（`:62`）、`getBestExcluding`（`:87`）；接口 `/api/article/{id}/participations?sort=score`、`/api/user/submissions/:id`、`/api/user/participation/{articleId}`（名次/参与人数）；成长榜 `/api/leaderboards/growth`（`routes/leaderboards.ts`，**按需取**：`?self` / `?diligence` / `?standout`，都不带 = 三块全给；读 `users.growth_*` 的三个降序索引）。
 
 ### 1.7 今日挑战（24 小时窗口）
 
@@ -164,7 +164,7 @@
 
 **③ 派生物 / 对账。** 无。
 
-**④ 读它的地方。** `listFavorites`（`favorites.ts:61`）→ `GET /api/user/favorites`（`routes/favorites.ts:53`，收藏列表页）；`favoriteIdsOf`（`favorites.ts:42`）→ `GET /api/user/is-favorite`（`routes/favorites.ts` 的 `isFavoriteRoutes`，竞技场页的按钮状态）。
+**④ 读它的地方。** `listFavorites`（`favorites.ts:61`）→ `GET /api/user/favorites`（`routes/favorites.ts:53`，收藏列表页）；`favoriteIdsOf`（`favorites.ts:42`）→ `GET /api/user/favorited`（`routes/favorites.ts` 的 `favoritedRoutes`，竞技场页的按钮状态）；`favoriteCountsOf`（`favorites.ts`）→ `GET /api/stats/favorite-count?ids=`（`routes/stats.ts`，公开的收藏总量）。
 
 ### 1.10 连战与解冻卡
 
@@ -205,7 +205,7 @@
 
 **③ 派生物 / 对账。** `articles.published_at`（`schema.ts:277`）是「最近一次上线时刻」，只在草稿→已发布那一刻写（admin `:660`、`:880`；灌库 `:93`）。无对账命令。
 
-**④ 读它的地方。** `GET /api/articles`、`GET /api/articles/latest`、推荐选句 `bandOf`（`recommend.ts:150`）与已分配句校验（`recommend.ts:235`）、admin 列表。`GET /api/participations?articleId=` 与 `/api/participations/stats` **不读**它（`routes/participations.ts`）—— 它们只看 `participations`，**句子行不在也照常返回**（2026-09 的 L1 解耦）。
+**④ 读它的地方。** `GET /api/articles`、`GET /api/articles/latest`、推荐选句 `bandOf`（`recommend.ts:150`）与已分配句校验（`recommend.ts:235`）、admin 列表。`GET /api/article/{id}/participations` 与 `GET /api/stats/participation` **不读**它（`routes/article.ts` / `routes/stats.ts`）—— 它们只看 `participations`，**句子行不在也照常返回**。
 
 ---
 

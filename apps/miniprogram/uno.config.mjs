@@ -27,6 +27,24 @@ export default {
   separators: '__',
 
   /**
+   * ⭐ **组合类（shortcut）** —— 目前只有一个：普通白卡（没有主题色的容器）。
+   *
+   * ⚠️ 为什么值得有它：全项目有三十多处 `bg-white rounded-2.5 ...`，
+   *    要让它们"长得一样"就得每处抄同一串类名 —— 抄漏一处就是一张没有边框的卡。
+   *    收成一个 `card` 之后，"白卡长什么样"只有这一处定义。
+   *
+   * ⚠️ 它是**构建期展开的原子类**（产物里就是 `.card{...}`），不是 app.wxss 里
+   *    手写的语义类 —— 后者会踩到"页面 WXSS 在 app.wxss 之后加载、同名类互相覆盖"那个坑
+   *    （见 src/app.wxss 的说明）。所以这条路是安全的。
+   *
+   * ⚠️ 句子卡（`arena-card`）**不用**这个：它有主题色，边框跟主题前景色走
+   *    （见 components/arena-card/arena-card.wxss 的 .ac-card）。
+   */
+  shortcuts: {
+    card: 'bg-white rounded-2.5 border-2 border-solid border-cardline',
+  },
+
+  /**
    * ⚠️ 这里的色值**全部取自页面里既有的颜色**，不是新设计的 ——
    *    迁移只换写法，不换视觉。灰阶/间距/字号一律用 UnoCSS 默认刻度。
    *
@@ -51,7 +69,8 @@ export default {
 
       // ---- 面 ----
       page: '#f7f7f8', // 页面底色
-      line: '#f0f0f0', // 分隔线
+      line: '#f0f0f0', // 分隔线（卡片**内部**的分隔，比卡片的边更淡）
+      cardline: '#cccccc', // ⭐ 普通白卡的边框（用户 2026-09 定）—— 要能从 #f7f7f8 页底上明确"起边"，所以比 line 深一档
     },
   },
 }

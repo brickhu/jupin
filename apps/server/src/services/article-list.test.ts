@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   clampLimit,
+  clampOffset,
+  countTags,
   filterByTags,
   onlineAtOf,
   parseLevels,
@@ -151,5 +153,45 @@ describe('sortByParticipants —— 参与人数倒序', () => {
 
   it('缺人数（没参与过）当 0，不是 undefined 排在中间', () => {
     expect(sortByParticipants(rows, new Map([['b', 2]])).map((r) => r.articleId)).toEqual(['b', 'c', 'a'])
+  })
+})
+
+describe('clampOffset —— 翻页起点', () => {
+  it('坏值一律退回 0（列表接口被随手拼参数很正常，不该给 400）', () => {
+    expect(clampOffset(undefined)).toBe(0)
+    expect(clampOffset('')).toBe(0)
+    expect(clampOffset('abc')).toBe(0)
+    expect(clampOffset('-5')).toBe(0)
+  })
+
+  it('正常值取整；上限封顶', () => {
+    expect(clampOffset('50')).toBe(50)
+    expect(clampOffset('50.7')).toBe(50)
+    expect(clampOffset('999999999', 1000)).toBe(1000)
+  })
+})
+
+describe('countTags —— 标签上那个"几篇"', () => {
+  it('按标签数文章；同一篇里重复出现的标签只算一次', () => {
+    const rows = [
+      { tags: ['励志', '旅行'] },
+      { tags: ['励志', '励志'] },
+      { tags: [] },
+      { tags: null },
+    ]
+    expect(countTags(rows)).toEqual([
+      { tag: '励志', count: 2 },
+      { tag: '旅行', count: 1 },
+    ])
+  })
+
+  it('⭐ 排序是两键全序：数量降序 → 标签升序（少了第二键，刷新一下顺序就变）', () => {
+    const rows = [{ tags: ['b', 'a'] }, { tags: ['c'] }]
+    // a / b / c 各 1 篇 ⇒ 只能靠标签升序决定
+    expect(countTags(rows).map((t) => t.tag)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('空标签 / 只有空白的标签不进名录（它不是标签，是脏数据）', () => {
+    expect(countTags([{ tags: ['', '  ', '真标签'] }])).toEqual([{ tag: '真标签', count: 1 }])
   })
 })

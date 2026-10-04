@@ -1,9 +1,1 @@
-{
-  "navigationBarTitleText": "参与挑战",
-  "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar",
-    "ui-button": "/components/ui-button/ui-button",
-    "eval-dialog": "/components/eval-dialog/eval-dialog",
-    "recording-player": "/components/recording-player/recording-player"
-  }
-}
+{"navigationBarTitleText":"参与挑战","usingComponents":{"eval-dialog":"/components/eval-dialog/eval-dialog","nav-bar":"/components/nav-bar/nav-bar","recording-player":"/components/recording-player/recording-player","ui-button":"/components/ui-button/ui-button","ui-icon":"/components/ui-icon/ui-icon"}}

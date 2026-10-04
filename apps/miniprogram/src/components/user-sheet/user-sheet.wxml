@@ -85,9 +85,9 @@
     <view class="us-menu">
       <view class="us-menu-item" wx:for="{{menu}}" wx:key="key"
             data-key="{{item.key}}" bindtap="onMenuTap" hover-class="us-menu-hover">
-        <text class="us-menu-icon iconfont {{item.icon}}"></text>
+        <ui-icon class="us-menu-icon" name="{{item.icon}}" />
         <text class="us-menu-label">{{item.label}}</text>
-        <text class="us-menu-arrow iconfont icon-chevron-right"></text>
+        <ui-icon class="us-menu-arrow" name="mdi:chevron-right" />
       </view>
     </view>
   </view>

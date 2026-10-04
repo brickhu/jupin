@@ -51,6 +51,7 @@
 
 import type {
   ArticleDetail,
+  ArticleFavoriteCount,
   ArticleStats,
   MeResponse,
   ParticipationRecord,
@@ -139,17 +140,27 @@ export interface MeState {
    */
   articleDetail: Record<string, ArticleDetail>
   /**
-   * ⭐⭐ 句子 → **参与统计**（`GET /api/participations/stats?ids=` 的批量结果）。
+   * ⭐⭐ 句子 → **参与统计**（`GET /api/stats/participation?ids=` 的批量结果）。
    *
    * 用户 2026-09 定的结构（L1 解耦）：人数 / 最高 / 最低是 `participations` 的
    * **聚合派生值**，**不挂在句子卡片 / 详情上**（那两个是内容，可缓存）。
    *
-   * ⚠️ 统计是**现算**的：加载器 `ensureArticleStats` 每次都重新拉（不做 loaded 短路），
+   * ⚠️ 统计是**现算**的：加载器 `lib/stats.ts` 每次都重新拉（不做 loaded 短路），
    *    这里存的只是"最近一次拿到的值"，供卡片与概要卡跨组件读同一份。
    * ⚠️ 它同样**不落 storage**（与 articleDetail 同理：会话级、值会变）。
    * ⚠️ 键不存在 = 还没拉到（界面按"还没有人参与"画，但那不是结论）。
    */
   articleStats: Record<string, ArticleStats>
+  /**
+   * ⭐⭐ 句子 → **收藏总量**（`GET /api/stats/favorite-count?ids=` 的批量结果）。
+   *
+   * ⚠️ 与 `articleStats` **完全同层同法**（用户 2026-09 定：统计统一进 store）：
+   *    它也是**公开**的聚合、也**现算**（每次都重新拉，不做 loaded 短路）、
+   *    也**不落 storage**（会话级：值会随别人收藏而变，缓存住就是"过期数字"）。
+   * ⚠️ 键不存在 = 还没拉到 —— 界面按"还没人收藏"画，但那**不是结论**：
+   *    要显示"N 人收藏"就必须等这一格有值（`null` 与 `0` 是两件事）。
+   */
+  articleFavoriteCounts: Record<string, number>
 }
 
 /**
@@ -171,6 +182,7 @@ function emptyState(): MeState {
     participation: {},
     articleDetail: {},
     articleStats: {},
+    articleFavoriteCounts: {},
   }
 }
 
@@ -239,6 +251,15 @@ export function hasJoined(): boolean {
  *
  * ⚠️ 页面**必须**在 onUnload 里退订，否则页面销毁后回调还在跑，
  *    里面一句 setData 就会报「setData on destroyed page」。
+ *
+ * ⚠️⚠️⚠️ **订阅回调里只许"读 store + 重画"，绝不许"取数 → 写 store"**。
+ *    那是一条**自激的请求风暴**：
+ *        取数 → `applyXxx` → `commit` → 广播 → 回调 → 再取数 → …
+ *    （2026-09 真实踩过：首页在订阅回调里调 `fillCardData()`，而它调的
+ *      `ensureStats` 设计上"每次都重新拉"，于是无限请求 `/api/stats/*`。）
+ *
+ *    ⇒ 要在"某个事件"发生时补一次取数，**盯那个事件**（例如身份从 pending 变 ready），
+ *      **不要盯"每一次广播"**。广播是"有人写完了"的通知，不是"该去拉了"的信号。
  */
 export function subscribe(fn: (s: MeState) => void): () => void {
   listeners.add(fn)
@@ -305,6 +326,7 @@ function persist(): void {
     const snapshot: Partial<MeState> = { ...state }
     delete snapshot.articleDetail
     delete snapshot.articleStats
+    delete snapshot.articleFavoriteCounts
     wx.setStorageSync(STORAGE_KEY, snapshot)
   } catch {
     // 存储写不进去不该影响主流程
@@ -338,6 +360,8 @@ export function hydrate(): void {
         articleDetail: {},
         // ⚠️ 同理：参与统计是"最近一次拿到的值"，不落 storage（见 MeState.articleStats）
         articleStats: {},
+        // ⚠️ 收藏总量与它同层同法（见 MeState.articleFavoriteCounts）
+        articleFavoriteCounts: {},
         // ⚠️ 缓存里有 userInfo 就直接算「已解析」（头像秒出，不必先转一圈 spinner）；
         //    没有就仍算 pending —— 本机也没记住我是谁，得等这次登录问回来。
         session: raw.userInfo ? 'ready' : 'pending',
@@ -494,7 +518,7 @@ export function applyArticleDetail(detail: ArticleDetail): void {
 }
 
 /**
- * ⭐ 读**最近一次**拿到的参与统计（`GET /api/participations/stats`）。
+ * ⭐ 读**最近一次**拿到的参与统计（`GET /api/stats/participation`）。
  * ⚠️ 键不存在 = 还没拉到 —— 界面按"还没有人参与"画，但那不是结论。
  */
 export function getArticleStats(articleId: string): ArticleStats | null {
@@ -504,12 +528,59 @@ export function getArticleStats(articleId: string): ArticleStats | null {
 /**
  * ⭐ 批量写参与统计（一次 commit）。
  * ⚠️ 统计是**现算**的：同一 id 每次拉到就覆盖，不做合并（服务端是唯一真相）。
+ *
+ * ⚠️⚠️ **值一模一样就不 commit**（也就不广播）—— 这是防"订阅里取数"自激的**结构性防线**：
+ *    统计是"每次都重新拉"的，所以"拉回来发现没变"是**常态**；
+ *    若无条件 commit，任何"广播 → 取数"的回调都会变成死循环（见 subscribe 的说明）。
+ *    ⚠️ 它**不能替代**那条铁律（值真的变了照样会广播），但能让绝大多数空转消失。
  */
 export function applyArticleStats(items: ArticleStats[]): void {
   if (items.length === 0) return
   const articleStats = { ...state.articleStats }
-  for (const it of items) articleStats[it.articleId] = it
+  let changed = false
+  for (const it of items) {
+    const prev = articleStats[it.articleId]
+    if (
+      prev &&
+      prev.participantCount === it.participantCount &&
+      prev.topScore === it.topScore &&
+      prev.lowestScore === it.lowestScore
+    ) {
+      continue
+    }
+    articleStats[it.articleId] = it
+    changed = true
+  }
+  if (!changed) return
   commit({ ...state, articleStats })
+}
+
+/**
+ * ⭐ 读**最近一次**拿到的收藏总量（`GET /api/stats/favorite-count`）。
+ * ⚠️ `null` = 还没拉到，`0` = 确实没人收藏 —— **两者必须分开**
+ *    （把"没拉到"写成 0，界面会肯定地说"还没人收藏"，而那是错的）。
+ */
+export function getFavoriteCount(articleId: string): number | null {
+  return state.articleFavoriteCounts[articleId] ?? null
+}
+
+/**
+ * ⭐ 批量写收藏总量（一次 commit）—— 与 `applyArticleStats` 同法。
+ * ⚠️ 0 也要写进去：它是**答案**（"确实没人收藏"），不是"没拿到"。
+ * ⚠️⚠️ 同样**值没变就不 commit**（理由见 applyArticleStats）：这一格是 2026-09 新加的，
+ *    加它的同时就把这条防线补上了 —— 否则它会成为第二个自激的引信。
+ */
+export function applyFavoriteCounts(items: ArticleFavoriteCount[]): void {
+  if (items.length === 0) return
+  const articleFavoriteCounts = { ...state.articleFavoriteCounts }
+  let changed = false
+  for (const it of items) {
+    if (articleFavoriteCounts[it.articleId] === it.favoriteCount) continue
+    articleFavoriteCounts[it.articleId] = it.favoriteCount
+    changed = true
+  }
+  if (!changed) return
+  commit({ ...state, articleFavoriteCounts })
 }
 
 /**

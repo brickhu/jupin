@@ -44,7 +44,7 @@
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->
       <button class="pr-share shrink-0" open-type="share" wx:if="{{hasProfile}}">
-        <text class="text-32rpx iconfont icon-share"></text>
+        <ui-icon class="text-32rpx" name="mdi:share-variant" />
       </button>
     </view>
 

@@ -1,8 +1,1 @@
-{
-  "navigationBarTitleText": "参与场次",
-  "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark",
-  "usingComponents": {
-    "nav-bar": "/components/nav-bar/nav-bar"
-  }
-}
+{"navigationBarTitleText":"参与场次","enablePullDownRefresh":true,"backgroundTextStyle":"dark","usingComponents":{"nav-bar":"/components/nav-bar/nav-bar","ui-icon":"/components/ui-icon/ui-icon"}}

@@ -11,6 +11,7 @@ import type {
 } from '@jushuo/shared'
 import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
+import { participationIdOf } from '@jushuo/shared'
 import { env } from '../env'
 import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } from '../services/audio-key'
 import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
@@ -356,6 +357,12 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
           id: submissionId,
           userId,
           articleId,
+          /**
+           * ⭐ 这一条属于哪一行参与 —— **插入时就算好**，不看参与行在不在：
+           *    participationIdOf 是 (userId, articleId) 的纯函数，而参与行要等**出分结算**
+           *    才由 syncParticipation 建，所以不能靠 join、更不能加外键（见 db/schema.ts 的说明）。
+           */
+          participationId: participationIdOf(userId, articleId),
           audioKey,
           // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
           //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。

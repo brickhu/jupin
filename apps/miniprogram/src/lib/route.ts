@@ -53,6 +53,18 @@ export const ROUTES = {
   reading: { url: '/pages/reading/reading', route: 'pages/reading/reading' },
   arena: { url: '/pages/arena/arena', route: 'pages/arena/arena' },
   challenge: { url: '/pages/challenge/challenge', route: 'pages/challenge/challenge' },
+  /** ⭐ 浏览句库（公开）：顶部切标签 / 难度，下面无限滚动 */
+  browse: { url: '/pages/browse/browse', route: 'pages/browse/browse' },
+  /** ⭐ 全部标签（公开）：标签名录，点一个去 browse */
+  tags: { url: '/pages/tags/tags', route: 'pages/tags/tags' },
+  /**
+   * ⭐ 一条参与记录的**详情**（公开；地址 = participations.id）—— 从榜单点进来。
+   * ⚠️ 键名带 Detail：上面那个 `participations` 是「我的参与场次」**列表**，只差一个 s。
+   */
+  participationDetail: {
+    url: '/pages/participation/participation',
+    route: 'pages/participation/participation',
+  },
 } as const
 
 /** 加入页 —— 认不出身份时统一落到这里（用户 2026-09 定的去处） */

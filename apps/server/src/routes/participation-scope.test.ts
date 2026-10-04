@@ -44,6 +44,15 @@ const ARENA_WIDE_ALLOWED: Array<{ file: string; nth: number; why: string }> = [
       '它没有任何"我的"语义，也不对外返回单个用户的画像',
   },
   {
+    file: 'services/participations.ts',
+    nth: 2,
+    why:
+      'participationRecordById：按**地址**取一行（公开的参与详情 `GET /api/participation/{id}`）。' +
+      '⚠️ 它刻意只按 id 查 —— 那个地址本身就是 (user_id, article_id) 的派生值（见 db/schema.ts 与迁移 0057），' +
+      '所以"查哪一行"已经由调用方明确指定；它**不会**把别人的行当成"我的"：' +
+      '返回的就是指定那一条，而且调用方是公开接口、本来就要看别人的记录（与 /api/profile/{id} 同类）。',
+  },
+  {
     file: 'services/article-delete.ts',
     nth: 1,
     why:

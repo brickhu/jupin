@@ -88,6 +88,7 @@ export function mountOpenApiDocs(app: ReturnType<typeof createApp>): void {
       //    2026-09 删除：today 已并入 /api/articles/today（tag 用「句库」），
       //    这个分组已经没有路由在用（留着只会在 Swagger UI 上挂一个空组）。
       { name: '句库', description: '公开：句库查询 / 最新上线 / 今日推荐 / 详情' },
+      { name: '统计', description: '公开：按句批量聚合（参与统计 / 收藏总量）' },
       { name: '排行榜', description: '公开：成长榜（三块 TOP10，按需取）' },
       { name: '用户', description: '公开：用户目录（按加入时间 / 能量排序）' },
       { name: '挑战提交', description: '上传与提交检测' },

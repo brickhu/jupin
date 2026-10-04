@@ -197,7 +197,7 @@ GET    /api/user/experience        # 获取经验分+称号+streak
 
 # 文章
 GET    /api/articles/today         # 获取今日推荐文章（按能力分推荐）
-GET    /api/articles/:id           # 获取文章详情
+GET    /api/article/{id}           # 获取文章详情
 GET    /api/articles/list          # 文章列表（分页+按难度筛选）
 
 # 朗读评分（核心）

@@ -1,5 +1,5 @@
 import type { MeResponse } from '@jushuo/shared'
-import { CLOUD_ENV_ID } from './config'
+import { BUILD_TIME, CLOUD_ENV_ID, ENV, TARGET } from './config'
 import { login, markCloudInit } from './lib/api/client'
 import { refreshMe } from './lib/join'
 import { hydrate, hasJoined, markSessionUnknown } from './lib/store'
@@ -31,6 +31,15 @@ App({
   },
 
   async onLaunch() {
+    /**
+     * ⭐ **第一行就打出版本** —— 用来回答"我看的到底是哪一版"，别再靠猜。
+     *
+     * ⚠️ 真实踩过（2026-09）：改完图标、构建、编译，界面上就是不变 ——
+     *    因为跑的是旧包 / 旧字体缓存，而**没有任何地方能一眼看出跑的是哪一版**，
+     *    于是来回怀疑代码。这一行把「构建时刻 + 打到哪儿」摆在控制台最前面。
+     */
+    console.log(`[app] 构建于 ${BUILD_TIME} · 环境 ${ENV} · ${TARGET}`)
+
     // ⭐ 先把上次的「我的参与记录 / streak」读回来 —— 首页首帧就有数据，不必先白一下。
     //    ⚠️ 它只是缓存：各页面照常会向服务端刷一遍，以服务端为准。
     hydrate()

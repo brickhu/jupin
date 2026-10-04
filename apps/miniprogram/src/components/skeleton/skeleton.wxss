@@ -19,6 +19,12 @@
   padding: 32rpx;
   margin-bottom: 24rpx;
   box-sizing: border-box;
+  /**
+   * ⚠️ 与真卡片同一条灰边（.card 见 uno.config.mjs 的 shortcuts / cardline 色）。
+   *    不写的话，骨架 → 真内容的那一下会"边长出来"，看起来像抖了一下。
+   * ⚠️ 组件 CSS 引用不到 UnoCSS token，只能写字面量 —— 改主题色时这里要一起改。
+   */
+  border: 2rpx solid #cccccc;
 }
 
 /* ── 灰块本体 + 流光 ─────────────────────────────────────── */

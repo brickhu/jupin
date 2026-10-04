@@ -1,6 +1,7 @@
-import { and, asc, count, desc, eq, max, min, or } from 'drizzle-orm'
+import { and, asc, count, desc, eq, max, min, or, sum } from 'drizzle-orm'
 
 import { db } from '../db'
+import { participationIdOf } from '@jushuo/shared'
 import type { ArticleTheme, ArticleWordItem, ParticipationRecord } from '@jushuo/shared'
 import { getRank } from './leaderboard'
 
@@ -31,10 +32,17 @@ import { articles, participations, submissions } from '../db/schema'
 type Database = typeof db
 
 /** 参与记录的一行（不含任何时间戳以外的派生） */
+
 export interface ParticipationRow {
+  /** ⭐ 对外地址（派生值，见 participationIdOf） */
+  id: string
   userId: number
   articleId: string
   attempts: number
+  /** ⭐ 三项成长值累计（这条参与下已出分 submissions 之和，见 schema 的说明） */
+  growthSelf: number
+  growthDiligence: number
+  growthStandout: number
   bestScore: string
   worstScore: string
   firstAt: Date
@@ -110,6 +118,15 @@ async function computeParticipation(
       worst: min(submissions.score),
       firstAt: min(submissions.createdAt),
       lastAt: max(submissions.createdAt),
+      /**
+       * ⭐⭐ 三项**成长值累计**（用户 2026-09 要求）：这条参与下每次挑战各加一点，
+       *    这里汇总成一行 —— 口径与 attempts 完全一致（**只算 scored**）。
+       * ⚠️ 没出分的那次本来就没加成长值（成长值在 settle 时才写进 submissions），
+       *    把它算进来只会凭空多出 0 或旧值。
+       */
+      growthSelf: sum(submissions.growthSelf),
+      growthDiligence: sum(submissions.growthDiligence),
+      growthStandout: sum(submissions.growthStandout),
     })
     .from(submissions)
     .where(scoredOf(userId, articleId))
@@ -170,7 +187,12 @@ async function computeParticipation(
       links,
     userId,
     articleId,
+    id: participationIdOf(userId, articleId),
     attempts: Number(agg.attempts),
+    // ⚠️ SUM() 在 MySQL 上回来是 DECIMAL（字符串），且没有行时是 null ⇒ 一律 Number + 兜底 0
+    growthSelf: Number(agg.growthSelf ?? 0),
+    growthDiligence: Number(agg.growthDiligence ?? 0),
+    growthStandout: Number(agg.growthStandout ?? 0),
     // ⚠️ DECIMAL 读回来是字符串，原样带过去（drizzle 的 decimal 列就要字符串）
     bestScore: String(agg.best),
     worstScore: String(agg.worst),
@@ -189,6 +211,9 @@ async function upsertOne(row: ParticipationRow, database: Database): Promise<voi
     .values(row)
     .onDuplicateKeyUpdate({
       set: {
+        // ⚠️ id 是派生值，重算必然相同 —— 但仍然写上去：万一某天算法改了，
+        //    这一行会跟着修正，而不是留着一个按旧算法算出来的地址
+        id: row.id,
         attempts: row.attempts,
         bestScore: row.bestScore,
         worstScore: row.worstScore,
@@ -239,7 +264,11 @@ export interface RebuildResult {
 function flat(row: ParticipationRow | null): Record<string, string> | null {
   if (!row) return null
   return {
+    id: String(row.id),
     attempts: String(row.attempts),
+    growthSelf: String(row.growthSelf),
+    growthDiligence: String(row.growthDiligence),
+    growthStandout: String(row.growthStandout),
     bestScore: String(row.bestScore),
     worstScore: String(row.worstScore),
     firstAt: row.firstAt.toISOString(),
@@ -284,6 +313,11 @@ export async function rebuildParticipations(
       lastAt: participations.lastAt,
       bestSubmissionId: participations.bestSubmissionId,
       reachedAt: participations.reachedAt,
+      /** ⚠️ 同上：对账要逐字段比，id 与三项成长值不选出来就会报假不一致 */
+      id: participations.id,
+      growthSelf: participations.growthSelf,
+      growthDiligence: participations.growthDiligence,
+      growthStandout: participations.growthStandout,
       // ⚠️ 两个快照列必须在这里也选出来：漏了的话对账会拿 undefined 去比，
       //    报出"expected 有值 / actual 空"的假不一致（我第一次就漏了）
       words: participations.words,
@@ -294,7 +328,13 @@ export async function rebuildParticipations(
   const stored = new Map<string, Record<string, string>>()
   for (const r of existing) {
     stored.set(r.userId + ':' + r.articleId, {
+      /** ⚠️ 这里和上面那个 select 是**两处**：选出来了还要在映射里放进去，
+       *  漏了就会报「expected 有值 / actual 空」的假不一致（id 上我正好又踩了一次） */
+      id: String(r.id),
       attempts: String(r.attempts),
+      growthSelf: String(r.growthSelf),
+      growthDiligence: String(r.growthDiligence),
+      growthStandout: String(r.growthStandout),
       bestScore: String(r.bestScore),
       worstScore: String(r.worstScore),
       firstAt: r.firstAt.toISOString(),
@@ -353,6 +393,45 @@ export async function rebuildParticipations(
     }
   }
 
+  /**
+   * ⭐⭐ 顺带核对 / 修复 `submissions.participation_id` —— 它是**派生列**，
+   *    按同一个式子（shared 的 participationIdOf）现算，不依赖参与行是否存在。
+   *
+   * ⚠️ 为什么必须有这一段：这一列没有外键兜底（提交先于参与行存在，加了外键就写不进去），
+   *    所以"写歪了"只能靠这里发现并修回来 —— 老代码写的、手改的、迁移出错的，都归它管。
+   * ⚠️ 它是这一列的**唯一读者**（见 db/schema.ts 的说明），也是它敢存在的理由。
+   */
+  const links = await database
+    .select({
+      id: submissions.id,
+      participationId: submissions.participationId,
+      userId: submissions.userId,
+      articleId: submissions.articleId,
+    })
+    .from(submissions)
+
+  for (const l of links) {
+    const want = participationIdOf(l.userId, l.articleId)
+    if (l.participationId === want) continue
+    /**
+     * ⚠️ 只有 **check 模式**才报出来（与上面 participations 那段同一套写法）：
+     *    apply 模式是"把它改对"，改对了就不再是"不一致" —— 报出来会让
+     *    `pnpm db:participations --apply` 永远以失败退出，运维就分不清
+     *    "修好了" 和 "修不动" 了（我第一版就是这么写的，实测才发现）。
+     */
+    if (check) {
+      mismatches.push({
+        userId: l.userId,
+        articleId: l.articleId,
+        what: `submissions.participation_id（${l.id}）`,
+        expected: want,
+        actual: l.participationId,
+      })
+      continue
+    }
+    await database.update(submissions).set({ participationId: want }).where(eq(submissions.id, l.id))
+  }
+
   return { computed, rows, orphans, mismatches }
 }
 
@@ -370,6 +449,10 @@ export async function rebuildParticipations(
 export interface ParticipationRecordSource {
   articleId: string
   attempts: number
+  /** ⭐ 三项成长值累计（这条参与下已出分 submissions 之和） */
+  growthSelf: number
+  growthDiligence: number
+  growthStandout: number
   /** DECIMAL，drizzle 读回来是字符串 */
   best: string | number | null
   /** 同上 */
@@ -377,6 +460,8 @@ export interface ParticipationRecordSource {
   lastAt: Date | string
   /** 词表**快照**（同时是原文的来源：`words[].text` 拼起来就是原句） */
   words: unknown
+  /** ⭐ 对外地址（派生值，见 participationIdOf） */
+  id: string
   /** 连读标注**快照**（与 words 一一对应；老记录没有 ⇒ 空数组） */
   links: unknown
   /**
@@ -411,7 +496,13 @@ export function toParticipationRecord(
     words.length === 0 && row.articleText ? { text: row.articleText } : {}
 
   return {
+    id: row.id,
     articleId: row.articleId,
+    /**
+     * ⭐ 这一句累计带来的成长值（三维，与 users.growth_* 同一套口径）。
+     * ⚠️ 公开接口也给：成长值本来就是公开的（/api/profile/{id} 就展示这三项）。
+     */
+    growth: { self: row.growthSelf, diligence: row.growthDiligence, standout: row.growthStandout },
     words,
     links,
     ...fallbackText,
@@ -423,6 +514,43 @@ export function toParticipationRecord(
     lastAt: new Date(row.lastAt as unknown as string).toISOString(),
     theme: row.theme,
   }
+}
+
+/**
+ * ⭐ **按地址取一行**（`GET /api/participation/{id}` 用）—— 地址就是 participations.id。
+ *
+ * ⚠️ 与 participationRecordOf 共用同一套映射（toParticipationRecord）与同一个名次来源
+ *    （getRank，跨用户算的），所以"从榜单点进来"看到的数就是榜上那一行的数。
+ * ⚠️ 没有这一行 ⇒ null（**不是**一条全 0 的假记录）。
+ */
+export async function participationRecordById(
+  participationId: string,
+): Promise<ParticipationRecord | null> {
+  const [row] = await db
+    .select({
+      id: participations.id,
+      articleId: participations.articleId,
+      userId: participations.userId,
+      attempts: participations.attempts,
+      growthSelf: participations.growthSelf,
+      growthDiligence: participations.growthDiligence,
+      growthStandout: participations.growthStandout,
+      best: participations.bestScore,
+      worst: participations.worstScore,
+      lastAt: participations.lastAt,
+      words: participations.words,
+      links: participations.links,
+      /** ⚠️ 只用于"词表快照为空"时的兜底原文（不落库，见 toParticipationRecord） */
+      articleText: articles.text,
+      theme: articles.theme,
+    })
+    .from(participations)
+    .innerJoin(articles, eq(articles.id, participations.articleId))
+    .where(eq(participations.id, participationId))
+    .limit(1)
+
+  if (!row) return null
+  return toParticipationRecord(row, await getRank(row.articleId, row.userId))
 }
 
 /**
@@ -439,10 +567,15 @@ export async function participationRecordOf(
 ): Promise<ParticipationRecord | null> {
   const [row] = await db
     .select({
+      id: participations.id,
       articleId: participations.articleId,
       attempts: participations.attempts,
       best: participations.bestScore,
       worst: participations.worstScore,
+      /** ⭐ 三项成长值累计（与列表、详情同一份口径） */
+      growthSelf: participations.growthSelf,
+      growthDiligence: participations.growthDiligence,
+      growthStandout: participations.growthStandout,
       lastAt: participations.lastAt,
       words: participations.words,
       links: participations.links,

@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "参与详情",
+  "enableShareAppMessage": true,
+  "enableShareTimeline": true,
+  "usingComponents": {
+    "nav-bar": "/components/nav-bar/nav-bar",
+    "boot-overlay": "/components/boot-overlay/boot-overlay"
+  }
+}

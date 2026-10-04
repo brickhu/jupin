@@ -6,8 +6,8 @@
 <view class="ab-wrap">
   <view class="ab {{circleClass}} {{outline ? 'ab-outline' : ''}} {{disabled ? 'ab-disabled' : ''}}"
         style="{{circleStyle}}" catchtap="onTap" hover-class="{{disabled ? '' : 'ab-hover'}}">
-    <text class="ab-glyph {{glyphClass}} iconfont {{glyph}} {{spinning ? 'ab-spinning' : ''}}"
-          style="{{glyphStyle}}"></text>
+    <ui-icon class="ab-glyph {{glyphClass}} {{spinning ? 'ab-spinning' : ''}}"
+          name="{{glyphName}}" style="{{glyphStyle}}" />
   </view>
 
   <text wx:if="{{showDuration && durationText}}" class="ab-duration {{durationClass}}">{{durationText}}</text>

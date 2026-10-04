@@ -1,3 +1,4 @@
+import { isIconName } from '../../lib/icon-names'
 import type { ArticleTheme } from '@jushuo/shared'
 
 /**
@@ -24,37 +25,30 @@ import type { ArticleTheme } from '@jushuo/shared'
  *    仓库里另外两个用到 app.wxss 里图标的组件（arena-card / audio-button）也都写着它。
  *    别只按"看起来无关"就删掉，那是踩过一次的坑。
  *
- * ⚠️ 图标用的是项目自带的 **iconfont**（Iconify/MDI 子集，见 app.wxss 与
- *    tools/iconfont/build.mjs）—— 所以 icon 传的是 **iconify 名**（mdi:play / mdi:star），
- *    组件取冒号后面的部分拼成 `icon-<name>` 类。
- *    ⚠️⚠️ 子集里**没有**的图标画不出来（只有 13 个：play / stop / home / share /
- *    bell / target / clipboard / fire / heart-outline / chevron-left / chevron-right /
- *    loading / microphone）
- *    —— 要新图标得先把它加进子集再重新生成。
+ * ⚠️ 图标走项目自带的 **CSS mask 图标**（Iconify 数据 → icons.wxss，见 tools/iconfont/build.mjs）——
+ *    所以 icon 传的是 **iconify 名**（mdi:play / clarity:favorite-line），由 <ui-icon> 渲染。
+ *    ⚠️⚠️ 名单里**没有**的图标画不出来（名单见 `lib/icon-names.ts`，**自动生成**）
+ *    —— 要新图标得先把它加进 `tools/iconfont/build.mjs` 的 ICONS 再重新生成。
  */
 
-/** 图标字体里真实存在的名字 —— 传了别的会画出一个空框，这里挡一道并在控制台说清楚 */
-const KNOWN_ICONS = new Set([
-  'play', 'stop', 'home', 'share', 'bell', 'target', 'clipboard',
-  'fire', 'heart-outline', 'heart', 'chevron-left', 'chevron-right', 'loading',
-  // ⚠️ 朗读页 s1 那颗「点击录音并朗读」按设计稿挂了麦克风字形（2026-09）
-  'microphone',
-])
+/**
+ * 校验图标名，并把"名单里没有"这件事**当场说出来**。
+ *
+ * ⚠️ 名单**不在这里手写**：`lib/icon-names.ts` 由 `tools/iconfont/build.mjs` 生成 ——
+ *    这里原来手抄过一份，结果两处都漂了（写过从来没进过名单的 `heart`、又漏了在用的 `check`）。
+ * ⚠️ 写错一个不存在的名字**不会报错，只是画不出来** —— 所以这一句 warn 必须留着。
+ */
+function assertIconName(icon: string): string {
+  const name = String(icon ?? '').trim()
+  if (name && !isIconName(name)) {
+    console.warn('[ui-button] 图标不在名单里：' + name + '（名单见 lib/icon-names.ts）')
+  }
+  return name
+}
 
 type Variant = 'fill' | 'outline' | 'ghost' | 'link'
 type Size = 'sm' | 'md' | 'lg' | 'xl'
 type BtnColor = 'brand' | 'default' | 'error' | 'warning' | 'success'
-
-/** iconify 名 → iconfont 类名。'mdi:star' → 'icon-star'；已经是 'star' 也认 */
-function iconClassOf(icon: string): string {
-  const name = String(icon ?? '').trim()
-  if (name === '') return ''
-  const bare = name.includes(':') ? name.slice(name.indexOf(':') + 1) : name
-  if (!KNOWN_ICONS.has(bare)) {
-    console.warn('[ui-button] 图标不在 iconfont 子集里：' + name + '（见 tools/iconfont/build.mjs）')
-  }
-  return 'icon-' + bare
-}
 
 Component({
   options: { virtualHost: true },
@@ -79,7 +73,7 @@ Component({
 
   data: {
     cls: '',
-    iconCls: '',
+    iconName: '',
     /** style 属性：只有 width 是数字时才需要 */
     style: '',
   },
@@ -120,7 +114,7 @@ Component({
       this.setData({
         cls,
         // ⚠️ loading 时图标换成转圈（icon 位置不变，按钮不跳）
-        iconCls: d.loading === true ? 'icon-loading ub-spin' : iconClassOf(d.icon as string),
+        iconName: d.loading === true ? 'mdi:loading' : assertIconName(d.icon as string),
         style: typeof width === 'number' && width > 0 ? 'width:' + width + 'px' : '',
       })
     },

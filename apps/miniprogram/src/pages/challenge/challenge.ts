@@ -515,6 +515,20 @@ Page({
   },
 
   /** ⭐ 转发给好友 —— 路径就是这一页（带 sid），对方打开看到同一屏 */
+  /**
+   * ⭐ 点榜上的某一行 —— 去**参与详情页**看这一行（`pages/participation?id=`）。
+   *
+   * ⚠️ 只带地址（`participations.id`）：它自带句子与分数，落点页不用再传别的。
+   * ⚠️ 自己那一行**也跳**（口径与竞技场一致：每一行都是一条参与记录）。
+   *    唯一不跳的是"我的占位行" —— 我还没参与过这一句时，榜心给我留的那一行
+   *    没有对应记录（服务端 mine 分支给空地址，见 leaderboard.ts）。
+   */
+  onOpenParticipant(e: WechatMiniprogram.BaseEvent) {
+    const pid = String((e.currentTarget.dataset as { pid?: string }).pid ?? '')
+    if (!pid) return
+    goPublic(ROUTES.participationDetail.url + '?id=' + pid)
+  },
+
   onShareAppMessage() {
     return {
       title: this.data.shareTitle,

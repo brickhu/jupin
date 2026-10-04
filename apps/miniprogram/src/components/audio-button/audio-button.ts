@@ -27,16 +27,21 @@ import { formatDuration } from '@jushuo/shared'
  * 事件：play —— 宿主据此在 播 / 停 之间切换。
  */
 
-/** state → 字形。⚠️ `playing` 是 **stop** 不是 pause：这里没有「暂停后续播」 */
+/**
+ * state → 图标名。
+ * ⚠️ 写的是 **iconify 名**（唯一名单见 lib/icon-names.ts，由 tools/iconfont/build.mjs 生成），
+ *    直接交给 <ui-icon name="…"> 渲染 —— 全项目"有哪些图标"只有一处，不各处手写类名。
+ * ⚠️ `playing` 是 **stop** 不是 pause：这里没有「暂停后续播」
+ */
 const GLYPH: Record<string, string> = {
-  unplay: 'icon-play',
-  loading: 'icon-loading',
-  playing: 'icon-stop',
+  unplay: 'mdi:play',
+  loading: 'mdi:loading',
+  playing: 'mdi:stop',
 }
 
 Component({
-  // ⚠️ apply-shared：.iconfont / .icon-* 定义在 app.wxss 里，
-  //    isolated 的组件拿不到，字形会整个不显示（且不报错）
+  // ⚠️ apply-shared：图标的 .ui-icon / .ui-icon-* 定义在 app.wxss（icons.wxss）里，
+  //    isolated 的组件拿不到，图标会整个不显示（且不报错）
   options: { styleIsolation: 'apply-shared' },
 
   properties: {
@@ -57,7 +62,7 @@ Component({
   },
 
   data: {
-    glyph: GLYPH.unplay as string,
+    glyphName: GLYPH.unplay as string,
     spinning: false,
     durationText: '',
     /**
@@ -94,7 +99,7 @@ Component({
       const fill = this.data.fill
       const ink = this.data.ink
       this.setData({
-        glyph: GLYPH[state] ?? GLYPH.unplay,
+        glyphName: (GLYPH[state] ?? GLYPH.unplay) as string,
         spinning: state === 'loading',
         durationText: formatDuration(this.data.durationMs),
         circleClass: 'ab-' + size,

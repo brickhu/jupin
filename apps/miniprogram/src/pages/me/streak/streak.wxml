@@ -12,7 +12,7 @@
   <nav-bar id="nav" title="连战记录" />
 
   <!-- ── ① 统计 ─────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-5 flex items-center">
+  <view class="card p-5 flex items-center">
     <view class="flex-1">
       <text class="text-72rpx font-bold text-ink leading-[1]">{{streakDays}}</text>
       <text class="text-24rpx text-faint block mt-2">连续战斗</text>
@@ -22,14 +22,14 @@
   </view>
 
   <!-- ── ② 连战日历 ─────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-4 mt-3">
+  <view class="card p-4 mt-3">
     <view class="flex items-center">
       <view class="px-3 py-2" bindtap="onPrev" hover-class="active__opacity-60">
-        <text class="text-40rpx text-muted iconfont icon-chevron-left"></text>
+        <ui-icon class="text-40rpx text-muted" name="mdi:chevron-left" />
       </view>
       <text class="flex-1 text-center text-28rpx font-medium text-ink">{{monthText}}</text>
       <view class="px-3 py-2 {{canNext ? '' : 'opacity-30'}}" bindtap="onNext" hover-class="{{canNext ? 'active__opacity-60' : ''}}">
-        <text class="text-40rpx text-muted iconfont icon-chevron-right"></text>
+        <ui-icon class="text-40rpx text-muted" name="mdi:chevron-right" />
       </view>
     </view>
 
@@ -64,7 +64,7 @@
   </view>
 
   <!-- ── ③ 领奖 ─────────────────────────────────────────────── -->
-  <view class="bg-white rounded-2.5 p-4 mt-3">
+  <view class="card p-4 mt-3">
     <view class="flex items-center">
       <text class="text-28rpx text-ink flex-1">领取奖励</text>
       <text class="text-24rpx text-faint" wx:if="{{unfreezePending > 0}}">{{unfreezePending}} 张解冻卡待领取</text>

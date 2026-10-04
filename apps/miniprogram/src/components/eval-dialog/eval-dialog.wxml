@@ -31,7 +31,7 @@
   <view class="ed-card {{entered ? 'ed-card-on' : ''}}" wx:if="{{mode === 'precheck'}}" catchtap="noop" catchtouchmove="noop">
     <!-- 正在问服务端要权威余额 —— 这几百毫秒必须看得见（否则用户以为点了没反应） -->
     <view class="ed-body" wx:if="{{phase === 'precheck'}}">
-      <text class="text-56rpx text-brand iconfont icon-loading animate-spin"></text>
+      <ui-icon class="text-56rpx text-brand animate-spin" name="mdi:loading" />
       <text class="text-30rpx font-bold text-ink mt-3">正在确认能量…</text>
     </view>
 
@@ -91,7 +91,7 @@
     <view class="ed-body" wx:if="{{phase === 'uploading' || phase === 'scoring'}}">
       <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 ——
            和页面上原来那张 s4 卡用的是同一套（不另造一个 CSS ring）。 -->
-      <text class="text-56rpx {{phase === 'uploading' ? 'text-brand' : 'text-ok'}} iconfont icon-loading animate-spin"></text>
+      <ui-icon class="text-56rpx {{phase === 'uploading' ? 'text-brand' : 'text-ok'}} animate-spin" name="mdi:loading" />
       <text class="text-34rpx font-bold mt-3 {{phase === 'uploading' ? 'text-brand' : 'text-ok'}}">
         {{phase === 'uploading' ? '正在上传录音' : 'AI评测中'}}
       </text>
@@ -165,8 +165,8 @@
     <!-- ── 右上角 × ：**只在结果态**画 ──────────────────────────
          ⚠️ 与「确认」是同一个动作（都走 confirm）—— 给一个习惯性的出口，
            但评测中不画（关不掉，见文件头）。 -->
-    <text class="ed-close iconfont icon-chevron-right"
+    <ui-icon class="ed-close" name="mdi:chevron-right"
           wx:if="{{phase === 's5' || phase === 's6'}}"
-          bindtap="onConfirm"></text>
+          bindtap="onConfirm" />
   </view>
 </view>

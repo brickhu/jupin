@@ -194,6 +194,7 @@ export async function getTopLeaderboard(
 ): Promise<LeaderboardRow[]> {
   const rows = await db
     .select({
+      participationId: participations.id,
       userId: participations.userId,
       score: participations.bestScore,
       nickname: users.nickname,
@@ -218,6 +219,9 @@ export async function getTopLeaderboard(
 
   return rows.map((row, i) => ({
     rank: i + 1,
+    userId: row.userId,
+    // ⭐ 客户端从榜单点这一行去看参与详情（`GET /api/participation/{id}`）
+    participationId: row.participationId,
     nickname: row.userId === userId ? '你' : (row.nickname ?? '挑战者'),
     // ⚠️ 自己那一行也把头像带上（列表里"你"也有头像，只是名字换成"你"）
     avatarUrl: row.avatarUrl ?? null,
@@ -258,6 +262,7 @@ export async function getLeaderboardAround(
    */
   const above = await db
     .select({
+      participationId: participations.id,
       userId: participations.userId,
       score: participations.bestScore,
       nickname: users.nickname,
@@ -272,6 +277,7 @@ export async function getLeaderboardAround(
 
   const below = await db
     .select({
+      participationId: participations.id,
       userId: participations.userId,
       score: participations.bestScore,
       nickname: users.nickname,
@@ -292,10 +298,22 @@ export async function getLeaderboardAround(
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
+  /** ⭐ 我那一行的地址 —— 自己没有 join，所以单独查一次（上面那条查头像的顺手带上也好，但分开更清楚） */
+  const [mineRow] = await db
+    .select({ participationId: participations.id })
+    .from(participations)
+    .where(and(eq(participations.articleId, articleId), eq(participations.userId, userId)))
+    .limit(1)
 
   const ordered = [
     ...above.reverse(),
-    { userId, score: mine.best, nickname: null as string | null, avatarUrl: me?.avatarUrl ?? null },
+    {
+      userId,
+      participationId: mineRow?.participationId ?? '',
+      score: mine.best,
+      nickname: null as string | null,
+      avatarUrl: me?.avatarUrl ?? null,
+    },
     ...below,
   ]
   const { rank } = await getRank(articleId, userId)
@@ -303,6 +321,9 @@ export async function getLeaderboardAround(
 
   return ordered.slice(0, limit).map((row, i) => ({
     rank: startRank + i,
+    userId: row.userId,
+    // ⭐ 同上：榜单行要能点进参与详情
+    participationId: row.participationId,
     // ⚠️ 与 `userId`（榜心）刻意分开：分享页里"榜心是他、标签不是你"是正常状态
     nickname: row.userId === labelUserId ? '你' : (row.nickname ?? '挑战者'),
     avatarUrl: row.avatarUrl ?? null,

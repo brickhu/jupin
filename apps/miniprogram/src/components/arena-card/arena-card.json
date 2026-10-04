@@ -1,7 +1,1 @@
-{
-  "component": true,
-  "styleIsolation": "apply-shared",
-  "usingComponents": {
-    "audio-button": "/components/audio-button/audio-button"
-  }
-}
+{"component":true,"styleIsolation":"apply-shared","usingComponents":{"audio-button":"/components/audio-button/audio-button","ui-icon":"/components/ui-icon/ui-icon"}}

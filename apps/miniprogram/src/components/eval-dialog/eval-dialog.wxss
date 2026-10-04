@@ -7,8 +7,6 @@
  *    卡片**里面**的内容照旧用工具类（那是页面里的写法）。
  * ⚠️ 层级要压过导航栏（z-index: 100）和用户面板（200）—— 弹窗盖住一切。
  */
-/* ⚠️ 本组件是 isolated，app.wxss 里的 .iconfont 进不来，必须自己引一份 */
-@import "../../iconfont.wxss";
 
 .ed-layer {
   position: fixed;
@@ -71,7 +69,7 @@
   width: 100%;
 }
 
-/* 右上角那个 × —— 用字体里的右箭头转 45°（字体里没有 close 字形） */
+/* 右上角那个 × —— 用右箭头转 45°（名单里没有 close 图标） */
 .ed-close {
   position: absolute;
   top: 20rpx;
