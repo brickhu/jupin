@@ -69,3 +69,87 @@ export function alignWordScores(refText: string, engineWords: string[]): (number
   }
   return out
 }
+
+/**
+ * ⭐ 只报「**没读到**」的参考词下标 —— 给「漏读预检」用，与 alignWordScores 的差别是
+ *    **替换（读错）一律不算**。
+ *
+ * ⚠️⚠️ 为什么不能直接用上面那个 alignWordScores（它在做 LCS，只认「完全相等」）：
+ *    2026-10 实测（9 段真人录音，转写用 ASR）—— 用 LCS 判漏读的**假阳性是 50%**：
+ *    学习者把 `simpler` 读得让 ASR 听成 `similar` / `as simple` / `by the seminar`，
+ *    这些**替换**在 LCS 里一律表现为「这个参考词没对上」⇒ 全被判成漏读。
+ *    但用户明明读了 —— 那一位上是有东西的。
+ *
+ * ⭐ 所以这里换成**带代价的序列对齐**，并让**替换明显便宜于缺位**：
+ *
+ *     match = 0 · substitution = 1 · deletion / insertion = 3
+ *
+ *    ⇒ 对齐器会把「词对不上」**优先解释成读错**（替换），
+ *      只有**整段位置空着**才解释成没读到（缺位）。
+ *      换成这套判据之后，同一批数据的假阳性降到 **0/8**。
+ *
+ * ⭐ 为什么这个错误方向是对的：门禁的代价**不对称** ——
+ *    「漏放」（真漏读没抓到）只是维持现状（照常提交、由讯飞判，代价是那一次评测费）；
+ *    「误拦」（明明读了却交不上去）会直接毁掉这个功能。
+ *
+ * ⚠️ 已知边界（实测，别指望它超出这个范围）：
+ *    · **单个词的漏读抓不到** —— ASR 会顺着上下文把它「脑补」出来
+ *      （实测把剪掉的 `simple` 补成 `as soon` / `as long` / `as as`），转写里根本不缺位；
+ *    · 抓得到的是**连续多词的缺失**（实测剪掉连续 3 个词：5/5 检出）。
+ *
+ * @returns 参考词里「没有任何转写词与之对应」的那些下标（升序）
+ */
+export function missingWordsOf(refText: string, engineWords: string[]): number[] {
+  const refNorm = plainWordsOf(refText).map(norm)
+  const engNorm = engineWords.map(norm)
+  const n = refNorm.length
+  const m = engNorm.length
+  if (n === 0) return []
+  // 一个字都没转写出来 ⇒ 整句都没读到（这是最强的信号，不是"没数据"）
+  if (m === 0) return refNorm.map((_, i) => i)
+
+  /** ⚠️ 这两个常数就是面那段注释描述的判据本身 —— 改它们等于改产品行为 */
+  const SUB = 1
+  const GAP = 3
+
+  // dp[i][j] = refNorm 前 i 个 与 engNorm 前 j 个 的最小对齐代价
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  for (let i = 1; i <= n; i++) (dp[i] as number[])[0] = i * GAP
+  for (let j = 1; j <= m; j++) (dp[0] as number[])[j] = j * GAP
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const same = refNorm[i - 1] === engNorm[j - 1]
+      const row = dp[i] as number[]
+      const prev = dp[i - 1] as number[]
+      row[j] = Math.min(
+        (prev[j - 1] as number) + (same ? 0 : SUB),
+        (prev[j] as number) + GAP,
+        (row[j - 1] as number) + GAP,
+      )
+    }
+  }
+
+  // 回溯：**先试替换**（它最便宜），只有实在配不上才记一个缺位
+  const out: number[] = []
+  let i = n
+  let j = m
+  while (i > 0 || j > 0) {
+    const cur = (dp[i] as number[])[j] as number
+    if (i > 0 && j > 0) {
+      const same = refNorm[i - 1] === engNorm[j - 1]
+      const sub = ((dp[i - 1] as number[])[j - 1] as number) + (same ? 0 : SUB)
+      if (Math.abs(sub - cur) < 1e-9) {
+        i--
+        j--
+        continue
+      }
+    }
+    if (i > 0 && ((dp[i - 1] as number[])[j] as number) + GAP === cur) {
+      out.push(i - 1)
+      i--
+      continue
+    }
+    j--
+  }
+  return out.reverse()
+}

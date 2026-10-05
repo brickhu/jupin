@@ -14,7 +14,8 @@
     "pages/challenge/challenge",
     "pages/participation/participation",
     "pages/tags/tags",
-    "pages/browse/browse"
+    "pages/browse/browse",
+    "pages/dev/asr-probe/asr-probe"
   ],
   "window": {
     "navigationStyle": "custom",

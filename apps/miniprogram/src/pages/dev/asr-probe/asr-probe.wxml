@@ -1,0 +1,62 @@
+<!--
+  ⭐ B41 探针页 —— 量微信同声传译插件的「英文质量 + 延迟」。
+  ⚠️ 这是**一次性探针**，B41 收尾后整页删除（连同 app.json 的 pages 那一行）。
+  判据只有两个：① 识别文本对不对（尤其看 simpler）；
+                ② finalizeMs（说完 → 出文本）是否 ≤1s。
+-->
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+  <nav-bar id="nav" title="ASR 探针" />
+
+  <view wx:if="{{!available}}" class="card p-4 mb-3">
+    <text class="text-28rpx text-bad block leading-[1.6]">同声传译插件不可用：请确认已在公众平台添加「微信同声传译」，且 app.json 的 version 与平台一致。</text>
+  </view>
+
+  <!-- 句子（可改）—— 默认那句刻意选了 B40 里 ASR 出过错的那一条 -->
+  <view class="card p-3 mb-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-2">要读的句子（可改）</text>
+    <textarea class="probe-input w-full text-28rpx text-ink" value="{{sentence}}" auto-height
+              bindinput="onInput" placeholder="粘贴任意一句英文" placeholder-class="text-faint" />
+    <text class="text-22rpx text-faint block mt-2">识别语言：{{lang}}</text>
+  </view>
+
+  <!-- 录音按钮：一个按钮两个态 -->
+  <view class="rounded-full py-[26rpx] text-center text-30rpx text-white {{recording ? 'bg-bad' : 'bg-brand'}}"
+        bindtap="onToggle" hover-class="active__opacity-60">
+    {{recording ? (waiting ? '正在出结果…' : '说完了') : '开始朗读'}}
+  </view>
+
+  <view wx:if="{{error}}" class="card p-4 mt-3 border border-solid border-cardline">
+    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+  </view>
+
+  <!-- ⭐ 延迟：这一块是探针的主要产出 -->
+  <view wx:if="{{finalizeMs !== null}}" class="card p-4 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-2">延迟（判据：说完 → 出文本 ≤ 1000ms）</text>
+    <view class="flex items-baseline">
+      <text class="text-48rpx font-bold {{finalizeMs <= 1000 ? 'text-ok' : 'text-bad'}}">{{finalizeMs}}</text>
+      <text class="text-24rpx text-faint ml-2">ms ＝ 说完 → 出文本</text>
+    </view>
+    <text class="text-22rpx text-faint block mt-2">全程 {{totalMs}}ms（含朗读）· 插件自报录音 {{recordMs}}ms</text>
+  </view>
+
+  <!-- 识别文本 -->
+  <view wx:if="{{text}}" class="card p-4 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-2">识别结果</text>
+    <text class="text-28rpx text-ink leading-[1.7] block">{{text}}</text>
+  </view>
+
+  <!-- ⭐ 逐词判据：缺位的标红（替换不算，见 shared/word-align.ts） -->
+  <view wx:if="{{words.length}}" class="card p-4 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-2">判据结果（红＝判为「没读到」）</text>
+    <view class="flex flex-wrap">
+      <text wx:for="{{words}}" wx:key="index"
+            class="text-28rpx mr-2 mb-2 {{item.missing ? 'text-bad font-semibold' : 'text-ink'}}">{{item.text}}</text>
+    </view>
+    <text class="text-24rpx text-faint block mt-2">判为没读到：{{missingWords.length ? missingWords : '无'}}</text>
+  </view>
+
+  <view class="mt-4 text-center py-[22rpx] rounded-full bg-white text-28rpx text-muted" bindtap="onReset"
+        hover-class="active__opacity-60">清空重来</view>
+
+  <text class="text-22rpx text-faint block mt-4 leading-[1.7]">⚠️ 探针不写库、不发能量、不调接口 —— 只调插件。测完这页要删。</text>
+</view>

@@ -20,6 +20,8 @@
  *    我们不能把它复制进自己的目录（临时文件的生命周期由插件管）。
  */
 
+import { getPlugin, PLUGIN_HINT } from './wechatsi'
+
 /** 插件的方法签名 —— 只声明我们真正用到的那一个（多声明就会跟着对方的版本漂） */
 interface TtsPlugin {
   textToSpeech: (o: {
@@ -31,9 +33,11 @@ interface TtsPlugin {
   }) => void
 }
 
-/** 一次性配置没做时的统一话术 —— 它比"合成失败"有用得多 */
-export const PLUGIN_HINT =
-  '同声传译插件没生效：请在微信公众平台「设置 → 第三方设置 → 插件管理」里添加「微信同声传译」，再重新编译'
+/**
+ * ⚠️ 插件名 / 话术 / **取插件的方式**都只有一份，在 `./wechatsi`（asr.ts 也用同一个插件）。
+ *    这里只做**转出**，让老的 `import { PLUGIN_HINT } from './tts'` 继续可用。
+ */
+export { PLUGIN_HINT } from './wechatsi'
 
 /** 词 → 插件给出的本地临时文件路径 */
 const cache = new Map<string, string>()
@@ -47,18 +51,9 @@ export function stripToSpoken(text: string): string {
   return String(text ?? '').replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '')
 }
 
-/** 拿插件；没在 app.json 声明 / 平台上没添加 / 版本不对时返回 null（调用方给明确提示，不静默失败） */
-function plugin(): TtsPlugin | null {
-  try {
-    return requirePlugin('WechatSI') as TtsPlugin
-  } catch {
-    return null
-  }
-}
-
 /** 插件此刻能不能用 —— 界面可以用它决定要不要渲染发音入口 */
 export function isTtsAvailable(): boolean {
-  return plugin() !== null
+  return getPlugin<TtsPlugin>() !== null
 }
 
 /**
@@ -74,7 +69,7 @@ export function speak(text: string): Promise<string> {
   const hit = cache.get(clean)
   if (hit !== undefined) return Promise.resolve(hit)
 
-  const p = plugin()
+  const p = getPlugin<TtsPlugin>()
   if (!p) return Promise.reject(new Error(PLUGIN_HINT))
 
   return new Promise<string>(function (resolve, reject) {

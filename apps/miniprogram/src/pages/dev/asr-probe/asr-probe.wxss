@@ -1,0 +1,11 @@
+/*
+  B41 探针页 —— 只用 uno 原子类，这里只留一样 uno 表达不了的东西。
+  ⚠️ 整页是一次性的，B41 收尾后连同这个文件一起删。
+*/
+
+/* textarea 默认有个最小高度和自带的 padding，探针里让它跟内容走 */
+.probe-input {
+  min-height: 0;
+  padding: 0;
+  line-height: 1.7;
+}
