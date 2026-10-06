@@ -30,21 +30,25 @@
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
     <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's1' || phase === 's3'}}">
       <view class="flex items-center">
-        <!-- ⚠️ 只在这一句真的灌了标准音时才渲染这颗钮（canPlayAudio）：
-             点了没反应的图标比没有这个按钮更难排查。
-             ⚠️ 用 ui-button 的 ghost/default（浅灰实心圆 + 深色字形）而不是 audio-button：
-                设计稿上这颗是「实心浅灰圆」，而 audio-button 的未播放态是**描边**。 -->
-        <!-- ⚠️⚠️ 这里**故意不传 loading**，改用 icon 表达"在取音"：
-             ui-button 的 loading 会**吞掉点击**（防重复提交用的），而这颗是**开关** ——
-             一旦某次取音卡住，那颗钮就永远点不动了（界面上只看到转圈，
-             连"再点一次重试"都做不到）。用户 2026-09 报的"播放按钮不能播放"就是这个形状。
-             ⇒ 取音中显示 mdi:loading 字形，点击照常进来（再点 = 重试，见 onPlaySentence）。 -->
-        <ui-button wx:if="{{canPlayAudio}}" onlyIcon="{{true}}" size="md" variant="ghost" color="default"
-                   icon="{{sentenceState === 'loading' ? 'mdi:loading' : sentenceState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
-                   bind:press="onPlaySentence" />
-        <!-- ⚠️ 时长拿不到就**不渲染**这几个字（不是显示 00:00 —— 那看着像音频坏了）。
-             详情接口目前没有这个数，见 reading.ts 的 stdDurationText -->
-        <text class="text-28rpx text-body ml-2" wx:if="{{stdDurationText}}">{{stdDurationText}}</text>
+        <!-- ⭐⭐ **用全站唯一的 audio-button**（用户 2026-10 定：与列表页的播放控件统一）。
+             ⚠️ 原来这里是自己用 ui-button 拼的，理由是"设计稿上这颗是实心浅灰圆、
+                而 audio-button 的未播放态是描边"。**那个理由现在作废** ——
+                同一个"播放"动作在两个页面上长得不一样，比描边还是实心更值得在意：
+                用户会以为它们是两种不同的东西。
+             ⚠️ 只在这一句真的灌了标准音时才渲染（canPlayAudio）：
+                点了没反应的图标比没有这个按钮更难排查。
+             ⚠️⚠️ **当初不敢用 loading 状态的那个坑，audio-button 没有** ——
+                它的 onTap **只检查 disabled**，转圈时点击照常抛事件。
+                （ui-button 的 loading 会吞掉点击，那是给"防重复提交"用的；
+                  而这颗是**开关** —— 取音卡住时点不动就永远卡住了，
+                  用户 2026-09 报的"播放按钮不能播放"就是这个形状。）
+                ⇒ 取音中直接用 audio-button 的 loading 态，再点 = 重试（见 onPlaySentence）。
+             ⚠️ 右边的时长也交给它（showDuration）—— 格式只在这里定一次。
+                拿不到时长时 durationMs 是 0，formatDuration(0) 返回空串 ⇒ 那几个字不渲染。 -->
+        <audio-button wx:if="{{canPlayAudio}}" size="md"
+                      state="{{sentenceState === 'loading' ? 'loading' : sentenceState === 'playing' ? 'playing' : 'unplay'}}"
+                      showDuration="{{true}}" durationMs="{{stdDurationMs}}"
+                      bind:play="onPlaySentence" />
       </view>
       <!-- ⭐ IPA 胶囊 = 切换「单词下方显示音标」；开着时变实心，状态一眼可见 -->
       <ui-button size="sm" variant="{{ipaOn ? 'fill' : 'ghost'}}" color="{{ipaOn ? 'brand' : 'default'}}"
@@ -53,12 +57,14 @@
 
     <!-- ── s2 顶行：红点 + 录音中…｜右侧红色计时器 ───────────── -->
     <!-- -- 给改代码的人 --
-         min-h-[76rpx] 是**故意的**：s1/s3 那一行里放着 ui-button size="md"
-         （= 76rpx 高的圆钮 / IPA 胶囊），而这一行只有一个小红点和几个字 ——
+         min-h-[64rpx] 是**故意的**：s1/s3 那一行里放着 audio-button size="md"
+         （ab-md = 64rpx），而这一行只有一个小红点和几个字 ——
          不撑高的话，s1 → s2 那一下整张卡的内容会**往上跳**
          （用户 2026-09 报的「s2 顶栏和 s1 高度不一致」）。
-         76 与 ub-s-md 是同一个数，改按钮尺寸时一起改。 -->
-    <view class="flex items-center justify-between mb-3 min-h-[76rpx]" wx:if="{{phase === 's2'}}">
+         ⚠️ 64 与 ab-md 是同一个数，**改播放钮尺寸时这里要一起改**。
+         ⚠️ 这个数跟着播放钮走过一次：原来是 76（ui-button 的 ub-s-md），
+            换成 audio-button 之后播放钮变 64，这里不跟着改就会**把那个跳动放回来**。 -->
+    <view class="flex items-center justify-between mb-3 min-h-[64rpx]" wx:if="{{phase === 's2'}}">
       <view class="flex items-center">
         <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0"></view>
         <text class="text-28rpx text-body ml-2">录音中...</text>

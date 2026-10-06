@@ -1,7 +1,6 @@
 import {
   ENERGY_PER_CHALLENGE,
   PREFLIGHT,
-  formatDuration,
   formatScore,
 } from '@jushuo/shared'
 import { alignmentDetailOf, missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
@@ -311,17 +310,17 @@ Page({
     fullAudio: '',
     /** 'cloud' | 'http' —— 见 shared 的 AudioRef */
     audioKind: 'http' as 'cloud' | 'http',
-    /** 标准音时长（毫秒）—— 拿不到就是 0，见 stdDurationText 的说明 */
-    stdDurationMs: 0,
     /**
-     * ⭐ 顶行标准音那颗圆钮右边的 `00:23`。
+     * ⭐ 标准音时长（毫秒）—— **直接交给 audio-button 的 durationMs**，由它统一格式化成 `00:23`。
      *
      * ⚠️ 数据来自详情接口的 audio.durationMs（= shared 的 StandardAudio，
      *    服务端用同一个 standardAudioOf 拼，与列表接口同源）。
-     *    拿不到（老服务端 / 文件缺失 / 解析失败）就是空串，WXML 据此**不渲染那几个字** ——
-     *    不是显示 00:00（那看着像音频坏了）。
+     *    拿不到（老服务端 / 文件缺失 / 解析失败）就是 0 —— `formatDuration(0)` 返回空串，
+     *    于是那几个字**不渲染**（不是显示 00:00：那看着像音频坏了）。
+     * ⚠️ 页面里**不再自己拼时长字符串**：格式只由 audio-button 定一次，
+     *    各页各拼会出现 `0:03` / `3.0 秒` 并存，看起来像在量不同的东西。
      */
-    stdDurationText: '',
+    stdDurationMs: 0,
 
     /** 正在播的单词下标；-1 表示没在播单词 */
     playingWord: -1,
@@ -785,9 +784,8 @@ Page({
         canPlayAudio: !!content.audio,
         fullAudio: content.audio?.full ?? '',
         audioKind: content.audio?.kind ?? 'http',
-        // ⚠️ 详情接口**没有**时长（见 stdDurationText 的说明）—— 有就显示，没有就空着
+        // ⚠️ 详情接口**没有**时长（见 stdDurationMs 的说明）—— 有就显示，没有就空着
         stdDurationMs: stdMs,
-        stdDurationText: formatDuration(stdMs),
         phase: 's1',
       })
 
