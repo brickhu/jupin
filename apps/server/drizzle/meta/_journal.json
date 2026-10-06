@@ -407,6 +407,20 @@
       "when": 1790751655275,
       "tag": "0058_ambitious_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1791299245335,
+      "tag": "0059_drop_growth",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1791299251087,
+      "tag": "0060_add_cookies",
+      "breakpoints": true
     }
   ]
 }

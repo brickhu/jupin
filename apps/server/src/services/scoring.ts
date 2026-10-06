@@ -365,7 +365,7 @@ void previousBest
     console.log(
       '[scoring] 结算 id=' + submissionId +
         ' streak=' + settled.streakDays +
-        ' growth=' + settled.growth.self + '/' + settled.growth.diligence + '/' + settled.growth.standout +
+        ' cookies=' + settled.cookies.earned + '(line ' + settled.cookies.passLine + ')' +
         ' rewards=' + settled.rewards.length,
     )
   }

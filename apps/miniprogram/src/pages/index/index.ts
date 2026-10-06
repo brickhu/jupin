@@ -1,14 +1,12 @@
 import { BRAND, formatScore, startButtonLabel } from '@jushuo/shared'
 import type {
   ArticleTheme,
-  GrowthRankResponse,
-  GrowthRankRow,
   MeResponse,
   ArticleCard,
   ParticipationRecord,
   StreakView,
 } from '@jushuo/shared'
-import { fetchLatestCards, fetchGrowthBoards, fetchToday } from '../../lib/api/client'
+import { fetchLatestCards, fetchToday } from '../../lib/api/client'
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -33,34 +31,7 @@ import * as me from '../../lib/store'
 const SHARE_IMAGE = '/assets/share-home.jpg'
 
 /** 列表里一张卡片的**展示视图** —— 文案在 TS 里拼好，WXML 只负责画。 */
-/** 首页荣誉榜的一块（tab 上的短标签 + 它自己的前十） */
-interface BoardView {
-  key: string
-  /**
-   * ⚠️ 短标签：三个 tab 要挤在一行里，写「📈 自我超越」就够，别带 TOP10。
-   * ⚠️ emoji 前缀**故意不做成 icon font**：成长值是徽章那一类的荣誉标记，
-   *    要彩色要个性 —— 与 pages/profile 的成长值三行、用户面板那一排一致。
-   */
-  label: string
-  rows: GrowthRankRow[]
-}
 
-/**
- * 三个成长指标 → WXML 能直接渲染的数组。
- * ⚠️ 标签与顺序只在这里写一次：图标要与用户面板里那三个数一致
- *    （📈 自我超越 / 🔥 坚持不懈 / 🏔️ 人中翘楚）。
- * ⚠️ 顺序固定为「自我超越 / 坚持不懈 / 人中翘楚」—— 与用户面板那一排一致，
- *    换个顺序会让人以为漏了一个。
- * ⚠️ 接口是**按需返回**的（没点名的键不出现）⇒ 每个键都要 `?? []` 兜底：
- *    首页不带旗标（三块全要），但兜底不能省 —— 少了它，服务端只回一块时会当场抛。
- */
-function boardListOf(b: GrowthRankResponse): BoardView[] {
-  return [
-    { key: 'self', label: '📈 自我超越', rows: b.self ?? [] },
-    { key: 'diligence', label: '🔥 坚持不懈', rows: b.diligence ?? [] },
-    { key: 'standout', label: '🏔️ 人中翘楚', rows: b.standout ?? [] },
-  ]
-}
 
 interface CardView {
   articleId: string
@@ -266,8 +237,6 @@ Page({
     latestError: '',
     todayLoading: true,
     todayError: '',
-    boardsLoading: true,
-    boardsError: '',
 
     /**
      * ⭐ 状态卡的三种形态（用户 2026-09 定）：
@@ -298,23 +267,6 @@ Page({
     today: null as CardView | null,
     /** ⭐ 最新上线：句库按上线时间倒序的最新几句（服务端给，端侧只剔掉今日重复的那句） */
     latest: [] as CardView[],
-    /**
-     * ⭐ 三块成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10）。
-     * ⚠️ 与卡片分开存：它失败**不该**影响首页上半段（顶多这三块不出现）。
-     * ⚠️ 只在 TS 里拼成数组、**不另存一份原始响应** —— 同一份数据两种表示迟早对不上。
-     */
-    boardList: [] as BoardView[],
-    /**
-     * ⭐ 当前选中的是第几块（0 = 自我超越）。
-     * ⚠️ 用下标而不是 key：它同时是 wx:for 的 index，比较起来最直接。
-     */
-    activeBoard: 0,
-    /**
-     * 当前那一块的行。
-     * ⚠️ 在 TS 里算好、而不是在 WXML 里写 `boardList[activeBoard].rows`：
-     *    动态下标 + 点号连写在小程序模板里支持得很勉强，换个写法就白屏。
-     */
-    activeRows: [] as GrowthRankRow[],
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
     avatarPlaceholder: '/assets/avatar-placeholder.png',
     /**
@@ -602,7 +554,7 @@ Page({
     this.requesting = true
     try {
       // ⚠️ 三块**并发**跑、互不 await：谁先回来谁先画（各自 setData）
-      await Promise.all([this.loadLatest(), this.loadToday(), this.loadBoards()])
+      await Promise.all([this.loadLatest(), this.loadToday()])
     } finally {
       this.requesting = false
     }
@@ -709,41 +661,6 @@ Page({
     })
   },
 
-  /**
-   * 块 ④：荣誉榜（`GET /api/leaderboards/growth`）。
-   *
-   * ⚠️ 它在页面最下方、也最重（三块各 TOP10 + 头像换址）—— 绝不 await 它，
-   *    更不该因为它失败把上面三块也拖下水。
-   */
-  async loadBoards() {
-    if (this.gone) return
-    this.setData({ boardsError: '' })
-    if (this.data.boardList.length === 0) this.setData({ boardsLoading: true })
-    try {
-      const b = await fetchGrowthBoards()
-      /**
-       * ⚠️ 头像要先换址（云存储 fileID → 临时地址）才能进 <image src>，
-       *    见 lib/cloud-file.ts。三块榜最多 30 行，同一个人的头像会重复出现 ——
-       *    换址那边有会话缓存与并发去重，不会真的请求 30 次。
-       */
-      const list = await Promise.all(
-        boardListOf(b).map(async (board) => ({
-          ...board,
-          rows: await attachAvatarSrc(board.rows),
-        })),
-      )
-      if (this.gone) return
-      this.setData({
-        boardList: list,
-        // ⚠️ 用户可能已经切过 tab：保留他选的那一块，别跳回第一块
-        activeRows: list[this.data.activeBoard]?.rows ?? list[0]?.rows ?? [],
-        boardsLoading: false,
-      })
-    } catch (err) {
-      if (this.gone) return
-      this.setData({ boardsLoading: false, boardsError: this.explainError(err) })
-    }
-  },
 
   /**
    * 重画 —— 把「服务端卡片」与「store 里的我的参与状态」拼成展示视图。
@@ -831,16 +748,6 @@ Page({
     }
   },
 
-  /**
-   * ⭐ 切换荣誉榜的 tab。
-   * ⚠️ 纯本地切换（数据已经全在手里）—— 点一下就该立刻换，不该再发请求。
-   * ⚠️ 点当前这个直接返回：不返回的话会白 setData 一次（列表看着闪一下）。
-   */
-  onSwitchBoard(e: WechatMiniprogram.BaseEvent) {
-    const index = Number((e.currentTarget.dataset as { i?: string }).i ?? -1)
-    if (index < 0 || index === this.data.activeBoard) return
-    this.setData({ activeBoard: index, activeRows: this.data.boardList[index]?.rows ?? [] })
-  },
 
   /** 下拉刷新 / 整页重试：三块一起重来 */
   onRetry() {
@@ -865,11 +772,6 @@ Page({
   /** 块 ② 自己的重试 */
   onRetryToday() {
     void this.loadToday()
-  },
-
-  /** 块 ④ 自己的重试 */
-  onRetryBoards() {
-    void this.loadBoards()
   },
 
   /**

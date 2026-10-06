@@ -52,13 +52,12 @@
       </view>
     </view>
 
-    <!-- ③ 这一句累计带来的成长值（三项明细，不只给总分） -->
+    <!-- ③ 这一句累计赚到的饼干 -->
     <view class="card p-4 mt-3">
       <view class="flex items-baseline">
-        <text class="text-26rpx text-body flex-1">这一句的成长值</text>
-        <text class="text-40rpx font-bold text-ink">+{{view.growthTotal}}</text>
+        <text class="text-26rpx text-body flex-1">这一句赚到的饼干</text>
+        <text class="text-40rpx font-bold text-ink">{{view.cookieText}} 🍪</text>
       </view>
-      <text class="text-22rpx text-faint block mt-1">{{view.growthText}}</text>
     </view>
 
     <!-- ④ 词表快照：接口原样给的那些词（音标 / 句中释义有就画） -->

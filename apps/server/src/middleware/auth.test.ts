@@ -112,7 +112,6 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  *    · /api/pay          —— 虚拟支付的**发货推送**，来自微信平台、带不了 token ⇒
  *                           鉴权只能做在路由自己那一层（单号存在 + 金额相等 + 归属匹配 + 幂等）
  *    · /api/articles     —— 句库：正文 / 译文 / 难度标签 / 标准音（静态内容，无用户数据）
- *    · /api/leaderboards —— 成长榜 TOP10（榜上的昵称与分数本来就是公开的）
  *    · /api/users        —— 用户目录（昵称 / 头像 / 加入时间 / 能量）。
  *      ⚠️⚠️ 这是**唯一一个违反 ①（含仅本人可见字段）的例外**：`energy` 是账号余额，
  *          `/api/profile/:id` 与 `/api/user/me` 一直只给本人。这里是 **2026-09 用户
@@ -129,7 +128,7 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  */
 // ⚠️ 2026-09 删掉 `/api/arenas`（那条"大而全"的竞技场接口拆成了
 //    /api/articles/{id} + /api/participations + /api/participations/stats + 两条鉴权接口）
-const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/article', '/api/stats', '/api/leaderboards', '/api/profile', '/api/challenge', '/api/admin', '/api/users', '/api/participation', '/api/tags'])
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/article', '/api/stats', '/api/profile', '/api/challenge', '/api/admin', '/api/users', '/api/participation', '/api/tags'])
 const EXPECTED_PUBLIC = [...PUBLIC_PREFIXES].sort()
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {

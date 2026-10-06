@@ -330,10 +330,8 @@ userRoutes.openapi(participationsRoute, async (c) => {
         theme: articles.theme,
         /** ⭐ 这一行的地址（派生值）—— 记录自带它，端侧才能直接分享/跳转 */
         id: participations.id,
-        /** ⭐ 三项成长值累计（这条参与下已出分 submissions 之和） */
-        growthSelf: participations.growthSelf,
-        growthDiligence: participations.growthDiligence,
-        growthStandout: participations.growthStandout,
+        /** ⭐ 这一句累计赚到的饼干（这条参与下已出分 submissions 的 cookies_earned 之和） */
+        cookies: participations.cookies,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))

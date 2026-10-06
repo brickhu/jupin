@@ -5,7 +5,6 @@ import type {
   ChallengesResponse,
   TagsResponse,
   EnergyResponse,
-  GrowthRankResponse,
   MeResponse,
   ParticipationRecord,
   ParticipationsResponse,
@@ -948,23 +947,6 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
   })
 }
 
-/** 成长榜的三块（与接口的 `?self` / `?diligence` / `?standout` 一一对应） */
-export type GrowthBoard = 'self' | 'diligence' | 'standout'
-
-/**
- * ⭐ 成长榜 —— 三个成长指标各 TOP10（首页最下面那三块）。
- *
- * ⚠️ 它**不在**首页那个包里：那是「今天读哪一句」，这是全站累计的排行，
- *    两件事共用一个响应只会让两边都变重。首页本来就是并发拉的，多一个请求不多一次往返。
- *
- * ⚠️ **按需取**：不传 `boards` ⇒ 三块全给（首页就这一种用法）；
- *    传了 ⇒ 只查、只回点名的那几块（服务端每块一条独立 SQL）。
- *    没点名的键**不会出现**在返回里，读的时候用 `?? []` 兜底。
- */
-export function fetchGrowthBoards(boards?: GrowthBoard[]): Promise<GrowthRankResponse> {
-  const q = boards && boards.length > 0 ? '?' + boards.join('&') : ''
-  return request<GrowthRankResponse>('/api/leaderboards/growth' + q, { budgetMs: LAUNCH_BUDGET_MS })
-}
 
 /** 用户目录的查询参数（对应 `GET /api/users` 的 querystring） */
 export interface UserDirectoryQuery {

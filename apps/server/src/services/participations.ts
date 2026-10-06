@@ -40,9 +40,7 @@ export interface ParticipationRow {
   articleId: string
   attempts: number
   /** ⭐ 三项成长值累计（这条参与下已出分 submissions 之和，见 schema 的说明） */
-  growthSelf: number
-  growthDiligence: number
-  growthStandout: number
+  cookies: number
   bestScore: string
   worstScore: string
   firstAt: Date
@@ -124,9 +122,7 @@ async function computeParticipation(
        * ⚠️ 没出分的那次本来就没加成长值（成长值在 settle 时才写进 submissions），
        *    把它算进来只会凭空多出 0 或旧值。
        */
-      growthSelf: sum(submissions.growthSelf),
-      growthDiligence: sum(submissions.growthDiligence),
-      growthStandout: sum(submissions.growthStandout),
+      cookies: sum(submissions.cookiesEarned),
     })
     .from(submissions)
     .where(scoredOf(userId, articleId))
@@ -190,9 +186,7 @@ async function computeParticipation(
     id: participationIdOf(userId, articleId),
     attempts: Number(agg.attempts),
     // ⚠️ SUM() 在 MySQL 上回来是 DECIMAL（字符串），且没有行时是 null ⇒ 一律 Number + 兜底 0
-    growthSelf: Number(agg.growthSelf ?? 0),
-    growthDiligence: Number(agg.growthDiligence ?? 0),
-    growthStandout: Number(agg.growthStandout ?? 0),
+    cookies: Number(agg.cookies ?? 0),
     // ⚠️ DECIMAL 读回来是字符串，原样带过去（drizzle 的 decimal 列就要字符串）
     bestScore: String(agg.best),
     worstScore: String(agg.worst),
@@ -266,9 +260,7 @@ function flat(row: ParticipationRow | null): Record<string, string> | null {
   return {
     id: String(row.id),
     attempts: String(row.attempts),
-    growthSelf: String(row.growthSelf),
-    growthDiligence: String(row.growthDiligence),
-    growthStandout: String(row.growthStandout),
+    cookies: String(row.cookies),
     bestScore: String(row.bestScore),
     worstScore: String(row.worstScore),
     firstAt: row.firstAt.toISOString(),
@@ -315,9 +307,7 @@ export async function rebuildParticipations(
       reachedAt: participations.reachedAt,
       /** ⚠️ 同上：对账要逐字段比，id 与三项成长值不选出来就会报假不一致 */
       id: participations.id,
-      growthSelf: participations.growthSelf,
-      growthDiligence: participations.growthDiligence,
-      growthStandout: participations.growthStandout,
+      cookies: participations.cookies,
       // ⚠️ 两个快照列必须在这里也选出来：漏了的话对账会拿 undefined 去比，
       //    报出"expected 有值 / actual 空"的假不一致（我第一次就漏了）
       words: participations.words,
@@ -332,9 +322,7 @@ export async function rebuildParticipations(
        *  漏了就会报「expected 有值 / actual 空」的假不一致（id 上我正好又踩了一次） */
       id: String(r.id),
       attempts: String(r.attempts),
-      growthSelf: String(r.growthSelf),
-      growthDiligence: String(r.growthDiligence),
-      growthStandout: String(r.growthStandout),
+      cookies: String(r.cookies),
       bestScore: String(r.bestScore),
       worstScore: String(r.worstScore),
       firstAt: r.firstAt.toISOString(),
@@ -450,9 +438,8 @@ export interface ParticipationRecordSource {
   articleId: string
   attempts: number
   /** ⭐ 三项成长值累计（这条参与下已出分 submissions 之和） */
-  growthSelf: number
-  growthDiligence: number
-  growthStandout: number
+  /** ⭐ 这条参与累计赚到的饼干 */
+  cookies: number
   /** DECIMAL，drizzle 读回来是字符串 */
   best: string | number | null
   /** 同上 */
@@ -499,10 +486,10 @@ export function toParticipationRecord(
     id: row.id,
     articleId: row.articleId,
     /**
-     * ⭐ 这一句累计带来的成长值（三维，与 users.growth_* 同一套口径）。
+     * ⭐ 这一句累计赚到的饼干（与 users.cookies 同一套口径）。
      * ⚠️ 公开接口也给：成长值本来就是公开的（/api/profile/{id} 就展示这三项）。
      */
-    growth: { self: row.growthSelf, diligence: row.growthDiligence, standout: row.growthStandout },
+    cookies: Number(row.cookies ?? 0),
     words,
     links,
     ...fallbackText,
@@ -532,9 +519,7 @@ export async function participationRecordById(
       articleId: participations.articleId,
       userId: participations.userId,
       attempts: participations.attempts,
-      growthSelf: participations.growthSelf,
-      growthDiligence: participations.growthDiligence,
-      growthStandout: participations.growthStandout,
+      cookies: participations.cookies,
       best: participations.bestScore,
       worst: participations.worstScore,
       lastAt: participations.lastAt,
@@ -572,10 +557,8 @@ export async function participationRecordOf(
       attempts: participations.attempts,
       best: participations.bestScore,
       worst: participations.worstScore,
-      /** ⭐ 三项成长值累计（与列表、详情同一份口径） */
-      growthSelf: participations.growthSelf,
-      growthDiligence: participations.growthDiligence,
-      growthStandout: participations.growthStandout,
+      /** ⭐ 这一句累计赚到的饼干（与列表、详情同一份口径） */
+      cookies: participations.cookies,
       lastAt: participations.lastAt,
       words: participations.words,
       links: participations.links,

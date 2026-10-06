@@ -40,8 +40,8 @@ interface ParticipationView {
   rankText: string
   /** 「最近 3 天前」 */
   lastText: string
-  growthText: string
-  growthTotal: number
+  /** ⭐ 这一句累计赚到的饼干（成品文本，视图不自己算） */
+  cookieText: string
   words: WordRow[]
 }
 
@@ -59,12 +59,11 @@ function toView(r: ParticipationRecord): ParticipationView {
     rankText: '第 ' + r.rank + ' 名 / 共 ' + r.participantCount + ' 人',
     lastText: '最近 ' + agoText(r.lastAt),
     /**
-     * ⚠️ 三项明细都写出来，不只给总分：三个指标各自回答一个问题（自我超越 / 坚持不懈 / 人中翘楚），
-     *    合成一个数就没人解释得清它是怎么来的。
+     * ⭐ 这一句累计赚到的饼干（与 users.cookies 同一套口径）。
+     * ⚠️ 只有**一个数** —— 三维成长值已整体废除（prd §7.6），
+     *    所以这里不再有"合成总分说不清"的问题：它本来就是一句一句赚来的。
      */
-    growthTotal: r.growth.self + r.growth.diligence + r.growth.standout,
-    growthText:
-      '自我 ' + r.growth.self + ' · 坚持 ' + r.growth.diligence + ' · 翘楚 ' + r.growth.standout,
+    cookieText: String(r.cookies),
     words: r.words.map((w) => ({
       text: w.text,
       ipa: (w.ipa ?? '').trim(),

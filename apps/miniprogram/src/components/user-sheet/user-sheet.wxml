@@ -56,21 +56,18 @@
 
     <!-- ⭐ 这一排 = **三个成长值**（累计的荣誉，只增不减的那部分）。
          ⚠️ 这里原来放的是「连续 / 历史最长 / 解冻卡 / 能量」：
-            能量和解冻卡挪到名字下面（那是"手上能动用的"），
+            能量挪到名字下面（那是"手上能动用的"），
             连续天数在首页状态卡与「我的主页」。
-         ⚠️ **不合成总分**：三个数各自回答一个问题，相加之后没人解释得清。 -->
+         ⚠️ 两个位置**都要给**：只给余额的话，花掉时看起来像退步
+            （损失厌恶）；「累计获得」才是那条只增的进步线（prd §7.6）。 -->
     <view class="us-stats">
       <view class="us-stat">
-        <text class="us-stat-v">{{growth.self}}</text>
-        <text class="us-stat-k">📈 自我超越</text>
+        <text class="us-stat-v">{{cookies.total}}</text>
+        <text class="us-stat-k">🍪 累计获得</text>
       </view>
       <view class="us-stat">
-        <text class="us-stat-v">{{growth.diligence}}</text>
-        <text class="us-stat-k">🔥 坚持不懈</text>
-      </view>
-      <view class="us-stat">
-        <text class="us-stat-v">{{growth.standout}}</text>
-        <text class="us-stat-k">🏔️ 人中翘楚</text>
+        <text class="us-stat-v">{{cookies.balance}}</text>
+        <text class="us-stat-k">🥛 可用饼干</text>
       </view>
     </view>
 

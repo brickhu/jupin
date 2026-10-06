@@ -2,7 +2,7 @@ import type { MeResponse } from '@jushuo/shared'
 
 import { getTotalConquered } from './conquest'
 import { readEnergy } from './energy'
-import { readGrowth } from './growth'
+import { readCookies } from './cookies'
 import { readStreakView } from './streak'
 import { challengeStats } from './submission'
 import type { User } from './user'
@@ -20,7 +20,7 @@ import type { User } from './user'
  */
 export async function buildMeView(user: User): Promise<MeResponse> {
   const userId = user.id
-  const [streak, conqueredCount, stats, energy, growth] = await Promise.all([
+  const [streak, conqueredCount, stats, energy, cookies] = await Promise.all([
     readStreakView(userId),
     getTotalConquered(userId),
     // ⭐ 首页状态卡上的「挑战过几句 / 一共几回」—— 服务端数，
@@ -28,8 +28,8 @@ export async function buildMeView(user: User): Promise<MeResponse> {
     challengeStats(userId),
     // ⭐ 能量先**补足**再读（惰性 + 幂等，见 services/energy.ts）
     readEnergy(userId),
-    // ⭐ 三个成长值（**分开展示、不合成总分** —— 见 growth-and-energy.md）
-    readGrowth(userId),
+    // ⭐ 饼干：累计获得（只增）+ 可用（可花）—— 见 prd §7.6
+    readCookies(userId),
   ])
 
   return {
@@ -45,7 +45,7 @@ export async function buildMeView(user: User): Promise<MeResponse> {
     energy,
     // ⭐ 三个成长值 —— **分开给，不合成总分**（三个数各自回答一个问题，
     //    相加之后没人解释得清那个数是怎么来的）
-    growth,
+    cookies,
     // ⭐ 首页状态卡：挑战过几句 / 一共挑战了几回（全时段累计，只数打分成功的）
     challengedCount: stats.challengedCount,
     challengedRounds: stats.challengedRounds,

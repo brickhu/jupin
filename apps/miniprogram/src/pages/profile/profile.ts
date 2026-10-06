@@ -1,4 +1,4 @@
-import type { GrowthView, UserProfileResponse } from '@jushuo/shared'
+import type { CookieView, UserProfileResponse } from '@jushuo/shared'
 
 import { fetchUserProfile } from '../../lib/api/client'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
@@ -28,41 +28,38 @@ import * as me from '../../lib/store'
 /** 当前已换址的 fileID —— 用来丢弃「换到一半又被换掉」的旧结果 */
 let avatarFileId = ''
 
-interface GrowthRow {
+interface CookieRow {
   key: string
   icon: string
   name: string
   value: string
-  /** 一句话说明这个数是什么 —— 三个指标各自回答一个问题，不解释没人看得懂 */
+  /** 一句话说明这个数是什么 —— 不解释的话"两个饼干数"会让人以为是重复的 */
   blurb: string
 }
 
 /**
- * ⚠️ 三个数**分开展示、不合成总分**：相加之后没人解释得清那个数是怎么来的。
+ * ⭐ **两个位置**：累计获得（只增）+ 可用（可花）。
+ *
+ * ⚠️⚠️ 为什么是两个数而不是一个（prd §7.6）：一个数不能同时当"进度"和"钱包" ——
+ *    花掉它时看起来像**退步**（损失厌恶）。「累计获得」才是那条只增的进步线。
+ * ⚠️ 两个数共用同一个 🍪 符号，所以必须各配一句说明，否则会被当成重复。
  */
-function toGrowthRows(growth: GrowthView | undefined): GrowthRow[] {
-  const g = growth ?? { self: 0, diligence: 0, standout: 0 }
+function toCookieRows(cookies: CookieView | undefined): CookieRow[] {
+  const c = cookies ?? { total: 0, balance: 0 }
   return [
     {
-      key: 'self',
-      icon: '📈',
-      name: '自我超越',
-      value: String(g.self),
-      blurb: '比过去的自己读得更好：跟「我在这句的最高分」和「我的个人最高分」比，两边取平均',
+      key: 'total',
+      icon: '🍪',
+      name: '累计获得',
+      value: String(c.total),
+      blurb: '攻克一句就赚一次，**只增不减** —— 它是你的进步线（花饼干不会让它变小）',
     },
     {
-      key: 'diligence',
-      icon: '🔥',
-      name: '坚持不懈',
-      value: String(g.diligence),
-      blurb: '坚持的里程碑：连续 7 / 30 / 180 天各给一次，之后每满 360 天再给一次（越久越多）',
-    },
-    {
-      key: 'standout',
-      icon: '🏔️',
-      name: '人中翘楚',
-      value: String(g.standout),
-      blurb: '比这个竞技场的榜单中位数高多少 —— 场上人越多，同样的分越值钱',
+      key: 'balance',
+      icon: '🥛',
+      name: '可用饼干',
+      value: String(c.balance),
+      blurb: '40 块换 1 点能量（吃饼干补充能量）；补签也走能量',
     },
   ]
 }
@@ -86,7 +83,7 @@ Page({
     streakDays: 0,
     conqueredCount: 0,
     rounds: 0,
-    growthRows: [] as GrowthRow[],
+    cookieRows: [] as CookieRow[],
   },
 
   /** 这一页要看谁的：URL 里的 `u`；0 = 不带参数（看自己的） */
@@ -165,7 +162,7 @@ Page({
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,
-      growthRows: toGrowthRows(p.growth),
+      cookieRows: toCookieRows(p.cookies),
     })
     this.loadAvatar(p.avatarUrl ?? '')
   },

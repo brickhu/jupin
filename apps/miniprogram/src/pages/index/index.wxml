@@ -132,45 +132,4 @@
     <text class="text-26rpx text-brand">看全部标签</text>
   </view>
 
-  <!-- ══ 块 ④：荣誉榜 ═══════════════════════════════════════
-       ⚠️ 三块榜 = 三个成长指标各 TOP10，口径与用户面板那三个数**完全一致**。
-       ⚠️ 单独一个接口、单独一块加载态：它最重（30 行 + 头像换址），
-          绝不能因为它失败或慢，把上面三块一起拖住。 -->
-  <view class="pt-6 pb-2 px-1">
-    <text class="text-28rpx font-semibold text-ink">荣誉榜</text>
-  </view>
-
-  <skeleton wx:if="{{boardsLoading}}" variant="rank" rows="3" />
-
-  <view wx:elif="{{boardsError && boardList.length === 0}}" class="card p-5">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{boardsError}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
-          bindtap="onRetryBoards">重试</view>
-  </view>
-
-  <block wx:else>
-    <!-- ⭐ 三个指标**共用一个位置**，用等宽药丸切换（三块平铺 = 最多 30 行，会把首页拖长）。 -->
-    <view class="card p-4 mb-3">
-      <view class="flex items-center">
-        <view class="flex-1 text-center py-2 rounded-full {{activeBoard === i ? 'bg-brand' : ''}}"
-              wx:for="{{boardList}}" wx:for-item="tab" wx:for-index="i" wx:key="key"
-              data-i="{{i}}" bindtap="onSwitchBoard" hover-class="active__opacity-60">
-          <text class="text-24rpx {{activeBoard === i ? 'text-white font-medium' : 'text-muted'}}">{{tab.label}}</text>
-        </view>
-      </view>
-
-      <view class="mt-2">
-        <view class="flex items-center py-2" wx:for="{{activeRows}}" wx:for-item="row" wx:key="rank">
-          <!-- ⚠️ 名次固定宽度：不然第 1 名和第 10 名的昵称左边不齐 -->
-          <text class="text-24rpx text-faint w-[56rpx] shrink-0">{{row.rank}}</text>
-          <!-- ⭐ 头像 + 昵称（fileID 已在 index.ts 里换过址；失败退回本地占位图） -->
-          <image class="w-[44rpx] h-[44rpx] rounded-full shrink-0 mr-2" src="{{row.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-          <text class="text-26rpx {{row.isMe ? 'text-brand font-medium' : 'text-ink'}} flex-1 truncate">{{row.nickname}}</text>
-          <text class="text-28rpx font-medium text-ink ml-3 shrink-0">{{row.value}}</text>
-        </view>
-
-        <text class="text-22rpx text-faint block py-3 text-center" wx:if="{{activeRows.length === 0}}">还没有人上榜</text>
-      </view>
-    </view>
-  </block>
 </view>

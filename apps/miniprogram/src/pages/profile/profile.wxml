@@ -81,7 +81,7 @@
         </view>
       </view>
 
-      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{growthRows}}" wx:key="key">
+      <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{cookieRows}}" wx:key="key">
         <view class="flex items-center">
           <text class="text-36rpx">{{item.icon}}</text>
           <text class="text-28rpx text-ink font-medium ml-2 flex-1">{{item.name}}</text>

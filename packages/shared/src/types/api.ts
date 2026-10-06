@@ -183,15 +183,13 @@ export interface SubmitResponse {
    */
   attempts?: number
   /**
-   * ⭐ 这一把的**成长值快照**（三个指标各加了多少）—— s5 三张卡上的 +N 就是它。
+   * ⭐ 这一把的**饼干快照** —— 结果页那一行的 +N 就是它。
    *
-   * ⚠️ 不是 /me 里的**累计值**：累计值回答「我一共多少」，卡片问「这一把加了多少」，
-   *    把累计值摆上去会是 +128 这种数，用户会以为这一把加了 128。
    * ⚠️ 为什么可选：结算（services/settle.ts）与「status 置为 scored」不在同一个事务里，
    *    轮询恰好卡在两者之间时会读到 null；老数据也可能没结算过。
-   *    端侧拿不到就**整块不渲染**（不是摆三个 +0 —— 那会被读成「这一把没涨」）。
+   *    端侧拿不到就**整块不渲染**（不是摆一个 +0 🍪）。
    */
-  growth?: GrowthView
+  cookies?: CookieAwardView
   /** 榜单中心 5 条 */
   leaderboard: LeaderboardRow[]
   /** 词级结果（可选增强；缺失时端侧兜底） */
@@ -374,43 +372,6 @@ export interface ShopOrderResponse {
 }
 
 /**
- * ⭐ 成长榜的一行。
- *
- * ⚠️ 与 LeaderboardRow **故意分开**：那个的 score 是朗读分（要统一显示一位小数，
- *    见 formatScore），而成长值是**整数** —— 套 formatScore 会显示成 12.0。
- * ⚠️ 昵称口径与竞技场榜单一致：没起过名字是「挑战者」，自己显示「你」。
- */
-export interface GrowthRankRow {
-  rank: number
-  nickname: string
-  /**
-   * 头像 —— 与 LeaderboardRow 同一条口径：**云存储 fileID**（cloud://…），
-   * 客户端要先换址（lib/cloud-file.ts）才能进 <image src>；没设头像时为 null。
-   */
-  avatarUrl: string | null
-  /** 成长值（整数，累加值） */
-  value: number
-  isMe: boolean
-}
-
-/**
- * ⭐ 成长榜（自我超越 / 坚持不懈 / 人中翘楚，各 TOP10）—— **按需返回**。
- *
- * ⚠️ `GET /api/leaderboards/growth` 支持点名要哪几块：
- *    · **不带参数** ⇒ 三块都查、都给（首页一次拿全，别为省两次查询多发两个请求）；
- *    · **带 `?self` / `?diligence` / `?standout`**（可多选，带上即算，值忽略）
- *      ⇒ **只查、只回点名的那几块**（各是一条独立 SQL）。
- *
- * ⚠️⚠️ 没点名的键**直接不出现**，而不是给空数组 ——
- *    `[]` 的含义是"这块榜上没人（都还没攒下成长值）"，与"我没问"是两件事。
- */
-export interface GrowthRankResponse {
-  self?: GrowthRankRow[]
-  diligence?: GrowthRankRow[]
-  standout?: GrowthRankRow[]
-}
-
-/**
  * ⭐ **用户目录**里的一行（`GET /api/users`）。
  *
  * ⚠️⚠️ **这条接口是公开的，而且含 `energy`** —— 这是 2026-09 用户**明确要求**的口径
@@ -441,10 +402,10 @@ export interface UserSummary {
   /** ⭐ **连战天数** —— 取自 `users.streak_days`（与 `readStreakView().streakDays` 同一个值）。 */
   streakDays: number
   /**
-   * ⭐ **成长值** —— 三个指标各自给，**不合成总分**（见 GrowthView 的说明）。
-   * ⚠️ 直接来自 `users.growth_*` 这三列，与成长榜、用户面板同源。
+   * ⭐ **饼干** —— 累计获得 + 可用（见 CookieView 的说明）。
+   * ⚠️ 与个人主页、用户面板同源。
    */
-  growth: GrowthView
+  cookies: CookieView
 }
 
 /** `GET /api/users` 的响应 */
@@ -889,17 +850,37 @@ export interface MyStats {
  *    两条路都写进全局 store，谁后到谁生效（服务端是唯一真相）。
  */
 /**
- * ⭐ 三个成长值 —— **分开给，不合成总分**。
+ * ⭐ **饼干的两个位置**（规格：prd §7.6）—— 累计获得 + 可用。
  *
- * ⚠️ 三个数各自回答一个问题，相加之后没人解释得清那个数是怎么来的：
- *    · self      自我超越（跟自己的历史比）
- *    · diligence 坚持不懈（坚持的里程碑）
- *    · standout  人中翘楚（跟榜单比）
+ * ⚠️⚠️ 为什么是**两个数**而不是一个：一个数不能同时当"进度"和"钱包" ——
+ *    花掉它时看起来像退步（损失厌恶）。「累计获得」才是那条只增的进步线。
+ *    两个数**共用同一个 🍪 符号**（界面上是"累计 1,240 / 可用 320"）。
  */
-export interface GrowthView {
-  self: number
-  diligence: number
-  standout: number
+export interface CookieView {
+  /** 累计获得 —— 只增不减（= 流水里所有正数之和） */
+  total: number
+  /** 可用余额（可花；换能量会减少它） */
+  balance: number
+}
+
+/**
+ * ⭐ **这一把赚到的饼干** —— 结果页那一行（规格：prd §7.6）。
+ *
+ * ⚠️ 与 `CookieView` 分工不同：这个回答「**这一次**赚了多少」，
+ *    那个回答「我一共多少」。把累计值摆到结果页会是 +1240 这种数。
+ * ⚠️ `passLine` 是给端侧算「还差 X 分」用的：
+ *    `差 = passLine + 1 − 本次得分`（`pointsToConquer()`）。
+ *    **屏幕上永远不出现「0 🍪」** —— 没攻克时显示"还差 X 分"，那是邀请，不是判决。
+ */
+export interface CookieAwardView {
+  /** 这一把赚到的饼干（**0 = 没攻克**） */
+  earned: number
+  /** 攻克线 = max(85, 我在这句的历史最好分) */
+  passLine: number
+  /** 难度基准（10/20/30/40）—— 明细里解释"为什么是这个数" */
+  base: number
+  /** 生效的名次系数（0.1–1.0） */
+  rankFactor: number
 }
 
 /** ⭐ 性别 —— 只认这两个值；null = 未填 */
@@ -952,8 +933,8 @@ export interface MeResponse {
   challengedRounds: number
   /** 攻克金句数：**拿到过分数**的去重句子数（只要参与并出分就算，只增不减） */
   conqueredCount: number
-  /** ⭐ 三个成长值（分开展示） */
-  growth: GrowthView
+  /** ⭐ 饼干：累计获得 + 可用 */
+  cookies: CookieView
   streak: StreakView
 }
 
@@ -980,7 +961,8 @@ export interface UserProfileResponse {
   conqueredCount: number
   /** 挑战回合：打分成功的提交数 */
   challengedRounds: number
-  growth: GrowthView
+  /** ⭐ 饼干：累计获得 + 可用 */
+  cookies: CookieView
 }
 
 /**
@@ -1097,14 +1079,12 @@ export interface ParticipationRecord {
   id: string
   articleId: string
   /**
-   * ⭐⭐ **这一句累计带来的成长值**（三维，与 `users.growth_*` / `/api/profile/:id` 同一套口径）。
+   * ⭐⭐ **这一句累计赚到的饼干**（与 `users.cookies` 同一套口径）。
    *
-   * ⚠️ 它是这条参与下**已出分** submissions 的对应列之和（口径与 `attempts` 一致）——
-   *    用户 2026-09 要求：「一次 participation 下可能有多次 submissions，每次都能增加一点成长值，
-   *    希望他们能够累计到 participations 中」。
-   * ⚠️ 公开接口也带着它：成长值本来就是公开数据（个人主页就展示这三项）。
+   * ⚠️ 它是这条参与下**已出分** submissions 的 `cookies_earned` 之和（口径与 `attempts` 一致）。
+   * ⚠️ 公开接口也带着它：饼干本来就是公开数据（个人主页就展示）。
    */
-  growth: GrowthView
+  cookies: number
   /**
    * ⭐⭐ **词表快照**（与 `ArticleDetail.words` 同形：原词含标点 + 音标 / 重音 / 音节 / 释义 / 技巧）。
    *

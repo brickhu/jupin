@@ -226,17 +226,18 @@ export async function seedArticles(): Promise<number> {
    *    ② 老行 —— 上一轮灌过、当时这一列还是 NULL 的（比如这次新增的 7 篇），
    *       只在它还是 NULL 时才补，绝不覆盖运营/部署写过的值。
    */
-  const root = resolveStaticRoot()
-  if (process.env.STORAGE === 'local' && root) {
-    const { audioKeyOf } = await import('../services/standard-audio')
-    for (const a of list) {
-      const key = audioKeyOf(a.id)
-      if (!existsSync(resolve(root, key))) continue
-      await db
-        .update(articles)
-        .set({ standardAudio: key })
-        .where(and(eq(articles.id, a.id), isNull(articles.standardAudio)))
-    }
+  /**
+   * ⚠️⚠️ **本机模式下把盘上的标准音挂到库里** —— 走 `attachLocalStandardAudio`
+   *    （判据的唯一实现在 services/standard-audio.ts，admin 的写入接口用的是同一条）。
+   *
+   *    历史上这里是**自己写的一段循环**，而且只遍历 `list`（种子清单）——
+   *    于是管理台新增的句子永远补不上这一列（用户实测：新句子"取音频失败"）。
+   *    现在扫的是**库里所有还空着的行**，盘上有 mp3 就补。
+   */
+  if (process.env.STORAGE === 'local') {
+    const { attachLocalStandardAudio } = await import('../services/standard-audio')
+    const rows = await db.select({ id: articles.id }).from(articles).where(isNull(articles.standardAudio))
+    for (const a of rows) await attachLocalStandardAudio(a.id)
   }
 
   return list.length

@@ -52,6 +52,7 @@ const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..'
 /** 文件路径都写成仓库相对路径（POSIX 分隔符），扫描结果里用的也是这个形状 */
 const P = {
   energy: 'apps/server/src/services/energy.ts',
+  cookies: 'apps/server/src/services/cookies.ts',
   participations: 'apps/server/src/services/participations.ts',
   streak: 'apps/server/src/services/streak.ts',
   articleIndex: 'apps/server/src/services/article-index.ts',
@@ -84,6 +85,8 @@ interface TableRule {
 const TABLE_OWNERS: Record<string, TableRule> = {
   // 能量：流水是真相，users.energy 只是缓存，两者必须**同事务**写（docs 1.11 / 越界 #1#2）
   energy_ledger: { owners: [P.energy], note: 'topUp / hold / release / addEnergy 全在 services/energy.ts' },
+  // 饼干：与能量**同一套结构**（流水是真相，users.cookies 只是缓存，两者同事务写）
+  cookie_ledger: { owners: [P.cookies], note: 'grantCookies（由 settle 在结算事务里调用）' },
   // 战绩派生索引：一人一句一行，只能由同一份 computeParticipation 重算（docs 1.5）
   participations: {
     owners: [P.participations, P.articleDelete],
@@ -107,7 +110,7 @@ const TABLE_OWNERS: Record<string, TableRule> = {
     owners: [P.scoring, P.submissionsRoute, P.articleDelete],
     note: '评测列 scoring.ts；受理 insert 与 is_public 在 routes/submissions.ts',
   },
-  // users 是多概念共用一张表：身份/profile、连战、能量缓存、成长值、推荐窗口…
+  // users 是多概念共用一张表：身份/profile、连战、能量缓存、饼干、推荐窗口…
   // 默认按「表级」放行（细分列见 COLUMN_OWNERS）；表级这组就是这些概念的运行时写入方。
   users: {
     owners: [
@@ -116,6 +119,7 @@ const TABLE_OWNERS: Record<string, TableRule> = {
       P.authRoute,
       P.shopRoute,
       P.energy,
+      P.cookies,
       P.streak,
       P.settle,
       P.rewards,
@@ -155,10 +159,14 @@ const COLUMN_OWNERS: Record<string, Record<string, string[]>> = {
     // 登录态：只有两处换 code 时顺手落库（routes/auth.ts 的 login/session 与 routes/shop.ts 下单前刷新）
     session_key: [P.authRoute, P.shopRoute],
     session_key_at: [P.authRoute, P.shopRoute],
-    // 成长值累计：结算唯一入口 settle（docs 1.4）
-    growth_self: [P.settle],
-    growth_diligence: [P.settle],
-    growth_standout: [P.settle],
+    /**
+     * ⭐ 饼干余额：**结算唯一入口** settle 加余额（docs 1.4 / prd §7.6）。
+     *
+     * ⚠️ 它是**缓存**，真相在 cookie_ledger 的流水里（与 energy 同一套结构）：
+     *    两者必须同事务写，所以入账这条路的起点是 settle、实现落在 services/cookies.ts。
+     *    代码里 `grantCookies` 是 settle 调用的，所以所有者写 settle 而不是 cookies.ts。
+     */
+    cookies: [P.cookies],
     // 发卡记账位：grantReward 成功后由 rewards 推进（docs 1.4 / 1.10）
     unfreeze_marker_streak: [P.rewards],
     // 今日推荐 24 小时窗口：recommendToday 落库（docs 1.7）
@@ -194,10 +202,8 @@ const COLUMN_OWNERS: Record<string, Record<string, string[]>> = {
   },
   submissions: {
     // 结算快照列由 settle 写（与评测列同表，但概念不同，docs 1.4）
-    growth_self: [P.settle],
-    growth_diligence: [P.settle],
-    growth_standout: [P.settle],
-    growth_meta: [P.settle],
+    cookies_earned: [P.settle],
+    cookie_meta: [P.settle],
     streak_delta: [P.settle],
   },
 }

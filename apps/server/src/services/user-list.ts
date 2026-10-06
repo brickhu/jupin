@@ -1,8 +1,8 @@
-import { and, asc, count, countDistinct, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, count, countDistinct, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { UserSummary } from '@jushuo/shared'
 
 import { db } from '../db'
-import { submissions, users } from '../db/schema'
+import { cookieLedger, submissions, users } from '../db/schema'
 
 /** 用户目录一次最多给几条 / 不给 limit 时给几条（用户 2026-09 定） */
 export const MAX_USER_LIMIT = 100
@@ -40,9 +40,8 @@ export async function listUsers(opts: { sort: UserSort; limit: number }): Promis
       createdAt: users.createdAt,
       // ⭐ 这四个数就在 users 这一行上，跟着主查询一起拿，不额外查库
       streakDays: users.streakDays,
-      growthSelf: users.growthSelf,
-      growthDiligence: users.growthDiligence,
-      growthStandout: users.growthStandout,
+      /** ⚠️ 只取余额这一列；「累计获得」要 SUM 流水，列表页不值得为它多查一次 */
+      cookieBalance: users.cookies,
     })
     .from(users)
     .where(eq(users.status, 'normal'))
@@ -79,7 +78,27 @@ export async function listUsers(opts: { sort: UserSort; limit: number }): Promis
           .where(and(inArray(submissions.userId, ids), eq(submissions.status, 'scored')))
           .groupBy(submissions.userId)
 
+  /**
+   * ③ 这一页所有人的**累计获得饼干** —— 同样一条聚合，不是每行一次。
+   *
+   * ⚠️ 只求**正数**（`delta > 0`）：出账（换能量）不该让"累计获得"变小，
+   *    否则列表上的数会随着用户花饼干而**倒退**（prd §7.6 的那条口径）。
+   * ⚠️ 余额不在这里算：它在 `users.cookies` 上，跟着主查询一起拿。
+   */
+  const cookieTotals =
+    ids.length === 0
+      ? []
+      : await db
+          .select({
+            userId: cookieLedger.userId,
+            total: sql<number | null>`SUM(CASE WHEN ${cookieLedger.delta} > 0 THEN ${cookieLedger.delta} ELSE 0 END)`,
+          })
+          .from(cookieLedger)
+          .where(inArray(cookieLedger.userId, ids))
+          .groupBy(cookieLedger.userId)
+
   const byUser = new Map(stats.map((s) => [s.userId, s]))
+  const cookieByUser = new Map(cookieTotals.map((c) => [c.userId, Number(c.total ?? 0)]))
 
   return rows.map((r) => {
     const st = byUser.get(r.id)
@@ -92,10 +111,10 @@ export async function listUsers(opts: { sort: UserSort; limit: number }): Promis
       conqueredCount: Number(st?.sentences ?? 0),
       challengedRounds: Number(st?.rounds ?? 0),
       streakDays: Number(r.streakDays ?? 0),
-      growth: {
-        self: Number(r.growthSelf ?? 0),
-        diligence: Number(r.growthDiligence ?? 0),
-        standout: Number(r.growthStandout ?? 0),
+      /** ⭐ 饼干：累计获得（查流水求和）+ 可用（users.cookies 那一列） */
+      cookies: {
+        total: cookieByUser.get(r.id) ?? 0,
+        balance: Number(r.cookieBalance ?? 0),
       },
     }
   })

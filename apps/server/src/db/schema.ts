@@ -111,17 +111,16 @@ export const users = mysqlTable('users', {
   unfreezeMarkerStreak: int('unfreeze_marker_streak').notNull().default(0),
 
   // ----------------------------------------------------------------
-  // ⭐ 成长值（三个独立指标，**分开展示、不合成总分**）
+  // ⭐ 饼干（🍪）—— 全站**唯一**的累计值（规格：prd §7.6）
   //
-  // ⚠️ 这三个是**累加值**；每一次提交的明细在 submissions 的快照列里。
-  //    两者分工：这里回答"我一共多少"，那里回答"这一次为什么是这些分"。
+  // ⚠️ 结构与能量**完全一样**：余额是缓存，真相在 cookie_ledger 的流水里，
+  //    两者必须**在同一个事务里**写（分开写一定会漂移，而"余额和流水对不上"
+  //    是最难查的一类问题）。
+  // ⚠️ 「累计获得」**不存列**：从流水里按 delta > 0 求和即可。
+  //    它只在个人主页出现一次，SUM 的代价可以接受；多存一列就多一处会漂移的地方。
   // ----------------------------------------------------------------
-  /** 自我超越（句子内 + 个人全局，各占一半后取平均） */
-  growthSelf: int('growth_self').notNull().default(0),
-  /** 坚持不懈（跨过 7 / 30 / 180 / 360×k 里程碑） */
-  growthDiligence: int('growth_diligence').notNull().default(0),
-  /** 人中翘楚（与榜单中位数的差距 × 样本量权重） */
-  growthStandout: int('growth_standout').notNull().default(0),
+  /** 可用饼干（可花；累计获得见 cookie_ledger） */
+  cookies: int('cookies').notNull().default(0),
 
   // ----------------------------------------------------------------
   // ⭐ 能量值（替代"每天 N 次挑战机会"）
@@ -176,23 +175,6 @@ export const users = mysqlTable('users', {
 
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 }, (t) => [
-  /**
-   * ⭐⭐ **成长榜的读路径**（`GET /api/leaderboards/growth`，首页那三块 TOP10）。
-   *
-   * ⚠️⚠️ 没有它们时那条查询是 `type=ALL` + `Using filesort`：
-   *    每次请求**全表扫 users 三遍、再各排一次序**（EXPLAIN 实测）。
-   *    榜单只要 TOP10，建了索引就是"沿索引倒着走 10 步就停"。
-   *
-   * ⚠️⚠️ 必须是**降序索引** `(growth_x DESC, id ASC)`：
-   *    查询是 `ORDER BY growth_x DESC, id ASC`，而**升序**索引 `(growth_x, id)`
-   *    只能消掉全表扫、仍要 `Using filesort`（实测）。降序索引才两者都消掉。
-   *    ⚠️ 第二列 `id` 保持 **ASC**：它是并列时的次序（**先来的在前**），别改成 DESC。
-   *
-   * ⚠️ 代价只有写放大：结算时那一次 `users` UPDATE 会多维护 3 个索引，可忽略。
-   */
-  index('users_growth_self_idx').on(sql`${t.growthSelf} DESC`, t.id),
-  index('users_growth_diligence_idx').on(sql`${t.growthDiligence} DESC`, t.id),
-  index('users_growth_standout_idx').on(sql`${t.growthStandout} DESC`, t.id),
 
   /**
    * ⭐⭐ **用户目录的两种排序**（`GET /api/users`）—— 与上面三个同理：
@@ -201,7 +183,7 @@ export const users = mysqlTable('users', {
    *  · `sort=joined`（默认）：`ORDER BY created_at DESC, id DESC`
    *    ⇒ 升序索引 `(created_at, id)` **倒着扫**就是这两个 DESC，不需要降序索引。
    *  · `sort=energy`：`ORDER BY energy DESC, id ASC`（并列先来的在前）
-   *    ⇒ 混合方向，必须**降序索引** `(energy DESC, id ASC)`（同成长榜那三个）。
+   *    ⇒ 混合方向，必须**降序索引** `(energy DESC, id ASC)`。
    */
   index('users_created_at_idx').on(t.createdAt, t.id),
   index('users_energy_idx').on(sql`${t.energy} DESC`, t.id),
@@ -602,27 +584,26 @@ export const submissions = mysqlTable('submissions', {
   streakDelta: text('streak_delta'),
 
   // ----------------------------------------------------------------
-  // ⭐ 成长值快照 —— 本次提交在三个指标上各拿了多少
+  // ⭐ 饼干快照 —— 这一次攻克赚了多少
   //
   // ⚠️⚠️ 为什么必须落库，不能回看时现算：
-  //    这三个数依赖「提交那一刻的历史」（我在这句的最高分、个人最高分、榜单中位数），
-  //    而历史会变 —— 现算的话同一个成绩今天显示 +5、明天显示 +3，用户会认为是 bug。
+  //    它依赖「提交那一刻的历史」（我在这句的历史最好分、当时的榜单分位），
+  //    而历史会变 —— 现算的话同一个成绩今天显示 +20、明天显示 +8，用户会认为是 bug。
   //    落库之后是**永久冻结的事实**，与 streakDelta 同一类东西。
   //
   // ⚠️ 这里存的是「算出来是多少」，不是「真相的副本」—— 不违反「不建第二份真相」。
   // ----------------------------------------------------------------
-  /** 本次自我超越（n1 与 n2 取平均后的值） */
-  growthSelf: int('growth_self'),
-  /** 本次坚持不懈（跨过的里程碑之和，通常是 0） */
-  growthDiligence: int('growth_diligence'),
-  /** 本次人中翘楚 */
-  growthStandout: int('growth_standout'),
+  /** 本次赚到的饼干（**0 = 没攻克**；端侧据此决定显示 +N 还是"还差 X 分"） */
+  cookiesEarned: int('cookies_earned'),
   /**
-   * 本次成长值的**记账依据**（JSON）：
-   * { highestInSentence, highestInUser, n1, n2, sampleSize, baseline, weight }
-   * ⚠️ 回看结果页要能回答「为什么是这些分」—— 光有结果没有依据，那句话就说不出来。
+   * 本次饼干的**记账依据**（JSON）：
+   * { bestInSentence, passLine, difficulty, base, rankFactor, percentile, sampleSize }
+   * ⚠️ 结果页要能回答两件事，都靠它：
+   *    · 「还差 X 分」—— 需要 passLine（`差 = passLine + 1 − score`）；
+   *    · 「为什么是这个数」—— 需要 base / rankFactor。
+   *    光有结果没有依据，那两句话就说不出来。
    */
-  growthMeta: text('growth_meta'),
+  cookieMeta: text('cookie_meta'),
 
   /**
    * ⭐ 这次挑战的能量状态 —— 两阶段的第二段。
@@ -682,10 +663,10 @@ export const submissions = mysqlTable('submissions', {
   uniqueIndex('submissions_user_attempt_idx').on(t.userId, t.attemptId),
   index('submissions_user_time_idx').on(t.userId, t.createdAt),
   /**
-   * ⭐ **按句子的聚合仍然要它** —— 读者是「参与记录的生产者」和「成长值快照」，
+   * ⭐ **按句子的聚合仍然要它** —— 读者是「参与记录的生产者」和「饼干快照」，
    *    不再是榜单（榜单 2026-09 起读 participations，见下面那张表）：
    *      · services/participations.ts：算某个 (user, article) 的最高分/最低分/首末时间；
-   *      · growth.ts 的 arenaSnapshot：算这一句所有参与者的最高分（取中位数用）——
+   *      · cookies 的榜单分位：算这一句所有参与者的最高分（算名次用）——
    *        它 WHERE article_id = ? AND status = scored 再 GROUP BY user_id。
    *
    * ⚠️⚠️ 这里原来挂的是 (schedule_date, score)，注释写着
@@ -780,23 +761,21 @@ export const participations = mysqlTable('participations', {
   worstScore: decimal('worst_score', { precision: 5, scale: 1 }).notNull(),
 
   /**
-   * ⭐⭐ **这一句上累计拿到的成长值**（三维，与 `users.growth_*` 同一套口径）——
-   *    用户 2026-09 要求：「用户在一次 participation 下可能有多次 submissions，
-   *    每次都能增加一点成长值，希望他们能够累计到 participations 中」。
+   * ⭐⭐ **这一句上累计赚到的饼干**（与 `users.cookies` 同一套口径）——
+   *    同一条产品要求：「一次 participation 下可能有多次 submissions，
+   *    每次都能赚一点，希望它们能累计到 participations 中」。
    *
    * ⚠️ 它是**派生聚合**，与 attempts / bestScore 同类（不是第二份真相）：
-   *    每一项都等于这条参与下**已出分** submissions 的对应列之和
-   *    （`SUM(growth_self)` … over `status = 'scored'`），写入方仍只有
+   *    它等于这条参与下**已出分** submissions 的 `cookies_earned` 之和
+   *    （over `status = 'scored'`），写入方仍只有
    *    services/participations.ts 的 computeParticipation（重算式，可整表重建）。
-   * ⚠️ 口径与 attempts 一致：**只算 scored**。没出分的那次本来就没加成长值
-   *    （成长值在 settle 时才写进 submissions），把它算进来会凭空多出 0 或旧值。
-   * ⚠️ 于是有一个可验证的不变量：对某个用户，
-   *    `SUM(participations.growth_*)` 应当等于 `users.growth_*`（两处同源）——
-   *    它是我验收这次改动用的判据（见迁移 0058 的说明）。
+   * ⚠️ 口径与 attempts 一致：**只算 scored**。没出分的那次本来就没赚饼干
+   *    （饼干在 settle 时才写进 submissions），把它算进来会凭空多出 0 或旧值。
+   * ⚠️ 于是有一个可验证的不变量（与它取代的成长值**同一条**）：对某个用户，
+   *    `SUM(participations.cookies)` 应当等于 `users.cookies` 里"攻克赚来"的那部分
+   *    （即 `SUM(cookie_ledger.delta) WHERE reason='conquer'`）。两处同源，可对账。
    */
-  growthSelf: int('growth_self').notNull(),
-  growthDiligence: int('growth_diligence').notNull(),
-  growthStandout: int('growth_standout').notNull(),
+  cookies: int('cookies').notNull(),
   /** 第一次 / 最近一次已出分挑战的时刻（列表按 last_at 倒序） */
   firstAt: datetime('first_at', { mode: 'date', fsp: 3 }).notNull(),
   lastAt: datetime('last_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -1137,6 +1116,34 @@ export const rewardGrants = mysqlTable('reward_grants', {
  *    同一条 submission 的 hold 只会有一行、同一天的 topup 只会有一行。
  *    （hold 与 release 的 reason 不同，所以不会互相撞。）
  */
+/**
+ * ⭐ 饼干流水 —— **流水是真相，users.cookies 是缓存**（与能量同一套结构）。
+ *
+ * ⚠️⚠️ 两者必须**在同一个事务里**写（理由同能量：漂移没有任何东西看起来是坏的）。
+ *
+ * reason 取值：conquer（攻克入账）/ exchange（换能量出账）/ admin。
+ *
+ * ⚠️ 「累计获得」**从这张表现算**（`SUM(delta) WHERE delta > 0`），不另存一列 ——
+ *    多存一列就多一处会漂移的地方，而它只在个人主页用一次。
+ *
+ * ⚠️ unique(reason, ref_type, ref_id, user_id) 是**一次性发放**的幂等键：
+ *    同一条 submission 的攻克入账只会有一行。出账（exchange）的 ref 是兑换单号。
+ */
+export const cookieLedger = mysqlTable('cookie_ledger', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull().references(() => users.id),
+  /** 正数入账（攻克）、负数出账（换能量），单位「块」 */
+  delta: int('delta').notNull(),
+  reason: varchar('reason', { length: 64 }).notNull(),
+  /** submission | exchange | admin */
+  refType: varchar('ref_type', { length: 16 }).notNull(),
+  refId: varchar('ref_id', { length: 64 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+}, (t) => [
+  uniqueIndex('cookie_ledger_idem_idx').on(t.reason, t.refType, t.refId, t.userId),
+  index('cookie_ledger_user_idx').on(t.userId, t.createdAt),
+])
+
 export const energyLedger = mysqlTable('energy_ledger', {
   id: int('id').autoincrement().primaryKey(),
   userId: int('user_id').notNull().references(() => users.id),

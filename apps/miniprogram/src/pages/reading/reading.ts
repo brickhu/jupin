@@ -4,7 +4,7 @@ import {
   formatScore,
 } from '@jushuo/shared'
 import { alignmentDetailOf, missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
-import type { GrowthView, SubmitResponse } from '@jushuo/shared'
+import { pointsToConquer, type CookieAwardView, type SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
 import {
@@ -145,67 +145,46 @@ function mmss(ms: number): string {
   return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s
 }
 
-/**
- * ⭐ 三张成长值卡 —— **命名以代码为准**：自我超越 / 坚持不懈 / 人中翘楚。
- *
- * ⚠️⚠️ 设计稿上写的是「自我挑战」「鹤立鸡群」，**不采纳**（用户 2026-09：以代码为主）。
- *    全站（首页三块成长榜、个人主页、接口类型 GrowthView）都是这一套名字，
- *    照稿子改文案会让同一个人在两屏里有两个名字。
- *
- * ⚠️ 颜色跟着**指标**走而不是跟着位置走：自我超越橙 / 坚持不懈绿 / 人中翘楚紫 ——
- *    设计稿把绿的那张放在最后，但绿的是「坚持不懈」，位置换了颜色不换。
- */
-const GROWTH_META = [
-  { key: 'self', label: '自我超越', textCls: 'text-orange-500', borderCls: 'border-orange-400' },
-  { key: 'diligence', label: '坚持不懈', textCls: 'text-ok', borderCls: 'border-ok' },
-  { key: 'standout', label: '人中翘楚', textCls: 'text-purple-500', borderCls: 'border-purple-400' },
-] as const
 
-interface GrowthCard {
-  key: string
-  label: string
-  /** 展示文本（带 + 号） */
-  value: string
-  textCls: string
-  borderCls: string
+/**
+ * ⭐ 结果页那**一行**饼干（规格：prd §7.6）。
+ *
+ * ⚠️ 只有两种形态：拿到了就是 `+20 🍪`（大号墨色），
+ *    没拿到就是「再高 3 分就能攻克」（灰色小字）。
+ *    **没有第三种** —— 屏幕上永远不出现「0 🍪」。
+ */
+interface CookieLine {
+  text: string
+  cls: string
 }
 
 /**
- * ⭐ 拿「这一把加了多少」的三张卡。
+ * ⭐ **结果页那一行饼干** —— 拿到就显示 +N，没拿到显示"还差多少"。
  *
- * ⚠️ 数据来自服务端刚下发的 SubmitResponse.growth（submissions.growth_* 的快照）。
- *    拿不到时（结算与「status 置为 scored」之间的窗口 / 老数据）返回空数组 ⇒
- *    **整块不渲染**，而不是摆三个 +0 —— +0 会被读成「这一把没涨」，
- *    而真相是「还没结算」。
+ * ⚠️⚠️ 屏幕上**永远不出现「0 🍪」**（prd §7.6 的硬口径）：
+ *    "0 🍪"是把"你什么都没得到"说出来；"还差 3 分"说的是同一件事，
+ *    但它是**邀请**（目标梯度），不是判决。
  *
- * ⚠️ 不要拿 /me 里那个**累计值**顶上去：卡片上的 +5 是「这一把加了多少」，
- *    累计值放上去会是 +128 这种数 —— 差得不是一点，用户会以为刚才这一把加了 128。
+ * ⚠️ 数据来自服务端刚下发的 `SubmitResponse.cookies`（submissions 的快照）。
+ *    拿不到时（结算与「status 置为 scored」之间的窗口 / 老数据）返回 **null** ⇒
+ *    **整块不渲染** —— 原来这里是三张恒为 +0 的灰卡，那是**三次**"你什么都没得到"的宣告。
+ *
+ * ⚠️ 不要拿主页那个**累计值**顶上来：这一行回答的是「**这一把**赚了多少」，
+ *    累计值放上去会是 +1240 这种数。
  */
-function growthCardsOf(delta: Partial<GrowthView> | null): GrowthCard[] {
-  if (!delta) return []
-  return GROWTH_META.map((m) => ({
-    key: m.key,
-    label: m.label,
-    value: '+' + Math.max(0, Number(delta[m.key] ?? 0)),
-    textCls: m.textCls,
-    borderCls: m.borderCls,
-  }))
-}
+function cookieLineOf(
+  award: CookieAwardView | null | undefined,
+  score: number | null | undefined,
+): CookieLine | null {
+  if (!award) return null
 
-/**
- * ⭐ 失败态的三张卡 —— **恒为 +0（灰）**。
- *
- * ⚠️ 与 s5 的「拿不到就不渲染」不同：这里的值不需要服务端给，它**就是 0**
- *    （评测失败不扣能量、也不加成长值，服务端会把受理时锁的 2 点释放掉）。
- */
-function zeroGrowthCards(): GrowthCard[] {
-  return GROWTH_META.map((m) => ({
-    key: m.key,
-    label: m.label,
-    value: '+0',
-    textCls: 'text-faint',
-    borderCls: 'border-gray-300',
-  }))
+  if (award.earned > 0) return { text: '+' + award.earned + ' 🍪', cls: 'text-40rpx font-bold text-ink' }
+
+  // ⚠️ 没攻克：不显示 0，改说"还差多少"。分数拿不到就整块不渲染（宁可不显示，也不显示错的）
+  if (score === null || score === undefined) return null
+  const gap = pointsToConquer(score, award.passLine)
+  if (gap <= 0) return null
+  return { text: '再高 ' + gap + ' 分就能攻克', cls: 'text-26rpx text-muted' }
 }
 
 /**
@@ -392,9 +371,9 @@ Page({
      *   · s5：服务端下发了这一把的增量（SubmitResponse.growth）就是三张 +N；
      *         拿不到（还没结算 / 老数据）时是**空数组** ⇒ 整块不渲染；
      *   · s6：恒为三张 +0（灰）—— 且**不做数字滚动**（没有"涨"这回事，
-     *         见 zeroGrowthCards 与 WXML 里 s6 那一块）。
+     *         见 cookieLineOf 与 WXML 里 s6 那一块）。
      */
-    growthCards: [] as GrowthCard[],
+    cookieLine: null as CookieLine | null,
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -1064,7 +1043,7 @@ Page({
         uploadPercent: 0,
         scoreText: '',
         scoreSubtitle: '',
-        growthCards: [],
+        cookieLine: null,
         // ⚠️ 同 onRestart：入场开关要复位
         failDetail: '',
       },
@@ -1921,8 +1900,9 @@ Page({
       failDetail: detail || '录音不符合规范，无法检测发音',
       scoreText: '',
       scoreSubtitle: '',
-      // ⚠️ 失败态的三张卡是恒定的 +0（灰）—— 不需要服务端给（见 zeroGrowthCards）
-      growthCards: zeroGrowthCards(),
+      // ⚠️ 失败态**整块不出现**（prd §7.6）：原来这里是三张恒为 +0 的灰卡，
+      //    那是三次「你什么都没得到」的宣告。
+      cookieLine: null,
       playingWord: -1,
       sentenceState: 'unplay',
       replayState: 'unplay',
@@ -1979,7 +1959,7 @@ Page({
      *    ⚠️ 但**不在这里清缓存**：s5 上那颗「试听」播的就是本地这份文件，
      *       清早了按钮就点了没反应。真正的清理在 onUnload（见那里的说明）。
      */
-    const growth = growthDeltaOf(result)
+    const cookie = cookieAwardOf(result)
     this.setData({
       phase: 's5',
       error: '',
@@ -1988,7 +1968,7 @@ Page({
       scoreText: formatScore(result.score),
       scoreSubtitle: this.subtitleOf(result),
       attemptTitle: (result.attempts ?? 0) > 0 ? '第' + (result.attempts ?? 0) + '次朗读' : 'AI口语测评',
-      growthCards: growthCardsOf(growth),
+      cookieLine: cookieLineOf(cookie, result.score),
       failDetail: '',
       playingWord: -1,
       sentenceState: 'unplay',
@@ -2001,7 +1981,7 @@ Page({
      *    卡片搬进弹窗之后，弹窗自己有一次进出场过渡（见 eval-dialog 的 entered），
      *    再给卡片加一层淡入是两次动画叠在一起，所以那一套整个删了。
      */
-    if (roll) this.rollNumbers(result.score, growth)
+    if (roll) this.rollNumbers(result.score, cookie)
     this.syncEnergyNote()
     /**
      * ⭐⭐ 出了分 = 这一句的历史多了一条 —— 立刻重拉。
@@ -2024,12 +2004,12 @@ Page({
    * ⚠️⚠️ 末帧**无条件写精确值**，不能用缓动函数算出来的近似值：
    *    四舍五入会让 89.46 停在 89.4，而服务端给的是 89.5 ——
    *    "动画结束时差 0.1"是最不该有的错。
-   * ⚠️ 分数一位小数（走 formatScore 的统一口径）、成长值取整（Math.round）。
+   * ⚠️ 分数一位小数（走 formatScore 的统一口径）、饼干取整（Math.round）。
    *
    * @param score  最终分（0–100，一位小数）
-   * @param growth 这一把的成长值增量；null = 服务端还没给，那就只滚分数
+   * @param cookie 这一把的饼干快照；null = 服务端还没给，那就只滚分数
    */
-  rollNumbers(score: number, growth: Partial<GrowthView> | null) {
+  rollNumbers(score: number, cookie: CookieAwardView | null) {
     this.stopRoll()
     const startedAt = Date.now()
     this.rollTimer = setInterval(() => {
@@ -2044,16 +2024,12 @@ Page({
       const done = t >= 1
       this.setData({
         scoreText: done ? formatScore(score) : formatScore(score * k),
-        ...(growth
+        ...(cookie
           ? {
-              growthCards: growthCardsOf(
-                done
-                  ? growth
-                  : {
-                      self: Math.round((growth.self ?? 0) * k),
-                      diligence: Math.round((growth.diligence ?? 0) * k),
-                      standout: Math.round((growth.standout ?? 0) * k),
-                    },
+              // ⚠️ 只滚"拿到了多少"；没攻克那一档是文字（"还差 X 分"），不参与滚动
+              cookieLine: cookieLineOf(
+                done ? cookie : { ...cookie, earned: Math.round(cookie.earned * k) },
+                score,
               ),
             }
           : {}),
@@ -2263,7 +2239,7 @@ Page({
       scoreText: '',
       scoreSubtitle: '',
       attemptTitle: '',
-      growthCards: [],
+      cookieLine: null,
       failDetail: '',
       playingWord: -1,
       sentenceState: 'unplay',
@@ -2313,14 +2289,14 @@ function readStdDurationMs(audio: { full: string; kind: 'cloud' | 'http'; durati
 }
 
 /**
- * ⭐ 从提交结果里读「这一把的成长值快照」。
+ * ⭐ 从提交结果里读「这一把的饼干快照」。
  *
- * ⚠️ 字段就是 shared 的 SubmitResponse.growth（形状 GrowthView：self / diligence / standout），
- *    由服务端 services/submission-view.ts 从 submissions.growth_* 读出来 ——
+ * ⚠️ 字段就是 shared 的 `SubmitResponse.cookies`（形状 CookieAwardView），
+ *    由服务端 services/submission-view.ts 从 submissions 的快照列读出来 ——
  *    端侧读的字段名与服务端给的是同一个，不再有第二套。
  * ⚠️ 它是**可选**的：结算与「status 置为 scored」不在同一个事务里，轮询可能卡在中间；
- *    老数据也可能没结算过 ⇒ null，端侧整块不渲染（见 growthCardsOf）。
+ *    老数据也可能没结算过 ⇒ null，端侧整块不渲染（见 cookieLineOf）。
  */
-function growthDeltaOf(result: SubmitResponse): Partial<GrowthView> | null {
-  return result.growth ?? null
+function cookieAwardOf(result: SubmitResponse): CookieAwardView | null {
+  return result.cookies ?? null
 }

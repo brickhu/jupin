@@ -105,7 +105,7 @@ export async function sweepStaleSubmissions(force = false): Promise<SweepResult>
       .where(
         and(
           eq(submissions.status, 'scored'),
-          isNull(submissions.growthSelf),
+          isNull(submissions.cookiesEarned),
           // ⚠️ 只补"已经不是刚出分"的那些：正常流程里 settle 就在写分数之后几秒内跑，
           //    不排除刚刚出分的行会让兜底与正常流程抢同一条（虽然 settle 有原子认领，
           //    但少一次无意义的争抢更好）

@@ -26,8 +26,6 @@ import type {
   ArticleFavoriteCount,
   ArticleFavoriteCountsResponse,
   Gender,
-  GrowthRankResponse,
-  GrowthRankRow,
   MeResponse,
   ProfileUpdateResponse,
   ParticipationRecord,
@@ -260,10 +258,26 @@ export const ArticleWordItemSchema = z
   })
   .openapi('ArticleWordItem')
 
-/** 成长值快照（这一把各加了多少） */
-export const GrowthViewSchema = z
-  .object({ self: z.number(), diligence: z.number(), standout: z.number() })
-  .openapi('GrowthView')
+/**
+ * ⭐ 饼干的两个位置（累计获得 / 可用）—— 见 prd §7.6。
+ * ⚠️ 是两个数不是三个：它们**共用同一个 🍪 符号**（"累计 1,240 / 可用 320"）。
+ */
+export const CookieViewSchema = z
+  .object({ total: z.number().int(), balance: z.number().int() })
+  .openapi('CookieView')
+
+/**
+ * ⭐ 这一把赚到的饼干 —— 结果页那一行。
+ * ⚠️ `passLine` 是给端侧算「还差 X 分」的（`差 = passLine + 1 − score`）。
+ */
+export const CookieAwardViewSchema = z
+  .object({
+    earned: z.number().int(),
+    passLine: z.number().int(),
+    base: z.number().int(),
+    rankFactor: z.number(),
+  })
+  .openapi('CookieAwardView')
 
 /** ⭐ 「参与场次」一条（一句一行 = 一个竞技场） */
 export const ParticipationRecordSchema = z
@@ -271,8 +285,8 @@ export const ParticipationRecordSchema = z
     /** ⭐ 这一行的地址（派生值：sha256(`userId:articleId`) 前 24 位） */
     id: z.string(),
     articleId: z.string(),
-    /** ⭐ 这条参与累计带来的成长值（已出分 submissions 之和） */
-    growth: GrowthViewSchema,
+    /** ⭐ 这条参与累计赚到的饼干（已出分 submissions 的 cookies_earned 之和） */
+    cookies: z.number().int(),
     /**
      * ⭐⭐ 词表快照（与 ArticleDetail.words 同形）—— **它同时就是原文**：
      *    `words[].text` 含标点，拼起来即原句。所以这里**没有 text 字段**（2026-09 删）。
@@ -443,7 +457,7 @@ export const MeResponseSchema = okEnvelope(
       challengedCount: z.number().int(),
       challengedRounds: z.number().int(),
       conqueredCount: z.number().int(),
-      growth: GrowthViewSchema,
+      cookies: CookieViewSchema,
       streak: StreakViewSchema,
     })
     .openapi('MeResponse'),
@@ -497,7 +511,7 @@ export const SubmitResponseSchema = z
     previousBest: z.number().nullable(),
     /** 这一把是这句的第几次（可空：序号只在"有结论"时才分配） */
     attempts: z.number().int().optional(),
-    growth: GrowthViewSchema.optional(),
+    cookies: CookieAwardViewSchema.optional(),
     leaderboard: z.array(LeaderboardRowSchema),
     words: z.array(WordScoreSchema).optional(),
     dimensions: ScoreDimensionsSchema.optional(),
@@ -807,31 +821,6 @@ export const FavoriteListResponseSchema = okEnvelope(
   z.object({ items: z.array(FavoriteItemSchema) }).openapi('FavoritesResponse'),
 )
 
-/** 成长榜一行（三个榜共用） */
-export const GrowthRankRowSchema = z
-  .object({
-    rank: z.number().int(),
-    nickname: z.string(),
-    avatarUrl: z.string().nullable(),
-    value: z.number(),
-    isMe: z.boolean(),
-  })
-  .openapi('GrowthRankRow')
-
-/**
- * 成长榜（首页下方）—— **按需返回**：没点名的键**不出现**（不是空数组）。
- * 见 `GET /api/leaderboards/growth` 的 `?self` / `?diligence` / `?standout`。
- */
-export const GrowthRankResponseSchema = okEnvelope(
-  z
-    .object({
-      self: z.array(GrowthRankRowSchema).optional(),
-      diligence: z.array(GrowthRankRowSchema).optional(),
-      standout: z.array(GrowthRankRowSchema).optional(),
-    })
-    .openapi('GrowthRankResponse'),
-)
-
 /**
  * ⭐ **用户目录**（`GET /api/users`）里的一行。
  * ⚠️ 这条接口是**公开**的且**含 energy**（用户 2026-09 明确要求）——
@@ -850,8 +839,8 @@ export const UserSummarySchema = z
     challengedRounds: z.number().int(),
     /** 连战天数 */
     streakDays: z.number().int(),
-    /** 成长值（三个指标，不合成总分） */
-    growth: GrowthViewSchema,
+    /** 饼干：累计获得 + 可用 */
+    cookies: CookieViewSchema,
   })
   .openapi('UserSummary')
 
@@ -932,7 +921,7 @@ export const PublicProfileResponseSchema = okEnvelope(
       streakDays: z.number().int(),
       conqueredCount: z.number().int(),
       challengedRounds: z.number().int(),
-      growth: GrowthViewSchema,
+      cookies: CookieViewSchema,
     })
     .openapi('PublicProfileResponse'),
 )
@@ -1023,15 +1012,10 @@ type _ArticleParticipationsParity = Equal<
   ArticleParticipationsResponse
 >
 type _TokenParity = Equal<z.infer<typeof TokenResponseSchema>['data'], TokenResponse>
-type _GrowthRowParity = Equal<z.infer<typeof GrowthRankRowSchema>, GrowthRankRow>
 type _UserSummaryParity = Equal<z.infer<typeof UserSummarySchema>, UserSummary>
 type _UserListParity = Equal<
   z.infer<typeof UserListResponseSchema>['data'],
   UserListResponse
->
-type _GrowthResParity = Equal<
-  z.infer<typeof GrowthRankResponseSchema>['data'],
-  GrowthRankResponse
 >
 type _GoodsItemParity = Equal<z.infer<typeof ShopGoodsItemSchema>, ShopGoodsItem>
 type _GoodsResParity = Equal<z.infer<typeof ShopGoodsResponseSchema>['data'], ShopGoodsResponse>
@@ -1098,10 +1082,8 @@ const _parityChecks: [
   _ArticleParticipationRowParity,
   _ArticleParticipationsParity,
   _TokenParity,
-  _GrowthRowParity,
   _UserSummaryParity,
   _UserListParity,
-  _GrowthResParity,
   _GoodsItemParity,
   _GoodsResParity,
   _PayDataParity,
@@ -1113,5 +1095,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

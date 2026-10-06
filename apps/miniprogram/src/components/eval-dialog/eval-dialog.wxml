@@ -114,14 +114,10 @@
       <text class="text-120rpx font-bold text-ok leading-[1.1]">{{scoreText}}</text>
       <text class="text-26rpx text-body mt-2 text-center leading-[1.6]">{{scoreSubtitle}}</text>
 
-      <!-- ⭐ 三张成长值卡：这一把加了多少（服务端下发；拿不到时整块不渲染） -->
-      <view class="flex items-stretch gap-2 mt-5 w-full" wx:if="{{growthCards.length > 0}}">
-        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
-              wx:for="{{growthCards}}" wx:key="key">
-          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
-          <text class="text-40rpx font-bold text-ink leading-[1.2]">{{item.value}}</text>
-        </view>
-      </view>
+      <!-- ⭐ 饼干那一行：这一把赚了多少（服务端下发；拿不到时整块不渲染）
+           ⚠️ 屏幕上**永远不出现「0 🍪」** —— 没攻克时这一行是「再高 X 分就能攻克」，
+              那是**邀请**（目标梯度），不是判决。见 prd §7.6。 -->
+      <text class="mt-5 {{cookieLine.cls}}" wx:if="{{cookieLine}}">{{cookieLine.text}}</text>
     </view>
 
     <!-- ── 检测失败（s6）────────────────────────────────────
@@ -130,14 +126,9 @@
       <text class="text-72rpx font-bold text-bad">检测失败</text>
       <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
 
-      <!-- ⚠️ 失败三张卡恒为 +0（灰）：失败不扣能量、也不加成长值 -->
-      <view class="flex items-stretch gap-2 mt-5 w-full">
-        <view class="flex-1 flex flex-col items-center rounded-1.5 border-2 border-solid py-2 {{item.borderCls}}"
-              wx:for="{{growthCards}}" wx:key="key">
-          <text class="text-20rpx {{item.textCls}}">{{item.label}}</text>
-          <text class="text-40rpx font-bold leading-[1.2] {{item.textCls}}">{{item.value}}</text>
-        </view>
-      </view>
+      <!-- ⚠️ 失败态**整块不出现**（prd §7.6）。
+           原来这里有三张恒为 +0 的灰卡 —— 那是**三次**「你什么都没得到」的宣告。 -->
+
     </view>
 
     <!-- ⚠️ 本次消耗的能量那行小字（已经扣了 / 失败没扣）由页面拼好传进来 -->

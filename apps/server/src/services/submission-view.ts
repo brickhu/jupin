@@ -7,6 +7,7 @@ import { loadArticleRefText } from './content'
 import { getBestExcluding, getLeaderboardAround, getRank } from './leaderboard'
 import { attemptNoOf } from './submission'
 import type { SubmissionStatusResponse } from '@jushuo/shared'
+import { cookieAwardViewOf } from './cookies'
 
 /**
  * ⭐ 把一行提交翻译成客户端要的**结果包** —— 全站只有这一处。
@@ -102,19 +103,10 @@ export async function describe(
      */
     attempts: await attemptNoOf(row.userId, row.articleId, row.createdAt, row.id),
     // ⭐ 这一把的成长值快照 —— s5 三张卡的 +N。字段名就照端侧读的 growth 给
-    //    （reading.ts 的 growthDeltaOf），不自创第二套。
     //    ⚠️ 结算与「status 置为 scored」不是同一个事务，轮询可能卡在中间
-    //    （growth_self 还是 null）⇒ 那时**不给**这个字段，端侧整块不渲染
-    //    （不是摆三个 +0，那会被读成「这一把没涨」）。
-    ...(row.growthSelf !== null
-      ? {
-          growth: {
-            self: row.growthSelf,
-            diligence: row.growthDiligence ?? 0,
-            standout: row.growthStandout ?? 0,
-          },
-        }
-      : {}),
+    //    （cookies_earned 还是 null）⇒ 那时**不给**这个字段，端侧整块不渲染
+    //    （不是摆一个 +0 🍪 —— 屏幕上永远不出现"0 🍪"，见 prd §7.6）。
+    ...(row.cookiesEarned !== null ? { cookies: cookieAwardViewOf(row) } : {}),
     leaderboard,
     text: article[0] ? await loadArticleRefText(article[0].id) : '',
     // ⭐ 录音时长 —— 结果页在播放按钮旁边显示它（读完之后最直观的参照）

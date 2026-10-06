@@ -16,7 +16,7 @@ import { playbackRefOf } from '../services/recording'
 import { describe } from '../services/submission-view'
 import { getTotalConquered } from '../services/conquest'
 import { challengeStats } from '../services/submission'
-import { readGrowth } from '../services/growth'
+import { readCookies } from '../services/cookies'
 import { verifyToken } from '../lib/token'
 import { readStreakView } from '../services/streak'
 import type { Variables } from '../middleware/auth'
@@ -264,10 +264,10 @@ profileRoutes.openapi(publicProfileRoute, async (c) => {
    */
   // ⚠️ 公开接口：只给公开成绩。能量 / 解冻卡是账号余额，走 /api/user/*（端侧融合）
 
-  const [conqueredCount, stats, growth, streak] = await Promise.all([
+  const [conqueredCount, stats, cookies, streak] = await Promise.all([
     getTotalConquered(u.id),
     challengeStats(u.id),
-    readGrowth(u.id),
+    readCookies(u.id),
     readStreakView(u.id),
   ])
 
@@ -280,7 +280,7 @@ profileRoutes.openapi(publicProfileRoute, async (c) => {
       streakDays: streak.streakDays,
       conqueredCount,
       challengedRounds: stats.challengedRounds,
-      growth,
+      cookies,
     },
   }, 200)
 })

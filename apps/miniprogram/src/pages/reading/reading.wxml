@@ -280,7 +280,7 @@
   <eval-dialog mode="{{confirmOpen ? 'precheck' : 'submitting'}}"
                phase="{{phase}}" uploadPercent="{{uploadPercent}}"
                scoreText="{{scoreText}}" scoreSubtitle="{{scoreSubtitle}}"
-               attemptTitle="{{attemptTitle}}" growthCards="{{growthCards}}"
+               attemptTitle="{{attemptTitle}}" cookieLine="{{cookieLine}}"
                failDetail="{{failDetail}}" energyNote="{{energyNote}}"
                costEnergy="{{costEnergy}}" balanceEnergy="{{confirmEnergy}}"
                bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail"

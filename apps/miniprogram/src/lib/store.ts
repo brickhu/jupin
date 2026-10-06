@@ -398,7 +398,7 @@ function ensureUserInfo(): MeResponse {
       challengedCount: 0,
       challengedRounds: 0,
       conqueredCount: 0,
-      growth: { self: 0, diligence: 0, standout: 0 },
+      cookies: { total: 0, balance: 0 },
       streak: emptyStreak(),
     }
   )

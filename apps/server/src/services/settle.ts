@@ -3,7 +3,9 @@ import { dayKey } from '@jushuo/shared'
 
 import { db } from '../db'
 import { submissions, users } from '../db/schema'
-import { arenaSnapshot, computeGrowth, highestInSentence, highestInUser } from './growth'
+import type { CookieAward } from '@jushuo/shared'
+
+import { arenaSnapshot, computeCookies, difficultyOf, grantCookies, highestInSentence } from './cookies'
 import { evaluateRewards, type GrantedReward } from './rewards'
 import { recordRead } from './streak'
 import { unfreezeStatus } from './unfreeze'
@@ -25,18 +27,20 @@ import { unfreezeStatus } from './unfreeze'
  * ⚠️ 调用点必须在「分数**已经落库**、且这条 run 确实是写入者」之后
  *    （services/scoring.ts 里那个 affectedRows === 1 的分支）。
  *
- * ⚠️ 幂等靠 submissions.growth_self IS NULL 这个守卫：
- *    成长值的累加不像发奖那样有唯一键兜底，重复加一次**不会报错**，
+ * ⚠️ 幂等靠 submissions.cookies_earned IS NULL 这个守卫：
+ *    饼干的累加不像发奖那样有唯一键兜底（流水上的唯一键是第二道保险），
+ *    重复加一次**不会报错**，
  *    只会让用户的数字凭空变大 —— 这种错最难发现。
  */
 
 export interface SettleResult {
   streakDays: number
   streakBest: number
-  /** 这次读有没有被计入（false = 今天已经读过，只加成长值不加天数） */
+  /** 这次读有没有被计入（false = 今天已经读过，只发饼干不加天数） */
   streakCounted: boolean
   streakDelta: number
-  growth: { self: number; diligence: number; standout: number }
+  /** ⭐ 这一把赚到的饼干（含攻克线 —— 端侧靠它显示「还差 X 分」） */
+  cookies: CookieAward
   rewards: GrantedReward[]
   unfreezeCards: number
 }
@@ -44,8 +48,8 @@ export interface SettleResult {
 /**
  * ⭐ **进程内的原子认领**：同一条提交在同一进程里只会被结算一次。
  *
- * ⚠️ 为什么需要它（2026-09 加兜底清扫之后）：判据是"先读 growth_self 再写"，
- *    两个并发调用会**都读到 null**、都往下走 —— 而成长值是**累加**的，
+ * ⚠️ 为什么需要它（2026-09 加兜底清扫之后）：判据是"先读 cookies_earned 再写"，
+ *    两个并发调用会**都读到 null**、都往下走 —— 而饼干是**累加**的，
  *    重复加一次不会报错，只会让用户的数字凭空变大（这种错最难发现）。
  *    以前只有唯一调用点（scoring 里那条 affectedRows===1 的分支），
  *    现在多了"惰性补跑"（services/sweep.ts）⇒ 并发窗口变成真实存在的。
@@ -73,9 +77,9 @@ export async function settle(userId: number, submissionId: string): Promise<Sett
 async function settleInner(userId: number, submissionId: string): Promise<SettleResult | null> {
   const [row] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
   if (!row || row.status !== 'scored' || row.score === null) return null
-  // ⚠️ 已经结算过（growth_self 有值）→ 直接退出。
+  // ⚠️ 已经结算过（cookies_earned 有值）→ 直接退出。
   //    合法的 0 也会写 0，所以判据是 null 而不是 falsy。
-  if (row.growthSelf !== null) return null
+  if (row.cookiesEarned !== null) return null
 
   const score = Number(row.score)
 
@@ -90,20 +94,17 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
   // ---- ① streak：只算天数，不碰卡（卡是用户主动用的，见 ./unfreeze.ts）----
   const read = await recordRead(userId, dayKey(row.createdAt))
 
-  // ---- ② 三个成长指标：三样历史都**排除本次提交** ----
-  const [bestSentence, bestUser, snapshot] = await Promise.all([
+  // ---- ② 饼干：两样历史都**排除本次提交**（难度是句子的属性，不必排除）----
+  const [bestSentence, snapshot, difficulty] = await Promise.all([
     highestInSentence(userId, row.articleId, submissionId),
-    highestInUser(userId, submissionId),
     arenaSnapshot(row.articleId, submissionId),
+    difficultyOf(row.articleId),
   ])
-  const growth = computeGrowth({
-    score,
-    highestInSentence: bestSentence,
-    highestInUser: bestUser,
-    snapshot,
-    streakBefore,
-    streakAfter: read.state.streakDays,
-  })
+  /**
+   * ⚠️ 与它取代的三维成长值最大的不同：**连续天数不再参与**。
+   *    「坚持不懈」与连战本来就是同一个数（已删），连战的回报走补签那条线。
+   */
+  const cookies = computeCookies({ score, difficulty, highestInSentence: bestSentence, snapshot })
 
   // ---- ③ 奖励：规则求值（全部走 grantReward）----
   const rewards = await evaluateRewards({
@@ -125,10 +126,8 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
     const updated = await tx
       .update(submissions)
       .set({
-        growthSelf: growth.self,
-        growthDiligence: growth.diligence,
-        growthStandout: growth.standout,
-        growthMeta: JSON.stringify(growth.meta),
+        cookiesEarned: cookies.earned,
+        cookieMeta: JSON.stringify(cookies.meta),
         streakDelta: JSON.stringify({
           streakDays: read.state.streakDays,
           streakBest: read.state.streakBest,
@@ -138,31 +137,20 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
         }),
       })
       // ⚠️ 守卫：只有「还没结算过」的那一次能写进去（见文件头）
-      .where(and(eq(submissions.id, submissionId), isNull(submissions.growthSelf)))
+      .where(and(eq(submissions.id, submissionId), isNull(submissions.cookiesEarned)))
 
     const affected = (updated as unknown as [{ affectedRows?: number }])[0]?.affectedRows
     if (Number(affected ?? 0) !== 1) return
 
-    // 成长值的累加：读改写（同一事务里，行锁住，简单可靠）
-    const [u] = await tx
-      .select({
-        self: users.growthSelf,
-        diligence: users.growthDiligence,
-        standout: users.growthStandout,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .for('update')
-    if (!u) return
-
-    await tx
-      .update(users)
-      .set({
-        growthSelf: u.self + growth.self,
-        growthDiligence: u.diligence + growth.diligence,
-        growthStandout: u.standout + growth.standout,
-      })
-      .where(eq(users.id, userId))
+    /**
+     * ⭐ 饼干的累加：加余额 + 记流水。
+     *
+     * ⚠️⚠️ 幂等**完全靠上面那个 `IS NULL` 守卫**（affectedRows 不为 1 时已经 return）——
+     *    所以这里不再自己判一次：两道判断分开写，迟早会不一致。
+     * ⚠️ 用 `users.cookies + n` 而不是"读出来再加"：读改写要 `FOR UPDATE`，
+     *    而这里已经在一人一行的事务里，交给数据库自增更简单也更准。
+     */
+    await grantCookies(tx, { userId, submissionId, earned: cookies.earned })
   })
 
   return {
@@ -170,7 +158,12 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
     streakBest: read.state.streakBest,
     streakCounted: read.counted,
     streakDelta: read.delta,
-    growth: { self: growth.self, diligence: growth.diligence, standout: growth.standout },
+    cookies: {
+      earned: cookies.earned,
+      passLine: cookies.passLine,
+      base: cookies.base,
+      rankFactor: cookies.rankFactor,
+    },
     rewards,
     unfreezeCards: unfreeze.count,
   }

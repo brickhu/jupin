@@ -16,14 +16,16 @@
  *      （数字滚动、能量小字、恢复 s5），状态留在页面一处，组件就不会成为第二份真相。
  */
 
-/** 成长值三卡 —— 形状与朗读页里的 GrowthCard 一致（那边算好、这边只画） */
-interface GrowthCard {
-  key: string
-  label: string
-  value: string
-  /** 'text-orange-500' 之类 —— 由页面按 GROWTH_META 决定 */
-  textCls: string
-  borderCls: string
+/**
+ * ⭐ 饼干那一行 —— 形状与朗读页里的 CookieLine 一致（那边算好、这边只画）。
+ *
+ * ⚠️ 只有**两种**形态：`+20 🍪`（拿到了）或「再高 3 分就能攻克」（没拿到）。
+ *    没有"0 🍪"这一种 —— 那是把"你什么都没得到"说出来（prd §7.6）。
+ */
+interface CookieLine {
+  text: string
+  /** 'text-40rpx font-bold text-ink' 之类 —— 由页面决定 */
+  cls: string
 }
 
 /**
@@ -62,8 +64,12 @@ Component({
     scoreSubtitle: { type: String, value: '' },
     /** s5 左上角那行「第 N 次朗读」 */
     attemptTitle: { type: String, value: '' },
-    /** s5/s6 的三张成长值卡（s5 拿不到服务端增量时是空数组） */
-    growthCards: { type: Array, value: [] as GrowthCard[] },
+    /**
+     * ⭐ s5 那一行饼干（形状见 CookieLine）。
+     * ⚠️ 默认 **null** ⇒ 整块不渲染 —— 这是"拿不到"与"失败态"共同的表达方式
+     *    （`type: null` 是 wxml 组件里声明"可空对象"的写法，用 Object 构造器装不下 null）。
+     */
+    cookieLine: { type: null, value: null as CookieLine | null },
     /** s6 的副标题（默认「录音不符合规范」；超时那次会换一句真话） */
     failDetail: { type: String, value: '' },
     /** 底部那行能量小字（成品文本，页面拼） */

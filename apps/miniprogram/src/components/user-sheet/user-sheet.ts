@@ -198,7 +198,7 @@ Component({
         avatarUrl: p?.avatarUrl ?? '',
         conqueredCount: p?.conqueredCount ?? 0,
         energy: p?.energy ?? 0,
-        growth: p?.growth ?? { self: 0, diligence: 0, standout: 0 },
+        cookies: p?.cookies ?? { total: 0, balance: 0 },
         streak: st.userInfo?.streak ?? null,
       })
 

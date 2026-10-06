@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { env } from '../env'
-import { audioRefOf } from './standard-audio'
+import { audioKeyOf, audioRefOf, localStandardAudioKey } from './standard-audio'
 
 /**
  * ⚠️ 这一条是**回归测试**：本机的标准音一度去云桶里找，报「拿不到标准音」。
@@ -44,5 +44,29 @@ describe('audioRefOf', () => {
       // 裸环境（CI）没有云坐标 —— 那就只能退回本机那条路，但至少不能是空的
       expect(ref?.kind).toBe('http')
     }
+  })
+})
+
+/**
+ * ⭐ `localStandardAudioKey` —— "本机这一行该不该有标准音"的**唯一判断**。
+ *
+ * ⚠️ 它存在的理由（2026-09 真实缺口）：原来只有"种子清单里的句子"会被挂上，
+ *    管理台新增的句子不在清单里 ⇒ 音频文件明明生成好了，`standard_audio` 永远是 NULL
+ *    ⇒ 接口不给 audio ⇒ 新句子在模拟器里"取音频失败"。
+ *    ⇒ 判据统一成"盘上有没有这个 mp3"，这里把三种情形钉住。
+ */
+describe('localStandardAudioKey —— 盘上是唯一判据', () => {
+  const root = '/tmp/jushuo-static'
+
+  it('盘上有这个 mp3 ⇒ 给出该写进 standard_audio 的 key', () => {
+    expect(localStandardAudioKey('abc123', { root, exists: () => true })).toBe(audioKeyOf('abc123'))
+  })
+
+  it('盘上没有 ⇒ null（还没生成音频，不该凭空写一个指向空文件的 key）', () => {
+    expect(localStandardAudioKey('abc123', { root, exists: () => false })).toBeNull()
+  })
+
+  it('连静态根都找不到 ⇒ null（容器/本机路径都不对时不要猜）', () => {
+    expect(localStandardAudioKey('abc123', { root: null, exists: () => true })).toBeNull()
   })
 })

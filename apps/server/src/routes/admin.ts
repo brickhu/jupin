@@ -7,6 +7,7 @@ import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
 import { ArticleTextImmutableError, contentColumnsOf, saveArticleContent } from '../services/article-content'
+import { attachLocalStandardAudio } from '../services/standard-audio'
 import { articleRefsOf, deleteArticle } from '../services/article-delete'
 import { storeStandardAudio } from '../services/standard-audio'
 
@@ -271,7 +272,23 @@ adminRoutes.openapi(adminWriteRoute, async (c) => {
    */
   try {
     const { created } = await saveArticleContent(id, cols, { isActive: body.isActive as boolean | undefined })
-    console.log(`[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）`)
+
+    /**
+     * ⭐⭐ **发布那一刻顺手把标准音挂上**（仅本机模式；判据 = 盘上有没有那个 mp3）。
+     *
+     * ⚠️⚠️ 为什么写在这里：管理台的流程是「拆句 → 生成音频（落到 content/audio/）→ 发布」，
+     *    而挂载这一列原来只在**种子/部署**那一步做 ⇒ 从管理台加的新句子
+     *    在本机永远是 `audio: null`（用户实测的"新句子取音频失败"）。
+     *    ⇒ 写入接口顺势补上：**只补空值、只在 STORAGE=local**，
+     *      判据与种子完全共用 `attachLocalStandardAudio`（一条实现，不会漂）。
+     * ⚠️ 云端**故意不写**：那一列的含义是"音频分发得出去"，要等上传到对象存储成功
+     *    （见 services/standard-audio.ts 的说明）。
+     */
+    const audioKey = await attachLocalStandardAudio(id)
+
+    console.log(
+      `[admin] 写入句子 id=${id}（${created ? '新建' : '更新'}）` + (audioKey ? ' · 已挂标准音' : ''),
+    )
     return c.json({ ok: true, data: { id, created } }, 200)
   } catch (err) {
     if (err instanceof ArticleTextImmutableError) {

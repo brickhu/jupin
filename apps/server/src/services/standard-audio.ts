@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { asc, count, eq, isNotNull } from 'drizzle-orm'
+import { and, asc, count, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { articles } from '../db/schema'
 import { env } from '../env'
@@ -45,6 +45,52 @@ export async function storeStandardAudio(
   await getStorage().put(key, bytes)
   await db.update(articles).set({ standardAudio: key }).where(eq(articles.id, articleId))
   return { audioKey: key }
+}
+
+/**
+ * ⭐⭐ **本机模式下：这个 id 该不该有标准音** —— 纯判断（可注入 root / exists，便于单测）。
+ *
+ * ⚠️ 判据只有一条：**盘上有没有 `content/audio/<id>.mp3`**。
+ *    不查任何清单、不看是谁写的 —— 这正是 2026-09 修的那个缺口：
+ *    原来只有"种子清单里的句子"会被挂上，而**管理台新增的句子不在清单里** ⇒
+ *    音频文件明明生成好了，`standard_audio` 却永远是 NULL ⇒ 接口不给 audio ⇒
+ *    新加的句子在模拟器里"取音频失败 / 没有播放钮"。
+ */
+export function localStandardAudioKey(
+  articleId: string,
+  opts: { root?: string | null; exists?: (abs: string) => boolean } = {},
+): string | null {
+  const root = opts.root === undefined ? resolveStaticRoot() : opts.root
+  if (!root) return null
+  const key = audioKeyOf(articleId)
+  const hit = (opts.exists ?? existsSync)(resolve(root, key))
+  return hit ? key : null
+}
+
+/**
+ * ⭐⭐ **本机模式下把标准音挂到这一行上**（`standard_audio` 原来为空才写）。
+ *
+ * @returns 写进去的 key；不需要写（云端 / 盘上没文件 / 已经有值）就是 null
+ *
+ * ⚠️⚠️ **只在 `STORAGE=local` 时写**：这一列的含义是「音频**分发得出去**」，
+ *    不是「盘上有文件」。云端由 `seedStandardAudio` 在**上传成功之后**才写
+ *    （提前写 ⇒ 客户端拿到指向空桶的 fileID ⇒「按钮在、点了没声音」，比没有按钮更难查）。
+ *
+ * ⚠️ 两个调用方（都走这一条判断，别再各写一遍）：
+ *    · `db/seed-articles.ts` —— 批量补历史行（灌库时对齐盘上的音频）；
+ *    · `routes/admin.ts` 的写入接口 —— **发布那一刻就挂上**，
+ *      这样"管理台加句子 → 生成音频 → 发布 → 模拟器立刻能播"，不用记得再跑一次种子。
+ */
+export async function attachLocalStandardAudio(articleId: string): Promise<string | null> {
+  if (env.STORAGE !== 'local') return null
+  const key = localStandardAudioKey(articleId)
+  if (!key) return null
+  // ⚠️ 只补空值：绝不覆盖运营/部署已经写过的 key
+  await db
+    .update(articles)
+    .set({ standardAudio: key })
+    .where(and(eq(articles.id, articleId), isNull(articles.standardAudio)))
+  return key
 }
 
 export function audioKeyOf(articleId: string): string {

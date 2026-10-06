@@ -22,7 +22,6 @@ import { articleRoutes } from './routes/article'
 import { statsRoutes } from './routes/stats'
 import { tagsRoutes } from './routes/tags'
 import { shopRoutes } from './routes/shop'
-import { leaderboardsRoutes } from './routes/leaderboards'
 import { participationRoutes } from './routes/participation'
 import { usersRoutes } from './routes/users'
 import { payRoutes } from './routes/pay'
@@ -265,14 +264,11 @@ app.route('/api/user/shop', shopRoutes)
  *    所以挂**可选**身份解析（认不出按 0，绝不 401），而不是 authMiddleware：
  *    挂了它，未加入的人打开首页就会 401，而首页本来就该给所有人看。
  */
-app.use('/api/leaderboards/*', optionalAuthMiddleware)
-app.route('/api/leaderboards', leaderboardsRoutes)
-
 /**
  * ⭐ **参与详情**（`/api/participation/{userId}?articleId=`，公开）。
  *
  * ⚠️ 为什么是公开：它给的是**榜上那一行的详情**（分数 / 次数 / 时间 / 句子快照），
- *    而榜单本来就是公开的（见 routes/leaderboards.ts 的说明）——
+ *    而榜单本来就是公开的——
  *    从榜单点人进去看，却在门口要登录，是自相矛盾。
  */
 app.route('/api/participation', participationRoutes)
