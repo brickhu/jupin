@@ -6,6 +6,7 @@ import { openEnergyPage } from '../../lib/challenges'
 import { openJoinPage, refreshMe } from '../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
+import { openCookiesPage } from '../../lib/challenges'
 
 /**
  * ⭐ 「个人主页」—— **按用户 id 取一份数据**，一页一套渲染。
@@ -175,7 +176,8 @@ Page({
    */
   onOpenCookies() {
     if (!this.data.isMe) return
-    void wx.navigateTo({ url: '/pages/me/cookies/cookies' })
+    // ⚠️ 走共用的 openCookiesPage（它带去重）—— 与用户面板那处入口同一个函数
+    openCookiesPage()
   },
 
   /**

@@ -52,11 +52,27 @@ const ENERGY_ROUTE = 'pages/me/energy/energy'
 /**
  * 打开「能量」—— 同一套去重逻辑。
  *
- * ⚠️ 入口有三个，都指向这一页：用户面板名字下面那行「⚡ 能量 N 点」、
+ * ⚠️ 入口有三个，都指向这一页：用户面板名字下面那行「⚡ N」、
  *    朗读页能量不够时的引导、以及「我的主页」。
  */
 export function openEnergyPage(): void {
   void goOnce(ENERGY_PAGE, ENERGY_ROUTE)
+}
+
+/** ⭐ 「我的饼干」页（余额 + 流水） */
+const COOKIES_PAGE = '/pages/me/cookies/cookies'
+const COOKIES_ROUTE = 'pages/me/cookies/cookies'
+
+/**
+ * 打开「我的饼干」—— 同一套去重逻辑。
+ *
+ * ⚠️ 入口有两个：用户面板名字下面那行「🍪 N」（与能量**并列**）、
+ *    以及「我的主页」的饼干那两行。
+ * ⚠️ 与能量页一样走 goOnce：那两处入口指向同一页，
+ *    连点两下不该压出两层一样的页面（返回时要按两次）。
+ */
+export function openCookiesPage(): void {
+  void goOnce(COOKIES_PAGE, COOKIES_ROUTE)
 }
 
 /** 「参与场次」列表页 */

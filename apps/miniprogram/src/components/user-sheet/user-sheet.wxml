@@ -38,18 +38,25 @@
       <image class="us-avatar" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="us-idcol">
         <text class="us-name">{{nickname}}</text>
-        <!-- ⭐ 名字下面这一行 = **手上能动用的两样东西**：能量还剩多少、有几张解冻卡。
+        <!-- ⭐ 名字下面这一行 = **手上能动用的两样东西**，并列：能量与饼干。
              ⚠️ 它们是一类：都回答「我现在能做什么」——
-                能量决定还能挑战几次，解冻卡决定断档后能不能补。
+                能量决定还能挑战几次（也能补签），饼干能换成能量。
              ⚠️ 连续天数不在这里（它在首页的状态卡、「我的主页」，以及菜单里的
-                「连战记录」）；成长值是**累计的荣誉**，属于下面那一排数字。 -->
+                「连战记录」）。
+             ⚠️ 2026-10 之前这里还有「❄️ 解冻卡 N 张」—— 解冻卡已整体作废（prd §7.8）。 -->
         <!--
-          ⚠️ 能量这一段用 **catchtap** 单独接一个点击：
-              外面整块 us-head 是「改资料」，用 bindtap 的话点能量会连带跳去改资料；
+          ⚠️⚠️ 两段都各自用 **catchtap** 接点击：
+              外面整块 us-head 是「改资料」，用 bindtap 的话点它们会连带跳去改资料；
               catch 阻止冒泡，父级那个 bindtap 就不会触发。
-          ⚠️ 2026-10 之前这里还有「❄️ 解冻卡 N 张」—— 解冻卡已整体作废（prd §7.8）。
+          ⚠️ 只写 emoji + 数字 + ›（不写「能量」「饼干」两个词）：
+              这两个符号在全站已经是它们各自的固定符号，而这一行要塞两样东西，
+              带上词就挤成两行 —— 那比"少一个词"更难认。
         -->
-        <text class="us-sub" catchtap="onOpenEnergy" hover-class="us-sub-hover">⚡ 能量 {{energy}} 点 ›</text>
+        <view class="us-subs">
+          <text class="us-sub" catchtap="onOpenEnergy" hover-class="us-sub-hover">⚡ {{energy}} ›</text>
+          <text class="us-sub-sep">|</text>
+          <text class="us-sub" catchtap="onOpenCookies" hover-class="us-sub-hover">🍪 {{cookies.balance}} ›</text>
+        </view>
       </view>
       <text class="us-edit">{{named ? '修改' : '设置'}}</text>
     </view>

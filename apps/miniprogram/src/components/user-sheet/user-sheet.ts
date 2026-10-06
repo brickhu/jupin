@@ -6,6 +6,7 @@ import { resolveCloudFileUrl } from '../../lib/cloud-file'
 import {
   openChallengesPage,
   openCollectionPage,
+  openCookiesPage,
   openEnergyPage,
   openParticipationsPage,
   openProfileHomePage,
@@ -292,6 +293,17 @@ Component({
     onOpenEnergy() {
       this.triggerEvent('close')
       openEnergyPage()
+    },
+
+    /**
+     * ⭐ 去「我的饼干」—— 与能量**并列**的第二个入口（名字下面那一行）。
+     *
+     * ⚠️ 与 onOpenEnergy 完全同构：也用 catchtap（见那边那段说明）、
+     *    也先收面板再跳。两处入口写成一个样子，改的时候才不会漏一个。
+     */
+    onOpenCookies() {
+      this.triggerEvent('close')
+      openCookiesPage()
     },
 
     onClose() {

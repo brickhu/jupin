@@ -114,15 +114,30 @@
   text-overflow: ellipsis;
 }
 
-.us-sub {
-  display: block;
+/* ⭐ 名字下面那一行：能量与饼干**并列**（2026-10 加饼干入口）。
+   ⚠️ 用 flex 而不是两段 inline：小程序里 block 元素并排要靠 flex 才稳，
+      而且分隔符那条竖线也要跟着基线对齐。 */
+.us-subs {
+  display: flex;
+  align-items: center;
   margin-top: 8rpx;
+}
+
+.us-sub {
   font-size: 24rpx;
   color: #999;
 }
 
-/* ⚠️ 那一行现在**可点**（进能量页），所以按下要给反馈 —— 而父级 us-head 的
-   hover 反馈是整块变的，分不出点的是哪一块。这一条只让这一行自己变。 */
+/* ⚠️ 分隔符给一点左右间距 —— 贴着数字会看成"数字的一部分"（比如 20| 🍪）。 */
+.us-sub-sep {
+  font-size: 22rpx;
+  color: #ddd;
+  margin: 0 14rpx;
+}
+
+/* ⚠️ 这两段现在**都可点**（分别进能量页 / 饼干页），所以按下要给反馈 ——
+   而父级 us-head 的 hover 反馈是整块变的，分不出点的是哪一段。
+   这一条只让被点的那一段自己变。 */
 .us-sub-hover {
   opacity: 0.6;
 }
