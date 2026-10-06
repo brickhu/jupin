@@ -1,5 +1,6 @@
 import { and, eq, gte, lt } from 'drizzle-orm'
 import { addDays, dayFromNumber, dayKey, dayNumber, dayStartUtc, today as dayOf } from '@jushuo/shared'
+import type { MakeupState } from '@jushuo/shared'
 
 import { db } from '../db'
 import { submissions } from '../db/schema'
@@ -40,6 +41,8 @@ export interface StreakRecordView {
   streakDays: number
   streakBest: number
   days: StreakRecordDay[]
+  /** ⭐ 补签的当前状态 —— 与 StreakView.makeup 同一份口径（这一页是补签的唯一入口） */
+  makeup: MakeupState
 }
 
 /** 校验 'YYYY-MM'，非法返回 null */
@@ -108,5 +111,6 @@ export async function readStreakRecord(
     streakDays: streak.streakDays,
     streakBest: streak.streakBest,
     days,
+    makeup: streak.makeup,
   }
 }

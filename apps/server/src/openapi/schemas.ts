@@ -21,6 +21,7 @@ import type {
   EnergyLedgerItem,
   EnergyResponse,
   MakeupResponse,
+  MakeupState,
   FavoriteItem,
   FavoritesResponse,
   FavoritedResponse,
@@ -426,12 +427,31 @@ export const StreakDeltaSchema = z
 
 /* ---------- 我的：连战与个人资料 ---------- */
 
+/**
+ * ⭐ **补签的当前状态** —— 随连战视图下发（服务端用 shared 的纯函数算好）。
+ * ⚠️ 端侧算不出来：缺口要看 lastReadDate，而那个字段不下发
+ *    （发了就等于把"今天算哪天"交回给一台时钟可以被随便改的手机）。
+ */
+export const MakeupStateSchema = z
+  .object({
+    ok: z.boolean().openapi({ description: '现在能不能补' }),
+    gapDays: z.number().int().openapi({ description: '缺口几天（0 = 没断档）' }),
+    cost: z.number().int().openapi({ description: '补签本身要花几点能量' }),
+    totalCost: z.number().int().openapi({ description: '当天总共要几点（补签 + 还要读的那一句）' }),
+    reason: z
+      .enum(['already-read-today', 'no-gap', 'too-long', 'not-enough-energy'])
+      .optional()
+      .openapi({ description: 'ok=false 时说明为什么（⚠️ 只有这四个值）' }),
+  })
+  .openapi('MakeupState')
+
 /** ⭐ 连战展示视图（服务端算好、端侧只显示 —— 不让端侧重算"今天读没读"） */
 export const StreakViewSchema = z
   .object({
     streakDays: z.number().int(),
     streakBest: z.number().int(),
     readToday: z.boolean(),
+    makeup: MakeupStateSchema,
   })
   .openapi('StreakView')
 
@@ -561,6 +581,7 @@ export const StreakRecordResponseSchema = okEnvelope(
       streakDays: z.number().int(),
       streakBest: z.number().int(),
       days: z.array(StreakRecordDaySchema),
+      makeup: MakeupStateSchema,
     })
     .openapi('StreakRecordResponse'),
 )
@@ -982,6 +1003,7 @@ type _ParticipationsParity = Equal<
 type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
 type _MakeupParity = Equal<z.infer<typeof MakeupResponseSchema>['data'], MakeupResponse>
+type _MakeupStateParity = Equal<z.infer<typeof MakeupStateSchema>, MakeupState>
 type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
 type _ArtResParity = Equal<
   z.infer<typeof ParticipationSubmissionsResponseSchema>['data'],
@@ -1074,6 +1096,7 @@ const _parityChecks: [
   _LedgerParity,
   _EnergyParity,
   _MakeupParity,
+  _MakeupStateParity,
   _PartSubmissionParity,
   _ArtResParity,
   _StreakViewParity,
@@ -1102,5 +1125,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

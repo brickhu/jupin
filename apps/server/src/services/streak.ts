@@ -1,5 +1,13 @@
 import { eq } from 'drizzle-orm'
-import { applyRead, today, type StreakState, type StreakView } from '@jushuo/shared'
+import {
+  ENERGY_PER_CHALLENGE,
+  applyRead,
+  makeupEligibilityOf,
+  makeupTotalCostOf,
+  today,
+  type StreakState,
+  type StreakView,
+} from '@jushuo/shared'
 import { db, type Executor } from '../db'
 import { users } from '../db/schema'
 import type { User } from './user'
@@ -26,14 +34,30 @@ export function stateOf(user: User): StreakState {
   }
 }
 
-/** 把库里的状态组装成客户端要的展示视图 */
+/**
+ * 把库里的状态组装成客户端要的展示视图。
+ *
+ * ⚠️ 补签那一块也在这里算好（用 shared 的纯函数）—— 端侧**算不出来**：
+ *    缺口要看 lastReadDate，而那个字段不下发。要端侧算就得把 lastReadDate
+ *    也发出去，那等于把"今天算哪天"又交回给一台时钟可以被随便改的手机。
+ *    ⇒ 与「readToday 由服务端判定」同一条原则。
+ */
 export function streakView(state: StreakState, date: string = today()): StreakView {
+  const mk = makeupEligibilityOf(state, date)
   return {
     streakDays: state.streakDays,
     streakBest: state.streakBest,
     // ⭐ 「今天读没读」由**服务端的日期**判定，不信客户端时钟。
     //    手机时间可以随便改；让本地判断只会出现「本地显示已打卡、服务端不认」。
     readToday: state.lastReadDate === date,
+    makeup: {
+      ok: mk.ok,
+      gapDays: mk.gapDays,
+      cost: mk.cost,
+      totalCost: makeupTotalCostOf(mk.gapDays, ENERGY_PER_CHALLENGE),
+      // ⚠️ 只有补不了的时候才带 reason —— ok 时带上去会让端侧多一个要判的分支
+      ...(mk.ok ? {} : { reason: mk.reason }),
+    },
   }
 }
 

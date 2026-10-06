@@ -192,6 +192,9 @@ function emptyStreak(): StreakView {
     streakDays: 0,
     streakBest: 0,
     readToday: false,
+    // ⚠️ 还不知道缺口（要等服务端第一份 /me）—— 当成"没事要补"，
+    //    不显示补签卡。**不要**猜一个 ok:true 上去：那会让按钮先亮起来再消失。
+    makeup: { ok: false, gapDays: 0, cost: 0, totalCost: 0, reason: 'no-gap' },
   }
 }
 

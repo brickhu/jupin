@@ -246,9 +246,12 @@ export interface StreakView {
   streakBest: number
   /** 今天是否已经读过（读过再读不叠加） */
   readToday: boolean
-  // ⚠️ 这里原来有解冻卡的三项（手上几张 / 待领取 / 最早到期）。
-  //    2026-10 解冻卡整体作废：断档改成**花能量补签**（prd §7.8），
-  //    于是"手上有几张卡"这个概念没了 —— 玩家能动用的只剩能量。
+  /**
+   * ⭐ **补签的当前状态** —— 断档之后花能量把缺口填上（prd §7.8）。
+   * ⚠️ 它是解冻卡那三项的替代：同样回答"断档了我能做什么"，
+   *    但答案从"手上几张卡"变成了"补得上吗、要花几点"。
+   */
+  makeup: MakeupState
 }
 
 /**
@@ -276,6 +279,12 @@ export interface StreakRecordResponse {
   streakDays: number
   streakBest: number
   days: StreakRecordDay[]
+  /**
+   * ⭐ **补签的当前状态** —— 与 `StreakView.makeup` 同一份口径。
+   * ⚠️ 这一页是补签的**唯一入口**，所以它必须带着"现在能不能补"，
+   *    否则端侧要么自己算（算不出来，见 MakeupState 的说明）、要么再发一个请求。
+   */
+  makeup: MakeupState
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,6 +357,31 @@ export interface MakeupResponse {
   /** 补完之后的连战视图 */
   streak: StreakView
   /** 补不了的原因（⚠️ 只可能是这四个值，schema 里是 enum） */
+  reason?: MakeupFailureReason
+}
+
+/**
+ * ⭐ **补签的当前状态** —— 服务端用 `shared/makeup.ts` 的纯函数算好、随连战视图下发。
+ *
+ * ⚠️⚠️ 为什么由服务端算：端侧**根本算不出来** —— 缺口要看 `lastReadDate`，
+ *    而那个字段不下发（只发 `streakDays / streakBest / readToday`）。
+ *    要端侧算就得把 `lastReadDate` 也发出去，那等于把"今天算哪天"这个判断
+ *    又交回给一台时钟可以被随便改的手机。
+ *    ⇒ 与「readToday 由服务端判定」同一条原则。
+ *
+ * ⚠️ 它**不含** `newLastReadDate`（补完该落到哪天）—— 那是服务端写库的内部细节，
+ *    发出去只会让人以为客户端可以自己改连战。
+ */
+export interface MakeupState {
+  /** 现在能不能补 */
+  ok: boolean
+  /** 缺口几天（0 = 没断档） */
+  gapDays: number
+  /** 补签本身要花几点能量 */
+  cost: number
+  /** 当天总共要几点（补签 + 还要读的那一句） */
+  totalCost: number
+  /** ok=false 时说明为什么 */
   reason?: MakeupFailureReason
 }
 

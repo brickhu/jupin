@@ -16,6 +16,7 @@ import type {
   ChallengeShareResponse,
   ArticleListResponse,
   LatestCardsResponse,
+  MakeupResponse,
   UserListResponse,
   FavoritesResponse,
   ParticipationSubmissionsResponse,
@@ -870,6 +871,24 @@ export function fetchParticipationDetail(
 export function fetchStreakRecord(month?: string): Promise<StreakRecordResponse> {
   const q = month ? '?month=' + encodeURIComponent(month) : ''
   return request<StreakRecordResponse>('/api/user/streak-record' + q, { budgetMs: LAUNCH_BUDGET_MS })
+}
+
+/**
+ * ⭐⭐ **补签** —— 断档之后花能量把缺口填上（prd §7.8 / plan B50）。
+ *
+ * ⚠️⚠️ 服务端**补不成也返回 200**（`ok: false` 是正常业务结果，不是请求失败）——
+ *    所以这里**不会抛**，调用方要自己看 `data.ok` 与 `data.reason` 再说人话。
+ *    四个原因对应四句完全不同的话：
+ *      already-read-today ⇒ 今天已经读过了（缺口要在读**之前**补）
+ *      no-gap             ⇒ 没断档，不用补
+ *      too-long           ⇒ 断太久 ⇒ **说成"重新开始"，别说失败**
+ *      not-enough-energy  ⇒ 配合 shortfall 指向"吃饼干 / 充值"
+ */
+export function makeUpStreak(): Promise<MakeupResponse> {
+  return request<MakeupResponse>('/api/user/makeup', {
+    method: 'POST',
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
 }
 
 /**

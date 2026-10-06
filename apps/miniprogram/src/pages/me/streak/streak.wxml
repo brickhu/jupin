@@ -22,6 +22,42 @@
     <text class="text-120rpx leading-[1]">🔥</text>
   </view>
 
+  <!-- ── ①.⑤ 补签 ─────────────────────────────────────────────
+       ⭐ 位置刻意放在**统计下面、日历上面**：断档的时候，这一页最重要的事
+          就是"我还能不能接上"，而不是先看一整个月的格子。
+       ⚠️ 四种状态由 makeupViewOf 在 TS 里判好（WXML 不做判断）：
+          能补 / 今天已读 / 断太久 / 整块不出现。 -->
+  <view class="card p-4 mt-3 border-warn" wx:if="{{makeupView.kind === 'ready'}}">
+    <view class="flex items-center">
+      <text class="text-32rpx">🩹</text>
+      <text class="text-30rpx font-semibold text-ink ml-2 flex-1">{{makeupView.title}}</text>
+    </view>
+    <text class="text-24rpx text-body block mt-2 leading-[1.6]">{{makeupView.note}}</text>
+    <text class="text-24rpx text-bad block mt-1.5 leading-[1.6]" wx:if="{{makeupView.short}}">{{makeupView.short}}</text>
+
+    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{makeupView.canPress ? 'bg-brand text-white' : 'bg-line text-faint'}}"
+          bindtap="onMakeUp" hover-class="{{makeupView.canPress ? 'active__opacity-60' : ''}}">
+      {{makingUp ? '补签中…' : makeupView.button}}
+    </view>
+    <!-- ⚠️ 必须把"补完还得读一句"说出来：补签本身不加天数，
+         今天不读，今天就是新缺口（见 makeupViewOf 的说明） -->
+    <text class="text-22rpx text-faint block mt-2 text-center" wx:if="{{makeupView.canPress}}">补签只填缺口，补完今天读一句才算接上</text>
+  </view>
+
+  <!-- ⚠️ 断太久 ⇒ **不报失败**：说成"重新开始"，并提历史最长还在 -->
+  <view class="card p-4 mt-3" wx:elif="{{makeupView.kind === 'too-long'}}">
+    <view class="flex items-center">
+      <text class="text-32rpx">🌱</text>
+      <text class="text-28rpx font-medium text-ink ml-2 flex-1">{{makeupView.title}}</text>
+    </view>
+    <text class="text-24rpx text-muted block mt-2 leading-[1.6]">{{makeupView.note}}</text>
+  </view>
+
+  <!-- 今天已经读过：说明"补签要在读之前做"，别让他反复点 -->
+  <view class="card p-4 mt-3" wx:elif="{{makeupView.kind === 'read-today'}}">
+    <text class="text-26rpx text-muted leading-[1.6]">{{makeupView.title}} —— {{makeupView.note}}</text>
+  </view>
+
   <!-- ── ② 连战日历 ─────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
     <view class="flex items-center">
