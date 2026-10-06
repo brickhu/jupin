@@ -170,3 +170,38 @@ describe('describeAsrEvent —— 联合类型取字段只有这一处', () => {
     expect(asr.describeAsrEvent({ at: 1, kind: 'start-requested' })).toBe('')
   })
 })
+
+describe('asrErrorText —— 负数码要变成人话（-30003 真机遇到过）', () => {
+  it('⭐ -30003 的话术里必须点出「开发者工具/模拟器」这个最常见原因', async () => {
+    const asr = await freshAsr()
+    const t = asr.asrErrorText(-30003, '录音帧数据未产生或者发送失败导致的数据传输失败')
+    expect(t).toContain('-30003')
+    expect(t).toContain('开发者工具')
+  })
+
+  it('-30001 指向麦克风权限', async () => {
+    const asr = await freshAsr()
+    expect(asr.asrErrorText(-30001, '录音接口出错')).toContain('麦克风')
+  })
+
+  it('-40001 要点出配额数字（它比讯飞的钱更早成为瓶颈）', async () => {
+    const asr = await freshAsr()
+    const t = asr.asrErrorText(-40001, '频率限制')
+    expect(t).toContain('3 万条/天')
+  })
+
+  it('表里没有的码：照原样带出来，不硬猜', async () => {
+    const asr = await freshAsr()
+    const t = asr.asrErrorText(-99999, '某种新错误')
+    expect(t).toContain('-99999')
+    expect(t).toContain('某种新错误')
+  })
+
+  it('onError 走的就是这条翻译（不是把 retcode 裸给用户）', async () => {
+    const mgr = fakePlugin()
+    const asr = await freshAsr()
+    const p = asr.startRecognize()
+    mgr.onError?.({ retcode: -30003, msg: '录音帧数据未产生' })
+    await expect(p).rejects.toThrow(/开发者工具/)
+  })
+})

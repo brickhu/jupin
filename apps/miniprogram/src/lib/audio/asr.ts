@@ -100,6 +100,43 @@ export function describeAsrEvent(e: AsrEvent): string {
 /** 识别语言 —— 目前只需要英文；改这里等于改产品行为 */
 export const ASR_LANG = 'en_US'
 
+/**
+ * ⭐ 插件错误码 → 人话。
+ *
+ * ⚠️ 为什么要这张表：插件 `onError` 只给一个**负数码 + 一句很含糊的 msg**
+ *    （"录音帧数据未产生或者发送失败导致的数据传输失败"），
+ *    直接摊给用户等于没说，摊给开发者也定位不了。
+ * ⚠️ 码表来源：官方文档「微信同声传译」的 onError 错误码说明
+ *    （https://developers.weixin.qq.com/miniprogram/dev/platform-capabilities/extended/translator.html）。
+ *    ⚠️ 那份文档对应的是**旧版本（0.0.7）**，而 app.json 用的是 0.3.5 ——
+ *      遇到表里没有的码，就照原样把码和 msg 显示出来，别硬猜。
+ */
+export const ASR_ERROR_HINT: Record<number, string> = {
+  [-30001]: '录音接口出错 —— 多半是麦克风权限没给（右上角「…」→ 设置里打开「麦克风」）',
+  [-30002]: '录音被暂停，识别终止',
+  [-30003]:
+    '插件没拿到录音数据。⚠️ 最常见的原因是**在开发者工具里跑** —— 模拟器不产生真实录音帧，必须用真机预览；其次是一开口就点了「说完了」（还没产生任何帧）',
+  [-30004]: '没查到识别结果（网络或其他非正常状态）',
+  [-30005]: '微信侧识别服务内部错误',
+  [-30006]: '识别没在限定时间内完成 —— 句子太长或网络太慢',
+  [-30007]: 'start 参数错误',
+  [-30008]: '查询结果时网络失败',
+  [-30009]: '创建鉴权失败',
+  [-30010]: '发送鉴权时网络失败',
+  [-30011]: '上一次识别还没结束就再次开始',
+  [-30012]: '没有正在进行的识别却调了 stop',
+  [-30013]: '未知错误',
+  [-40001]: '达到接口调用频率限制（配额 250 条/分钟 · 3 万条/天）',
+}
+
+/** 把 retcode 翻成人话；表里没有就照原样带出来 */
+export function asrErrorText(retcode: number | undefined, msg: string | undefined): string {
+  const known = retcode === undefined ? undefined : ASR_ERROR_HINT[retcode]
+  if (known) return `识别失败（${retcode}）：${known}`
+  const code = retcode === undefined ? '' : `（${retcode}）`
+  return `识别失败${code}：${msg ?? '未知原因'}`
+}
+
 /** 调了 start() 之后，插件多久没回 onStart 就认为"根本没录起来" */
 const START_TIMEOUT_MS = 6000
 /** 调了 stop() 之后，多久没回 onStop 就认为"这次废了" */
@@ -201,8 +238,7 @@ function ensureManager(): RecognitionManager | null {
     if (cur.stopTimer) clearTimeout(cur.stopTimer)
     emit({ at: Date.now(), kind: 'plugin-error', raw: res })
     const e = (res ?? {}) as { retcode?: number; msg?: string }
-    const code = e.retcode === undefined ? '' : `（${e.retcode}）`
-    cur.reject(new Error(`识别失败${code}：${e.msg ?? '未知原因'}`))
+    cur.reject(new Error(asrErrorText(e.retcode, e.msg)))
   })
 
   manager = m
