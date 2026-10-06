@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 
 import { db } from '../db'
 import { users } from '../db/schema'
-import { ENERGY_REASON, readEnergy, spendEnergy, topUpEnergy } from './energy'
+import { ENERGY_REASON, spendEnergy, topUpEnergy } from './energy'
 import { shiftLastReadDate, stateOf, streakView } from './streak'
 import type { User } from './user'
 
@@ -60,8 +60,22 @@ export async function makeUpStreak(userId: number, now: Date = new Date()): Prom
     // 行锁：与 recordRead 抢同一行时按顺序来，避免"补到一半又被读掉了"
     const [row] = await tx.select().from(users).where(eq(users.id, userId)).for('update').limit(1)
 
-    const fail = async (reason: MakeupFailure, gapDays: number, cost: number): Promise<MakeupResult> => {
-      const energy = await readEnergy(userId, now)
+    /**
+     * ⚠️⚠️ **绝不在这里调 `readEnergy()`** —— 实测它会**死锁**：
+     *
+     *     Lock wait timeout exceeded; try restarting transaction
+     *     select energy, energy_date from users where id = ? for update
+     *
+     * 原因与「不要在事务里调 grantEnergy」是同一类：`readEnergy` 内部会走
+     * `topUpEnergy` ⇒ **它自己开一个事务、去锁同一行** ⇒ 我这边已经锁着，
+     * 它那边等到超时（实测卡了 **50 秒**才 500）。
+     *
+     * ⭐ 余额直接用**事务里已经锁住的那行**（`row.energy`）——
+     *   它就在手边，再查一次既没必要又会死锁。
+     *   ⚠️ 它是 `topUpEnergy` 之后的值（那个调用在事务**之前**），所以是最新的。
+     */
+    const fail = (reason: MakeupFailure, gapDays: number, cost: number): MakeupResult => {
+      const energy = row ? (row as User).energy : 0
       return {
         ok: false,
         gapDays,

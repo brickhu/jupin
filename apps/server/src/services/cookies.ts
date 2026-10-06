@@ -316,6 +316,51 @@ export async function exchangeCookiesForEnergy(
   requestId: string,
 ): Promise<ExchangeResponse> {
   return db.transaction(async (tx) => {
+    /**
+     * ⚠️⚠️ **先查这一笔换过没有** —— 2026-10 实测漏了它，后果是**重试直接 500**：
+     *
+     *     Duplicate entry 'exchange-exchange-<requestId>-<userId>'
+     *     for key 'cookie_ledger.cookie_ledger_idem_idx'
+     *
+     * ⚠️ 而客户端**本来就会重试**（`requestWithRetries`）⇒ 一次网络抖动
+     *    就会变成用户看到的"服务端错误"。
+     * ⚠️ `addEnergy` 有自己的查重（返回 false），但**饼干这一侧的插入没有** ——
+     *    所以必须在最前面挡一次，两道都在才叫真的幂等。
+     *
+     * ⭐ 幂等的正确语义是「**同一个请求返回同一个结果**」：所以这里把原来那笔的
+     *    数额读回来照原样回，而不是回一个 `ok:false`（那会让客户端以为这次没成，
+     *    而钱其实早就扣了）。
+     */
+    const [done] = await tx
+      .select({ delta: cookieLedger.delta, id: cookieLedger.id })
+      .from(cookieLedger)
+      .where(
+        and(
+          eq(cookieLedger.userId, userId),
+          eq(cookieLedger.reason, 'exchange'),
+          eq(cookieLedger.refType, 'exchange'),
+          eq(cookieLedger.refId, requestId),
+        ),
+      )
+      .limit(1)
+
+    if (done) {
+      const spent = Math.abs(done.delta)
+      const [now] = await tx
+        .select({ cookies: users.cookies, energy: users.energy })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+      return {
+        ok: true,
+        // ⚠️ 数额从**那一笔流水**推回来：换算是确定的（每 40 块 1 点），不另存一列
+        energyGained: Math.floor(spent / COOKIES_PER_ENERGY),
+        cookiesSpent: spent,
+        cookies: await readCookies(userId, tx),
+        energy: now?.energy ?? 0,
+      }
+    }
+
     const [row] = await tx
       .select({ cookies: users.cookies, energy: users.energy })
       .from(users)

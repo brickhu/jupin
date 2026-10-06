@@ -25,6 +25,24 @@ import { energyLedger, users } from '../db/schema'
  */
 
 /** 流水的 reason 取值。奖励规则的 code 也走这个字段 */
+/**
+ * ⚠️⚠️⚠️ **哪几个函数自己开事务 —— 别在别人的事务里调它们**
+ *
+ * 这个坑在本项目里**踩了两次**（2026-10），两次的症状完全不同、都很难查：
+ *
+ * | 误用的函数 | 后果 |
+ * |---|---|
+ * | `grantEnergy` | **静默地不在同一个事务里**：我的事务回滚了，能量却已经加上 ⇒ **白送** |
+ * | `readEnergy`  | **死锁**：它内部走 `topUpEnergy`（自己开事务去锁同一行）⇒ 我这边锁着，它等到超时，**卡 50 秒才 500** |
+ *
+ * ⇒ 规矩：**在 `db.transaction(async (tx) => …)` 里，只能用接受 `Executor` 的那些**：
+ *      · 加能量 → `addEnergy(tx, …)`
+ *      · 花能量 → `spendEnergy(tx, …)`
+ *      · 读余额 → **直接用你事务里已经锁住的那一行的 `energy`**（别再查）
+ *
+ * ⚠️ 而 `grantEnergy` / `readEnergy` / `topUpEnergy` / `holdChallengeEnergy` /
+ *    `releaseChallengeEnergy` 这几个**自己开事务**，只在**事务之外**用。
+ */
 export const ENERGY_REASON = {
   dailyTopUp: 'daily_topup',
   hold: 'challenge_hold',
