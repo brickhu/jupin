@@ -2,18 +2,20 @@ import { and, eq, gte, lt } from 'drizzle-orm'
 import { addDays, dayFromNumber, dayKey, dayNumber, dayStartUtc, today as dayOf } from '@jushuo/shared'
 
 import { db } from '../db'
-import { submissions, unfreezeCards } from '../db/schema'
+import { submissions } from '../db/schema'
 import { readStreakView } from './streak'
 
 /**
- * ⭐ 「连战记录」—— 一个月的日历：哪天读了（连战）、哪天的缺口是用解冻卡补的。
+ * ⭐ 「连战记录」—— 一个月的日历：哪天读了（连战）。
  *
  * ⚠️⚠️ 这一页的数据**全部是现算的**，不落额外的表：
- *    · 连战日 = 那天有 status='scored' 的提交（按**北京时间**切天，见 day.ts）
- *    · 解冻日 = 被解冻卡补上的那几天 —— 由卡的 used_at 与 used_for_gap **反推**：
- *      补签是把 lastReadDate 从 D−N 推到 D−1（见 ./unfreeze.ts），
- *      所以补的就是「used_at 往前数 N 天」。
- *    ⇒ 存一份"日历表"就是第二份真相，必然和 submissions / unfreeze_cards 漂移。
+ *    连战日 = 那天有 status='scored' 的提交（按**北京时间**切天，见 day.ts）。
+ *    ⇒ 存一份"日历表"就是第二份真相，必然和 submissions 漂移。
+ *
+ * ⚠️ 这里原来还有第二种格子「**解冻日**」（被解冻卡补上的那几天，从卡的
+ *    used_at / used_for_gap 反推）。2026-10 解冻卡整体作废，那种格子随之消失 ——
+ *    补签在新的口径里是**花能量**，但它同样只是把 lastReadDate 往前推，
+ *    而"补了哪几天"照样能从 lastReadDate 与提交记录推出来（见 prd §7.8）。
  *
  * ⚠️ 连战日按**提交那一刻**算（created_at），不是按"这次挑战算哪天"——
  *    与 streak 本身同一条口径（见 services/scoring.ts 那段说明）。
@@ -21,8 +23,8 @@ import { readStreakView } from './streak'
 
 export interface StreakRecordDay {
   date: string
-  /** read = 那天读了；unfreeze = 那天的缺口是用解冻卡补上的 */
-  kind: 'read' | 'unfreeze'
+  /** ⚠️ 只剩 read 一种 —— 「unfreeze」那种格子随解冻卡一起作废（2026-10） */
+  kind: 'read'
 }
 
 export interface StreakRecordView {
@@ -38,12 +40,6 @@ export interface StreakRecordView {
   streakDays: number
   streakBest: number
   days: StreakRecordDay[]
-  /** 手上几张（已领取、未用、未过期） */
-  unfreezeCards: number
-  /** ⭐ 待领取几张 */
-  unfreezePending: number
-  /** 手上最早到期的日子 */
-  unfreezeExpiresOn: string | null
 }
 
 /** 校验 'YYYY-MM'，非法返回 null */
@@ -95,25 +91,10 @@ export async function readStreakRecord(
   const readDays = new Set<string>()
   for (const row of rows) readDays.add(dayKey(row.createdAt))
 
-  // ---- 解冻日：从"用过的卡"反推它补了哪几天 ----
-  const cards = await db
-    .select({ usedAt: unfreezeCards.usedAt, usedForGap: unfreezeCards.usedForGap })
-    .from(unfreezeCards)
-    .where(eq(unfreezeCards.userId, userId))
-
-  const unfreezeDays = new Set<string>()
-  for (const c of cards) {
-    if (!c.usedAt || !c.usedForGap) continue
-    const usedDay = dayOf(c.usedAt)
-    // 补签把 lastReadDate 推到 usedAt 的前一天，所以覆盖的是 usedAt−gap .. usedAt−1
-    for (let i = 1; i <= c.usedForGap; i++) unfreezeDays.add(addDays(usedDay, -i))
-  }
-
   const days: StreakRecordDay[] = []
   for (let i = 0; i < daysInMonth; i++) {
     const date = addDays(firstDay, i)
     if (readDays.has(date)) days.push({ date, kind: 'read' })
-    else if (unfreezeDays.has(date)) days.push({ date, kind: 'unfreeze' })
   }
 
   const streak = await readStreakView(userId, today)
@@ -127,8 +108,5 @@ export async function readStreakRecord(
     streakDays: streak.streakDays,
     streakBest: streak.streakBest,
     days,
-    unfreezeCards: streak.unfreezeCards,
-    unfreezePending: streak.unfreezePending,
-    unfreezeExpiresOn: streak.unfreezeExpiresOn,
   }
 }

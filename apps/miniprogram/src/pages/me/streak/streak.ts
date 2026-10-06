@@ -1,7 +1,7 @@
 import { addDays } from '@jushuo/shared'
 import type { StreakRecordResponse } from '@jushuo/shared'
 
-import { claimRewards, fetchStreakRecord } from '../../../lib/api/client'
+import { fetchStreakRecord } from '../../../lib/api/client'
 import { refreshMe } from '../../../lib/join'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 
@@ -21,8 +21,8 @@ import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 interface Cell {
   key: string
   day: string
-  /** ''=普通日；'read'=那天读了；'unfreeze'=那天的缺口是解冻卡补的 */
-  kind: '' | 'read' | 'unfreeze'
+  /** ''=普通日（含对齐用的空格）；'read'=那天读了 */
+  kind: '' | 'read'
   isToday: boolean
 }
 
@@ -38,7 +38,7 @@ function monthText(month: string): string {
 }
 
 function buildCells(data: StreakRecordResponse): Cell[] {
-  const kindOf = new Map<string, 'read' | 'unfreeze'>()
+  const kindOf = new Map<string, 'read'>()
   for (const d of data.days) kindOf.set(d.date, d.kind)
 
   const cells: Cell[] = []
@@ -74,10 +74,6 @@ Page({
     streakBest: 0,
     cells: [] as Cell[],
 
-    unfreezeCards: 0,
-    unfreezePending: 0,
-    unfreezeExpiresOn: '' as string,
-    claiming: false,
   },
 
   onLoad() {
@@ -107,9 +103,6 @@ Page({
         streakDays: data.streakDays,
         streakBest: data.streakBest,
         cells: buildCells(data),
-        unfreezeCards: data.unfreezeCards,
-        unfreezePending: data.unfreezePending,
-        unfreezeExpiresOn: data.unfreezeExpiresOn ?? '',
       })
     } catch (err) {
       // ⚠️ 失败时保留已经画出来的日历 —— 拉不到新的不该把看到的也清掉
@@ -130,24 +123,4 @@ Page({
     void this.load(this.data.month || undefined)
   },
 
-  /**
-   * ⭐ 领取待领取的解冻卡。
-   *
-   * ⚠️ 领完之后要**同时**刷新两处：本页的卡数、以及全局 store 里的那份
-   *    （导航栏/用户面板/首页都读它）—— 只刷一处会出现"这页说 2 张、面板说 0 张"。
-   */
-  async onClaim() {
-    if (this.data.claiming || this.data.unfreezePending <= 0) return
-    this.setData({ claiming: true })
-    try {
-      const res = await claimRewards()
-      await refreshMe()
-      wx.showToast({ title: '领到 ' + res.claimed + ' 张解冻卡', icon: 'none' })
-      await this.load(this.data.month)
-    } catch (err) {
-      wx.showToast({ title: (err as Error).message || '领取失败', icon: 'none' })
-    } finally {
-      this.setData({ claiming: false })
-    }
-  },
 })

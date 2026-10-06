@@ -8,7 +8,6 @@ import type { CookieAward } from '@jushuo/shared'
 import { arenaSnapshot, computeCookies, difficultyOf, grantCookies, highestInSentence } from './cookies'
 import { evaluateRewards, type GrantedReward } from './rewards'
 import { recordRead } from './streak'
-import { unfreezeStatus } from './unfreeze'
 
 /**
  * ⭐⭐ **打分成功之后的唯一结算入口**。
@@ -42,7 +41,6 @@ export interface SettleResult {
   /** ⭐ 这一把赚到的饼干（含攻克线 —— 端侧靠它显示「还差 X 分」） */
   cookies: CookieAward
   rewards: GrantedReward[]
-  unfreezeCards: number
 }
 
 /**
@@ -85,13 +83,13 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
 
   // ⚠️ streak 的「读之前」必须在 recordRead 之前取 —— 它对坚持不懈的跨档判定是必需的
   const [before] = await db
-    .select({ streakDays: users.streakDays, marker: users.unfreezeMarkerStreak })
+    .select({ streakDays: users.streakDays })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
   const streakBefore = before?.streakDays ?? 0
 
-  // ---- ① streak：只算天数，不碰卡（卡是用户主动用的，见 ./unfreeze.ts）----
+  // ---- ① streak：只算天数（⚠️ 解冻卡已作废；断档改成花能量补签，见 prd §7.8）----
   const read = await recordRead(userId, dayKey(row.createdAt))
 
   // ---- ② 饼干：两样历史都**排除本次提交**（难度是句子的属性，不必排除）----
@@ -115,11 +113,7 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
     streakAfter: read.state.streakDays,
     // 提交前的全场最高分（榜单最高分，排除本次）—— 首读时是 0，规则里会跟 75 取大
     sentenceTop: snapshot.length > 0 ? Math.max(...snapshot) : 0,
-    unfreezeMarker: before?.marker ?? 0,
   })
-
-  // ⚠️ 发完奖再看卡数：本次新发的卡要算进结果页显示的「手上还有几张」
-  const unfreeze = await unfreezeStatus(userId)
 
   // ---- ④ 落库（一次性，带守卫）----
   await db.transaction(async (tx) => {
@@ -133,7 +127,6 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
           streakBest: read.state.streakBest,
           counted: read.counted,
           delta: read.delta,
-          unfreezeCards: unfreeze.count,
         }),
       })
       // ⚠️ 守卫：只有「还没结算过」的那一次能写进去（见文件头）
@@ -165,6 +158,5 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
       rankFactor: cookies.rankFactor,
     },
     rewards,
-    unfreezeCards: unfreeze.count,
   }
 }

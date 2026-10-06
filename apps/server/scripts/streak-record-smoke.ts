@@ -1,21 +1,20 @@
 import { eq } from 'drizzle-orm'
-import { addDays, today as dayOf } from '@jushuo/shared'
+import { addDays, participationIdOf, today as dayOf } from '@jushuo/shared'
+
 import { db } from '../src/db'
-import { submissions, unfreezeCards, users } from '../src/db/schema'
-import {
-  claimUnfreezeCards,
-  grantUnfreezeCard,
-  unfreezeStatus,
-  useUnfreezeCards,
-} from '../src/services/unfreeze'
+import { submissions, users } from '../src/db/schema'
 import { readStreakRecord } from '../src/services/streak-record'
 
 /**
- * 连战记录 + 领取的冒烟测试。
+ * 连战记录的冒烟测试 —— 铺几天成绩，看日历有没有画对。
  *
  *   DATABASE_URL=... node_modules/.bin/tsx apps/server/scripts/streak-record-smoke.ts
  *
  * ⚠️ 会在本地库造一个 smoke_streak 账号；跑完自己清。
+ *
+ * ⚠️ 这个脚本原来还测「解冻卡」那一整套（发放 → 待领取 → 领取 → 补签 →
+ *    日历上的"解冻日"）。解冻卡 2026-10 整体作废（prd §7.8）⇒ 那些断言全部删除。
+ *    补签本身会以**花能量**的形式回来（plan B50），届时这里要重新长出对应断言。
  */
 
 const OPENID = 'smoke_streak'
@@ -23,18 +22,24 @@ const OPENID = 'smoke_streak'
 async function cleanup() {
   const [u] = await db.select({ id: users.id }).from(users).where(eq(users.openid, OPENID)).limit(1)
   if (!u) return
-  await db.delete(unfreezeCards).where(eq(unfreezeCards.userId, u.id))
   await db.delete(submissions).where(eq(submissions.userId, u.id))
   await db.delete(users).where(eq(users.id, u.id))
 }
 
 /** 造一条"某天读的"成绩 —— createdAt 直接给，用来铺日历 */
-async function seedRead(userId: number, articleId: number, day: string, n: number) {
+async function seedRead(userId: number, articleId: string, day: string, n: number) {
   await db.insert(submissions).values({
     id: 'smk' + String(n).padStart(3, '0') + 'y'.repeat(24),
     userId,
     articleId,
-    seq: n,
+    /**
+     * ⚠️ participation_id 是**必填**的（后来那次迁移加的）——
+     *    这个脚本一直没跟上，也正因为脚本不在类型检查里。
+     *    它是派生值，现算即可（与 services/participations.ts 同一处实现）。
+     */
+    participationId: participationIdOf(userId, articleId),
+    // ⚠️ 这里原来还有 seq —— submissions 早就没有那一列了（改叫 attempts）。
+    //    脚本不在类型检查里，所以这个坑一直没被发现（见 tsconfig 的 include）。
     audioKey: 'audio/smoke/' + userId + '/' + n + '.mp3',
     status: 'scored',
     score: '80.0',
@@ -49,57 +54,43 @@ async function main() {
   if (!user) throw new Error('建号失败')
 
   const today = dayOf()
-  // 本月 5/6/7 号读过（用当天往前推，保证落在这个月里）
+  // 当天往前推 4/5/6 天 —— 保证落在这个月里（除非今天是月初，那也照样是个有效用例）
   for (const [i, back] of [4, 5, 6].entries()) {
-    await seedRead(user.id, 1, addDays(today, -back), i + 1)
+    await seedRead(user.id, '1', addDays(today, -back), i + 1)
   }
-
-  // 2 张待领取的卡
-  await grantUnfreezeCard({ userId: user.id, ruleCode: 'streak_unfreeze_7' })
-  await grantUnfreezeCard({ userId: user.id, ruleCode: 'streak_unfreeze_7' })
-
-  let st = await unfreezeStatus(user.id)
-  console.log('发放后：手上 ' + st.count + ' 张，待领取 ' + st.pending + ' 张')
 
   const rec = await readStreakRecord(user.id)
   console.log('')
   console.log('连战记录 month=' + rec.month + ' 首日周几=' + rec.weekdayOfFirst + ' 天数=' + rec.daysInMonth)
-  console.log('连战日：' + rec.days.filter((d) => d.kind === 'read').map((d) => d.date).join(', '))
-  console.log('解冻日：' + (rec.days.filter((d) => d.kind === 'unfreeze').map((d) => d.date).join(', ') || '(无)'))
-  console.log('待领取 ' + rec.unfreezePending + ' / 手上 ' + rec.unfreezeCards)
+  const read = rec.days.filter((d) => d.kind === 'read').map((d) => d.date)
+  console.log('连战日：' + (read.join(', ') || '(无)'))
 
-  const claimed = await claimUnfreezeCards(user.id)
-  console.log('')
-  console.log('领取：' + claimed + ' 张')
-  st = await unfreezeStatus(user.id)
-  console.log('领取后：手上 ' + st.count + ' 张，待领取 ' + st.pending + ' 张，最早到期 ' + st.expiresOn)
+  // ⚠️ 只对**落在这个月里**的那几天断言：上个月的那几天本来就不该出现在这个月
+  const expected = [4, 5, 6]
+    .map((back) => addDays(today, -back))
+    .filter((d) => d.slice(0, 7) === rec.month)
+    .sort()
+  if (read.slice().sort().join(',') !== expected.join(',')) {
+    throw new Error('连战日不对：期望 ' + expected.join(',') + '，实际 ' + read.join(','))
+  }
 
-  // ---- 真的补一次签：把 lastReadDate 退回前天（缺口 1 天），再走真实的用卡逻辑 ----
-  await db.update(users).set({ lastReadDate: addDays(today, -2) }).where(eq(users.id, user.id))
-  const used = await useUnfreezeCards(user.id)
-  console.log('补签：' + JSON.stringify(used))
-
-  const rec2 = await readStreakRecord(user.id)
-  const blue = rec2.days.filter((d) => d.kind === 'unfreeze').map((d) => d.date)
-  console.log('再取日历 —— 解冻日：' + (blue.join(', ') || '(无)'))
-  console.log('期望解冻日：' + addDays(today, -1))
-  if (blue.length !== 1 || blue[0] !== addDays(today, -1)) throw new Error('解冻日反推不对')
-  st = await unfreezeStatus(user.id)
-  console.log('补签后：手上 ' + st.count + ' 张')
-  if (st.count !== 1) throw new Error('补签应该正好用掉 1 张')
-
-  // ---- 重复补签应该被拒（今天读过 / 没断档）----
-  const again = await useUnfreezeCards(user.id)
-  console.log('再补一次：' + JSON.stringify(again))
-  if (again.ok) throw new Error('不该允许补第二次')
+  /**
+   * ⚠️ 格子的 kind 只可能是 'read' —— 原来还有 'unfreeze'。
+   *    这条盯着的是"日历只剩一种格子"这个事实，不是格式洁癖：
+   *    多出第二种 kind 而端侧没画它，用户看到的就是**一个空白的格子**。
+   */
+  const kinds = new Set(rec.days.map((d) => d.kind))
+  for (const k of kinds) {
+    if (k !== 'read') throw new Error('日历里出现了 read 以外的格子：' + k)
+  }
+  console.log('✅ 连战记录冒烟通过')
 
   await cleanup()
-  console.log('')
-  console.log('✅ 冒烟结束，测试数据已清理')
-  process.exit(0)
 }
 
-main().catch((e) => {
-  console.error('❌', e)
-  process.exit(1)
-})
+void main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('❌ ' + (err as Error).message)
+    process.exit(1)
+  })

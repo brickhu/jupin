@@ -69,7 +69,6 @@ const P = {
   settle: 'apps/server/src/services/settle.ts',
   rewards: 'apps/server/src/services/rewards.ts',
   recommend: 'apps/server/src/services/recommend.ts',
-  unfreeze: 'apps/server/src/services/unfreeze.ts',
   goods: 'apps/server/src/services/goods.ts',
   order: 'apps/server/src/services/order.ts',
   admin: 'tools/admin/server.ts',
@@ -104,7 +103,6 @@ const TABLE_OWNERS: Record<string, TableRule> = {
   // 奖励发放：幂等键 (reason, ref_type, ref_id, user_id) 就在这张表（docs 1.4）
   reward_grants: { owners: [P.rewards], note: 'grantReward' },
   // 解冻卡：一张卡一行，发放 / 领取 / 使用各有一个唯一函数（docs 1.10）
-  unfreeze_cards: { owners: [P.unfreeze], note: 'grantUnfreezeCard / claimUnfreezeCards / useUnfreezeCards' },
   // 一次朗读 + 一次评测（同一行）：受理/可见性在路由，评测列在 scoring（docs 1.2 / 1.3）
   submissions: {
     owners: [P.scoring, P.submissionsRoute, P.articleDelete],
@@ -168,7 +166,6 @@ const COLUMN_OWNERS: Record<string, Record<string, string[]>> = {
      */
     cookies: [P.cookies],
     // 发卡记账位：grantReward 成功后由 rewards 推进（docs 1.4 / 1.10）
-    unfreeze_marker_streak: [P.rewards],
     // 今日推荐 24 小时窗口：recommendToday 落库（docs 1.7）
     today_article_id: [P.recommend],
     today_assigned_at: [P.recommend],
@@ -326,7 +323,6 @@ const EXEMPTIONS: Exemption[] = [
       'likes',
       'reviews',
       'submissions',
-      'unfreeze_cards',
       'reward_grants',
       'energy_ledger',
       'users',
@@ -334,27 +330,21 @@ const EXEMPTIONS: Exemption[] = [
     why: '清库运维脚本本体（AGENT.md 点名的事故脚本），有探针账号与 --confirm 保护；它天然要跨所有唯一写入方清数据。',
   },
   {
-    audit: '#12',
-    file: P.unfreeze,
-    tables: ['users'],
-    why: '补签要把 last_read_date 推到「昨天」，必须和消耗解冻卡同事务；走 services/streak.ts 会再开一次写、重复读状态。',
-  },
-  {
     audit: '#13',
     file: 'apps/server/src/db/seed-dev-arena.ts',
-    tables: ['users', 'unfreeze_cards', 'submissions'],
-    why: 'dev 假数据要造「已结算过」的形状（直写 streak / 直插 scored 行 / 直发卡），绕开 settle+grantReward；只在本地跑，且末尾已补 rebuildParticipations。',
+    tables: ['users', 'submissions', 'cookie_ledger'],
+    why: 'dev 假数据要造「已结算过」的形状（直写 streak / 直插 scored 行 / 直发饼干），绕开 settle+grantReward；只在本地跑，且末尾已补 rebuildParticipations。',
   },
   {
     audit: '#14',
     file: 'apps/server/scripts/settle-smoke.ts',
-    tables: ['energy_ledger', 'reward_grants', 'unfreeze_cards', 'submissions', 'users'],
+    tables: ['energy_ledger', 'reward_grants', 'submissions', 'users'],
     why: '结算冒烟：自建探针账号、自清自己造的行（AGENT.md 要求「只删自己造的」）；必须要能直插 scored 行。',
   },
   {
     audit: '#14',
     file: 'apps/server/scripts/streak-record-smoke.ts',
-    tables: ['unfreeze_cards', 'submissions', 'users'],
+    tables: ['submissions', 'users'],
     why: '连战日历冒烟：同上，自建自清探针账号，直接摆出历史连战数据。',
   },
 ]

@@ -1,10 +1,9 @@
 import { and, count, eq, gte } from 'drizzle-orm'
-import { TOP_RECORD_FLOOR, UNFREEZE_EVERY_DAYS, dayStartUtc, today as dayOf } from '@jushuo/shared'
+import { TOP_RECORD_FLOOR, dayStartUtc, today as dayOf } from '@jushuo/shared'
 
 import { db } from '../db'
 import { rewardGrants, rewardRules, users } from '../db/schema'
 import { addEnergy } from './energy'
-import { grantUnfreezeCard } from './unfreeze'
 
 /**
  * ⭐ 奖励系统 —— 规则可增删，但**下发只有一条路**（grantReward）。
@@ -22,17 +21,22 @@ import { grantUnfreezeCard } from './unfreeze'
  */
 
 export const TRIGGER = {
-  /** 本次读让 streakDays 跨过阈值 */
-  streakMilestone: 'streak_milestone',
+  /**
+   * ⚠️ 这里原来有 `streakMilestone`（连续 7 天发 1 张解冻卡）——
+   *    2026-10 随解冻卡整体作废（prd §7.8）。**断档不再发道具，改成花能量补签**，
+   *    于是"按连战发东西"这件事没有了：连战本身仍然记着，只是不再发奖。
+   */
   /** 本次得分 严格大于 max(提交前的全场最高分, threshold) */
   sentenceTopExceed: 'sentence_top_exceed',
 } as const
 
-export type RewardKind = 'unfreeze' | 'energy'
+/** ⚠️ 只剩 energy —— 'unfreeze' 那种奖励 2026-10 已作废 */
+export type RewardKind = 'energy'
 
 /** 预设规则的 code —— 与 reward_rules.code 一一对应 */
+/** ⚠️ `streak_unfreeze_7` 已作废（解冻卡整体下线）；库里可能还留着那行配置，
+ *  但它的 trigger 不再被求值（见文件末的未知触发器告警）。 */
 export const RULE_CODE = {
-  streakUnfreeze: 'streak_unfreeze_7',
   sentenceTopRecord: 'sentence_top_record',
 } as const
 
@@ -86,13 +90,6 @@ export async function ensureDefaultRules(): Promise<void> {
     .ignore()
     .values([
       {
-        code: RULE_CODE.streakUnfreeze,
-        trigger: TRIGGER.streakMilestone,
-        params: JSON.stringify({ threshold: UNFREEZE_EVERY_DAYS }),
-        rewardKind: 'unfreeze',
-        rewardAmount: 1,
-      },
-      {
         code: RULE_CODE.sentenceTopRecord,
         trigger: TRIGGER.sentenceTopExceed,
         params: JSON.stringify({ threshold: TOP_RECORD_FLOOR }),
@@ -116,7 +113,6 @@ export interface RewardContext {
   /** 提交前的**全场最高分**（榜单最高分，排除本次提交） */
   sentenceTop: number
   /** 本条提交之前存的「上次发卡时的 streakDays」 */
-  unfreezeMarker: number
   now?: Date
 }
 
@@ -129,7 +125,8 @@ export interface GrantedReward {
 /**
  * ⭐ 求值 + 发放。返回**这一条提交实际发出的奖励**（结果页要展示）。
  *
- * ⚠️ 这里会**改 users.unfreezeMarkerStreak**（规则 A 的记账位）——
+ * ⚠️ （原来这里会改 users.unfreezeMarkerStreak —— 规则 A 的记账位；
+ *    规则 A 与那一列 2026-10 一起删了。）
  *    只在真的发出去了才推进，否则下一次还得重来。
  */
 export async function evaluateRewards(ctx: RewardContext): Promise<GrantedReward[]> {
@@ -142,36 +139,6 @@ export async function evaluateRewards(ctx: RewardContext): Promise<GrantedReward
     if (typeof threshold !== 'number') continue
 
     let matched = false
-
-    if (rule.trigger === TRIGGER.streakMilestone) {
-      /**
-       * ⚠️ 判据是「**自从上一次发卡以来**连续了 >= threshold 天」，
-       *    不是「streakDays 跨过阈值」—— 后者只能触发一次，
-       *    而这条规则要的是**每满 7 天各发一张**（与旧行为一致，老用户不会少卡）。
-       * ⚠️ 断档时 marker 归 0（streakDays 变小了 = 重新开始数）。
-       */
-      const marker = ctx.streakAfter < ctx.unfreezeMarker ? 0 : ctx.unfreezeMarker
-      matched = ctx.streakAfter - marker >= threshold
-      if (matched) {
-        const granted = await grantReward({
-          userId: ctx.userId,
-          ruleCode: rule.code,
-          kind: rule.rewardKind,
-          amount: rule.rewardAmount,
-          refType: 'submission',
-          refId: ctx.submissionId,
-          now,
-        })
-        if (granted) {
-          await db
-            .update(users)
-            .set({ unfreezeMarkerStreak: ctx.streakAfter })
-            .where(eq(users.id, ctx.userId))
-          out.push({ ruleCode: rule.code, kind: rule.rewardKind, amount: rule.rewardAmount })
-        }
-      }
-      continue
-    }
 
     if (rule.trigger === TRIGGER.sentenceTopExceed) {
       /**
@@ -220,7 +187,7 @@ export async function evaluateRewards(ctx: RewardContext): Promise<GrantedReward
  * ① 幂等命中？          → 退出
  * ② 配额（日 / 终身）超了？ → 退出
  * ③ 写发放流水（唯一键兜底并发）
- * ④ 按 kind 落地：unfreeze → 插一张卡；energy → 加余额 + 流水
+ * ④ 落地：energy → 加余额 + 流水（⚠️ 原来还有 unfreeze → 插一张卡，已作废）
  * ~~~
  *
  * ⚠️ ③④ 必须在**同一个事务**里：只写了发放记录、东西没给出去，
@@ -292,18 +259,15 @@ export async function grantReward(input: {
     })
 
     // ④ 落地
-    if (input.kind === 'energy') {
-      // ⚠️ reason 用规则 code，流水能追溯到规则
-      await addEnergy(tx, {
-        userId: input.userId,
-        amount: input.amount,
-        reason: input.ruleCode,
-        refType: input.refType,
-        refId: input.refId,
-      })
-    } else {
-      await grantUnfreezeCard({ userId: input.userId, ruleCode: input.ruleCode, now }, tx)
-    }
+    // ⚠️ 只剩一种 kind（energy）—— 不再需要分支。加新种类时这里重新长出分支。
+    //    reason 用规则 code，流水能追溯到规则
+    await addEnergy(tx, {
+      userId: input.userId,
+      amount: input.amount,
+      reason: input.ruleCode,
+      refType: input.refType,
+      refId: input.refId,
+    })
 
     return true
   })

@@ -421,6 +421,13 @@
       "when": 1791299251087,
       "tag": "0060_add_cookies",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1791300229884,
+      "tag": "0061_drop_unfreeze",
+      "breakpoints": true
     }
   ]
 }

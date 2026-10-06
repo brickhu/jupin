@@ -97,7 +97,7 @@ describe('applySubmissionResult —— streak 那一半（战绩不再由端侧�
     store.applySubmissionResult({
       articleId: '3',
       score: 70,
-      streak: { streakDays: 9, streakBest: 9, unfreezeCards: 0, counted: true, delta: 1 },
+      streak: { streakDays: 9, streakBest: 9, counted: true, delta: 1 },
     })
     expect(store.getState().userInfo?.streak?.streakDays).toBe(9)
   })

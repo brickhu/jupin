@@ -873,17 +873,6 @@ export function fetchStreakRecord(month?: string): Promise<StreakRecordResponse>
 }
 
 /**
- * ⭐ 领取待领取的解冻卡。
- * ⚠️ 服务端幂等：没有待领取的就返回 claimed=0，不报错。
- */
-export function claimRewards(): Promise<{ claimed: number; streak: StreakView }> {
-  return request<{ claimed: number; streak: StreakView }>('/api/user/claim', {
-    method: 'POST',
-    budgetMs: LAUNCH_BUDGET_MS,
-  })
-}
-
-/**
  * ⭐ 我的挑战记录（全部，按时间倒序）。
  * ⚠️ 它和 /api/user/me 一样属于「启动路径」—— 从用户面板点进来，
  *    冷启动时同样会等，所以给同一份宽预算。

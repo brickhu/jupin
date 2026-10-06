@@ -100,15 +100,11 @@ export const users = mysqlTable('users', {
   // ⚠️ 这里原来有一列 freeze_count（解冻卡的**计数器**）。
   //    现在删掉了，两个原因：
   //      ① 解冻卡要**有效期**，"手上还有几张"已经不是一个整数能表达的（每张卡有自己的到期日）
-  //         ⇒ 改成一张卡一行（unfreeze_cards），余额从那里现算
-  //      ② 存量计数器就是第二份真相，必然和卡表漂移
-  /**
-   * ⭐ 上次发解冻卡时的 streakDays —— 奖励规则 A（连续 7 天发 1 张）用。
-   * ⚠️ 它让发卡变成**事件**而不是状态函数：发过一次就推进一次，
-   *    改阈值不会追溯重发（见 docs/design/reward-system.md 第 2 节）。
-   * ⚠️ 断档（streakDays 变小）时它归 0，计数从头。
-   */
-  unfreezeMarkerStreak: int('unfreeze_marker_streak').notNull().default(0),
+  //         ⇒ 当时改成了一张卡一行（unfreeze_cards）
+  //    ⚠️ 2026-10 那张表也删了（解冻卡整体作废，改成花能量补签，prd §7.8）
+  // ⚠️ 这里原来有一列 unfreeze_marker_streak（"上次发解冻卡时的 streakDays"）。
+  //    2026-10 随解冻卡整体删除：断档不再用道具补，而是**花能量补签**（prd §7.8），
+  //    于是"发卡事件"这个概念本身没了。
 
   // ----------------------------------------------------------------
   // ⭐ 饼干（🍪）—— 全站**唯一**的累计值（规格：prd §7.6）
@@ -579,7 +575,8 @@ export const submissions = mysqlTable('submissions', {
    * ⚠️ 为什么必须落库：打分是异步的，结果由**轮询**取回，
    *    而轮询可能发生很多次。「+1 / 断档归 1」只在**结算那一刻**算得出来，
    *    不存下来的话，结果页就只剩一个光秃秃的天数。
-   *    ⚠️ 解冻卡**不在这个快照里** —— 它有有效期，是现算的（见 services/unfreeze.ts）。
+   *    ⚠️ 需要**现算**的东西不进快照：断档的可补天数就是这么来的
+   *       （它取决于"最后读到哪天"和"今天"，见 services/streak.ts）。
    */
   streakDelta: text('streak_delta'),
 
@@ -847,7 +844,7 @@ export const subscriptions = mysqlTable('subscriptions', {
 export const goods = mysqlTable('goods', {
   /** 商品码：energy_10 / energy_300 / energy_3000 …（下单时用它，不用自增 id） */
   code: varchar('code', { length: 32 }).notNull().primaryKey(),
-  /** energy | unfreeze —— 决定发货加到哪儿（见 shared 的 GOODS_KIND） */
+  /** energy —— 决定发货加到哪儿（见 shared 的 GOODS_KIND）；解冻卡已作废 */
   kind: varchar('kind', { length: 16 }).notNull(),
   /** 发多少（点 / 张） */
   amount: int('amount').notNull(),
@@ -882,7 +879,7 @@ export const payments = mysqlTable('payments', {
    * ⚠️ 不 join goods 表：商品以后改价改名，历史订单必须还是当时那个商品。
    */
   goodsCode: varchar('goods_code', { length: 32 }).notNull().default(''),
-  /** 商品种类快照（energy | unfreeze）—— 发货时按它分支 */
+  /** 商品种类快照（energy）—— 发货时按它分支 */
   goodsKind: varchar('goods_kind', { length: 16 }).notNull().default(''),
   /** 发多少点/张的快照 */
   goodsAmount: int('goods_amount').notNull().default(0),
@@ -1000,50 +997,7 @@ export const reviews = mysqlTable('reviews', {
 /*    规格：docs/design/reward-system.md 与 docs/design/growth-and-energy.md */
 /* ================================================================== */
 
-/**
- * ⭐ 解冻卡 —— **一张卡一行**。
- *
- * ⚠️⚠️ 为什么不是 users 上的一个计数器：
- *    ① 卡有**有效期**，「手上还有几张」要按 expires_at 过滤，整数表达不了；
- *    ② 需要**使用记录**（用户主动用的，什么时候补的哪一次断档，必须能查）。
- *
- * ⚠️ 「过期」**不落状态**，由 expires_at 与「现在」比较得出 ——
- *    落一个 expired 状态就需要定时任务去翻，那是白给自己找事。
- */
-export const unfreezeCards = mysqlTable('unfreeze_cards', {
-  id: int('id').autoincrement().primaryKey(),
-  userId: int('user_id').notNull().references(() => users.id),
-  grantedAt: datetime('granted_at', { mode: 'date', fsp: 3 }).notNull(),
-  /**
-   * ⭐ **领取时间；null = 待领取**。
-   *
-   * ⚠️⚠️ 奖励发下来**不等于**进了用户的口袋 —— 待领取是刻意的：
-   *    用户得回到「连战记录」页点一下才真正拿到。
-   *    （这也是那一页存在的理由之一：它得有点"值得回来一趟"的东西。）
-   * ⚠️ 所以「手上还有几张」的判据是**三条一起**：
-   *    claimed_at IS NOT NULL AND used_at IS NULL AND expires_at > now。
-   */
-  claimedAt: datetime('claimed_at', { mode: 'date', fsp: 3 }),
-  /**
-   * 到期时间 —— ⚠️ **可空，因为领取时才定**（claimedAt + 1 年）。
-   *
-   * ⚠️ 为什么不在发放时就定时：那样"没及时来领"会变成"白白过期"，
-   *    而用户根本没机会知道 —— 同一个页面里既催他回来、又偷偷扣他的东西，
-   *    这件事说不通。领取之后才开始倒计时。
-   * ⚠️ 消耗时仍然**先到期先用**（FIFO by expires_at）。
-   */
-  expiresAt: datetime('expires_at', { mode: 'date', fsp: 3 }),
-  /** null = 还在手上；非 null = 已用（状态就靠它判断，见上） */
-  usedAt: datetime('used_at', { mode: 'date', fsp: 3 }),
-  /** 使用记录：补的是几天断档（今天 − lastReadDate − 1） */
-  usedForGap: int('used_for_gap'),
-  /** 哪条规则发的（可追溯到规则；规则后来改了也不影响这张卡） */
-  ruleCode: varchar('rule_code', { length: 64 }),
-  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-}, (t) => [
-  // 「我手上还有几张、最早哪张到期」就是这一个查询
-  index('unfreeze_cards_user_idx').on(t.userId, t.expiresAt),
-])
+
 
 /**
  * ⭐ 奖励规则 —— **可配置**，于是运营改阈值不用发版。
@@ -1063,7 +1017,7 @@ export const rewardRules = mysqlTable('reward_rules', {
   trigger: varchar('trigger', { length: 32 }).notNull(),
   /** 结构化参数（阈值 / N 等），JSON */
   params: text('params'),
-  /** unfreeze | energy */
+  /** 只剩 energy —— unfreeze 那种商品 2026-10 已作废 */
   rewardKind: varchar('reward_kind', { length: 16 }).notNull(),
   rewardAmount: int('reward_amount').notNull(),
   enabled: boolean('enabled').notNull().default(true),

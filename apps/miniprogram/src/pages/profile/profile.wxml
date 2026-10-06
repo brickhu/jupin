@@ -40,7 +40,7 @@
       <view class="ml-3 flex-1">
         <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
         <text class="text-24rpx text-faint block mt-1" wx:if="{{hasEnergy}}" bindtap="onEnergy"
-              hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{unfreezeCards}} 张</text>
+              hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 ›</text>
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->
       <button class="pr-share shrink-0" open-type="share" wx:if="{{hasProfile}}">

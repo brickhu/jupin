@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { count, eq } from 'drizzle-orm'
-import { UNFREEZE_VALID_DAYS, addDays, today } from '@jushuo/shared'
+import { addDays, today } from '@jushuo/shared'
 
-import { unfreezeCards, users } from './schema'
+import { cookieLedger, users } from './schema'
 import { RULE_CODE } from '../services/rewards'
 import { participationIdOf } from '@jushuo/shared'
 import { rebuildParticipations } from '../services/participations'
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       streakDays: c.run,
       streakBest,
       lastReadDate,
-      // ⚠️ 解冻卡**不再是 users 上的计数器**（一张卡一行、带有效期，见 unfreeze_cards）。
+      // ⚠️ 2026-10 之前这里给的是解冻卡（一张卡一行、带有效期）；解冻卡已整体作废。
       //    这里只把 marker 设成 streakBest —— 他们"已经记过账"，不会再补发。
       unfreezeMarkerStreak: streakBest,
     }
@@ -169,21 +169,20 @@ async function main(): Promise<void> {
       .where(eq(users.openid, openid))
       .limit(1)
 
-    // ⭐ 顺手发几张解冻卡 —— 本地看「我的主页」时卡不是 0，才有东西可验
+    // ⭐ 顺手给点饼干 —— 本地看「我的主页」时饼干不是 0，才有东西可验
+    //    （2026-10 之前这里是发解冻卡；解冻卡已整体作废，改成给饼干）
     if (row) {
-      const cards = Math.min(3, Math.floor(streakBest / 7))
-      await db.delete(unfreezeCards).where(eq(unfreezeCards.userId, row.id))
-      if (cards > 0) {
-        const now = new Date()
-        const expiresAt = new Date(now.getTime() + UNFREEZE_VALID_DAYS * 86_400_000)
-        await db.insert(unfreezeCards).values(
-          Array.from({ length: cards }, () => ({
-            userId: row.id,
-            grantedAt: now,
-            expiresAt,
-            ruleCode: RULE_CODE.streakUnfreeze,
-          })),
-        )
+      const cookies = Math.min(300, streakBest * 5)
+      await db.delete(cookieLedger).where(eq(cookieLedger.userId, row.id))
+      if (cookies > 0) {
+        await db.insert(cookieLedger).values({
+          userId: row.id,
+          delta: cookies,
+          reason: 'conquer',
+          refType: 'seed',
+          refId: 'dev-arena',
+        })
+        await db.update(users).set({ cookies }).where(eq(users.id, row.id))
       }
     }
     if (!row) throw new Error('写入选手失败：' + openid)

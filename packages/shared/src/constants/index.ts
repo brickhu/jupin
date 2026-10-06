@@ -297,7 +297,9 @@ export const ENERGY_PURCHASE_MIN = 10
  */
 export const GOODS_KIND = {
   energy: 'energy',
-  unfreeze: 'unfreeze',
+  // ⚠️ 这里原来还有一个 unfreeze（卖解冻卡）—— 2026-10 随解冻卡整体作废（prd §7.8）。
+  //    库里可能有历史订单的商品种类还是 'unfreeze'，发货时要能识别出来并拒绝
+  //    （见 services/order.ts 的说明），所以**旧值不能从类型里悄悄消失**。
 } as const
 
 export type GoodsKind = (typeof GOODS_KIND)[keyof typeof GOODS_KIND]
@@ -383,11 +385,8 @@ export const PAY_MIN_PRICE_FEN = 100
 /* ⭐ 奖励系统（见 docs/design/reward-system.md）                        */
 /* ------------------------------------------------------------------ */
 
-/** 奖励规则 A：每连续满 7 天发 1 张解冻卡（判据是 >= 7，第 7 天就发） */
-export const UNFREEZE_EVERY_DAYS = 7
-
-/** 解冻卡的有效期（天）—— 1 年 */
-export const UNFREEZE_VALID_DAYS = 365
+// ⚠️ 这里原来有两个常量：UNFREEZE_EVERY_DAYS（每 7 天发 1 张卡）与
+//    UNFREEZE_VALID_DAYS（卡的有效期 1 年）—— 2026-10 随解冻卡整体作废（prd §7.8）。
 
 /** 奖励规则 B 的绝对分门槛：得分必须 > max(全场最高分, 75) */
 export const TOP_RECORD_FLOOR = 75

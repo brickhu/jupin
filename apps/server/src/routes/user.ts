@@ -8,7 +8,6 @@ import { getArenaStatsBatch, getRank } from '../services/leaderboard'
 import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
-import { claimUnfreezeCards, unfreezeStatus, useUnfreezeCards } from '../services/unfreeze'
 import { readStreakRecord } from '../services/streak-record'
 import { readStreakView } from '../services/streak'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
@@ -23,7 +22,6 @@ import { defaultHook } from '../openapi'
 import {
   ParticipationSubmissionsResponseSchema,
   ChallengeRecordListSchema,
-  ClaimRewardsResponseSchema,
   EnergyResponseSchema,
   errorResponse,
   MeResponseSchema,
@@ -31,7 +29,6 @@ import {
   ParticipationRecordResponseSchema,
   ProfileUpdateResponseSchema,
   StreakRecordResponseSchema,
-  UnfreezeResponseSchema,
 } from '../openapi/schemas'
 
 export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -499,77 +496,6 @@ userRoutes.openapi(energyRoute, async (c) => {
       nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
     },
     }, 200)
-})
-
-/**
- * ⭐ 领取待领取的解冻卡。
- *
- * ⚠️ 有效期从**这一刻**开始算（领取 + 1 年），不是从发放算 ——
- *    否则"没及时来领"变成"白白过期"，而用户根本没机会知道。
- * ⚠️ 幂等：没有待领取的就返回 0，不报错（用户连点两下不该看到红字）。
- */
-const claimRoute = createRoute({
-  method: 'post',
-  path: '/claim',
-  tags: ['我的'],
-  summary: '领取待领的解冻卡（幂等：没有就返回 0）',
-  security: [{ userToken: [] }],
-  responses: {
-    200: {
-      content: { 'application/json': { schema: ClaimRewardsResponseSchema } },
-      description: '成功',
-    },
-  },
-})
-
-userRoutes.openapi(claimRoute, async (c) => {
-  const userId = c.get('userId')
-  const claimed = await claimUnfreezeCards(userId)
-  const streak = await readStreakView(userId)
-  return c.json({ ok: true, data: { claimed, streak } }, 200)
-})
-
-/**
- * ⭐ 补签 —— 用解冻卡的**唯一**途径（用户主动点的）。
- *
- * 规格：docs/design/reward-system.md 第 7 节。三条要点：
- *   · **方案 a**：只能在「断档之后、今天还没读」时补（今天读过就补不了了）
- *   · 卡不够时**拒绝且一张都不扣**（不做部分补）
- *   · ⚠️ **补签本身不增加天数** —— 它只是把缺口填上，
- *     **用户当天还得读一句才会 +1**。所以客户端拿到成功之后要立刻引导他读今天这一句，
- *     文案说「补上之后，今天读一句就接上了」，而不是「已恢复连战」。
- */
-const unfreezeRoute = createRoute({
-  method: 'post',
-  path: '/unfreeze',
-  tags: ['我的'],
-  summary: '补签（用解冻卡填断档）—— 卡不够时整单拒绝、一张不扣',
-  security: [{ userToken: [] }],
-  responses: {
-    200: {
-      content: { 'application/json': { schema: UnfreezeResponseSchema } },
-      description: '成功',
-    },
-    400: errorResponse('补不了（今天已读 / 卡不够 / 没有断档），code=UNFREEZE_FAILED'),
-  },
-})
-
-userRoutes.openapi(unfreezeRoute, async (c) => {
-  const userId = c.get('userId')
-  const result = await useUnfreezeCards(userId)
-
-  if (!result.ok) {
-    const error =
-      result.reason === 'already-read-today'
-        ? '今天已经读过了 —— 断档要在今天读之前补'
-        : result.reason === 'not-enough'
-          ? '解冻卡不够：需要 ' + (result.need ?? 0) + ' 张，手上只有 ' + (result.have ?? 0) + ' 张'
-          : '现在没有断档，不用补'
-    return c.json({ ok: false, code: 'UNFREEZE_FAILED', reason: result.reason, error }, 400)
-  }
-
-  const [streak, cards] = await Promise.all([readStreakView(userId), unfreezeStatus(userId)])
-  return c.json({ ok: true, data: { used: result.used, streak, unfreezeCards: cards.count } }, 200)
 })
 
 /**

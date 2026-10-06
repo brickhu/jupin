@@ -3,7 +3,6 @@ import { applyRead, today, type StreakState, type StreakView } from '@jushuo/sha
 import { db } from '../db'
 import { users } from '../db/schema'
 import type { User } from './user'
-import { unfreezeStatus, type UnfreezeStatus } from './unfreeze'
 
 /**
  * Streak 的**读写边界** —— 规则本身全在 `@jushuo/shared/streak.ts` 的纯函数里，
@@ -13,7 +12,8 @@ import { unfreezeStatus, type UnfreezeStatus } from './unfreeze'
  *    跨天、跨月、跨年、时钟回拨这些边界就再也单测不到了。
  *
  * ⚠️⚠️ 这个文件里**没有解冻卡** —— 断档不再自动消耗卡，
- *    发卡是奖励系统的事、用卡是用户主动补签（见 ./unfreeze.ts）。
+ *    ⚠️ 解冻卡已作废（2026-10）：断档改成**花能量补签**（prd §7.8），
+ *    所以这里不再有"手上有几张卡"这一类字段。
  *    合并进来只会让"谁在动用户的资产"变得说不清。
  */
 
@@ -26,30 +26,19 @@ function stateOf(user: User): StreakState {
 }
 
 /** 把库里的状态组装成客户端要的展示视图 */
-export function streakView(
-  state: StreakState,
-  date: string = today(),
-  unfreeze: UnfreezeStatus = { count: 0, pending: 0, expiresOn: null },
-): StreakView {
+export function streakView(state: StreakState, date: string = today()): StreakView {
   return {
     streakDays: state.streakDays,
     streakBest: state.streakBest,
     // ⭐ 「今天读没读」由**服务端的日期**判定，不信客户端时钟。
     //    手机时间可以随便改；让本地判断只会出现「本地显示已打卡、服务端不认」。
     readToday: state.lastReadDate === date,
-    // ⚠️ 卡的三样都由调用方查出来后传进来（现算，见 ./unfreeze.ts）
-    unfreezeCards: unfreeze.count,
-    unfreezePending: unfreeze.pending,
-    unfreezeExpiresOn: unfreeze.expiresOn,
   }
 }
 
 /** 直接读库并组装视图（用于 /me、/schedules 这类只读场景） */
 export async function readStreakView(userId: number, date: string = today()): Promise<StreakView> {
-  const [row, unfreeze] = await Promise.all([
-    db.select().from(users).where(eq(users.id, userId)).limit(1),
-    unfreezeStatus(userId),
-  ])
+  const [row] = await Promise.all([db.select().from(users).where(eq(users.id, userId)).limit(1)])
   /**
    * ⚠️⚠️ 兜底条件必须看 **row[0]**，不能看 row —— 查不到时拿到的是**空数组**，
    *    而空数组是真值，写 `row ? ...` 这条兜底永远不会生效（会直接崩）。
@@ -59,7 +48,7 @@ export async function readStreakView(userId: number, date: string = today()): Pr
   const state: StreakState = row[0]
     ? stateOf(row[0] as User)
     : { streakDays: 0, streakBest: 0, lastReadDate: null }
-  return streakView(state, date, unfreeze)
+  return streakView(state, date)
 }
 
 export interface ReadResult {

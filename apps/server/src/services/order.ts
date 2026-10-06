@@ -7,7 +7,6 @@ import { payments, users } from '../db/schema'
 import { env } from '../env'
 import { ENERGY_REASON, addEnergy } from './energy'
 import { findGoods, sellableIssue, type ShopItem } from './goods'
-import { grantUnfreezeCard } from './unfreeze'
 import { buildPayData, type PayData } from './xpay'
 
 /**
@@ -210,10 +209,13 @@ export async function deliverOrder(input: DeliverInput): Promise<DeliverResult> 
         refType: 'purchase',
         refId: pay.outTradeNo,
       })
-    } else if (pay.goodsKind === GOODS_KIND.unfreeze) {
-      await grantUnfreezeCard({ userId: pay.userId, ruleCode: 'purchase:' + pay.goodsCode }, tx)
     } else {
-      console.error('[order] 未知商品种类，拒绝发货：' + pay.goodsKind)
+      /**
+       * ⚠️ 走到这里说明订单的商品种类我们不认识 —— 包括**历史订单里的 'unfreeze'**
+       *    （解冻卡 2026-10 已作废，那种商品不再发货）。
+       *    拒绝发货而不是静默成功：钱收了东西没给，必须留下一条明确的日志。
+       */
+      console.error('[order] 未知/已下架的商品种类，拒绝发货：' + pay.goodsKind)
       return { ok: false as const, reason: 'kind' as const }
     }
 

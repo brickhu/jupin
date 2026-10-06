@@ -420,7 +420,6 @@ export const StreakDeltaSchema = z
     streakBest: z.number().int(),
     counted: z.boolean(),
     delta: z.number().int(),
-    unfreezeCards: z.number().int(),
   })
   .openapi('StreakDelta')
 
@@ -432,9 +431,6 @@ export const StreakViewSchema = z
     streakDays: z.number().int(),
     streakBest: z.number().int(),
     readToday: z.boolean(),
-    unfreezeCards: z.number().int(),
-    unfreezePending: z.number().int(),
-    unfreezeExpiresOn: z.string().nullable(),
   })
   .openapi('StreakView')
 
@@ -554,9 +550,9 @@ export const UploadResponseSchema = okEnvelope(
     .openapi('UploadResponse'),
 )
 
-/** 连战日历里的一天（read = 那天读了；unfreeze = 缺口是用解冻卡补的） */
+/** 连战日历里的一天（⚠️ 只剩 read —— 「unfreeze」随解冻卡作废，2026-10） */
 export const StreakRecordDaySchema = z
-  .object({ date: z.string(), kind: z.enum(['read', 'unfreeze']) })
+  .object({ date: z.string(), kind: z.enum(['read']) })
   .openapi('StreakRecordDay')
 
 /** ⭐ 连战日历（一个月）—— 端侧只负责画格子 */
@@ -572,24 +568,8 @@ export const StreakRecordResponseSchema = okEnvelope(
       streakDays: z.number().int(),
       streakBest: z.number().int(),
       days: z.array(StreakRecordDaySchema),
-      unfreezeCards: z.number().int(),
-      unfreezePending: z.number().int(),
-      unfreezeExpiresOn: z.string().nullable(),
     })
     .openapi('StreakRecordResponse'),
-)
-
-/** 补签的结果（`POST /api/user/unfreeze`）—— 卡不够时是 400 + Error(reason) */
-export const UnfreezeResponseSchema = okEnvelope(
-  z
-    .object({
-      /** 这次用掉几张解冻卡 */
-      used: z.number().int(),
-      streak: StreakViewSchema,
-      /** 补完之后手上还剩几张 */
-      unfreezeCards: z.number().int(),
-    })
-    .openapi('UnfreezeResponse'),
 )
 
 /** 保存资料之后回传的权威值（`POST /api/user/profile`） */

@@ -54,7 +54,6 @@ const targets: { label: string; table: string; where?: string; note: string }[] 
   { label: '· 参与记录', table: 'participations', note: '外键指向 submissions 且由它派生，必须先删' },
   { label: '· 点赞', table: 'likes', note: '外键指向 submissions，必须先删' },
   { label: '· AI 点评', table: 'reviews', note: '外键指向 submissions，必须先删' },
-  { label: '解冻卡', table: 'unfreeze_cards', note: '卡表本来就是新的，这里是兜底' },
   { label: '奖励发放流水', table: 'reward_grants', note: '' },
   { label: '能量流水', table: 'energy_ledger', note: '' },
 ]
@@ -77,7 +76,7 @@ console.log('  账号：' + users.n + ' 个（**不删**，只重置下面的字
 console.log('    其中探针账号 ' + probes.n + " 个（openid 以 probe 开头，会被删掉）")
 console.log('')
 console.log('会重置的字段（users）：')
-console.log('  streak_days / streak_best / last_read_date / unfreeze_marker_streak')
+console.log('  streak_days / streak_best / last_read_date / cookies')
 console.log('  invalid_count / invalid_date')
 console.log('  growth_self / growth_diligence / growth_standout')
 console.log('  energy / energy_date')
@@ -107,13 +106,12 @@ try {
   await conn.query('DELETE FROM reviews')
   await conn.query('DELETE FROM submissions')
 
-  await conn.query('DELETE FROM unfreeze_cards')
   await conn.query('DELETE FROM reward_grants')
   await conn.query('DELETE FROM energy_ledger')
 
   await conn.query(
     'UPDATE users SET streak_days = 0, streak_best = 0, last_read_date = NULL,' +
-      ' unfreeze_marker_streak = 0, invalid_count = 0, invalid_date = NULL,' +
+      ' cookies = 0, invalid_count = 0, invalid_date = NULL,' +
       ' growth_self = 0, growth_diligence = 0, growth_standout = 0,' +
       ' energy = 0, energy_date = NULL',
   )

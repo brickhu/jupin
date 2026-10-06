@@ -246,19 +246,13 @@ export interface StreakView {
   streakBest: number
   /** 今天是否已经读过（读过再读不叠加） */
   readToday: boolean
-  /**
-   * ⭐ 手上还有几张**解冻卡**（未过期、未使用）。
-   * ⚠️ **现算**，不是 users 上的计数器 —— 卡有有效期，整数表达不了。
-   */
-  unfreezeCards: number
-  /** ⭐ 待领取几张（发了但用户还没去「连战记录」页点领取） */
-  unfreezePending: number
-  /** 手上最早到期那张的到期日 'YYYY-MM-DD'；没有就是 null */
-  unfreezeExpiresOn: string | null
+  // ⚠️ 这里原来有解冻卡的三项（手上几张 / 待领取 / 最早到期）。
+  //    2026-10 解冻卡整体作废：断档改成**花能量补签**（prd §7.8），
+  //    于是"手上有几张卡"这个概念没了 —— 玩家能动用的只剩能量。
 }
 
 /**
- * ⭐ 「连战记录」—— 一个月里哪天读了、哪天的缺口是解冻卡补的。
+ * ⭐ 「连战记录」—— 一个月里哪天读了。
  *
  * ⚠️ 日历排版要的三个数（首日/天数/首日是周几）**全由服务端给**：
  *    端侧拿 'YYYY-MM-01' 去 new Date() 会按 UTC 解析，星期几有可能差一天，
@@ -266,8 +260,8 @@ export interface StreakView {
  */
 export interface StreakRecordDay {
   date: string
-  /** read = 那天读了；unfreeze = 那天的缺口是用解冻卡补上的 */
-  kind: 'read' | 'unfreeze'
+  /** ⚠️ 只剩 read —— 「unfreeze」那种格子随解冻卡一起作废（2026-10） */
+  kind: 'read'
 }
 
 export interface StreakRecordResponse {
@@ -282,9 +276,6 @@ export interface StreakRecordResponse {
   streakDays: number
   streakBest: number
   days: StreakRecordDay[]
-  unfreezeCards: number
-  unfreezePending: number
-  unfreezeExpiresOn: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -421,8 +412,6 @@ export interface StreakDelta {
   counted: boolean
   /** streak 变化量 */
   delta: number
-  /** 读完之后手上还有几张解冻卡（含本次新发的） */
-  unfreezeCards: number
 }
 
 /* ---------- 每日挑战 ---------- */

@@ -158,7 +158,6 @@ Page({
        */
       hasEnergy: me.getState().userInfo?.id === p.id,
       energy: me.getState().userInfo?.energy ?? 0,
-      unfreezeCards: me.getState().userInfo?.streak?.unfreezeCards ?? 0,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
       rounds: p.challengedRounds,

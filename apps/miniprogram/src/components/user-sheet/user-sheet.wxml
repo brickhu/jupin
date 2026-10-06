@@ -47,9 +47,9 @@
           ⚠️ 能量这一段用 **catchtap** 单独接一个点击：
               外面整块 us-head 是「改资料」，用 bindtap 的话点能量会连带跳去改资料；
               catch 阻止冒泡，父级那个 bindtap 就不会触发。
-          ⚠️ 解冻卡不接点击：它没有独立页面，入口在「连战记录」里。
+          ⚠️ 2026-10 之前这里还有「❄️ 解冻卡 N 张」—— 解冻卡已整体作废（prd §7.8）。
         -->
-        <text class="us-sub" catchtap="onOpenEnergy" hover-class="us-sub-hover">⚡ 能量 {{energy}} 点 › · ❄️ 解冻卡 {{streak.unfreezeCards}} 张</text>
+        <text class="us-sub" catchtap="onOpenEnergy" hover-class="us-sub-hover">⚡ 能量 {{energy}} 点 ›</text>
       </view>
       <text class="us-edit">{{named ? '修改' : '设置'}}</text>
     </view>

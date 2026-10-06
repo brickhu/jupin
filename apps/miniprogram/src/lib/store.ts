@@ -192,9 +192,6 @@ function emptyStreak(): StreakView {
     streakDays: 0,
     streakBest: 0,
     readToday: false,
-    unfreezeCards: 0,
-    unfreezePending: 0,
-    unfreezeExpiresOn: null,
   }
 }
 
@@ -607,11 +604,9 @@ export function applySubmissionResult(input: {
     userInfo = {
       ...base,
       streak: {
-        // 解冻卡的到期日 / 待领取数提交响应里没有，保留上一次刷新拿到的值
         ...base.streak,
         streakDays: input.streak.streakDays,
         streakBest: input.streak.streakBest,
-        unfreezeCards: input.streak.unfreezeCards,
         readToday: input.streak.counted,
       },
     }
