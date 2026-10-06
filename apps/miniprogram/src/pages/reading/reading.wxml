@@ -206,7 +206,14 @@
         <ui-button onlyIcon="{{true}}" size="xl" variant="fill"
                    color="{{canSubmit ? 'success' : 'default'}}" disabled="{{!canSubmit}}"
                    bind:press="onSubmit">
-          <text class="text-36rpx text-ink">✓</text>
+          <!-- ⚠️⚠️ **✓ 的颜色要跟着按钮状态走**（用户 2026-10 定）：
+               disabled 时底是 color="default" 的 #111111 + opacity .45（≈#999 中灰），
+               而正常态的字是 text-ink —— **和 #111 的底同色，等于没画**。
+               ⇒ 禁用时换成**白色 60%**，那颗勾才看得见。
+               ⚠️ 注意透明度的叠加：按钮自己还有 disabled 的 opacity .45，
+                  所以 60% 白最终落在底上大约 #d4d4d4（灰底 ≈#949494）——
+                  对比度不高但看得清。嫌弱就把 opacity-60 提到 80。 -->
+          <text class="text-36rpx {{canSubmit ? 'text-ink' : 'text-white opacity-60'}}">✓</text>
         </ui-button>
       </view>
 
