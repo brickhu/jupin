@@ -85,6 +85,12 @@ Page({
     frameContainer: '',
     /** 第一帧到达的时刻（相对 startRecognize），null = 一帧都没来 */
     frameAtMs: null as number | null,
+    /**
+     * ⭐⭐ **边读边变色能不能做？** —— 插件有没有流式中间结果（`onRecognize`）。
+     * 收不到就是"不能"，那"边读边变色"这条路用插件就断了。
+     */
+    interimCount: 0,
+    interimText: '',
   },
 
   /** 裸录音器（与插件用的是同一个全局单例，只是这里我们直接驱动它） */
@@ -156,6 +162,15 @@ Page({
     const events = [line, ...this.data.events].slice(0, 12)
     // ⚠️ plugin-start 是"真的开始录了"的唯一凭据，用它点亮状态
     if (e.kind === 'plugin-start') this.setData({ liveStarted: true })
+    /**
+     * ⭐ 中间结果：**只在这里出现**就说明插件支持流式 ⇒ "边读边变色"可行。
+     * ⚠️ 原文可能是 { result } 也可能是字符串，两种都兜住。
+     */
+    if (e.kind === 'plugin-interim') {
+      const raw = e.raw as { result?: string } | string | undefined
+      const partial = typeof raw === 'string' ? raw : String(raw?.result ?? '')
+      this.setData({ interimCount: this.data.interimCount + 1, interimText: partial })
+    }
     this.setData({ events })
   },
 
@@ -194,6 +209,8 @@ Page({
         frameBytes: 0,
         frameContainer: '',
         frameAtMs: null,
+        interimCount: 0,
+        interimText: '',
         error: '',
         text: '',
         finalizeMs: null,

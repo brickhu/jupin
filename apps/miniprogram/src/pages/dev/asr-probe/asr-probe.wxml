@@ -47,6 +47,21 @@
     </text>
   </view>
 
+  <!-- ⭐⭐⭐ 流式中间结果：它决定「边读文字边变色」能不能做。
+       ✅ 有 plugin-interim → 插件支持流式，边读边变色可行
+       ❌ 一条都没有 → 插件只在结束时给整句，"边读边变色"用插件就断了 -->
+  <view wx:if="{{recording || interimCount > 0}}" class="card p-3 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-1">流式中间结果（边读边变色的前提）</text>
+    <text class="text-32rpx font-semibold block {{interimCount > 0 ? 'text-ok' : 'text-warn'}}">
+      {{interimCount}} 次
+    </text>
+    <text wx:if="{{interimCount > 0}}" class="text-26rpx text-muted block mt-1">最近一次：{{interimText}}</text>
+    <text wx:elif="{{recSec >= 4}}" class="text-24rpx text-bad block mt-1 leading-[1.7]">
+      ⚠️ 已经说了 {{recSec}} 秒，**一次中间结果都没收到** ⇒ 这个版本的插件不给流式结果，
+      「边读边变色」用插件做不到（只能松手后整句变色）。
+    </text>
+  </view>
+
   <!-- ⭐⭐ 波形可用性：插件录音时，我们挂在全局单例上的帧回调还会不会来？
        ✅ 有帧 → 用插件录音也能保住实时波形（走方案 B）
        ❌ 0 帧 → 用插件录音就没有波形（或者是插件用了不支持帧回调的格式） -->

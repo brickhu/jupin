@@ -83,6 +83,16 @@ export interface RecognizeResult {
 export type AsrEvent =
   | { at: number; kind: 'start-requested' }
   | { at: number; kind: 'plugin-start'; raw: unknown }
+  /**
+   * ⭐ **流式中间结果** —— 只有当插件真的支持 `onRecognize` 时才会出现。
+   *
+   * ⚠️⚠️ 这是"**边读文字边变色**"能否实现的唯一判据：
+   *    官方文档（**0.0.7** 那份）的方法表里**没有** `onRecognize`，只有 onStart/onStop/onError；
+   *    但我们用着 **0.3.5**，而该插件的版本差异是实打实的
+   *    （社区记录：`onStart` 是 0.3.0 才加的）。
+   *    ⇒ **不能凭文档下结论，必须真机实测**（探针页就是干这个的）。
+   */
+  | { at: number; kind: 'plugin-interim'; raw: unknown }
   | { at: number; kind: 'stop-requested' }
   | { at: number; kind: 'plugin-stop'; raw: unknown }
   | { at: number; kind: 'plugin-error'; raw: unknown }
@@ -95,7 +105,12 @@ export type AsrEvent =
  */
 export function describeAsrEvent(e: AsrEvent): string {
   if (e.kind === 'timeout') return e.msg
-  if (e.kind === 'plugin-start' || e.kind === 'plugin-stop' || e.kind === 'plugin-error') {
+  if (
+    e.kind === 'plugin-start' ||
+    e.kind === 'plugin-stop' ||
+    e.kind === 'plugin-error' ||
+    e.kind === 'plugin-interim'
+  ) {
     try {
       return JSON.stringify(e.raw ?? null).slice(0, 160)
     } catch {
@@ -250,6 +265,17 @@ function ensureManager(): RecognitionManager | null {
       finalizeMs: cur.stoppedAt === null ? null : now - cur.stoppedAt,
       totalMs: now - cur.startedAt,
     })
+  })
+  /**
+   * ⭐⭐ **探一下 `onRecognize` 到底存不存在** —— 它决定"边读文字边变色"能不能做。
+   *
+   * ⚠️ 用 `bindEvent` 那套"属性和方法都试"的方式挂：如果这个版本的插件没有它，
+   *    `bindEvent` 会给我们挂上一个**永远不会被调用**的属性 —— 无害，
+   *    而探针页上"一条 `plugin-interim` 都没有"就是**否定**的证据。
+   * ⚠️ 真机测法：按住说话，**持续说 5–10 秒**，看事件流里有没有 `plugin-interim`。
+   */
+  bindEvent(m, 'onRecognize', (res) => {
+    emit({ at: Date.now(), kind: 'plugin-interim', raw: res })
   })
   bindEvent(m, 'onError', (res) => {
     const cur = pending
