@@ -38,6 +38,21 @@ private.key
 # ⚠️ 它是**推导数据**：ecdict 包一升级就要重建，提交它只会让仓库里躺一份迟早变质的副本。
 .cache/
 
+# ---- 内容流水线：标准音（本地资源，不进仓库）----
+# ⚠️ 这些 mp3 是**本地资源**，不是要提交的内容：
+#    · 线上播放走**云存储 fileID**（见 routes/admin.ts：音频上传后按 fileID 引用）
+#    · 仓库里这份只有两个本地读者：`/media/{id}.mp3`（开发期播放）与
+#      `standardAudioMs`（算卡片上的时长，从镜像里读）
+# ⚠️ 为什么会被"凭空"产出来：句子 id 是**内容哈希**（sha256(text) 前 16 位），
+#    改一句文案就换一个 id ⇒ 旧 mp3 与旧 manifest 条目留在原地，越攒越多。
+#    第 ④ 步收尾时会自动剪掉它们（见 tools/pipeline 的 pruneOrphanAudio）。
+# ⚠️ 只 ignore **新增**的：已经跟踪的那批不受 .gitignore 影响
+#    （要移出仓库得另外 `git rm --cached`）。
+content/audio/*.mp3
+# ⚠️ manifest.json **要留**：它是「这份音频是怎么来的」的指纹 ——
+#    进仓库才能在别的机器上判断"要不要重新合成"，否则会重复烧 TTS 额度。
+!content/audio/manifest.json
+
 # ---- 内容流水线中间产物 ----
 tools/pipeline/data/drafts/
 tools/pipeline/data/out/
