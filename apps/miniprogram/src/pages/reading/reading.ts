@@ -980,9 +980,12 @@ Page({
     })
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
-    // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
+    // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的判据会把这一次也拦住
     this.missedIdx = []
     this.misreadList = []
+    // ⚠️ 词上的标记也一起清（见 clearWordMarks）：判据清了、颜色还挂着的话，
+    //    按住之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
+    this.clearWordMarks()
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -1158,7 +1161,7 @@ Page({
     if (r.text === null) {
       this.missedIdx = []
       this.misreadList = []
-      this.setData({ words: words.map((w) => ({ ...w, missed: false })) })
+      this.clearWordMarks()
     } else {
       /**
        * ⭐⭐ **一次对齐，两列结果**：没读到的（缺位）与没读准的（替换 + 识别到的词）。
@@ -2061,6 +2064,24 @@ Page({
    *    ⚠️ 但两者**清缓存 + 复位界面**的那一半完全一样 ⇒ 共用 clearAttempt()，
    *      免得将来只改了其中一处（"重录之后又恢复成 s3"那个坑就是这么来的）。
    */
+  /**
+   * ⭐⭐ **清掉词上的全部预检标记** —— 「新的一遍开始」时唯一的出口。
+   *
+   * ⚠️⚠️ 为什么必须抽成一个方法：这个 bug **犯过两次** ——
+   *    第一次是"重录之后颜色没清"，第二次是加了 `misread`（黄标）之后
+   *    **只清了 `missed`、漏了新状态**，于是点「重新朗读」黄标还挂在句子上。
+   *    每次加一个标记状态，都要去四五个地方各补一行 —— 漏一个就复现。
+   *    ⇒ 收敛成这里一处：**以后再加状态，只需要改这一行**。
+   *
+   * ⚠️ 已经干净就不 setData：这个方法会在"起录"这种高频路径上被调，
+   *    没必要为一个必然相同的值触发一次渲染。
+   */
+  clearWordMarks() {
+    const words = this.data.words
+    if (!words.some((w) => w.missed || w.misread)) return
+    this.setData({ words: words.map((w) => ({ ...w, missed: false, misread: false })) })
+  },
+
   onRestart() {
     this.clearAttempt()
   },
@@ -2080,18 +2101,19 @@ Page({
     if (this.recordingKey) clearLastRecording(this.recordingKey)
     if (this.recordingKey) clearLastResult(this.recordingKey)
     /**
-     * ⚠️⚠️ **把上一遍的预检色清掉** —— 不清的话，"重录"回到 s1 之后，
-     *    上一遍那些红的 / 淡的词还挂在句子上，看起来像"这一遍也已经判过了"。
-     *    而这些颜色说的是**上一次**那一遍，属于同一种"第二份真相"。
+     * ⚠️⚠️ **把上一遍的预检标记清掉** —— 不清的话，"重录"回到 s1 之后，
+     *    上一遍那些黄标 / 灰标还挂在句子上，看起来像"这一遍也已经判过了"。
+     *    而这些标记说的是**上一次**那一遍，属于同一种"第二份真相"。
+     * ⚠️ 清法只有一处（clearWordMarks）—— 漏掉某个状态的 bug 犯过两次。
      */
     this.missedIdx = []
     this.misreadList = []
+    this.clearWordMarks()
     this.setData({
       phase: 's1',
       error: '',
       restored: false,
       audioPath: '',
-      words: this.data.words.map((w) => ({ ...w, missed: false, pending: false })),
       // ⚠️ 整页重来 = 上一次尝试作废（完整说明见构造函数里 attemptId 那段）
       attemptId: '',
       playPath: '',
