@@ -19,7 +19,7 @@ import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
-import { isSlowReading, submitHintOf } from '../../lib/submit-hint'
+import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
 import { fetchArticleContent } from '../../lib/content'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -458,14 +458,18 @@ Page({
      */
     hintText: '',
     /**
-     * ⭐ **是不是"朗读完整"** —— 界面据此选颜色（用户 2026-10 定）：
-     *    `true` ⇒ **绿**（可以提交）；`false` ⇒ **黄**（有事要说，含"读得有点慢"）。
-     * ⚠️ 它由 `submitHintOf` **连同文案一起返回**，界面不再自己比字符串 ——
-     *    各判一次会出现"文字是绿的、内容却说漏读"这种自相矛盾。
+     * ⭐ 这一句**是什么性质**（用户 2026-10 定）—— 它同时决定**颜色**和**提交按钮能不能按**：
+     *    `ok` ⇒ 绿 + 可提交；`warn` ⇒ 黄 + 可提交（只是建议）；`block` ⇒ **红 + 按钮禁用变灰**。
+     * ⚠️ 由 `submitHintOf` **连同文案一起返回**，界面不自己判 ——
+     *    各判一次会出现"文字是红的、按钮却能按"这种自相矛盾。
      */
-    hintOk: true,
-    /** ⭐ 刚拦下了一次提交 —— 把提示那行强调一下（光"点了没反应"会让人以为按钮坏了） */
-    hintHit: false,
+    hintLevel: 'ok' as SubmitHintLevel,
+    /**
+     * ⭐ 提交按钮能不能按 —— **从 hintLevel 派生**（`block` 就不能按）。
+     * ⚠️ 单独存一份而不是让 WXML 写 `hintLevel !== 'block'`：
+     *    按钮的 `disabled` 和 `color` 两处都要用它，写两遍迟早只改一处。
+     */
+    canSubmit: true,
     /**
      * ⭐ 松手后的收尾中 —— 按钮显示「识别中…」。
      * ⚠️ 它必须**立刻**有反应：用户松手后如果按钮还写着"松开结束"，会以为自己没松开。
@@ -503,9 +507,6 @@ Page({
    * 这期间录音还在继续、中间结果还在进来 —— 用来把最后那几个词追回来。
    */
   releasePending: false,
-
-  /** `hintHit` 的定时器 —— 强调一小会儿就恢复 */
-  hintHitTimer: null as ReturnType<typeof setTimeout> | null,
 
   /** 松手缓冲期的定时器（追上尾巴就提前清掉） */
   releaseTimer: null as ReturnType<typeof setTimeout> | null,
@@ -634,11 +635,6 @@ Page({
      *    用户以为"退出就不录了"，而麦克风其实还开着。
      */
     this.gone = true
-    // ⚠️ 强调的定时器也要清：页面没了它还会回来 setData
-    if (this.hintHitTimer !== null) {
-      clearTimeout(this.hintHitTimer)
-      this.hintHitTimer = null
-    }
     // ⚠️ 缓冲定时器也要清：页面没了它还会回来调 finishRecording
     if (this.releaseTimer !== null) {
       clearTimeout(this.releaseTimer)
@@ -1023,7 +1019,7 @@ Page({
     //    按住之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
     this.clearWordMarks()
     // ⚠️ 提示同理：这一遍还没判过，不能挂着上一遍那句
-    this.setData({ hintText: '', hintOk: true, hintHit: false })
+    this.setData({ hintText: '', hintLevel: 'ok', canSubmit: true })
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -1575,24 +1571,16 @@ Page({
      *    ⇒ 必须留出口。⭐ 那个出口**同时是假阳性率的测量仪器**：每一次被点，
      *    就是一条已知误报，上线后能持续量到真实误报率（见 prd 7.3）。
      */
-    if (this.missedIdx.length > 0) {
-      /**
-       * ⚠️⚠️ **拦下但不弹窗**（用户 2026-10 定）—— 该说的话已经在按钮下面那行提示里了，
-       *    再弹一次是同一件事的第二个说法。
-       * ⚠️ 但**必须给一个看得见的回应**：光"点了没反应"会让人以为按钮坏了。
-       *    所以把提示那行强调一下（`hintHit`），一会儿自己恢复。
-       * ⚠️ 强调用墨色加粗、不用红 —— 红是"判错"的颜色，这里只是"没读全"。
-       * ⚠️ 只有"漏读"拦 —— "读错"不可靠（ASR 听错占了很大一块，见 AlignmentDetail 的说明），
-       *    拿它拦人等于把"机器听错"变成"用户交不上去"。
-       */
-      this.setData({ hintHit: true })
-      if (this.hintHitTimer !== null) clearTimeout(this.hintHitTimer)
-      this.hintHitTimer = setTimeout(() => {
-        this.hintHitTimer = null
-        this.setData({ hintHit: false })
-      }, 1500)
-      return
-    }
+    /**
+     * ⚠️⚠️ **拦下但不弹窗**（用户 2026-10 定）—— 该说的话已经在按钮下面那行提示里了，
+     *    再弹一次是同一件事的第二个说法。
+     *
+     * ⚠️ 现在按钮本身已经是 **disabled + 灰**（见 WXML），所以正常按不到这里 ——
+     *    这一道是**兜底**（比如将来有别的入口调 onSubmit）。改成"强调提示"那一套已经不需要了：
+     *    按钮都灰了，"点了没反应"的困惑不存在。
+     * ⚠️ 判据用 `canSubmit` 而不是再数一遍 missedIdx —— 与按钮、与文案**同一份真相**。
+     */
+    if (!this.data.canSubmit) return
 
     // ⭐ 检查 1：时长 —— 不合格时**留在 s3**（不是进 s6）：s6 是「引擎判失败」的结果屏，
     //    而这一条在提交之前就能拦住，用户重录一遍再点就是了。
@@ -2180,9 +2168,13 @@ Page({
       misread: this.misreadList.length,
       slow: isSlowReading(recordMs, this.data.stdDurationMs),
     })
-    // ⚠️ 颜色和文案一起更新（hintOk 与 hintText 同源，不能只更一个）
-    if (hint.text !== this.data.hintText || hint.ok !== this.data.hintOk) {
-      this.setData({ hintText: hint.text, hintOk: hint.ok })
+    /**
+     * ⚠️ 三样**一起更新**（文案 / 颜色档 / 按钮可用性）——它们同源，分开更就会出现
+     *    "文字说请重新朗读、按钮却能按"这种自相矛盾。
+     */
+    const canSubmit = hint.level !== 'block'
+    if (hint.text !== this.data.hintText || hint.level !== this.data.hintLevel || canSubmit !== this.data.canSubmit) {
+      this.setData({ hintText: hint.text, hintLevel: hint.level, canSubmit })
     }
   },
 
@@ -2213,15 +2205,11 @@ Page({
     this.missedIdx = []
     this.misreadList = []
     this.clearWordMarks()
-    if (this.hintHitTimer !== null) {
-      clearTimeout(this.hintHitTimer)
-      this.hintHitTimer = null
-    }
     this.setData({
       // ⚠️ 提示也要清：这一遍还没判过，不能挂着上一遍那句
       hintText: '',
-      hintOk: true,
-      hintHit: false,
+      hintLevel: 'ok',
+      canSubmit: true,
       phase: 's1',
       error: '',
       restored: false,

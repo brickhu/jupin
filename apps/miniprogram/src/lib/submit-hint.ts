@@ -49,28 +49,44 @@ export interface SubmitHintInput {
   slow: boolean
 }
 
+/**
+ * ⭐ 提示的**三个档** —— 它们同时决定**文案的颜色**和**提交按钮能不能按**。
+ *
+ * | level | 颜色 | 提交按钮 |
+ * |---|---|---|
+ * | `ok` | 绿 | 可按 |
+ * | `warn` | 黄 | **可按**（只是建议，用户自己决定） |
+ * | `block` | 红 | **禁用 + 变灰** |
+ *
+ * ⚠️⚠️ 三档和文案**一起返回**，不让界面自己再判一遍 ——
+ *    各判一次会出现"文字是红的、按钮却能按"这种自相矛盾。
+ */
+export type SubmitHintLevel = 'ok' | 'warn' | 'block'
+
 export interface SubmitHint {
   /** 那一行写什么 */
   text: string
-  /**
-   * ⭐ **是不是"朗读完整"那一种** —— 界面据此决定颜色（用户 2026-10 定）：
-   *    `true` ⇒ **绿**（一切正常，可以提交）；`false` ⇒ **黄**（有事要说）。
-   *
-   * ⚠️ 它和 `text` **一起返回**，而不是让界面再去比一遍字符串：
-   *    各判一次就会出现"文字是绿的、内容却说漏读"这种自相矛盾 ——
-   *    文案和它的性质必须同源。
-   */
-  ok: boolean
+  /** 这一句是什么性质（决定颜色与按钮可用性，见 SubmitHintLevel） */
+  level: SubmitHintLevel
 }
 
 export function submitHintOf(input: SubmitHintInput): SubmitHint {
   const { missed, misread, slow } = input
 
+  /**
+   * ⚠️⚠️ **只有"漏读"拦提交**，所以只有它出 `block`。
+   *    "读错"不可靠（ASR 听错占了很大一块，见 AlignmentDetail 的说明）——
+   *    拿它拦人等于把"机器听错"变成"用户交不上去"。
+   *
+   * ⚠️ 拦的那两句说「**请重新朗读**」而不是「建议重试」：
+   *    前者是"这一步过不去"，后者是"你可以考虑一下" —— 按钮都灰了，措辞不能还留着商量的余地。
+   */
   if (missed > 0 && misread > 0) {
-    return { text: '漏读 ' + missed + ' 个单词，读错 ' + misread + ' 个单词，建议重试', ok: false }
+    return { text: '漏读 ' + missed + ' 个单词，读错 ' + misread + ' 个单词，请重新朗读', level: 'block' }
   }
-  if (missed > 0) return { text: '漏读 ' + missed + ' 个单词，建议重试', ok: false }
-  if (misread > 0) return { text: '读错 ' + misread + ' 个单词，建议重试', ok: false }
-  if (slow) return { text: '读得有点慢，建议重读一遍后提交', ok: false }
-  return { text: '朗读完整，点击提交 AI 检测并打分', ok: true }
+  if (missed > 0) return { text: '漏读 ' + missed + ' 个单词，请重新朗读', level: 'block' }
+
+  if (misread > 0) return { text: '读错 ' + misread + ' 个单词，建议重试', level: 'warn' }
+  if (slow) return { text: '读得有点慢，建议重读一遍后提交', level: 'warn' }
+  return { text: '朗读完整，点击提交 AI 检测并打分', level: 'ok' }
 }

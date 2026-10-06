@@ -172,7 +172,12 @@
            ⚠️ 尺寸与位置对齐 s3 那一行提交提示（同样 mt-3 / 24rpx / 居中），
               这样从 s1 到 s3 卡片高度不变，底部按钮不会跳。 -->
       <view class="mt-3 px-2 text-center">
-        <text class="text-24rpx leading-[1.6] text-faint">按住不放开始录音，松手结束</text>
+        <!-- ⚠️ **识别中要换一句话**（用户 2026-10 定）：那时候手已经松了，
+             还挂着"按住不放开始录音，松手结束"就是过时的指令 ——
+             用户会以为"我是不是没松干净"。 -->
+        <text class="text-24rpx leading-[1.6] text-faint">
+          {{releasePending ? '正在识别你的朗读，请稍等' : '按住不放开始录音，松手结束'}}
+        </text>
       </view>
     </view>
 
@@ -192,20 +197,31 @@
                      bind:press="onReplay">{{recordDurationText}}</ui-button>
         </view>
 
-        <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="success" bind:press="onSubmit">
+        <!-- ⭐⭐ **漏读时这颗钮要禁用 + 变灰**（用户 2026-10 定）：
+             它是"这一步过不去"，不是"你可以考虑一下" —— 留着可以按，
+             用户会反复按、反复没反应，而下面那行字已经说了要重新朗读。
+             ⚠️ 变灰用 color="default"（#111111）+ disabled（opacity .45），
+                落在白卡上就是灰的；只 disabled 的话是**半透明的绿**，那不是灰。
+             ⚠️ 两处都由 canSubmit 一个字段派生 —— 写两遍迟早只改一处。 -->
+        <ui-button onlyIcon="{{true}}" size="xl" variant="fill"
+                   color="{{canSubmit ? 'success' : 'default'}}" disabled="{{!canSubmit}}"
+                   bind:press="onSubmit">
           <text class="text-36rpx text-ink">✓</text>
         </ui-button>
       </view>
 
       <!-- ⭐⭐ **提交按钮下面那一行提示**（用户 2026-10 定）—— 见 lib/submit-hint.ts。
            ⚠️ 它替代了早先的弹窗：信息在按提交**之前**就摆在那里，看得见、不用被打断。
-           ⚠️ 措辞是**建议**（"建议重试"），不是判决 —— 判决是提交之后云端那一次。
-           ⚠️ **颜色**（用户 2026-10 定）：朗读完整用**绿**，其余（含"读得有点慢"）用**黄** ——
-              绿＝可以提交，黄＝有事要说。⚠️ 不用红：红是"判错"的颜色，这里没有判错。
-           ⚠️ hintHit = 「刚拦下了一次提交」的回应：光"点了没反应"会让人以为按钮坏了。
-              只加粗、**不改颜色** —— 颜色说的是"这句话是什么性质"，不该被一次点击改掉。 -->
+           ⚠️ 三档（ok / warn / block）说的**不只是颜色**，还有"这一步过不过得去"：
+               · ok    ⇒ 绿 —— 可以提交
+               · warn  ⇒ 黄 —— 只是建议（读错 / 读得慢），**按钮照样能按**
+               · block ⇒ **红 —— 拦住了**（漏读），提交按钮同时**禁用 + 变灰**
+           ⚠️ 措辞与档位一致：warn 那两句是「建议…」，block 那两句是「**请重新朗读**」——
+              按钮都灰了，措辞不能还留着商量的余地。 -->
       <view class="mt-3 px-2 text-center">
-        <text class="text-24rpx leading-[1.6] {{hintOk ? 'text-ok' : 'text-warn'}} {{hintHit ? 'font-semibold' : ''}}">{{hintText}}</text>
+        <!-- ⭐ 三档颜色由 hintLevel 一档决定（与文案、与按钮可用性同源）：
+               ok ⇒ 绿（可以提交）· warn ⇒ 黄（只是建议）· **block ⇒ 红（拦住了，只能重录）**。 -->
+        <text class="text-24rpx leading-[1.6] {{hintLevel === 'ok' ? 'text-ok' : hintLevel === 'block' ? 'text-bad' : 'text-warn'}}">{{hintText}}</text>
       </view>
 
       <!-- ⚠️ 这一态**不再显示**「评测消耗能量2，剩余3」（用户 2026-09 定：删掉）。
