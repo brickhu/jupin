@@ -314,6 +314,50 @@ export interface EnergyResponse {
   nextBefore: number | null
 }
 
+/**
+ * ⭐⭐ **补签的结果**（`POST /api/user/makeup`）—— 规格：prd §7.8。
+ *
+ * ⚠️⚠️ 补不成**也返回 200**（`ok: false` 是正常业务结果，不是请求错误）——
+ *    返回 4xx 会让端侧的通用错误处理弹一句无用的"网络异常"。
+ *
+ * ⚠️⚠️ `reason` **必须区分成四种**，因为用户要做的事完全不同：
+ *    · already-read-today ⇒ 今天已经读过了（缺口要在读**之前**补）
+ *    · no-gap             ⇒ 没断档，不用补
+ *    · too-long           ⇒ 断太久，**说成"重新开始"而不是失败**
+ *    · not-enough-energy  ⇒ 配合 `shortfall` 指向"吃饼干 / 充值"
+ *    混成一句"补签失败"等于什么都没告诉用户。
+ */
+export interface MakeupResponse {
+  /** 补成了没有 */
+  ok: boolean
+  /** 缺口几天（0 = 没断档） */
+  gapDays: number
+  /** 补签本身要花几点能量 */
+  cost: number
+  /**
+   * ⭐ **当天总共要几点** —— 补签 + 还要读的那一句。
+   * ⚠️ 必须给：用户看到"补签 3 点"会以为花 3 点就够了，
+   *    而当天他还得读一句（再 2 点）。总账要摆在明处，否则他会以为界面在骗他。
+   */
+  totalCost: number
+  /**
+   * ⭐ **还差几点能量**（只在 `not-enough-energy` 时有意义）。
+   * ⚠️ 没有它，用户只知道"不够"，不知道"还差多少" → 也没法决定要不要去吃饼干。
+   */
+  shortfall: number
+  /** 补完之后的连战视图 */
+  streak: StreakView
+  /** 补不了的原因（⚠️ 只可能是这四个值，schema 里是 enum） */
+  reason?: MakeupFailureReason
+}
+
+/** 补签补不了的原因 —— 与 `shared/makeup.ts` 的 `MakeupBlockReason` + 能量那条合起来 */
+export type MakeupFailureReason =
+  | 'already-read-today'
+  | 'no-gap'
+  | 'too-long'
+  | 'not-enough-energy'
+
 /** 商店里的一件商品（价格由服务端给，端侧不写死） */
 export interface ShopGoodsItem {
   code: string

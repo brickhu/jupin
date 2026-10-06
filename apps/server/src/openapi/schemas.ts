@@ -20,6 +20,7 @@ import type {
   ChallengesResponse,
   EnergyLedgerItem,
   EnergyResponse,
+  MakeupResponse,
   FavoriteItem,
   FavoritesResponse,
   FavoritedResponse,
@@ -459,14 +460,6 @@ export const MeResponseSchema = okEnvelope(
     .openapi('MeResponse'),
 )
 
-/** 领取解冻卡的结果（`POST /api/user/claim`） */
-export const ClaimRewardsResponseSchema = okEnvelope(
-  z
-    .object({ claimed: z.number().int(), streak: StreakViewSchema })
-    .openapi('ClaimRewardsResponse'),
-)
-
-
 /** 榜单一行（中心 5 条 + 竞技场榜单共用） */
 export const LeaderboardRowSchema = z
   .object({
@@ -593,8 +586,13 @@ export const MakeupResponseSchema = okEnvelope(
       /** 还差几点能量（只在 not-enough-energy 时有意义） */
       shortfall: z.number().int(),
       streak: StreakViewSchema,
-      /** already-read-today | no-gap | too-long | not-enough-energy */
-      reason: z.string().optional(),
+      /**
+       * ⚠️ 用 **enum** 而不是 string：这样 OpenAPI 文档里会**列出全部四个可能值**，
+       *    端侧也能对它做穷尽判断 —— 一个只写 `string` 的字段等于没文档。
+       */
+      reason: z
+        .enum(['already-read-today', 'no-gap', 'too-long', 'not-enough-energy'])
+        .optional(),
     })
     .openapi('MakeupResponse'),
 )
@@ -983,6 +981,7 @@ type _ParticipationsParity = Equal<
 >
 type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
+type _MakeupParity = Equal<z.infer<typeof MakeupResponseSchema>['data'], MakeupResponse>
 type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
 type _ArtResParity = Equal<
   z.infer<typeof ParticipationSubmissionsResponseSchema>['data'],
@@ -1074,6 +1073,7 @@ const _parityChecks: [
   _ParticipationsParity,
   _LedgerParity,
   _EnergyParity,
+  _MakeupParity,
   _PartSubmissionParity,
   _ArtResParity,
   _StreakViewParity,
@@ -1102,5 +1102,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

@@ -1,4 +1,4 @@
-import type { MakeupBlockReason, StreakView } from '@jushuo/shared'
+import type { MakeupBlockReason, MakeupFailureReason, MakeupResponse } from '@jushuo/shared'
 import { ENERGY_PER_CHALLENGE, makeupEligibilityOf, today as dayOf } from '@jushuo/shared'
 import { eq } from 'drizzle-orm'
 
@@ -21,27 +21,16 @@ import type { User } from './user'
  */
 
 /**
- * 补不了的原因 = 连战的（没断档 / 今天读过了 / 断太久）+ 能量的（不够）。
+ * ⚠️ 返回**直接用 shared 的 `MakeupResponse`**（接口契约），不在这里另定一个形状 ——
+ *    同一份真相两种写法迟早对不上，而 `openapi/schemas.ts` 的漂移检查
+ *    正是拿那个类型去比 schema 的（`_MakeupParity`）。
  *
+ * 补不了的原因 = 连战的（没断档 / 今天读过了 / 断太久）+ 能量的（不够）。
  * ⚠️ 两种原因**必须分开报**：前者要用户"去读一句 / 等下次"，
  *    后者要用户"吃饼干或充值" —— 混成一句"补签失败"等于什么都没说。
  */
-export type MakeupFailure = MakeupBlockReason | 'not-enough-energy'
-
-export interface MakeupResult {
-  ok: boolean
-  /** 缺口几天（0 = 没断档） */
-  gapDays: number
-  /** 补签本身要花几点能量 */
-  cost: number
-  /** 当天总共要几点（补签 + 还要读的那一句）—— 端侧把总账摆出来 */
-  totalCost: number
-  /** 还差几点能量（ok=false 且原因是 not-enough-energy 时才有意义） */
-  shortfall: number
-  /** 补完（或没补成）之后的连战视图 */
-  streak: StreakView
-  reason?: MakeupFailure
-}
+export type MakeupResult = MakeupResponse
+type MakeupFailure = MakeupFailureReason
 
 /**
  * ⭐⭐ **补签** —— 校验 → 扣能量 → 把 lastReadDate 推到昨天。**全程一个事务**。
