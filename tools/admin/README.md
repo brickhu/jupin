@@ -109,6 +109,10 @@ range 请求时才把媒体标成 seekable，否则 `audio.seekable` 是 `[0,0]`
 | 正文 / 译文 / 难度 / 标签 / **词表与连读标注** | `content/articles/<id>.json` | `articles` 行、`articles.difficulty`、`article_tags` |
 | 发布时间 | `articles.published_at` | —— |
 | 标准音（**只有整句**） | `content/audio/<id>.mp3` | 对象存储里的同名 key |
+
+⚠️ **本机（`STORAGE=local`）**：`articles.standard_audio` 由服务端按"**盘上有没有这个 mp3**"补上 ——
+**发布那一刻**（写入接口）就会挂，所以"加句子 → 生成音频 → 发布"之后模拟器直接能播，
+不用再手工跑种子。云端**故意不写**（那一列的含义是"分发得出去"，要等上传到对象存储成功）。
 | 某天读哪句 | `schedules` 表 | —— |
 
 * **id = `sha256(正文 trim 后)` 的前 16 位**（64 bit，长度见 shared 的 `constants`）——

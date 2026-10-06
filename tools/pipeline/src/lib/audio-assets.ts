@@ -157,60 +157,40 @@ export async function listArticleIdsOnDisk(): Promise<string[]> {
 }
 
 /**
- * ⭐⭐ **剪掉孤儿音频** —— 盘上有、但已经没有对应句子的那些。
+ * ⭐⭐ **找出疑似孤儿音频** —— 盘上有、但 `content/articles/` 里没有对应 JSON 的。
  *
- * ⚠️⚠️ 为什么必须有这一步（2026-10 发现的真实事故）：
- *    **句子 id 是内容哈希**（`sha256(text)` 前 16 位）⇒ **改一句文案就换一个 id**，
- *    而旧音频与旧 manifest 条目**留在原地没人清**。
- *    实测一次就攒了 3 个孤儿，其中一个还被提交进了仓库。
+ * ## ⚠️⚠️ 它**只报告、绝不删除**（2026-10 的事故换来的）
  *
- * ⚠️ 为什么不是「把 content/audio/*.mp3 加进 .gitignore」：
- *    **那个目录里 18/19 是正经内容**（成品标准音），ignore 会把它们一起漏掉。
- *    `.gitignore` 里对这件事的定性也是明写的：
- *    「合成缓存不是产物 —— **成品在 content/audio/**」。
+ * 我原来写的是 `pruneOrphanAudio()`，判据是"盘上有、`content/articles/` 里没有"，
+ * **并且真的删**。结果删掉了 3 个**正在使用**的音频：
  *
- * ⚠️ 只扫**顶层** `{id}.mp3`：`{id}/w{i}.mp3`（逐词切片）2026-09 已经废除了，
- *    万一盘上还留着旧目录，不动它 —— 那不是这一步的职责。
+ *   ⚠️ **`articles` 表才是正文的真相，不是 `content/articles/*.json`。**
+ *      管理台发布的句子**只进库、不落 JSON** —— 出事时库里 19 句、JSON 只有 16 个。
+ *      那 3 个"孤儿"其实是**只在库里的句子**的音频，删掉之后
+ *      接口的 `durationMs` 全变成 null（用户看到的就是"音频时长失效"）。
  *
- * @returns 被删掉的 id（调用方拿去打日志）
+ * ⚠️ 而**这个工具连不上数据库**（`tools/pipeline` 的依赖里没有 mysql / drizzle），
+ *    所以它**永远无法知道**哪些句子只在库里 ⇒ 按 JSON 判断必然误判。
+ *    ⇒ 结论：在这里**不能删**。要删也得是"有人拿库对一遍再删"。
+ *
+ * ⚠️ 顺带：`content/audio/*.mp3` 已经在 `.gitignore` 里了，
+ *    所以"新产的孤儿污染 git status"那件事**已经由 ignore 解决** ——
+ *    删除从来不是必需的，它只是我当时以为安全。
+ *
+ * @returns 疑似孤儿的 id（调用方打日志/告警用，**不要拿去删**）
  */
-export async function pruneOrphanAudio(): Promise<string[]> {
-  const { readdir, rm } = await import('node:fs/promises')
+export async function findOrphanAudio(): Promise<string[]> {
+  const { readdir } = await import('node:fs/promises')
   if (!existsSync(OUT)) return []
 
-  const valid = new Set(await listArticleIdsOnDisk())
+  const onDisk = new Set(await listArticleIdsOnDisk())
   const names = await readdir(OUT)
 
-  const removed: string[] = []
+  const suspected: string[] = []
   for (const name of names) {
     if (!name.endsWith('.mp3')) continue
     const id = name.replace(/\.mp3$/, '')
-    if (valid.has(id)) continue
-    await rm(resolve(OUT, name), { force: true })
-    removed.push(id)
+    if (!onDisk.has(id)) suspected.push(id)
   }
-
-  /**
-   * ⚠️ manifest 里的条目**要跟着清**（不只是清掉被删 MP3 的那几条）：
-   *    留着它，下次这条 id 被复用时会因为「清单里已经有指纹」而**跳过合成**
-   *    —— 结果是新句子配着旧音频，而且没有任何报错。
-   *
-   * ⚠️⚠️ 所以判据是「**这个 id 还有没有句子**」，不是「刚刚有没有删掉它的 mp3」：
-   *    实测就漏过一条 —— manifest 里有、盘上没有 mp3（生成到一半失败 / 音频被单独删过），
-   *    按"跟着 mp3 删"的写法它永远不会被清掉。
-   */
-  let manifest: Record<string, string> = {}
-  try {
-    manifest = JSON.parse(await readFile(MANIFEST, 'utf8')) as Record<string, string>
-  } catch {
-    return removed
-  }
-  const staleManifest = Object.keys(manifest).filter((id) => !valid.has(id))
-  if (staleManifest.length > 0) {
-    for (const id of staleManifest) delete manifest[id]
-    await writeFile(MANIFEST, JSON.stringify(manifest, null, 2) + '\n')
-  }
-
-  // 返回值 = 盘上删掉的 + 清单里清掉的（去重），调用方打日志用
-  return [...new Set([...removed, ...staleManifest])]
+  return suspected.sort()
 }

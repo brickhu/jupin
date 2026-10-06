@@ -20,6 +20,22 @@ import { audioKeyOf, audioRefOf } from './standard-audio'
  */
 const cache = new Map<string, { stamp: string | null; ms: number | null }>()
 
+/**
+ * ⚠️ **每个 id 只告警一次**（进程内）—— 首页一次要 7 张卡片，
+ *    不节流的话日志会被同一个 id 刷满，反而看不出是哪几个句子出了问题。
+ */
+const warned = new Set<string>()
+
+function warnMissing(articleId: string, why: string): void {
+  if (warned.has(articleId)) return
+  warned.add(articleId)
+  console.warn(
+    '[audio] ⚠️ 句子 #' + articleId + ' 的标准音算不出时长：' + why +
+      '\n          ⇒ 卡片上会**没有时长**。若是被误删，先确认它是不是"只在库里、没有 JSON"的句子' +
+      '（见 tools/pipeline 的 findOrphanAudio 注释）。',
+  )
+}
+
 export async function standardAudioMs(articleId: string): Promise<number | null> {
   const key = audioKeyOf(articleId)
   const stamp = await staticFileStamp(key)
@@ -36,7 +52,17 @@ export async function standardAudioMs(articleId: string): Promise<number | null>
      *    而且**不报错**。用 audioKeyOf 就不会再犯：磁盘路径与对象存储 key 同源。
      */
     const bytes = await readStaticFile(key)
-    if (bytes) value = mp3DurationMs(Buffer.from(bytes))
+    if (bytes) {
+      value = mp3DurationMs(Buffer.from(bytes))
+      if (value === null) warnMissing(articleId, '文件在、但解析不出时长（编码不认？）')
+    } else {
+      /**
+       * ⚠️⚠️ **文件不在** —— 2026-10 那次事故（音频被误删）在这里是完全静默的：
+       *    时长只是变成 null，接口照样 200，用户看到的只是"句子上面的时长没了"。
+       *    ⇒ 加一条**每个 id 只打一次**的告警，让这种事故有迹可循。
+       */
+      warnMissing(articleId, 'content/audio/' + articleId + '.mp3 不在盘上')
+    }
   } catch (err) {
     console.warn('[audio] 读标准音算时长失败（articleId=' + articleId + '）：' + (err as Error).message)
   }
