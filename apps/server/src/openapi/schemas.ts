@@ -21,6 +21,7 @@ import type {
   EnergyLedgerItem,
   EnergyResponse,
   MakeupResponse,
+  ExchangeResponse,
   MakeupState,
   FavoriteItem,
   FavoritesResponse,
@@ -618,6 +619,27 @@ export const MakeupResponseSchema = okEnvelope(
     .openapi('MakeupResponse'),
 )
 
+/**
+ * ⭐ **饼干换能量的结果**（`POST /api/user/exchange`）。
+ *
+ * ⚠️ 换不成也返回 200（`ok: false`）—— 返回 4xx 只会让端侧弹一句无用的"网络异常"。
+ */
+export const ExchangeResponseSchema = okEnvelope(
+  z
+    .object({
+      ok: z.boolean(),
+      energyGained: z.number().int().openapi({ description: '换到几点（ok=false 时是 0）' }),
+      cookiesSpent: z.number().int().openapi({ description: '用掉多少饼干（ok=false 时是 0）' }),
+      cookies: CookieViewSchema.openapi({ description: '换完之后的两个数（端侧别自己加减）' }),
+      energy: z.number().int().openapi({ description: '换完之后的能量余额' }),
+      reason: z
+        .enum(['not-enough-cookies'])
+        .optional()
+        .openapi({ description: '换不成的原因（ok=false 时才有）' }),
+    })
+    .openapi('ExchangeResponse'),
+)
+
 /** 保存资料之后回传的权威值（`POST /api/user/profile`） */
 export const ProfileUpdateResponseSchema = okEnvelope(
   z
@@ -1003,6 +1025,7 @@ type _ParticipationsParity = Equal<
 type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerItem>
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
 type _MakeupParity = Equal<z.infer<typeof MakeupResponseSchema>['data'], MakeupResponse>
+type _ExchangeParity = Equal<z.infer<typeof ExchangeResponseSchema>['data'], ExchangeResponse>
 type _MakeupStateParity = Equal<z.infer<typeof MakeupStateSchema>, MakeupState>
 type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
 type _ArtResParity = Equal<
@@ -1096,6 +1119,7 @@ const _parityChecks: [
   _LedgerParity,
   _EnergyParity,
   _MakeupParity,
+  _ExchangeParity,
   _MakeupStateParity,
   _PartSubmissionParity,
   _ArtResParity,
@@ -1125,5 +1149,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

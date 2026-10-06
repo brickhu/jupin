@@ -42,6 +42,29 @@ export const COOKIE_BASE: readonly number[] = [10, 20, 30, 40]
  */
 export const COOKIE_RANK_MIN_SAMPLE = 10
 
+/**
+ * ⭐⭐ **多少饼干换 1 点能量** —— 40。
+ *
+ * ⚠️⚠️ 这个数不是随便定的，它让**一个专家句 = 1 点能量**：
+ *    专家句基准 40 块 × 满分位 100% = 40 块 = 1 点能量。
+ *    ⇒ 一句话就能讲给用户听：「攻克一个专家句，就能换 1 点能量」。
+ *
+ * ⚠️ 为什么不做成"更便宜"（比如 20）：那会让饼干能换到**读不完的能量**，
+ *    直接侵蚀付费。而现在这套是自限的 —— 一次攻克最多换回**半次提交**，
+ *    想靠饼干无限读，得先不停地攻克新句子，而新句子受内容更新速度限制
+ *    （见 prd §7.6 的核算）。
+ */
+export const COOKIES_PER_ENERGY = 40
+
+/**
+ * ⭐ 这些饼干能换几点能量（向下取整）。
+ * ⚠️ 余额不足 40 时是 0 —— 调用方据此把按钮置灰，而不是让用户点了才发现。
+ */
+export function energyFromCookies(cookies: number): number {
+  if (!Number.isFinite(cookies) || cookies <= 0) return 0
+  return Math.floor(cookies / COOKIES_PER_ENERGY)
+}
+
 /** 难度 → 基准；难度未知（老内容 / null）按初级兜底，不报错也不给 0 */
 export function cookieBaseOf(level: ArticleLevel | null | undefined): number {
   if (level === null || level === undefined) return COOKIE_BASE[0] as number

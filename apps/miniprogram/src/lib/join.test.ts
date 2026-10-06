@@ -73,7 +73,6 @@ function meResponse(nickname: string | null) {
       streakDays: 0,
       streakBest: 0,
       readToday: false,
-      unfreezeCards: 0,
       unfreezePending: 0,
       unfreezeExpiresOn: null,
     },

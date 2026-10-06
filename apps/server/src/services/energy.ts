@@ -33,6 +33,8 @@ export const ENERGY_REASON = {
   admin: 'admin',
   /** ⭐ 补签（花能量填断档，见 services/makeup.ts / prd §7.8） */
   makeup: 'streak_makeup',
+  /** ⭐ 吃饼干换来的能量（见 services/cookies.ts 的 exchangeCookiesForEnergy） */
+  exchange: 'exchange',
 } as const
 
 /** 读余额（行锁住的版本，供事务内部复用） */

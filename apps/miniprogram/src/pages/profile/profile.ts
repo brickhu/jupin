@@ -79,7 +79,6 @@ Page({
     /** ⭐ 能量 / 解冻卡只有本人才有（别人的主页服务端返回 null）—— 决定那一行显不显示 */
     hasEnergy: false,
     energy: 0,
-    unfreezeCards: 0,
     streakDays: 0,
     conqueredCount: 0,
     rounds: 0,

@@ -29,7 +29,6 @@ beforeAll(async () => {
 const STREAK = {
   streakDays: 3,
   streakBest: 3,
-  unfreezeCards: 0,
   unfreezeExpiresOn: null,
   readToday: true,
 }

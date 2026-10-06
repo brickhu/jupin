@@ -8,6 +8,7 @@ import { getArenaStatsBatch, getRank } from '../services/leaderboard'
 import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
+import { exchangeCookiesForEnergy } from '../services/cookies'
 import { readStreakRecord } from '../services/streak-record'
 import { makeUpStreak } from '../services/makeup'
 import { readStreakView } from '../services/streak'
@@ -31,6 +32,7 @@ import {
   ProfileUpdateResponseSchema,
   StreakRecordResponseSchema,
   MakeupResponseSchema,
+  ExchangeResponseSchema,
 } from '../openapi/schemas'
 
 export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -514,6 +516,47 @@ userRoutes.openapi(energyRoute, async (c) => {
  *    · 连战那边：今天已读 / 没断档 / 断太久（`too-long` ⇒ 说成"重新开始"，别说失败）
  *    · 能量那边：`not-enough-energy` ⇒ 带上 `shortfall`，指向"吃饼干 / 充值"
  */
+/**
+ * ⭐⭐ **吃饼干补充能量** —— 40 块换 1 点（`COOKIES_PER_ENERGY`）。
+ *
+ * ⚠️ **一次换完**（把余额能换的都换掉），不接受数量：
+ *    能量比饼干**更通用**（能读句子、也能补签），而饼干只有这一个用途 ⇒
+ *    留着它没有任何好处，让用户填数量只是白加一步。
+ *
+ * ⚠️⚠️ `requestId` 由**客户端**生成（按一次按钮生成一个）——
+ *    两个账本各用它挡重，连点 / 重试都不会换两次。
+ *    没有它的话，双击一次按钮就会白扣 40 块。
+ */
+const exchangeRoute = createRoute({
+  method: 'post',
+  path: '/exchange',
+  tags: ['我的'],
+  summary: '吃饼干换能量（40 块 = 1 点，一次换完）',
+  security: [{ userToken: [] }],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ requestId: z.string().min(8).max(64) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ExchangeResponseSchema } },
+      description: '成功（⚠️ `data.ok` 才是"换成了没有"）',
+    },
+  },
+})
+
+userRoutes.openapi(exchangeRoute, async (c) => {
+  const userId = c.get('userId')
+  const { requestId } = c.req.valid('json')
+  // ⚠️ 换不成也返回 200（业务结果，不是请求错误）
+  return c.json({ ok: true, data: await exchangeCookiesForEnergy(userId, requestId) }, 200)
+})
+
 const makeupRoute = createRoute({
   method: 'post',
   path: '/makeup',

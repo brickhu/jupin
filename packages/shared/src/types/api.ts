@@ -385,6 +385,31 @@ export interface MakeupState {
   reason?: MakeupFailureReason
 }
 
+/**
+ * ⭐ **饼干换能量的结果**（`POST /api/user/exchange`）。
+ *
+ * ⚠️ 与补签一样，换不成**也返回 200**（`ok: false` 是业务结果）——
+ *    返回 4xx 只会让端侧弹一句无用的"网络异常"。
+ */
+export interface ExchangeResponse {
+  ok: boolean
+  /** 换到几点能量（ok=false 时是 0） */
+  energyGained: number
+  /** 用掉多少饼干（ok=false 时是 0） */
+  cookiesSpent: number
+  /** 换完之后的两个数 —— ⚠️ 端侧别自己加减，以服务端回的为准 */
+  cookies: CookieView
+  /** 换完之后的能量余额 */
+  energy: number
+  /** 换不成的原因 */
+  reason?: ExchangeFailureReason
+}
+
+/** 换不成的原因 */
+export type ExchangeFailureReason =
+  /** 饼干不够换 1 点（< 40 块） */
+  | 'not-enough-cookies'
+
 /** 补签补不了的原因 —— 与 `shared/makeup.ts` 的 `MakeupBlockReason` + 能量那条合起来 */
 export type MakeupFailureReason =
   | 'already-read-today'

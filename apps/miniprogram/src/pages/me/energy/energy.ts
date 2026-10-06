@@ -1,8 +1,11 @@
+import { COOKIES_PER_ENERGY, energyFromCookies } from '@jushuo/shared'
 import type { EnergyLedgerItem, ShopGoodsItem } from '@jushuo/shared'
 import { explainXpayError } from '@jushuo/shared'
 
-import { createShopOrder, fetchEnergy, fetchShopGoods } from '../../../lib/api/client'
+import { createShopOrder, exchangeCookies, fetchEnergy, fetchShopGoods } from '../../../lib/api/client'
 import { refreshMe } from '../../../lib/join'
+import { getState } from '../../../lib/store'
+import { newRequestId } from '../../../lib/request-id'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 import { agoText } from '../../../lib/time'
 
@@ -102,6 +105,17 @@ Page({
     perChallenge: 2,
     dailyFloor: 3,
 
+    /**
+     * ⭐ 吃饼干换能量（prd §7.7）：手上多少块、能换几点。
+     * ⚠️ 余额取自全局 store（它在 refreshMe 之后广播），端侧**不自己算余额**。
+     */
+    cookieBalance: 0,
+    /** 这些饼干能换几点（= floor(余额 / 40)，shared 的纯函数算的） */
+    cookieEnergy: 0,
+    /** 换 1 点要几块 —— 从 shared 拿，端侧不写死 40 */
+    cookiesPerEnergy: COOKIES_PER_ENERGY,
+    exchanging: false,
+
     goods: [] as (ShopGoodsItem & { priceText: string; unitText: string; image: string })[],
     /** 0 现网 / 1 沙箱 —— 沙箱时页面上要标出来，免得测试时以为花的是真钱 */
     payEnv: 0,
@@ -136,6 +150,7 @@ Page({
       const [energy, shop] = await Promise.all([fetchEnergy(), fetchShopGoods()])
       this.setData({
         loading: false,
+        ...this.cookieData(),
         energy: energy.energy,
         perChallenge: energy.perChallenge,
         dailyFloor: energy.dailyFloor,
@@ -152,6 +167,51 @@ Page({
     } catch (err) {
       // ⚠️ 失败时保留已经画出来的内容 —— 拉不到新的不该把看到的也清掉
       this.setData({ loading: false, error: (err as Error).message || '加载失败' })
+    }
+  },
+
+  /**
+   * ⭐ 从全局 store 读饼干余额并算「能换几点」。
+   *
+   * ⚠️ 端侧**不自己记余额**：`/me` 是唯一的来源（兑换成功后 refreshMe 会广播，
+   *    这里重算一遍就自动跟上了）。自己维护一份必然漂移。
+   */
+  cookieData() {
+    const balance = getState().userInfo?.cookies?.balance ?? 0
+    return { cookieBalance: balance, cookieEnergy: energyFromCookies(balance) }
+  },
+
+  /**
+   * ⭐⭐ **吃饼干换能量** —— 一次换完（服务端不接受数量）。
+   *
+   * ⚠️⚠️ `requestId` **按一次动作生成一个**，并在这次动作里复用：
+   *    服务端拿它当两个账本的幂等键。随手写 Date.now() 的话，
+   *    连点两下就是两个 id ⇒ 白扣 40 块（见 lib/request-id.ts 的说明）。
+   *
+   * ⚠️ 换不成服务端也回 200，所以这里要自己看 `ok` 再说人话 —— 不会抛。
+   */
+  async onExchange() {
+    if (this.data.exchanging || this.data.cookieEnergy <= 0) return
+    this.setData({ exchanging: true })
+    // ⚠️ 在动作开始时就定下来，之后的重试都用它（幂等的前提）
+    const requestId = newRequestId('exchange')
+    try {
+      const r = await exchangeCookies(requestId)
+      if (r.ok) {
+        wx.showToast({ title: '换到 ' + r.energyGained + ' 点能量', icon: 'none' })
+        /**
+         * ⚠️ 余额变了（饼干变少、能量变多）⇒ 刷新全局那份 ——
+         *    导航栏 / 用户面板 / 连战页都读它，只刷本页会出现两处数字不一样。
+         */
+        await refreshMe()
+      } else {
+        wx.showToast({ title: '饼干不够换 1 点（要 ' + this.data.cookiesPerEnergy + ' 块）', icon: 'none' })
+      }
+      await this.load()
+    } catch (err) {
+      wx.showToast({ title: (err as Error).message || '兑换失败', icon: 'none' })
+    } finally {
+      this.setData({ exchanging: false })
     }
   },
 

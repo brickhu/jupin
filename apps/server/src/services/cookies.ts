@@ -1,13 +1,17 @@
 import { and, eq, ne, sql } from 'drizzle-orm'
 import {
   COOKIE_PASS_LINE,
+  COOKIES_PER_ENERGY,
   cookieAwardOf,
+  energyFromCookies,
   type ArticleLevel,
   type CookieAward,
   type CookieAwardView,
+  type ExchangeResponse,
 } from '@jushuo/shared'
 
 import { db, type Executor } from '../db'
+import { ENERGY_REASON, addEnergy } from './energy'
 import { articles, cookieLedger, submissions, users } from '../db/schema'
 
 /**
@@ -279,4 +283,105 @@ export function cookieAwardViewOf(row: {
     base: num(meta.base) ?? 0,
     rankFactor: num(meta.rankFactor) ?? 1,
   }
+}
+
+/**
+ * ⭐⭐ **吃饼干补充能量** —— 40 块换 1 点（`COOKIES_PER_ENERGY`）。
+ *
+ * ## 为什么只能单向（饼干 → 能量），不能反过来
+ *
+ * 🍪 是**资源**、能量是**行动力**：吃饼干补体力说得通，把体力变回饼干说不通
+ * （prd §7.7 的隐喻是刻意的）。⚠️ 而且双向兑换会开出套利空间。
+ *
+ * ## 为什么是"一次换完"而不是让用户填数量
+ *
+ * ⚠️ 能量比饼干**更通用**：它能读句子、也能补签；而饼干只有这一个用途。
+ *    ⇒ 留着饼干没有任何好处，"换完"就是最优解，让用户选数量只是白加一步。
+ *    ⚠️ 按钮文案要把**换多少**说清楚（"换 8 点、用掉 320 块"），
+ *    而不是一个含糊的"兑换"。
+ *
+ * ## 两个账本必须同事务
+ *
+ * ⚠️⚠️ 扣饼干（cookie_ledger）与加能量（energy_ledger + users.energy）
+ *    要么一起成功、要么一起失败。**只成功一半 = 用户的钱凭空没了** ——
+ *    而这种错没有任何东西看起来是坏的。
+ *
+ * ⚠️ 幂等：两个账本各用 `(reason, refType, refId, userId)` 挡重，
+ *    `refId` 用调用方给的 `requestId`（客户端按一次按钮生成一个）——
+ *    重试 / 连点都不会换两次。
+ */
+export async function exchangeCookiesForEnergy(
+  userId: number,
+  requestId: string,
+): Promise<ExchangeResponse> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ cookies: users.cookies, energy: users.energy })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for('update')
+      .limit(1)
+
+    const cookies = row?.cookies ?? 0
+    const gained = energyFromCookies(cookies)
+
+    // 不够换 1 点 ⇒ 什么都不做（⚠️ 不报错，让端侧说"再攒攒"）
+    if (gained <= 0) {
+      const totals = await readCookies(userId, tx)
+      return {
+        ok: false,
+        energyGained: 0,
+        cookiesSpent: 0,
+        cookies: totals,
+        energy: row?.energy ?? 0,
+        reason: 'not-enough-cookies',
+      }
+    }
+
+    const spent = gained * COOKIES_PER_ENERGY
+
+    // ① 扣饼干（余额 + 流水）
+    await tx.update(users).set({ cookies: cookies - spent }).where(eq(users.id, userId))
+    await tx.insert(cookieLedger).values({
+      userId,
+      delta: -spent,
+      reason: 'exchange',
+      refType: 'exchange',
+      refId: requestId,
+    })
+
+    /**
+     * ② 加能量 —— 走 energy.ts 的 `addEnergy(tx, …)`。
+     *
+     * ⚠️⚠️ **必须用 `addEnergy`（接受事务的那个），不能用 `grantEnergy`**：
+     *    后者内部**自己开一个事务**（`db.transaction(tx => addEnergy(tx, …))`）——
+     *    在别人的事务里调它，两笔写入就**不在同一个事务**里了。
+     *    后果是：我的事务一旦回滚，**能量已经加到账上了**，而饼干没扣 ⇒ 白送。
+     *    这正是本函数头那段说的"只成功一半"，而且它没有任何东西看起来是坏的。
+     *
+     * ⚠️ 走 energy.ts 而不是在这里直接改 users.energy：那一列的写入方只能是
+     *    energy.ts（所有权守卫盯着这件事，而它拦得对）。
+     */
+    await addEnergy(tx, {
+      userId,
+      amount: gained,
+      reason: ENERGY_REASON.exchange,
+      refType: 'exchange',
+      refId: requestId,
+    })
+
+    const totals = await readCookies(userId, tx)
+    return {
+      ok: true,
+      energyGained: gained,
+      cookiesSpent: spent,
+      cookies: totals,
+      /**
+       * ⚠️ 直接 `锁里读到的余额 + 换到的点数`，**不要再去 readEnergy** ——
+       *    那个函数会先跑一次「每日补足」（一次写），在别人的事务里再开写不合适；
+       *    而且 grantEnergy 正是按 `energy + amount` 写的，这里算出来与库里的值一致。
+       */
+      energy: (row?.energy ?? 0) + gained,
+    }
+  })
 }

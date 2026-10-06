@@ -30,6 +30,32 @@
     <text class="text-120rpx leading-[1]">⚡</text>
   </view>
 
+        <!-- ── ①.⑤ 吃饼干换能量 ─────────────────────────────────────
+       ⭐ 放在**余额下面、充值上面**：它和充值回答的是同一个问题
+          （"我怎么把能量变多"），而这是不花钱的那条路。
+       ⚠️ 一次换完（服务端不接受数量）：能量比饼干更通用 —— 能读句子、
+          也能补签，而饼干只有这一个用途，留着它没有任何好处。
+       ⚠️ 余额不足 40 时按钮置灰，不让他点了才发现。 -->
+  <view class="card p-4 mt-3">
+    <view class="flex items-center">
+      <text class="text-32rpx">🍪</text>
+      <view class="flex-1 ml-2">
+        <text class="text-28rpx text-ink font-medium">吃饼干补充能量</text>
+        <text class="text-22rpx text-faint block mt-0.5">{{cookiesPerEnergy}} 块 🍪 = 1 点能量</text>
+      </view>
+      <text class="text-32rpx font-bold text-ink">{{cookieBalance}}</text>
+    </view>
+
+    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{cookieEnergy > 0 && !exchanging ? 'bg-brand text-white' : 'bg-line text-faint'}}"
+          bindtap="onExchange" hover-class="{{cookieEnergy > 0 ? 'active__opacity-60' : ''}}">
+      <block wx:if="{{exchanging}}">兑换中…</block>
+      <block wx:elif="{{cookieEnergy > 0}}">换 {{cookieEnergy}} 点能量</block>
+      <block wx:else>再攒攒（还差 {{cookiesPerEnergy - cookieBalance}} 块）</block>
+    </view>
+
+    <text class="text-22rpx text-faint block mt-2 text-center">一次换完 —— 能量既能读句子、也能补签，比饼干更经用</text>
+  </view>
+
   <!-- ── ② 充值 ───────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
     <text class="text-28rpx font-medium text-ink">充值</text>
@@ -39,7 +65,8 @@
       <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line {{item.sellable ? '' : 'opacity-40'}}"
             data-code="{{item.code}}" bindtap="onBuy"
             hover-class="{{item.sellable ? 'active__opacity-60' : ''}}">
-        <!-- ⚠️ 图是**可选**的：认不出来的商品码就没有 image，这里就不渲染 -->
+
+  <!-- ⚠️ 图是**可选**的：认不出来的商品码就没有 image，这里就不渲染 -->
         <image class="energy-thumb" src="{{item.image}}" mode="aspectFill" wx:if="{{item.image}}" />
         <view class="flex-1">
           <view class="flex items-center">

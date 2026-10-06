@@ -17,6 +17,7 @@ import type {
   ArticleListResponse,
   LatestCardsResponse,
   MakeupResponse,
+  ExchangeResponse,
   UserListResponse,
   FavoritesResponse,
   ParticipationSubmissionsResponse,
@@ -884,6 +885,23 @@ export function fetchStreakRecord(month?: string): Promise<StreakRecordResponse>
  *      too-long           ⇒ 断太久 ⇒ **说成"重新开始"，别说失败**
  *      not-enough-energy  ⇒ 配合 shortfall 指向"吃饼干 / 充值"
  */
+/**
+ * ⭐ **吃饼干补充能量** —— 40 块换 1 点，**一次换完**（服务端不接受数量）。
+ *
+ * ⚠️⚠️ `requestId` 必须由调用方生成、**按一次按钮只生成一个**：
+ *    服务端拿它当两个账本的幂等键。随手传 Date.now() 的话，
+ *    连点两下就是两个不同的 id ⇒ **白扣 40 块**。
+ *
+ * ⚠️ 换不成也返回 200（`ok:false` 是业务结果，见服务端的说明）—— 这里不会抛。
+ */
+export function exchangeCookies(requestId: string): Promise<ExchangeResponse> {
+  return request<ExchangeResponse>('/api/user/exchange', {
+    method: 'POST',
+    data: { requestId },
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
 export function makeUpStreak(): Promise<MakeupResponse> {
   return request<MakeupResponse>('/api/user/makeup', {
     method: 'POST',

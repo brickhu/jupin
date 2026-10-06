@@ -93,11 +93,6 @@ export const WORD_RED_LINE = 60
  *
  * ⚠️ 付费用户那 50 次是**硬上限**，不是"无限"：脚本刷分同样要拦。
  */
-/** 免费用户每天可挑战的次数 */
-export const FREE_DAILY_CHALLENGES = 1
-/** 付费用户每天的硬上限 */
-export const MEMBER_DAILY_CHALLENGES = 50
-
 /** 每日无效提交上限（超过则当天暂停提交） */
 export const MAX_INVALID_PER_DAY = 3
 
