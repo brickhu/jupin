@@ -27,10 +27,13 @@
  *      都可能既没有 `onStop` 也没有 `onError`。⇒ **必须有超时**，
  *      否则用户看到的是一个永远转不完的圈（这正是第一次实现犯的错）。
  *
- *   5. ⚠️⚠️ **在微信开发者工具里插件录不了音** —— 2026-10 实测：真机识别正常；
- *      而同一台机器的开发者工具里，`wx.getRecorderManager()` **裸录能正常出帧**，
- *      走插件却"还没说话就自己结束"，报 **-30003（录音帧数据未产生）**。
- *      ⇒ 这不是"模拟器没有麦克风"，是**插件自己在开发者工具里拿不到帧**。
+ *   5. ⚠️⚠️ **在开发者工具里插件报过 `-30003`（录音帧数据未产生）** ——
+ *      ⚠️ **机制未查清，别当成已知事实**：真机识别正常；开发者工具里
+ *      `wx.getRecorderManager()` **裸录能正常出帧**，而走插件"还没说话就自己结束"。
+ *      ⚠️ 但"能出帧却拿不到帧"**本身是矛盾的** ⇒ 至少还有一个未排除的解释：
+ *      **我自己的代码 bug**（`onStop/onStart` 的注册方式那一条后来修过 ——
+ *      修完之后是否还在 devtools 里失败，**没有复测**）。
+ *      ⇒ 目前只能说"**曾经失败过**"，不能说"**必然失败**"。要下结论请先用探针页复测。
  *        （别把它写成环境问题 —— 下一个人会照着去查权限，白费半天。）
  *      ⚠️ 后果：**这个功能没法在开发者工具里调**，每轮改动都得
  *        「预览 → 扫码 → 真机」，开发回路明显比别处慢，排期要算进去。
@@ -187,6 +190,8 @@ let pending:
   | {
       resolve: (r: RecognizeResult) => void
       reject: (e: Error) => void
+      /** ⭐ 流式中间结果的出口 —— 「边读文字边变色」靠它（探针页不需要，产品需要） */
+      onPartial?: (text: string) => void
       startedAt: number
       stoppedAt: number | null
       started: boolean
@@ -276,6 +281,15 @@ function ensureManager(): RecognitionManager | null {
    */
   bindEvent(m, 'onRecognize', (res) => {
     emit({ at: Date.now(), kind: 'plugin-interim', raw: res })
+    /**
+     * ⚠️ 回调形状官方没写（文档里连这个方法都没有 —— 它是 0.3.x 才有的）。
+     *    实测是 `{ result }`，但**两种都兜住**：给字符串就用字符串，给对象就取 result。
+     *    ⚠️ 中间结果**可能是"修正"而不是"追加"**（讯飞那边就有 pgs=apd/rpl 两态）——
+     *      所以这里**原样透传**，让上层按"整段当前文本"处理，不要自己拼接。
+     */
+    const raw = res as { result?: string } | string | undefined
+    const text = typeof raw === 'string' ? raw : String(raw?.result ?? '')
+    pending?.onPartial?.(text)
   })
   bindEvent(m, 'onError', (res) => {
     const cur = pending
@@ -337,7 +351,9 @@ export function ensureMicPermission(): Promise<void> {
  * 开始一次识别。**必须在用户点了"停止"时调 `stopRecognize()`**，
  * 否则要等插件的 `duration` 到点才回结果（默认给到最大值，靠手动停）。
  */
-export function startRecognize(opts: { durationMs?: number } = {}): Promise<RecognizeResult> {
+export function startRecognize(
+  opts: { durationMs?: number; onPartial?: (text: string) => void } = {},
+): Promise<RecognizeResult> {
   const m = ensureManager()
   if (!m) return Promise.reject(new Error(PLUGIN_HINT))
   if (pending) return Promise.reject(new Error('上一次识别还没结束，请稍等'))
@@ -363,7 +379,7 @@ export function startRecognize(opts: { durationMs?: number } = {}): Promise<Reco
       () => fail(`插件 ${START_TIMEOUT_MS / 1000} 秒没有开始录音 —— 多半是麦克风权限没给，或插件状态卡住了`),
       START_TIMEOUT_MS,
     )
-    pending = { resolve, reject, startedAt, stoppedAt: null, started: false, startTimer, stopTimer: null }
+    pending = { resolve, reject, onPartial: opts.onPartial, startedAt, stoppedAt: null, started: false, startTimer, stopTimer: null }
     emit({ at: startedAt, kind: 'start-requested' })
     try {
       m.start({ lang: ASR_LANG, duration: opts.durationMs ?? ASR_MAX_RECORD_MS })
