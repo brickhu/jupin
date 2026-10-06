@@ -47,6 +47,21 @@
     </text>
   </view>
 
+  <!-- ⭐⭐ 波形可用性：插件录音时，我们挂在全局单例上的帧回调还会不会来？
+       ✅ 有帧 → 用插件录音也能保住实时波形（走方案 B）
+       ❌ 0 帧 → 用插件录音就没有波形（或者是插件用了不支持帧回调的格式） -->
+  <view wx:if="{{recording || frameCount > 0}}" class="card p-3 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-1">波形帧（插件录音时我们收到几帧）</text>
+    <text class="text-32rpx font-semibold block {{frameCount > 0 ? 'text-ok' : 'text-warn'}}">
+      {{frameCount}} 帧 · {{frameBytes}} 字节
+    </text>
+    <text wx:if="{{frameCount > 0}}" class="text-22rpx text-muted block mt-1">首帧 {{frameAtMs}}ms 到达 · 容器 {{frameContainer}}</text>
+    <text wx:elif="{{recSec >= 3}}" class="text-24rpx text-bad block mt-1 leading-[1.7]">
+      ⚠️ 已经录了 {{recSec}} 秒，**一帧都没收到** ⇒ 用插件录音就没有实时波形。
+      （两种可能：插件换了录音器 / 它用的格式不支持帧回调 —— 对产品而言结论一样。）
+    </text>
+  </view>
+
   <view wx:if="{{error}}" class="card p-4 mt-3 border border-solid border-cardline">
     <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
   </view>

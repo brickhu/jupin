@@ -17,7 +17,7 @@
  *    再卡住时，看事件流停在哪一步就知道是谁的问题。
  */
 
-import { missingWordsOf, plainWordsOf } from '@jushuo/shared'
+import { missingWordsOf, plainWordsOf, sniffAudioContainer } from '@jushuo/shared'
 
 import {
   ASR_LANG,
@@ -70,10 +70,31 @@ Page({
     isDevtools: false,
     /** ⭐ 裸录音器自检结果 —— 绕开插件，直接看麦克风出不出帧 */
     micCheck: '',
+    /**
+     * ⭐⭐ **插件录音时，我们的帧回调还会不会来？**（决定"用插件录音还能不能保住实时波形"）
+     *
+     * 依据：`lib/audio/recorder.ts` 是把 `onFrameRecorded` 挂在**全局单例录音器**上的。
+     *      如果插件 `start()` 内部用的就是那个单例，插件录音时**我们的回调会照样收到帧**。
+     * ⚠️ 但帧回调只对 `format: 'PCM' | 'mp3'` 触发 —— 插件用什么格式我们控制不了，
+     *    所以**收不到帧有两种可能**（换了录音器 / 格式不支持帧），
+     *    对产品而言结论一样：**用插件录音就没有波形**。
+     */
+    frameCount: 0,
+    frameBytes: 0,
+    /** 第一帧的容器类型（用仓库自己的 sniffAudioContainer 判，不另写一份） */
+    frameContainer: '',
+    /** 第一帧到达的时刻（相对 startRecognize），null = 一帧都没来 */
+    frameAtMs: null as number | null,
   },
 
   /** 裸录音器（与插件用的是同一个全局单例，只是这里我们直接驱动它） */
   _mic: null as WechatMiniprogram.RecorderManager | null,
+
+  /** 帧计数器 —— 放实例上，避免每帧都 setData（帧回调很密） */
+  _frameN: 0,
+  _frameBytes: 0,
+  /** 这一轮 startRecognize 的时刻 —— 用来算"第一帧什么时候来" */
+  _recStartedAt: 0,
 
   /** 录音计时器 —— 放实例上，不放 data（data 要可序列化） */
   _tick: null as ReturnType<typeof setInterval> | null,
@@ -96,6 +117,32 @@ Page({
       /* 拿不到就保持 unknown —— 不因为这个挡住探针 */
     }
     this.setData({ navTop: navPadTop(), available: isAsrAvailable(), platform, isDevtools: platform === 'devtools' })
+
+    /**
+     * ⭐⭐ **本页的核心测量之一**：在全局单例录音器上挂帧回调，
+     *    然后**只调插件**去录音 —— 看帧会不会照样来。
+     *    ⚠️ 必须挂在插件 start() 之前；而且它没有 off*，挂上就摘不掉（探针页可接受）。
+     */
+    try {
+      wx.getRecorderManager().onFrameRecorded((res) => {
+        const n = res?.frameBuffer?.byteLength ?? 0
+        this._frameN++
+        this._frameBytes += n
+        this.setData({
+          frameCount: this._frameN,
+          frameBytes: this._frameBytes,
+          // 只在第一帧时判容器（每帧都判是白费）
+          ...(this._frameN === 1
+            ? {
+                frameContainer: sniffAudioContainer(new Uint8Array(res.frameBuffer)),
+                frameAtMs: Date.now() - this._recStartedAt,
+              }
+            : {}),
+        })
+      })
+    } catch {
+      /* 挂不上就是没有帧能力 —— 探针照常跑 */
+    }
   },
 
   onUnload() {
@@ -134,11 +181,19 @@ Page({
     if (this.data.waiting) return
 
     if (!this.data.recording) {
+      // ⭐ 每一轮都重置帧计数 —— 这一页要回答的就是"插件录音时帧来不来"
+      this._frameN = 0
+      this._frameBytes = 0
+      this._recStartedAt = Date.now()
       this.setData({
         recording: true,
         waiting: false,
         liveStarted: false,
         recSec: 0,
+        frameCount: 0,
+        frameBytes: 0,
+        frameContainer: '',
+        frameAtMs: null,
         error: '',
         text: '',
         finalizeMs: null,
