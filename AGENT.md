@@ -89,6 +89,14 @@
   · `count` 与 `GET /api/articles` **同一口径**（只算已上线且正文读得到的），
     所以"标签说 7 篇、点进去就是 7 篇"（本地实测对过）；
   · 搜索**不在服务端做**：标签只有几十个，tags 页本地过滤（省一次往返）。
+- ⭐ **标准音（`articles.standard_audio`）在本机怎么挂上**（2026-09 修的缺口）：
+  · 判据只有一条：**盘上有没有 `content/audio` 里那条同名 mp3**（唯一实现
+    `services/standard-audio.ts` 的 `localStandardAudioKey` / `attachLocalStandardAudio`）；
+  · **两个触发点**：管理台写入接口（发布那一刻顺手挂，仅 `STORAGE=local`）+ 种子兜底（批量补历史）；
+  · ⚠️ 只在 `STORAGE=local` 写。这一列的含义是「音频**分发得出去**」——
+    云端要等上传到对象存储成功才写（提前写 ⇒「按钮在、点了没声音」）；
+  · ⚠️ 原来只有"种子清单里的句子"会被挂 ⇒ **管理台新增的句子永远是 NULL**
+    ⇒ 接口不给 `audio` ⇒ 模拟器里"新句子取音频失败"（用户实测）。
 - **句库查询 `GET /api/articles` 支持翻页**：`?offset=` + 响应里的 `total`
   （`offset + items.length < total` 就还有下一页）。服务端是**先全局排序、再切页**，
   所以翻页不会串页 —— 见 services/article-list.ts 的 queryArticleCards。
