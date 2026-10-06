@@ -35,6 +35,11 @@
                 而 audio-button 的未播放态是描边"。**那个理由现在作废** ——
                 同一个"播放"动作在两个页面上长得不一样，比描边还是实心更值得在意：
                 用户会以为它们是两种不同的东西。
+             ⚠️⚠️ **尺寸与配色都要和列表页那颗一字不差**（用户 2026-10 定）：
+                size="sm"（ab-sm = 44rpx，与 arena-card 同一个数）；
+                配色传**卡片的前景色 / 底色**（默认主题 = 黑描边 + 白图标），
+                见 reading.ts 的 playFill / playInk。
+                「用同一个组件但一个蓝一个大」不算统一 —— 用户一眼看出来的正是这两样。
              ⚠️ 只在这一句真的灌了标准音时才渲染（canPlayAudio）：
                 点了没反应的图标比没有这个按钮更难排查。
              ⚠️⚠️ **当初不敢用 loading 状态的那个坑，audio-button 没有** ——
@@ -45,9 +50,10 @@
                 ⇒ 取音中直接用 audio-button 的 loading 态，再点 = 重试（见 onPlaySentence）。
              ⚠️ 右边的时长也交给它（showDuration）—— 格式只在这里定一次。
                 拿不到时长时 durationMs 是 0，formatDuration(0) 返回空串 ⇒ 那几个字不渲染。 -->
-        <audio-button wx:if="{{canPlayAudio}}" size="md"
+        <audio-button wx:if="{{canPlayAudio}}" size="sm"
                       state="{{sentenceState === 'loading' ? 'loading' : sentenceState === 'playing' ? 'playing' : 'unplay'}}"
                       showDuration="{{true}}" durationMs="{{stdDurationMs}}"
+                      fill="{{playFill}}" ink="{{playInk}}"
                       bind:play="onPlaySentence" />
       </view>
       <!-- ⭐ IPA 胶囊 = 切换「单词下方显示音标」；开着时变实心，状态一眼可见 -->
@@ -57,14 +63,18 @@
 
     <!-- ── s2 顶行：红点 + 录音中…｜右侧红色计时器 ───────────── -->
     <!-- -- 给改代码的人 --
-         min-h-[64rpx] 是**故意的**：s1/s3 那一行里放着 audio-button size="md"
-         （ab-md = 64rpx），而这一行只有一个小红点和几个字 ——
-         不撑高的话，s1 → s2 那一下整张卡的内容会**往上跳**
+         min-h-[56rpx] 是**故意的**：这一行只有一个小红点和几个字，而 s1/s3 那一行
+         有播放钮 + IPA 胶囊 —— 不撑高的话，s1 → s2 那一下整张卡的内容会**往上跳**
          （用户 2026-09 报的「s2 顶栏和 s1 高度不一致」）。
-         ⚠️ 64 与 ab-md 是同一个数，**改播放钮尺寸时这里要一起改**。
-         ⚠️ 这个数跟着播放钮走过一次：原来是 76（ui-button 的 ub-s-md），
-            换成 audio-button 之后播放钮变 64，这里不跟着改就会**把那个跳动放回来**。 -->
-    <view class="flex items-center justify-between mb-3 min-h-[64rpx]" wx:if="{{phase === 's2'}}">
+
+         ⚠️⚠️ **这个数 = s1/s3 那一行最高的那个**，不是播放钮的高度：
+              · 播放钮 audio-button size="sm" = **44rpx**（ab-sm）
+              · IPA 胶囊 ui-button   size="sm" = **56rpx**（ub-s-sm）  ← 现在由它撑高
+             ⇒ 取 56。
+         ⚠️ 这个数跟着播放钮走过了两趟，两趟都可能把那个跳动放回来：
+             76（ui-button ub-s-md）→ 64（ab-md）→ **56**（ab-sm，播放钮让位给 IPA 胶囊）。
+             下次再动播放钮或 IPA 的尺寸，**先看谁更高**，再改这里。 -->
+    <view class="flex items-center justify-between mb-3 min-h-[56rpx]" wx:if="{{phase === 's2'}}">
       <view class="flex items-center">
         <!-- ⭐ 录音指示点 —— **呼吸动效**（用户 2026-10 定）：一鼓一收，一眼看出"还在录"。
              ⚠️ 动效本身在页面 wxss 的 .rec-breath 里（scale + opacity 一起走）——
