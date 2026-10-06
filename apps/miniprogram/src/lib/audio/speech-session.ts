@@ -34,7 +34,7 @@
 
 import { PLATFORM } from '../../config'
 import { Recorder } from './recorder'
-import { ASR_MAX_RECORD_MS, isAsrAvailable, startRecognize, stopRecognize } from './asr'
+import { ASR_MAX_RECORD_MS, isAsrAvailable, resetRecognize, startRecognize, stopRecognize } from './asr'
 
 /** 这一轮用的是哪套后端 —— 界面据此决定要不要显示逐词标色 */
 export type SpeechBackend = 'plugin' | 'local'
@@ -72,6 +72,8 @@ export interface SpeechSession {
   start(): void
   /** 抬起（或 touchcancel）时调 */
   stop(): void
+  /** 页面销毁时调：把还没结束的这一轮丢掉，别让它回来往已销毁的页面上写 */
+  dispose(): void
 }
 
 /**
@@ -97,6 +99,10 @@ function pluginSession(cb: SpeechCallbacks): SpeechSession {
     stop() {
       stopRecognize()
     },
+    dispose() {
+      // ⚠️ 页面销毁时把 pending 清掉：否则 onStop 回来会往已经没了的页面上 setData
+      resetRecognize()
+    },
   }
 }
 
@@ -117,6 +123,9 @@ function localSession(cb: SpeechCallbacks): SpeechSession {
     },
     stop() {
       recorder.stop()
+    },
+    dispose() {
+      recorder.dispose()
     },
   }
 }

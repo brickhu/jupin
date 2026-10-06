@@ -8,7 +8,7 @@ import {
   samplesFromPcm16,
   sniffAudioContainer,
 } from '@jushuo/shared'
-import { plainWordsOf } from '@jushuo/shared'
+import { missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
 import type { GrowthView, SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
@@ -24,7 +24,7 @@ import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
-import { Recorder, type RecordResult } from '../../lib/audio/recorder'
+import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { fetchArticleContent } from '../../lib/content'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -299,10 +299,24 @@ interface WordView {
   i: number
   text: string
   /**
-   * ⭐ 这个词的国际音标（来自正文 JSON 的 words[i].ipa，形如 /ˈɛvɹiˌθɪŋ/）。
+   * ⭐ 这个词的国际音标（来自正文 JSON 的 words[i].ipa，形如 /ˈɛvriˌθɪŋ/）。
    * ⚠️ 查不到时是空串（老正文 / 生僻词）—— 那时**不渲染**这一行，不占位。
    */
   ipa: string
+  /**
+   * ⭐ **录音时的预检状态** —— 「读到了没」，与提交后那套评分色**完全无关**（见 prd 7.2）。
+   *
+   * | 状态 | 含义 | 视觉 |
+   * |---|---|---|
+   * | 都 false | 读到了 | 正常 |
+   * | `missed` | **已经读到它后面去了，它却没出现** —— 真漏了 | 标出来 |
+   * | `pending` | **还没轮到它** —— ⚠️ 这不是错，别标红 | 淡 |
+   *
+   * ⚠️⚠️ 两者必须分开：用户读到第 3 个词时把第 4–11 个标红，等于每个正在读的人都看到
+   *      "你漏了一大半"。判据见 `wordProgressOf`。
+   */
+  missed: boolean
+  pending: boolean
 }
 
 Page({
@@ -484,9 +498,43 @@ Page({
      * ⚠️ 端侧**不写死 2**（同 syncEnergyNote 的口径）；它是常量，所以放 data 里给 WXML 用。
      */
     costEnergy: ENERGY_PER_CHALLENGE,
+    /**
+     * ⭐ **漏读门禁**：定稿时判为「没读到」的词（空 = 没事）。
+     * ⚠️ 只在 s3 显示 —— 它是"按下提交之前"的提示，不是错误。
+     */
+    gateOpen: false,
+    gateWords: [] as string[],
   },
 
-  recorder: null as Recorder | null,
+  /** 这一轮朗读的录音会话（插件或本地，见 speech-session）—— 按下时建，抬起后作废 */
+  session: null as SpeechSession | null,
+
+  /**
+   * ⭐ 句子**原文** —— 判据（missingWordsOf / wordProgressOf）要的是原文不是词数组。
+   * ⚠️ 不拿 `plainWords.join(' ')` 回拼：那要再过一次切词，两次结果未必逐字相同。
+   */
+  refText: '',
+
+  /**
+   * ⭐ 定稿时判为「没读到」的那些词 —— 提交门禁读它。
+   * ⚠️ 空数组 = 没有拦的理由（包括"这一轮根本没做判断"，比如开发者工具里没有识别）——
+   *    两种情况都放行，见 onSubmit 的门禁。
+   */
+  missedTexts: [] as string[],
+
+  /** 用户按了「我确实读了，继续提交」—— 这一次不再拦（见 onSubmit） */
+  gateBypassed: false,
+
+  /**
+   * ⭐ 手指**此刻**还按在录音按钮上。
+   * ⚠️ 为什么需要它：要权限那一步是异步的（`ensureRecordAuth`），用户可能在它返回之前就松手了。
+   *    那时**不该开始录** —— 录下来的是用户没在说话的音频，而且 `touchend` 已经过去、
+   *    没人再来停它（要等 30 秒 duration 兜底）。
+   */
+  pressActive: false,
+
+  /** 这一轮用的哪个录音后端（'plugin' | 'local'）—— 决定"该不该等音频帧" */
+  speechBackend: 'local' as 'plugin' | 'local',
 
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
   gone: false,
@@ -809,10 +857,10 @@ Page({
      *    用户以为"退出就不录了"，而麦克风其实还开着。
      */
     this.gone = true
-    this.recorder?.stop()
-    // ⚠️ 还要把它从「当前那个录音器」上摘下来：RecorderManager 是全局单例、
-    //    监听器摘不掉，留着它下一帧还会往这个已经没了的页面上写（见 recorder.ts）
-    this.recorder?.dispose()
+    this.session?.stop()
+    // ⚠️ 还要把它从「当前那个录音器 / 识别管理器」上摘下来：两者都是全局单例、
+    //    监听摘不掉，留着它下一帧还会往这个已经没了的页面上写（见 recorder.ts / asr.ts）
+    this.session?.dispose()
     this.waveCtx = null
     this.stopTimer()
     // ⚠️ 数字滚动的定时器也要停：它每 16ms setData 一次，
@@ -940,6 +988,8 @@ Page({
       //    否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
       // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音标 / 第 i 个逐词分数」
       this.plainWords = plainWordsOf(content.text)
+      // ⭐ 判据要用原文（见 refText 字段的说明）
+      this.refText = content.text
       // ⭐ 缓存键由**句子原文 + uid** 决定（不是 articleId）—— 见字段上的说明
       this.recordingKey = recordingKeyOf(content.text, getUserId())
       /**
@@ -951,6 +1001,9 @@ Page({
         i,
         text,
         ipa: content.words[i]?.ipa ?? '',
+        // ⭐ 一进来默认"读到了"（两者都 false）—— 没有预检结果时不该有任何标记
+        missed: false,
+        pending: false,
       }))
       const stdMs = readStdDurationMs(content.audio)
       this.setData({
@@ -1125,17 +1178,39 @@ Page({
       return
     }
 
-    if (!this.recorder) {
-      this.recorder = new Recorder({
-        // ⭐ 声波监测：Recorder 交上来的帧**已经归一化到 16kHz 小端**，直接画
-        onFrame: (frame) => this.handleFrame(frame),
-        onStop: (r) => this.handleRecorded(r),
-        onError: (e) => {
-          this.stopTimer()
-          this.setData({ phase: 's1', error: e.message })
-        },
-      })
-    }
+    /**
+     * ⚠️⚠️ **授权是异步的** —— 用户完全可能在这一两百毫秒里已经松手了
+     *    （手抖一下、或者只想着点一下）。
+     *    那时**什么都不要做**：既不该建会话，也不该切到 s2 ——
+     *    否则会先闪一下录音界面再退回来，而用户根本没打算录。
+     *    ⚠️ 检查要放在**所有副作用之前**（第一版放在 start() 前，会白闪一帧 s2）。
+     */
+    if (!this.pressActive) return
+
+    /**
+     * ⭐⭐ **按住说话**（用户 2026-10 定）：按下建一个会话，松手结束。
+     *
+     * ⚠️ 会话有两个后端（见 lib/audio/speech-session）：
+     *    · **真机** → 微信插件：**同时**给音频和**流式识别文本** ⇒ 能边读边变色；
+     *    · **开发者工具 / 插件失败** → 我们自己的录音器：只给音频 ⇒ **没有变色**，但按住录音照常。
+     * ⚠️ 所以下面每一处用到"帧"或"识别"的地方，都必须先问**这一轮是哪个后端** ——
+     *    真机走插件时**永远不会有帧**（实测 0 帧），照旧等帧就会误报。
+     */
+    this.session = createSpeechSession({
+      // ⭐ 流式中间结果 → 逐词上色（只有插件后端会调）
+      onPartial: (t) => this.applyProgress(t),
+      // ⭐ 音频帧 → 波形（只有本地后端会调）
+      onFrame: (frame) => this.handleFrame(frame),
+      onDone: (r) => this.handleSpoken(r),
+      onError: (e) => {
+        this.stopTimer()
+        // ⚠️ 会话作废，否则下一次按下会被"上一次还没结束"挡住
+        this.session?.dispose()
+        this.session = null
+        this.setData({ phase: 's1', error: e.message })
+      },
+    })
+    this.speechBackend = this.session.backend
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     this.frameMode = 'deciding'
@@ -1157,6 +1232,8 @@ Page({
       {
         phase: 's2',
         error: '',
+        // ⚠️ 起新录音 = 上一次的门禁提示作废（否则它会挂在新一轮上）
+        gateOpen: false,
         elapsedText: '00:00',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
@@ -1197,7 +1274,8 @@ Page({
        *    没有这条日志就只能反复猜（本项目为此白跑过两轮）。
        *    ⚠️ 复用这个 100ms 的计时器，不为一行诊断再开一个 setTimeout。
        */
-      if (IS_DEVTOOLS && sec > 2 && this.waveFrames === 0 && !this.waveWarned) {
+      // ⚠️ 只有**本地后端**才该有帧（真机走插件时实测 0 帧，等它必然误报）
+      if (IS_DEVTOOLS && this.speechBackend === 'local' && sec > 2 && this.waveFrames === 0 && !this.waveWarned) {
         this.waveWarned = true
         console.warn(
           '[wave] 录了 2 秒还没收到任何音频帧（' + (this.waveCtx ? '画布已就绪' : '画布没就绪') + '）',
@@ -1205,11 +1283,56 @@ Page({
       }
     }, 100)
 
-    this.recorder.start()
+    this.session.start()
+  },
+
+  /**
+   * ⭐ **按下**（`bindtouchstart`）—— 开始这一次朗读。
+   * ⚠️ 与"点一下开始"不同：**按住的物理动作本身就是"我在录"**，
+   *    这正好取代了原来那条实时波形的作用（见 prd 7.2）。
+   */
+  onPressStart() {
+    if (this.data.phase === 's2' || this.data.phase === 'precheck') return
+    this.pressActive = true
+    void this.onStartRecord()
+  },
+
+  /**
+   * ⭐ **松手**（`bindtouchend` / `bindtouchcancel`）—— 说完了。
+   *
+   * ⚠️⚠️ `touchcancel` 也走这里，而且必须走**"停止并保留"**、不能当"取消"：
+   *    手指从按钮上滑出去时**只有 cancel 会来**（没有 touchend），漏了它录音停不下来；
+   *    而 WeChat 语音消息那套"上滑取消"的语义在这里是错的 ——
+   *    **弄丢一次朗读比留着一次不想要的糟得多**。
+   */
+  onPressEnd() {
+    this.pressActive = false
+    if (this.data.phase !== 's2') return
+    this.onStopRecord()
+  },
+
+  /**
+   * ⭐⭐ **流式中间结果 → 逐词上色**（「边读文字边变色」）。
+   *
+   * ⚠️ 用的是 `wordProgressOf` 而**不是** `missingWordsOf`：后者会把"还没读到的后半句"
+   *    全报成漏读 —— 用户读到第 3 个词却看到后面 8 个全红（见 shared/word-align.ts 的说明）。
+   *
+   * ⚠️ 传进来的文本是**整段当前结果**（可能是修正而不是追加），所以每次都**整体重算**，
+   *    不累积、不拼接 —— 拼错了会一路错到底，而重算是幂等的。
+   */
+  applyProgress(spokenText: string) {
+    if (this.gone) return
+    const spoken = spokenText.split(/\s+/).filter(Boolean)
+    const { missed, pending } = wordProgressOf(this.refText, spoken)
+    const missSet = new Set(missed)
+    const pendSet = new Set(pending)
+    this.setData({
+      words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: pendSet.has(i) })),
+    })
   },
 
   onStopRecord() {
-    this.recorder?.stop()
+    this.session?.stop()
 
     if (this.stopWatchdog !== null) clearTimeout(this.stopWatchdog)
     this.stopWatchdog = setTimeout(() => {
@@ -1221,7 +1344,7 @@ Page({
   },
 
   /** s2 → s3：录音落地，进预览 */
-  handleRecorded(r: RecordResult) {
+  handleSpoken(r: SpeechResult) {
     /**
      * ⚠️ 页面已经销毁就什么都别做。
      *
@@ -1239,6 +1362,33 @@ Page({
     this.stopTimer()
 
     /**
+     * ⭐⭐ **定稿**：把流式那套"三种状态"收成"两种"。
+     *
+     * ⚠️ 为什么必须重算、而不是沿用流式最后一帧的颜色：
+     *    流式里"最后一个匹配之后"的词一律算**还没读到**（因为分不清用户是跳过了还是没读到那儿）。
+     *    现在读完了 ⇒ **不再有"还没读到"**，剩下的缺位全都是**漏读**。
+     *    这就是 `missingWordsOf` 与 `wordProgressOf` 的分工（见 shared/word-align.ts）。
+     *
+     * ⚠️ **没有识别文本时（开发者工具 / 插件降级）什么都不标**：
+     *    那种环境压根没做判断，标出来的任何东西都是编的。`missedTexts` 保持空 ⇒ 门禁放行。
+     */
+    const words = this.data.words
+    if (r.text === null) {
+      this.missedTexts = []
+      this.setData({ words: words.map((w) => ({ ...w, missed: false, pending: false })) })
+    } else {
+      const missIdx = missingWordsOf(this.refText, r.text.split(/\s+/).filter(Boolean))
+      const missSet = new Set(missIdx)
+      this.missedTexts = missIdx.map((i) => words[i]?.text ?? '').filter(Boolean)
+      this.setData({
+        // ⚠️ pending 一律清掉 —— 定稿之后没有"还没读到"这一说了
+        words: words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: false })),
+      })
+    }
+    // ⚠️ 新一轮 = 门禁重新生效（上一次点的"我确实读了"不能带到这一轮）
+    this.gateBypassed = false
+
+    /**
      * ⭐ 试听播的就是**录音落地的那个文件**，不再从帧拼 WAV。
      *
      * ⚠️ 原来要拼 WAV 是因为：真机落盘的是**裸 PCM**（没有文件头），
@@ -1252,7 +1402,7 @@ Page({
     if (this.recordingKey) {
       saveLastRecording({
         key: this.recordingKey,
-        tempFilePath: r.tempFilePath,
+        tempFilePath: r.audioPath,
         playPath,
         durationMs: r.durationMs,
       })
@@ -1266,7 +1416,7 @@ Page({
       // ⚠️ 两个路径是两个用途，别混：
       //    audioPath → 录音落地文件：**上传**给对象存储 + **试听**都是它
       //    playPath  → 老版本留下的「帧拼 WAV」副本，新录音恒为空串
-      audioPath: r.tempFilePath,
+      audioPath: r.audioPath,
       playPath,
       durationMs: r.durationMs,
       recordDurationText: mmss(r.durationMs),
@@ -1517,6 +1667,21 @@ Page({
     // ⚠️ 弹窗里的按钮已经盖住了页面（✓ 点不到第二次）；这里再挡一道是防连点
     //    （会白烧一次上传流量 + 白锁一次能量）
     if (phase === 'uploading' || phase === 'scoring' || phase === 'precheck') return
+
+    /**
+     * ⭐⭐ **第 0 道：漏读门禁**（用户 2026-10 定：「没读到的都不允许提交」）。
+     *
+     * ⚠️ 放在最前面：它不花一分钱（判断在录音结束那一刻就算好了，这里只是读一下状态），
+     *    而它问的正是"你确定读完了吗" —— 比时长、身份、能量都更该先回答。
+     *
+     * ⚠️⚠️ **误拦是这道门禁唯一的致命错误**（读对了却交不上去），而判据的假阳性率样本还小
+     *    ⇒ 必须留出口。⭐ 那个出口**同时是假阳性率的测量仪器**：每一次被点，
+     *    就是一条已知误报，上线后能持续量到真实误报率（见 prd 7.3）。
+     */
+    if (this.missedTexts.length > 0 && !this.gateBypassed) {
+      this.setData({ gateOpen: true, gateWords: this.missedTexts })
+      return
+    }
 
     // ⭐ 检查 1：时长 —— 不合格时**留在 s3**（不是进 s6）：s6 是「引擎判失败」的结果屏，
     //    而这一条在提交之前就能拦住，用户重录一遍再点就是了。
@@ -2076,6 +2241,25 @@ Page({
   },
 
   /**
+   * ⭐ 门禁上的**「我确实读了，继续提交」** —— 出口。
+   *
+   * ⚠️ 设了 `gateBypassed` 就直接重走 onSubmit：这一次跳过第 0 道，后面三道照常。
+   * ⚠️ 这个标记**每一轮录音都会重置**（见 handleSpoken），不能带到下一次。
+   * ⭐ 它还是**假阳性率的测量仪器**：点一次 = 一条已知误报（见 prd 7.3）。
+   */
+  onGateBypass() {
+    this.gateBypassed = true
+    this.setData({ gateOpen: false })
+    void this.onSubmit()
+  },
+
+  /** 门禁上的**「去重录」** —— 回 s1（与 s3 那颗 ↺ 同一条路） */
+  onGateRetry() {
+    this.setData({ gateOpen: false })
+    this.onRestart()
+  },
+
+  /**
    * ⭐ 清掉「这一把」的本地缓存并把界面复位到 s1。
    *
    * ⚠️ 必须**一起清掉录音与结果两份缓存**：
@@ -2093,6 +2277,7 @@ Page({
       error: '',
       restored: false,
       audioPath: '',
+      gateOpen: false,
       // ⚠️ 整页重来 = 上一次尝试作废（完整说明见构造函数里 attemptId 那段）
       attemptId: '',
       playPath: '',
