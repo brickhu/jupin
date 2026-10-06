@@ -151,8 +151,16 @@
             ⚠️ 按钮必须**立刻**变字：还写着"松开结束"的话，用户会以为自己没松开。 -->
     <view class="mt-5" wx:if="{{phase === 's1' || phase === 's2'}}">
       <view bindtouchstart="onPressStart" bindtouchend="onPressEnd" bindtouchcancel="onPressEnd">
+        <!-- ⚠️ **「识别中…」那一态必须 disabled**（用户 2026-10 定）：
+             那时手已经松了、这一遍正在定稿，按钮上却还是一颗红实心圆钮 ——
+             看起来跟"按着"时一模一样，用户会以为还得再按一下。
+             功能上其实早就拦住了（phase 还是 s2，onPressStart 直接返回），
+             但那只是"按了没反应" —— **看起来能按、按了没反应**比直接变灰糟得多。
+             ⚠️ disabled 给的是 ub-disabled（opacity: .45），读起来正是"等着"。
+             ⚠️ 这里**特意不用 ui-button 的 loading**：那是给"防重复提交"用的转圈，
+                而这颗钮在识别完之后还要变回「按住朗读」—— 用 disabled 语义更准。 -->
         <ui-button variant="{{phase === 's2' ? 'fill' : 'outline'}}" color="error" size="xl" width="full"
-                   icon="mdi:microphone">
+                   icon="mdi:microphone" disabled="{{releasePending}}">
           {{releasePending ? '识别中…' : phase === 's2' ? '松开结束' : '按住朗读'}}
         </ui-button>
       </view>

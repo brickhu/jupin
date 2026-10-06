@@ -1084,6 +1084,11 @@ Page({
    *    这正好取代了原来那条实时波形的作用（见 prd 7.2）。
    */
   onPressStart() {
+    /**
+     * ⚠️ `phase === 's2'` 这一条**同时挡掉了「识别中…」那一态** ——
+     *    那时手已松、正在定稿，但 phase 还是 s2（要到 handleSpoken 才变 s3）。
+     *    ⇒ 功能上本来就按不动；界面上也把按钮 disabled 了（见 WXML），两处对齐。
+     */
     if (this.data.phase === 's2' || this.data.phase === 'precheck') return
 
     /**
