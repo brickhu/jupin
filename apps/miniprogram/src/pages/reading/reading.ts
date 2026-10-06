@@ -221,6 +221,23 @@ const ROLL_FRAME_MS = 16
 /** 只在开发者工具里为真 */
 const IS_DEVTOOLS = PLATFORM === 'devtools'
 
+/**
+ * ⭐⭐ **松手之后再多录一小会儿**（ms）—— 修的是「读完立刻松手，最后两个词标红」。
+ *
+ * ⚠️⚠️ 根因：插件的中间结果大约 **550ms 才回一次**（真机实测：6–8 秒的朗读收到 11 次）。
+ *    用户在读完的**那一瞬间**松手 ⇒ 最后那一小段语音（正是最后一个词）**还没进转写**，
+ *    于是定稿时被 `missingWordsOf` 判成"没读到" ⇒ 末尾 1–2 个词标红。
+ *    这不是判据错，是**我们停得太早**。
+ *
+ * ⭐ 所以松手**不立刻 stop**，先等一小会儿：让插件把尾巴追上来。
+ * ⚠️ 这不是"死等" —— 这段时间里中间结果照常进来，**用户会看到最后那几个词当场亮起来**，
+ *    等待是有内容的，不是卡住。
+ * ⚠️ 也不能等太久：松手到出结果本来是用户最没耐心的一段。
+ *    600ms 略大于一个回调周期（550ms），够追上尾巴，又不至于明显发顿。
+ * ⭐ 追上来就**提前结束**（见 applyProgress 里的完结判断），不等满这 600ms。
+ */
+const RELEASE_HANGOVER_MS = 600
+
 
 /** 逐词视图 —— 词 + 它自己的音标（音标开关打开时挂在词下面） */
 interface WordView {
@@ -426,6 +443,11 @@ Page({
      */
     gateOpen: false,
     gateWords: [] as string[],
+    /**
+     * ⭐ 松手后的收尾中 —— 按钮显示「识别中…」。
+     * ⚠️ 它必须**立刻**有反应：用户松手后如果按钮还写着"松开结束"，会以为自己没松开。
+     */
+    releasePending: false,
   },
 
   /** 这一轮朗读的录音会话（插件或本地，见 speech-session）—— 按下时建，抬起后作废 */
@@ -446,6 +468,15 @@ Page({
 
   /** 用户按了「我确实读了，继续提交」—— 这一次不再拦（见 onSubmit） */
   gateBypassed: false,
+
+  /**
+   * ⭐ **已经松手，但还在收尾**（松手缓冲期，见 RELEASE_HANGOVER_MS）。
+   * 这期间录音还在继续、中间结果还在进来 —— 用来把最后那几个词追回来。
+   */
+  releasePending: false,
+
+  /** 松手缓冲期的定时器（追上尾巴就提前清掉） */
+  releaseTimer: null as ReturnType<typeof setTimeout> | null,
 
   /**
    * ⭐ 手指**此刻**还按在录音按钮上。
@@ -571,6 +602,11 @@ Page({
      *    用户以为"退出就不录了"，而麦克风其实还开着。
      */
     this.gone = true
+    // ⚠️ 缓冲定时器也要清：页面没了它还会回来调 finishRecording
+    if (this.releaseTimer !== null) {
+      clearTimeout(this.releaseTimer)
+      this.releaseTimer = null
+    }
     this.session?.stop()
     // ⚠️ 还要把它从「当前那个录音器 / 识别管理器」上摘下来：两者都是全局单例、
     //    监听摘不掉，留着它下一帧还会往这个已经没了的页面上写（见 recorder.ts / asr.ts）
@@ -939,6 +975,12 @@ Page({
     // ⚠️ 门禁状态也一起清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
     this.missedTexts = []
     this.gateBypassed = false
+    // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
+    this.releasePending = false
+    if (this.releaseTimer !== null) {
+      clearTimeout(this.releaseTimer)
+      this.releaseTimer = null
+    }
 
     /**
      * ⚠️⚠️ **开始录新音 = 上一次那次结果作废**：把本地的「上次结果」缓存也清掉。
@@ -1010,6 +1052,34 @@ Page({
   onPressEnd() {
     this.pressActive = false
     if (this.data.phase !== 's2') return
+
+    /**
+     * ⚠️⚠️ **不立刻停** —— 见 RELEASE_HANGOVER_MS 的说明：
+     *    读完的那一瞬间松手，最后 1–2 个词还没进转写，直接停就会把它们判成漏读。
+     * ⭐ 这段时间里中间结果继续进来、词继续亮 —— 用户看到的是"正在收尾"，不是卡住。
+     */
+    this.releasePending = true
+    this.setData({ releasePending: true })
+    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
+    this.releaseTimer = setTimeout(() => {
+      this.releaseTimer = null
+      this.finishRecording()
+    }, RELEASE_HANGOVER_MS)
+  },
+
+  /**
+   * ⭐ 真正结束这一轮录音 —— 松手的缓冲期走完（或提前追上）之后调它。
+   * ⚠️ 与 onStopRecord 分开是为了让"缓冲"这件事只有一个出口，
+   *    不会出现"缓冲还没走完又被别处停了一次"。
+   */
+  finishRecording() {
+    if (this.releaseTimer !== null) {
+      clearTimeout(this.releaseTimer)
+      this.releaseTimer = null
+    }
+    if (!this.releasePending) return
+    this.releasePending = false
+    this.setData({ releasePending: false })
     this.onStopRecord()
   },
 
@@ -1026,6 +1096,16 @@ Page({
     if (this.gone) return
     const spoken = spokenText.split(/\s+/).filter(Boolean)
     const { missed, pending } = wordProgressOf(this.refText, spoken)
+
+    /**
+     * ⭐ **已经松手了，而且这一份结果已经读到句尾** ⇒ 不必等满缓冲期，直接收工。
+     * ⚠️ 判据是 `pending` 为空（没有"还没读到"的词了）—— 说明转写已经追上了用户实际读到的位置。
+     *    这是"读完立刻松手"最常见的情形：尾巴追上来就立刻出结果，用户感觉不到那 600ms。
+     */
+    if (this.releasePending && pending.length === 0) {
+      this.finishRecording()
+      return
+    }
     const missSet = new Set(missed)
     const pendSet = new Set(pending)
     this.setData({

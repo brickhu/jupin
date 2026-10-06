@@ -111,12 +111,15 @@
          ⚠️ 放在外层 view 上而不是 ui-button 上：ui-button 只发「press」（tap），
             但它用的是 catchtap、**不拦触摸事件**，所以触摸照常冒泡到这一层。
          ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）：
-            待录 = 红描边；录音中 = **红实心**（状态差别一眼可见，且不新增颜色）。 -->
+            待录 = 红描边；录音中 = **红实心**（状态差别一眼可见，且不新增颜色）。
+         ⭐ **松手后还有一段"识别中…"** —— 那是松手缓冲期（见 reading.ts 的 RELEASE_HANGOVER_MS）：
+            读完立刻松手时，最后 1–2 个词还没进转写，等一小会儿把它们追回来。
+            ⚠️ 按钮必须**立刻**变字：还写着"松开结束"的话，用户会以为自己没松开。 -->
     <view class="mt-5" wx:if="{{phase === 's1' || phase === 's2'}}">
       <view bindtouchstart="onPressStart" bindtouchend="onPressEnd" bindtouchcancel="onPressEnd">
         <ui-button variant="{{phase === 's2' ? 'fill' : 'outline'}}" color="error" size="xl" width="full"
                    icon="mdi:microphone">
-          {{phase === 's2' ? '松开结束' : '按住朗读'}}
+          {{releasePending ? '识别中…' : phase === 's2' ? '松开结束' : '按住朗读'}}
         </ui-button>
       </view>
     </view>
