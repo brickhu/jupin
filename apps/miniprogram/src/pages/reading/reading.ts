@@ -4,7 +4,7 @@ import {
   formatDuration,
   formatScore,
 } from '@jushuo/shared'
-import { missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
+import { alignmentDetailOf, missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
 import type { GrowthView, SubmitResponse } from '@jushuo/shared'
 
 import { PLATFORM } from '../../config'
@@ -20,6 +20,7 @@ import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
+import { gateMessage } from '../../lib/gate-message'
 import { fetchArticleContent } from '../../lib/content'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -453,6 +454,14 @@ Page({
   missedTexts: [] as string[],
 
   /**
+   * ⭐ **没读准**的那些词：`{ ref, heard }` —— 原文词 + **识别到的那个词**。
+   * ⚠️⚠️ 措辞只能是「识别成 X」（机器听到了什么），**不能**写成「你读错了」：
+   *    替换的成因里混着"真的读错了"和"ASR 听错了"两种，从转写里分不出来
+   *    （2026-10 实测：正常读 `simpler`，ASR 听成 `similar` / `as simple` / `by the seminar` 都出现过）。
+   */
+  misreadPairs: [] as { ref: string; heard: string }[],
+
+  /**
    * ⭐ **已经松手，但还在收尾**（松手缓冲期，见 RELEASE_HANGOVER_MS）。
    * 这期间录音还在继续、中间结果还在进来 —— 用来把最后那几个词追回来。
    */
@@ -820,6 +829,7 @@ Page({
          * ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 放行（不硬拦没见过的数据）。
          */
         this.missedTexts = last.missedTexts ?? []
+        this.misreadPairs = last.misreadPairs ?? []
         const missSet = new Set(
           this.missedTexts.map((t) => this.plainWords.findIndex((w) => w === t)).filter((i) => i >= 0),
         )
@@ -955,6 +965,7 @@ Page({
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
     this.missedTexts = []
+    this.misreadPairs = []
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -1129,11 +1140,20 @@ Page({
     const words = this.data.words
     if (r.text === null) {
       this.missedTexts = []
+      this.misreadPairs = []
       this.setData({ words: words.map((w) => ({ ...w, missed: false })) })
     } else {
-      const missIdx = missingWordsOf(this.refText, r.text.split(/\s+/).filter(Boolean))
-      const missSet = new Set(missIdx)
-      this.missedTexts = missIdx.map((i) => words[i]?.text ?? '').filter(Boolean)
+      /**
+       * ⭐⭐ **一次对齐，两列结果**：没读到的（缺位）与没读准的（替换 + 识别到的词）。
+       * ⚠️ 但**只有"没读到"拦提交** —— 替换不可靠（见 AlignmentDetail.substituted 的说明），
+       *    拿它拦人会把"ASR 听错"变成"用户交不上去"。
+       */
+      const detail = alignmentDetailOf(this.refText, r.text.split(/\s+/).filter(Boolean))
+      const missSet = new Set(detail.missing)
+      this.missedTexts = detail.missing.map((i) => words[i]?.text ?? '').filter(Boolean)
+      this.misreadPairs = detail.substituted
+        .map((sp) => ({ ref: words[sp.at]?.text ?? '', heard: sp.heard }))
+        .filter((x) => x.ref && x.heard && x.ref !== x.heard)
       this.setData({ words: words.map((w, i) => ({ ...w, missed: missSet.has(i) })) })
     }
 
@@ -1157,6 +1177,7 @@ Page({
         // ⭐ 判据跟着录音一起存 —— 否则从缓存恢复的那一次会**绕过漏读门禁**
         //    （恢复的录音没走过识别，missedTexts 会是空的）。见 LastRecording.missedTexts
         missedTexts: this.missedTexts,
+        misreadPairs: this.misreadPairs,
       })
     }
 
@@ -1439,8 +1460,16 @@ Page({
        * ⚠️ 刻意**没有**"继续提交"那个出口（用户 2026-10 定）：判为漏读就只提示、不放过。
        */
       void wx.showModal({
-        title: '还有词没读到',
-        content: '有 ' + this.missedTexts.length + ' 个词没读到：' + this.missedTexts.join('、'),
+        title: '还有词没读好',
+        /**
+         * ⭐ **两件事分开说**（用户 2026-10 定）：
+         *    · **没读到** —— 那一位上什么都没有；
+         *    · **没读准** —— 读到了，但**机器听到的是另一个词**（把那个词显示出来）。
+         * ⚠️⚠️ "没读准"那行**必须**写成「识别成 X」而不是「你读错了 X」：
+         *    那是在陈述**机器听到了什么**，不是在判定用户读错了 ——
+         *    替换的成因里 ASR 听错占了很大一块（见 AlignmentDetail.substituted 的说明）。
+         */
+        content: gateMessage(this.missedTexts, this.misreadPairs),
         showCancel: false,
         confirmText: '我知道了',
       })
@@ -2024,6 +2053,7 @@ Page({
      *    而这些颜色说的是**上一次**那一遍，属于同一种"第二份真相"。
      */
     this.missedTexts = []
+    this.misreadPairs = []
     this.setData({
       phase: 's1',
       error: '',

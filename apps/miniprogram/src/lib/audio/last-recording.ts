@@ -145,6 +145,11 @@ export interface LastRecording {
    * ⚠️ 老缓存里没有这个字段 ⇒ 读出来是 `undefined`，按"没判过"处理（放行，不硬拦）。
    */
   missedTexts?: string[]
+  /**
+   * ⭐ **没读准**的那些 `{ ref, heard }`（原文词 + 识别到的词）—— 与 missedTexts 同理，
+   *    必须跟着录音一起存，否则从缓存恢复时提示会缺掉"没读准"那一行。
+   */
+  misreadPairs?: { ref: string; heard: string }[]
 }
 
 /**
@@ -255,6 +260,8 @@ export function saveLastRecording(input: {
   durationMs: number
   /** 预检判据，见 LastRecording.missedTexts */
   missedTexts?: string[]
+  /** 没读准的那些，见 LastRecording.misreadPairs */
+  misreadPairs?: { ref: string; heard: string }[]
 }): void {
   const dir = slotDirOf(input.key)
   const audioPath = dir + '/' + savedNameOf(input.tempFilePath)
@@ -290,6 +297,7 @@ export function saveLastRecording(input: {
     savedAt: Date.now(),
     audioPath,
     ...(input.missedTexts ? { missedTexts: input.missedTexts } : {}),
+    ...(input.misreadPairs ? { misreadPairs: input.misreadPairs } : {}),
   }
 
   // ⚠️ 封顶：本地文件总量只有 10MB、超了静默失败，
@@ -334,6 +342,7 @@ export function loadLastRecording(key: string): LastRecording | null {
     ...found,
     // ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 门禁放行（不硬拦没见过的数据）
     missedTexts: Array.isArray(found.missedTexts) ? found.missedTexts : [],
+    misreadPairs: Array.isArray(found.misreadPairs) ? found.misreadPairs : [],
     // ⚠️ 试听文件可能根本没写成功（见 writePlayableWav 的 catch），
     //    那种情况下只恢复「能提交」，不能假装能试听
     playPath: exists(replayPathOf(key)) ? replayPathOf(key) : '',

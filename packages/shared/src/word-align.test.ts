@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { alignWordScores, missingWordsOf, wordProgressOf } from './word-align'
+import { alignWordScores, alignmentDetailOf, missingWordsOf, wordProgressOf } from './word-align'
 
 /**
  * ⚠️ 这些断言盯的是**颜色会不会张冠李戴**：
@@ -167,5 +167,61 @@ describe('wordProgressOf —— 流式进度（漏读 vs 还没读到）', () =>
   it('原文为空 / 转写为空：不抛', () => {
     expect(wordProgressOf('', ['the'])).toEqual({ missed: [], pending: [], lastMatched: -1 })
     expect(wordProgressOf(REF, []).pending).toHaveLength(11)
+  })
+})
+
+/**
+ * ⭐⭐ 「没读到」与「没读准」要分开报 —— 提交前的提示靠它（见 prd 7.3）。
+ */
+describe('alignmentDetailOf —— 没读到 vs 没读准（识别到的是什么）', () => {
+  const REF = 'Everything should be made as simple as possible, but not simpler.'
+  const w = (s: string) => s.split(/\s+/)
+
+  it('整句读对 ⇒ 两个都是空', () => {
+    const d = alignmentDetailOf(REF, w(REF))
+    expect(d.missing).toEqual([])
+    expect(d.substituted).toEqual([])
+  })
+
+  it('⭐ 读成 similar ⇒ 报「没读准」，并带上**识别到的那个词**', () => {
+    // ⚠️ 这是 2026-10 的真实反例：把 simpler 正常读出来，ASR 听成 similar
+    const d = alignmentDetailOf(REF, w('Everything should be made as simple as possible, but not similar.'))
+    expect(d.missing).toEqual([])
+    expect(d.substituted).toEqual([{ at: 10, heard: 'similar.' }])
+  })
+
+  it('⭐ 整句读完、只是中间跳过两个词 ⇒ 报「没读到」，不是「没读准」', () => {
+    // ⚠️ 必须用**读完整句**的输入：'as possible' 那种读到一半的，
+    //    后面的 but/not/simpler 也会被算成没读到（那是"还没读到"，不是跳过）
+    const d = alignmentDetailOf(REF, w('Everything should be made as possible, but not simpler.'))
+    expect(d.missing).toEqual([5, 6]) // simple / 第二个 as
+    expect(d.substituted).toEqual([])
+  })
+
+  it('⭐ 一个词都没听到 ⇒ 全是「没读到」', () => {
+    const d = alignmentDetailOf(REF, [])
+    expect(d.missing).toHaveLength(11)
+    expect(d.substituted).toEqual([])
+  })
+
+  it('⭐ 两种可以**同时**出现，且同一个词不会既"没读到"又"没读准"', () => {
+    // 跳过 simple，同时把末尾读成 similar
+    const d = alignmentDetailOf(REF, w('Everything should be made as as possible, but not similar.'))
+    expect(d.missing).toEqual([5]) // simple
+    expect(d.substituted).toEqual([{ at: 10, heard: 'similar.' }])
+    const missSet = new Set(d.missing)
+    for (const sp of d.substituted) expect(missSet.has(sp.at)).toBe(false)
+  })
+
+  it('报的是**转写里的原词**（归一化只用于比较，不用于展示）', () => {
+    const d = alignmentDetailOf('I have a cat', ['I', 'have', 'a', 'Cats'])
+    // ⚠️ 展示的必须是人看到的那个形态
+    expect(d.substituted[0]?.heard).toBe('Cats')
+  })
+
+  it('与 missingWordsOf 一致 —— 后者就是前者的 missing 那一列', () => {
+    for (const hyp of ['Everything should be made as possible', 'Everything', '', 'blah blah']) {
+      expect(missingWordsOf(REF, w(hyp))).toEqual(alignmentDetailOf(REF, w(hyp)).missing)
+    }
   })
 })

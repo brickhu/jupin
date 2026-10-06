@@ -209,11 +209,55 @@ function alignText(refText: string, spokenWords: string[]): (number | null)[] {
  *
  * @returns 参考词里「没有任何转写词与之对应」的那些下标（升序）
  */
+/** ⭐ 一次对齐能给出的**两种不同的"没读好"** */
+export interface AlignmentDetail {
+  /**
+   * ⭐ **没读到** —— 转写里**完全没有**这个词的对应物（缺位）。
+   * 这是最确定的一种：那一位上什么都没有。
+   */
+  missing: number[]
+  /**
+   * ⭐ **没读准** —— 对上了，但**转写里那个词跟原文不一样**（替换）。
+   *
+   * ⚠️⚠️ 拿它当"用户读错了"的证据**要非常小心**：替换的成因里混着
+   *    「真的读错了」和「ASR 听错了」两种，而从转写里**分不出来**。
+   *    2026-10 实测就是这个：学习者把 `simpler` 正常读出来，ASR 却听成
+   *    `similar` / `as simple` / `by the seminar` 都出现过。
+   *    ⇒ 所以措辞必须是「**识别到的是 X**」（机器听到了什么），
+   *      **不能**写成「你读错了 X」。
+   */
+  substituted: { at: number; heard: string }[]
+}
+
+/**
+ * ⭐⭐ **对齐的完整结果** —— 同时给出「没读到」与「没读准」，给提交前的提示用。
+ *
+ * ⚠️ 与 `missingWordsOf` 的关系：后者只要"没读到"（门禁只需要它，因为替换不可靠）。
+ *    这里是**超集**，多给一列"识别到的是什么"。
+ */
+export function alignmentDetailOf(refText: string, spokenWords: string[]): AlignmentDetail {
+  const refNorm = plainWordsOf(refText).map(norm)
+  const engNorm = spokenWords.map(norm)
+  const aligned = alignRefToSpoken(refNorm, engNorm)
+
+  const missing: number[] = []
+  const substituted: { at: number; heard: string }[] = []
+  for (let i = 0; i < aligned.length; i++) {
+    // ⚠️ `noUncheckedIndexedAccess` 让 aligned[i] 多带一个 undefined —— 一起挡掉
+    const j = aligned[i]
+    if (j === null || j === undefined) {
+      missing.push(i)
+      continue
+    }
+    // ⚠️ 报的是**转写里的原词**（不是归一化后的），因为那是要给人看的
+    if (refNorm[i] !== engNorm[j]) substituted.push({ at: i, heard: spokenWords[j] ?? '' })
+  }
+  return { missing, substituted }
+}
+
 export function missingWordsOf(refText: string, engineWords: string[]): number[] {
-  const out: number[] = []
-  const aligned = alignText(refText, engineWords)
-  for (let i = 0; i < aligned.length; i++) if (aligned[i] === null) out.push(i)
-  return out
+  // ⭐ 与 alignmentDetailOf 共用同一次对齐，不再各写一遍（"重复即错误"）
+  return alignmentDetailOf(refText, engineWords).missing
 }
 
 /** 流式过程中，一个参考词的三种处境 */

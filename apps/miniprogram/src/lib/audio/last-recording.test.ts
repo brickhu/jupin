@@ -179,11 +179,17 @@ describe('保存与恢复', () => {
     expect(load(KEY_A)?.missedTexts).toEqual(['simple', 'as'])
   })
 
-  it('⚠️ 老缓存里没有这个字段 ⇒ 读出来是空数组（＝没判过 ⇒ 放行，不硬拦没见过的数据）', async () => {
+  it('⭐⭐ 「没读准」那些词也要一起恢复 —— 否则缓存恢复时提示会缺一行', async () => {
+    save({ ...optsFor(KEY_A), missedTexts: ['simple'], misreadPairs: [{ ref: 'simpler', heard: 'similar' }] })
+    expect(load(KEY_A)?.misreadPairs).toEqual([{ ref: 'simpler', heard: 'similar' }])
+  })
+
+  it('⚠️ 老缓存里没有这两个字段 ⇒ 读出来是空数组（＝没判过 ⇒ 放行，不硬拦没见过的数据）', async () => {
     // ⚠️ 直接写一条**不带 missedTexts** 的老格式元信息，模拟升级前的缓存
     save(optsFor(KEY_B))
     const got = load(KEY_B)
     expect(got?.missedTexts).toEqual([])
+    expect(got?.misreadPairs).toEqual([])
   })
 
   it('⚠️ 文件名沿用原件 —— 扩展名丢了播放器会按错的解码器去解', () => {
