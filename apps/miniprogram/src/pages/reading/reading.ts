@@ -1213,6 +1213,9 @@ Page({
     this.speechBackend = this.session.backend
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
+    // ⚠️ 门禁状态也一起清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
+    this.missedTexts = []
+    this.gateBypassed = false
     this.frameMode = 'deciding'
     this.frameFails = 0
     this.waveWarned = false
@@ -2272,12 +2275,20 @@ Page({
     this.stopRoll()
     if (this.recordingKey) clearLastRecording(this.recordingKey)
     if (this.recordingKey) clearLastResult(this.recordingKey)
+    /**
+     * ⚠️⚠️ **把上一遍的预检色清掉** —— 不清的话，"重录"回到 s1 之后，
+     *    上一遍那些红的 / 淡的词还挂在句子上，看起来像"这一遍也已经判过了"。
+     *    而这些颜色说的是**上一次**那一遍，属于同一种"第二份真相"。
+     */
+    this.missedTexts = []
+    this.gateBypassed = false
     this.setData({
       phase: 's1',
       error: '',
       restored: false,
       audioPath: '',
       gateOpen: false,
+      words: this.data.words.map((w) => ({ ...w, missed: false, pending: false })),
       // ⚠️ 整页重来 = 上一次尝试作废（完整说明见构造函数里 attemptId 那段）
       attemptId: '',
       playPath: '',
