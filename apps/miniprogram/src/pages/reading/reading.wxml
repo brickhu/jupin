@@ -79,14 +79,15 @@
       <view class="flex flex-col items-center mr-2 mb-1" wx:for="{{words}}" wx:key="i"
             data-i="{{item.i}}" bindtap="onPlayWord">
         <!-- ⚠️ px-1 mr-1 的写法与迁移前一致：高亮底色的内边距不跟着 cls 走，着色时整行不抖 -->
-        <!-- ⭐⭐ 录音时的**预检色**（只判"读到了没"，与提交后的评分色无关，见 prd 7.2）：
-               · missed  = 已经读到它后面去了、它却没出现 ⇒ 真漏了 → 红色 + 下划线
-               · pending = 还没轮到它 ⇒ ⚠️ **这不是错**，只是淡一点（标红会让每个正在读的人
-                           都看到"你漏了一大半"）
-               · 都没有  = 读到了 → 正常
+        <!-- ⭐⭐ **定稿后的预检色**（只判"读到了没"，与提交后的评分色无关，见 prd 7.2）：
+               · missed = 定稿时判为「没读到」→ 红色 + 下划线
+               · 否则   = 读到了 → 正常
+             ⚠️ **录音过程中不逐词变色**（用户 2026-10 定）：插件的中间结果约 550ms 才回一次，
+                字是一跳一跳地亮，延迟体验不理想 —— 与其做个迟钝的实时反馈，不如不做。
+                现在只在**松手定稿那一刻**算一次，是即时的、准的。
              ⚠️ 用**下划线**而不是填充色块：提交后的正式标色是填充色块，
                 两套视觉语言分开，用户才不会以为系统在自相矛盾。 -->
-        <text class="text-44rpx leading-[1.35] px-1 transition-colors duration-150 {{item.missed ? 'text-bad font-semibold underline' : item.pending ? 'text-faint' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
+        <text class="text-44rpx leading-[1.35] px-1 {{item.missed ? 'text-bad font-semibold underline' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
         <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 -->
         <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && phase !== 's2' && item.ipa}}">{{item.ipa}}</text>
       </view>
@@ -126,21 +127,8 @@
 
     <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
     <view class="mt-5" wx:if="{{phase === 's3'}}">
-      <!-- ⭐⭐ **漏读门禁**（用户 2026-10 定：「没读到的都不允许提交」）。
-           ⚠️ 措辞是「可能没读到」而不是「你读错了」—— 它是**预检**不是判决（见 prd 7.2/7.3）。
-           ⚠️⚠️ 必须给出口：「我确实读了，继续提交」。
-              误拦是这道门禁**唯一的致命错误**（读对了却交不上去），而判据的假阳性率样本还小。
-           ⭐ 那个出口**同时是假阳性率的测量仪器** —— 每被点一次就是一条已知误报。 -->
-      <view wx:if="{{gateOpen}}" class="card p-4 mb-3 border border-solid border-cardline">
-        <text class="text-26rpx text-ink block leading-[1.7]">有 {{gateWords.length}} 个词可能没读到：{{gateWords}}</text>
-        <text class="text-22rpx text-faint block mt-1">不放心就重录一遍；确定读到了也可以直接提交。</text>
-        <view class="flex items-center mt-3">
-          <view class="flex-1 py-2 mr-2 rounded-full bg-white border border-solid border-cardline text-center text-26rpx text-ink"
-                bindtap="onGateRetry" hover-class="active__opacity-60">重录</view>
-          <view class="flex-1 py-2 rounded-full bg-brand text-center text-26rpx text-white"
-                bindtap="onGateBypass" hover-class="active__opacity-60">我确实读了</view>
-        </view>
-      </view>
+      <!-- ⭐ 漏读门禁不在这里画 —— 它是**原生弹窗**（wx.showModal），见 reading.ts 的 onSubmit。
+           一句话 + 一个「我知道了」按钮，原生组件正好是这个形状，不必在页面里再搭一张卡。 -->
 
       <view class="flex items-center">
         <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" bind:press="onRestart">

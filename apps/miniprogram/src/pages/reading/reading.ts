@@ -250,19 +250,11 @@ interface WordView {
    */
   ipa: string
   /**
-   * ⭐ **录音时的预检状态** —— 「读到了没」，与提交后那套评分色**完全无关**（见 prd 7.2）。
-   *
-   * | 状态 | 含义 | 视觉 |
-   * |---|---|---|
-   * | 都 false | 读到了 | 正常 |
-   * | `missed` | **已经读到它后面去了，它却没出现** —— 真漏了 | 标出来 |
-   * | `pending` | **还没轮到它** —— ⚠️ 这不是错，别标红 | 淡 |
-   *
-   * ⚠️⚠️ 两者必须分开：用户读到第 3 个词时把第 4–11 个标红，等于每个正在读的人都看到
-   *      "你漏了一大半"。判据见 `wordProgressOf`。
+   * ⭐ **定稿后的预检结果**：这个词判为「没读到」。与提交后那套评分色**完全无关**（见 prd 7.2）。
+   * ⚠️ 只在**定稿那一刻**由 `missingWordsOf` 算一次 —— **录音过程中不逐词变色**
+   *    （用户 2026-10 定：实时标色的延迟体验不理想，整套去掉）。
    */
   missed: boolean
-  pending: boolean
 }
 
 Page({
@@ -438,12 +430,6 @@ Page({
      */
     costEnergy: ENERGY_PER_CHALLENGE,
     /**
-     * ⭐ **漏读门禁**：定稿时判为「没读到」的词（空 = 没事）。
-     * ⚠️ 只在 s3 显示 —— 它是"按下提交之前"的提示，不是错误。
-     */
-    gateOpen: false,
-    gateWords: [] as string[],
-    /**
      * ⭐ 松手后的收尾中 —— 按钮显示「识别中…」。
      * ⚠️ 它必须**立刻**有反应：用户松手后如果按钮还写着"松开结束"，会以为自己没松开。
      */
@@ -465,9 +451,6 @@ Page({
    *    两种情况都放行，见 onSubmit 的门禁。
    */
   missedTexts: [] as string[],
-
-  /** 用户按了「我确实读了，继续提交」—— 这一次不再拦（见 onSubmit） */
-  gateBypassed: false,
 
   /**
    * ⭐ **已经松手，但还在收尾**（松手缓冲期，见 RELEASE_HANGOVER_MS）。
@@ -750,9 +733,8 @@ Page({
         i,
         text,
         ipa: content.words[i]?.ipa ?? '',
-        // ⭐ 一进来默认"读到了"（两者都 false）—— 没有预检结果时不该有任何标记
+        // ⭐ 一进来默认"读到了" —— 没有预检结果时不该有任何标记
         missed: false,
-        pending: false,
       }))
       const stdMs = readStdDurationMs(content.audio)
       this.setData({
@@ -848,8 +830,7 @@ Page({
           playPath: last.playPath,
           durationMs: last.durationMs,
           recordDurationText: mmss(last.durationMs),
-          words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: false })),
-          gateOpen: false,
+          words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i) })),
         })
       }
       this.syncEnergyNote()
@@ -960,7 +941,7 @@ Page({
      */
     this.session = createSpeechSession({
       // ⭐ 流式中间结果 → 逐词上色（只有插件后端会调）
-      onPartial: (t) => this.applyProgress(t),
+      onPartial: (t) => this.onInterimText(t),
       onDone: (r) => this.handleSpoken(r),
       onError: (e) => {
         this.stopTimer()
@@ -972,9 +953,8 @@ Page({
     })
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
-    // ⚠️ 门禁状态也一起清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
+    // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
     this.missedTexts = []
-    this.gateBypassed = false
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -997,7 +977,6 @@ Page({
       phase: 's2',
       error: '',
       // ⚠️ 起新录音 = 上一次的门禁提示作废（否则它会挂在新一轮上）
-      gateOpen: false,
         elapsedText: '00:00',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
@@ -1084,33 +1063,26 @@ Page({
   },
 
   /**
-   * ⭐⭐ **流式中间结果 → 逐词上色**（「边读文字边变色」）。
+   * ⭐ **中间结果只用来判断"该收工了没"，不再上色。**
    *
-   * ⚠️ 用的是 `wordProgressOf` 而**不是** `missingWordsOf`：后者会把"还没读到的后半句"
-   *    全报成漏读 —— 用户读到第 3 个词却看到后面 8 个全红（见 shared/word-align.ts 的说明）。
+   * ⚠️⚠️ 早期版本在这里逐词变色（「边读文字边变色」），用户 2026-10 决定**整套去掉**：
+   *    插件的中间结果约 **550ms 才回一次**，字是一跳一跳地亮，延迟体验不理想 ——
+   *    与其做一个迟钝的实时反馈，不如不做。**定稿那一刻的标色保留**（那是即时的、准的）。
    *
-   * ⚠️ 传进来的文本是**整段当前结果**（可能是修正而不是追加），所以每次都**整体重算**，
-   *    不累积、不拼接 —— 拼错了会一路错到底，而重算是幂等的。
+   * ⭐ 但现在这个回调还有**一个必须留的用途**：松手之后判断尾巴追上了没有。
+   *    「读完立刻松手 ⇒ 最后两个词被判漏读」那个故障的解法是松手缓冲 600ms，
+   *    而**追上就立刻结束**靠的正是这里 —— 没有它，每次松手都要白等满 600ms。
+   *
+   * ⚠️ 传进来的文本是**整段当前结果**（可能是修正而不是追加），所以每次都整体重算。
    */
-  applyProgress(spokenText: string) {
-    if (this.gone) return
+  onInterimText(spokenText: string) {
+    if (this.gone || !this.releasePending) return
     const spoken = spokenText.split(/\s+/).filter(Boolean)
-    const { missed, pending } = wordProgressOf(this.refText, spoken)
-
     /**
-     * ⭐ **已经松手了，而且这一份结果已经读到句尾** ⇒ 不必等满缓冲期，直接收工。
      * ⚠️ 判据是 `pending` 为空（没有"还没读到"的词了）—— 说明转写已经追上了用户实际读到的位置。
      *    这是"读完立刻松手"最常见的情形：尾巴追上来就立刻出结果，用户感觉不到那 600ms。
      */
-    if (this.releasePending && pending.length === 0) {
-      this.finishRecording()
-      return
-    }
-    const missSet = new Set(missed)
-    const pendSet = new Set(pending)
-    this.setData({
-      words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: pendSet.has(i) })),
-    })
+    if (wordProgressOf(this.refText, spoken).pending.length === 0) this.finishRecording()
   },
 
   onStopRecord() {
@@ -1157,18 +1129,13 @@ Page({
     const words = this.data.words
     if (r.text === null) {
       this.missedTexts = []
-      this.setData({ words: words.map((w) => ({ ...w, missed: false, pending: false })) })
+      this.setData({ words: words.map((w) => ({ ...w, missed: false })) })
     } else {
       const missIdx = missingWordsOf(this.refText, r.text.split(/\s+/).filter(Boolean))
       const missSet = new Set(missIdx)
       this.missedTexts = missIdx.map((i) => words[i]?.text ?? '').filter(Boolean)
-      this.setData({
-        // ⚠️ pending 一律清掉 —— 定稿之后没有"还没读到"这一说了
-        words: words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: false })),
-      })
+      this.setData({ words: words.map((w, i) => ({ ...w, missed: missSet.has(i) })) })
     }
-    // ⚠️ 新一轮 = 门禁重新生效（上一次点的"我确实读了"不能带到这一轮）
-    this.gateBypassed = false
 
     /**
      * ⭐ 试听播的就是**录音落地的那个文件**，不再从帧拼 WAV。
@@ -1463,8 +1430,20 @@ Page({
      *    ⇒ 必须留出口。⭐ 那个出口**同时是假阳性率的测量仪器**：每一次被点，
      *    就是一条已知误报，上线后能持续量到真实误报率（见 prd 7.3）。
      */
-    if (this.missedTexts.length > 0 && !this.gateBypassed) {
-      this.setData({ gateOpen: true, gateWords: this.missedTexts })
+    if (this.missedTexts.length > 0) {
+      /**
+       * ⭐ 用微信**原生弹窗**（`wx.showModal`）而不是页面上的一张卡：
+       *    它就是「一句话 + 一个底部按钮 + 点了关掉」，原生组件正好是这个形状 ——
+       *    不必新增状态、不必新增组件，也不会和朗读页自己的浮层（eval-dialog）抢注意力。
+       * ⚠️ `showCancel: false` + 自定义 confirmText 就是"只有一个按钮"。
+       * ⚠️ 刻意**没有**"继续提交"那个出口（用户 2026-10 定）：判为漏读就只提示、不放过。
+       */
+      void wx.showModal({
+        title: '还有词没读到',
+        content: '有 ' + this.missedTexts.length + ' 个词没读到：' + this.missedTexts.join('、'),
+        showCancel: false,
+        confirmText: '我知道了',
+      })
       return
     }
 
@@ -2025,24 +2004,6 @@ Page({
     this.clearAttempt()
   },
 
-  /**
-   * ⭐ 门禁上的**「我确实读了，继续提交」** —— 出口。
-   *
-   * ⚠️ 设了 `gateBypassed` 就直接重走 onSubmit：这一次跳过第 0 道，后面三道照常。
-   * ⚠️ 这个标记**每一轮录音都会重置**（见 handleSpoken），不能带到下一次。
-   * ⭐ 它还是**假阳性率的测量仪器**：点一次 = 一条已知误报（见 prd 7.3）。
-   */
-  onGateBypass() {
-    this.gateBypassed = true
-    this.setData({ gateOpen: false })
-    void this.onSubmit()
-  },
-
-  /** 门禁上的**「去重录」** —— 回 s1（与 s3 那颗 ↺ 同一条路） */
-  onGateRetry() {
-    this.setData({ gateOpen: false })
-    this.onRestart()
-  },
 
   /**
    * ⭐ 清掉「这一把」的本地缓存并把界面复位到 s1。
@@ -2063,13 +2024,11 @@ Page({
      *    而这些颜色说的是**上一次**那一遍，属于同一种"第二份真相"。
      */
     this.missedTexts = []
-    this.gateBypassed = false
     this.setData({
       phase: 's1',
       error: '',
       restored: false,
       audioPath: '',
-      gateOpen: false,
       words: this.data.words.map((w) => ({ ...w, missed: false, pending: false })),
       // ⚠️ 整页重来 = 上一次尝试作废（完整说明见构造函数里 attemptId 那段）
       attemptId: '',
