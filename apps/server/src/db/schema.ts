@@ -1063,6 +1063,9 @@ export const rewardGrants = mysqlTable('reward_grants', {
  * ⚠️⚠️ 两者必须**在同一个事务里**写。分开写就一定会漂移，
  *    而「余额和流水对不上」是最难查的一类问题（没有任何东西看起来是坏的）。
  *
+ * ⚠️⚠️ **它和 cookie_ledger 结构一模一样，但刻意是两张表** ——
+ *    理由完整地写在 cookie_ledger 的注释里（别把它们合并，先看那段）。
+ *
  * reason 取值：daily_topup / purchase / challenge_hold / challenge_release / admin /
  * 以及奖励规则的 code。
  *
@@ -1074,6 +1077,27 @@ export const rewardGrants = mysqlTable('reward_grants', {
  * ⭐ 饼干流水 —— **流水是真相，users.cookies 是缓存**（与能量同一套结构）。
  *
  * ⚠️⚠️ 两者必须**在同一个事务里**写（理由同能量：漂移没有任何东西看起来是坏的）。
+ *
+ * ## ⭐⭐ 为什么和 energy_ledger 是**两张表**，而不是一张带 currency 列的
+ *
+ * ⚠️ 它们的结构确实一样（delta / reason / ref_type / ref_id / 幂等键），
+ *    所以"消除重复"的念头会反复出现。别那么做，理由有四条：
+ *
+ * ① **两种币的性质不同**：能量**可以花钱买**（purchase 那条 reason 是真钱），
+ *    饼干只能赚。合成一张表之后，"这个月的充值收入是多少"要**按 reason 过滤**
+ *    才敢算 —— 而收入口径不该藏在WHERE 子句里。
+ * ② **审计问的是两个问题**："我充的钱去哪了" 与 "我赚的饼干去哪了"。
+ *    两张表各自回答一个，不用每次都带上 `currency = ?`。
+ * ③ **类型上防误发**：分开之后 `addEnergy` 在代码层面**碰不到饼干**
+ *    （反之亦然）。合成一张表意味着"给能量记一笔"和"给饼干记一笔"
+ *    是同一段代码，**错一个参数就发错币** —— 而那种错没有任何东西看起来是坏的。
+ * ④ **幂等键的语义会变脏**：现在是 `unique(reason, ref_type, ref_id, user_id)`；
+ *    合并之后必须变成 `unique(currency, reason, ref_type, ref_id, user_id)`，
+ *    等于把"币种"混进业务键里。而这两张表的 reason 取值本来就不同
+ *    （`challenge_hold` 只属于能量，`conquer` 只属于饼干）。
+ *
+ * ⚠️ 一句话：**它们长得像，但不是同一件事的两个副本，是两件事恰好形状相同。**
+ *    重复的判据是"同一份真相有两处写法"，而这里的两份真相本来就是分开的。
  *
  * reason 取值：conquer（攻克入账）/ exchange（换能量出账）/ admin。
  *
