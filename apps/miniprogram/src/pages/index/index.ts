@@ -13,6 +13,8 @@ import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { openChallengesPage, openParticipationsPage, openStreakPage } from '../../lib/challenges'
 import { refreshMe } from '../../lib/join'
 import { ensureStats } from '../../lib/stats'
+import { streakNudgeOf } from '../../lib/streak-nudge'
+import type { StreakNudge } from '../../lib/streak-nudge'
 import { ensureParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
@@ -264,6 +266,11 @@ Page({
      *    而错的数字比没有数字更糟：他会以为记录丢了。
      */
     stats: null as StatsView | null,
+    /**
+     * ⭐ 连战提醒（prd §7.8.1）—— 分五级，由 lib/streak-nudge.ts 判好。
+     * ⚠️ 'today'/'gap1' 画一行、'gap2' 画卡片、'gap3' 弹窗、'restart' 画引导。
+     */
+    nudge: { level: 'none', title: '', note: '', action: '', gapDays: 0, cost: 0 } as StreakNudge,
     today: null as CardView | null,
     /** ⭐ 最新上线：句库按上线时间倒序的最新几句（服务端给，端侧只剔掉今日重复的那句） */
     latest: [] as CardView[],
@@ -306,6 +313,14 @@ Page({
 
   /** store 退订函数 */
   unsubStore: null as (() => void) | null,
+
+  /**
+   * ⚠️ 断 3 天那个弹窗**一次会话只弹一次**。
+   *    不加这个守卫的话：store 每次广播（读完一句、拉完统计…）都会重画，
+   *    而重画就会再弹一次 ⇒ 用户被反复打断，最后学会无视它。
+   *    ⚠️ 放在实例上而不是 data：它不该参与 setData，也不该被缓存进本地。
+   */
+  nudged3: false,
 
   /**
    * 上一次见到的身份状态 —— 用来把"该补一次参与状态"钉在**状态跃迁**上，
@@ -694,6 +709,7 @@ Page({
     this.setData({
       statusMode,
       stats: statusMode === 'data' ? statsOf(st.userInfo, st.userInfo?.streak ?? null) : null,
+      nudge: this.nudgeOf(st.userInfo ?? null),
       today,
       /**
        * ⚠️ `?? []` 不是多余的：c 可能来自**上次启动落下的缓存**，
@@ -703,6 +719,46 @@ Page({
       latest: (c.latest ?? [])
         .filter((x) => !c.today || x.articleId !== c.today.articleId)
         .map((x) => this.toView(x, true)),
+    })
+  },
+
+  /**
+   * ⭐ 连战提醒该到哪一级（prd §7.8.1）。
+   *
+   * ⚠️ 判断全在 lib/streak-nudge.ts 的纯函数里 —— 这里只负责取数。
+   */
+  nudgeOf(userInfo: MeResponse | null): StreakNudge {
+    const streak = userInfo?.streak
+    if (!streak) return { level: 'none', title: '', note: '', action: '', gapDays: 0, cost: 0 }
+    const nudge = streakNudgeOf(streak.makeup, streak.readToday, streak.streakBest)
+    /**
+     * ⚠️⚠️ 弹窗**一次会话只弹一次**（`nudged3` 这个实例字段）。
+     *    不加这个守卫的话：store 每次广播（读完一句、拉完统计…）都会重画，
+     *    而重画就会再弹一次 ⇒ 用户被反复打断，最后学会无视它。
+     *    ⚠️ 用实例字段而不是 data：它不该参与 setData，也不该被缓存。
+     */
+    if (nudge.level === 'gap3' && !this.nudged3) {
+      this.nudged3 = true
+      // ⚠️ 延到下一帧：render 里 setData 之后再弹，避免和首屏渲染抢
+      setTimeout(() => this.showGap3Modal(nudge), 0)
+    }
+    return nudge
+  },
+
+  /**
+   * ⚠️ 用**原生弹窗**而不是自绘：这是这一套里唯一一处"最强的打断"，
+   *    而它只配给**真的最后机会**（断 3 天，明天就补不了了）。
+   *    原生弹窗在被打断这件事上是最有效的，而且不需要新组件。
+   */
+  showGap3Modal(n: StreakNudge) {
+    wx.showModal({
+      title: n.title,
+      content: n.note,
+      confirmText: '去补签',
+      cancelText: '今天再说',
+      success: (r) => {
+        if (r.confirm) void this.onOpenStreak()
+      },
     })
   },
 

@@ -9,6 +9,43 @@
   <!-- ⚠️ id="nav" 是页面 onPageScroll 找到它的方式（见 lib/nav.ts），三页统一 -->
   <nav-bar id="nav" title="{{brand.name}}" left="avatar" />
 
+  <!-- ══ 块 ⓪：连战提醒 ═══════════════════════════════════════
+       ⭐ 放在**最上面**（prd §7.8.1）：断档这件事的价值随时间衰减，
+          用户打开的第一眼看不到，就等于没提醒。
+       ⚠️ 分级由 lib/streak-nudge.ts 判好（WXML 只画）：
+            today / gap1 → 一行轻提示（gap1 带【去补签】）
+            gap2         → 卡片（升级一次，但仍不打断）
+            gap3         → **不在这里画**：走原生弹窗（最强打断，只配给最后一天）
+            restart      → 引导卡（⚠️ 不说失败，见下）
+       ⚠️ 即使只断 1 天也不用红色 —— 红是"判错"的颜色（结果页那些红块），
+          而这里只是"该回来读一句了"。 -->
+
+  <!-- 今天还没读 / 断 1 天：一行就够 -->
+  <view class="flex items-center px-1 mb-2"
+        wx:if="{{nudge.level === 'today' || nudge.level === 'gap1'}}">
+    <text class="text-24rpx text-warn flex-1 leading-[1.5]">{{nudge.title}} · {{nudge.note}}</text>
+    <text class="text-24rpx text-brand ml-2 shrink-0" wx:if="{{nudge.action}}"
+          bindtap="onOpenStreak" hover-class="active__opacity-60">{{nudge.action}} ›</text>
+  </view>
+
+  <!-- 断 2 天：升级成卡片 -->
+  <view class="card p-4 mb-3 border-warn" wx:elif="{{nudge.level === 'gap2'}}">
+    <text class="text-28rpx font-medium text-ink">{{nudge.title}}</text>
+    <text class="text-24rpx text-body block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
+    <view class="mt-3 text-center py-[20rpx] rounded-full bg-brand text-white text-28rpx font-medium"
+          bindtap="onOpenStreak" hover-class="active__opacity-60">去补签</view>
+  </view>
+
+  <!-- ⚠️⚠️ 断 ≥4 天：**不报失败**。说成"重新开始"，并把"最长的还在"摆出来 ——
+       那是在用户已经难过的时候，唯一还能给的东西（prd §7.8）。 -->
+  <view class="card p-4 mb-3" wx:elif="{{nudge.level === 'restart'}}">
+    <view class="flex items-center">
+      <text class="text-32rpx">🌱</text>
+      <text class="text-28rpx font-medium text-ink ml-2">{{nudge.title}}</text>
+    </view>
+    <text class="text-24rpx text-muted block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
+  </view>
+
   <!-- ══ 块 ①：我的状态卡 ═══════════════════════════════════
        ⚠️⚠️ 数据**只来自全局 store**（GET /api/user/me 的结果），本页不为它单独发请求。
           四态见 index.ts 的 data.statusMode / render()：
