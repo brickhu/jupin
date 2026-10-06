@@ -18,3 +18,8 @@ export function lintWxSource(text: string): WxProblem[]
  * 与 lintWxSource 分开：那条逐字符扫结构，这条要按行看上下文。
  */
 export function lintMultilineText(text: string): WxProblem[]
+/**
+ * ⭐ 连续两行完全相同（且含 `="`）—— 编辑残留，会变成页面上的**可见文字**。
+ * 判据刻意收得很紧（先试"连续重复行"时全仓 54 处命中、全是正常的 `</view>`）。
+ */
+export function lintDuplicateLine(text: string): WxProblem[]

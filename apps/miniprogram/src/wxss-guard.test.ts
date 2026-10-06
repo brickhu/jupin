@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { lintMultilineText, lintWxSource, type WxProblem } from '../wxss-lint.mjs'
+import { lintDuplicateLine, lintMultilineText, lintWxSource, type WxProblem } from '../wxss-lint.mjs'
 
 const SRC = fileURLToPath(new URL('.', import.meta.url))
 
@@ -104,5 +104,36 @@ describe('lintMultilineText —— <text> 的内容必须紧贴标签', () => {
   it('注释注释掉之后，真正的代码照样抓得到', () => {
     const mixed = ['<!-- 示例 -->', '<text class="a">', '  文案', '</text>'].join('\n')
     expect(lintMultilineText(mixed)).toHaveLength(1)
+  })
+})
+
+/**
+ * ⭐⭐ 连续两行完全相同的"属性样"行 —— 编辑残留，会变成页面上的**可见文字**。
+ *
+ * ⚠️ 真实事故（2026-10）：改卡片那行 <view> 时，一次按行替换只覆盖了标签的**第一行**，
+ *    第二行（wx:if="…">）留在了原地 —— 卡片顶上于是多出一行 wx:if="…"，
+ *    而构建 / 类型检查 / 类名检查**全部通过**。
+ */
+describe('lintDuplicateLine —— 编辑残留的重复行', () => {
+  it('⭐ 连续两行相同的属性行 ⇒ 报出来（就是那次事故的形状）', () => {
+    const bad = ['<view class="a"', '      wx:if="{{x}}">', '      wx:if="{{x}}">', '  <text>y</text>'].join('\n')
+    expect(lintDuplicateLine(bad)).toHaveLength(1)
+  })
+
+  it('⭐⭐ 正常的 `</view>` 连续两行 ⇒ **不报**（先试"连续重复行"时全仓 54 处命中、全是它）', () => {
+    expect(lintDuplicateLine(['  </view>', '  </view>'].join('\n'))).toEqual([])
+  })
+
+  it('两行只是缩进不同 ⇒ 也算重复（比对前先 trim）', () => {
+    expect(lintDuplicateLine(['  wx:if="{{x}}">', 'wx:if="{{x}}">'].join('\n'))).toHaveLength(1)
+  })
+
+  it('行内容不同 ⇒ 不报', () => {
+    expect(lintDuplicateLine(['  wx:if="{{x}}">', '  wx:if="{{y}}">'].join('\n'))).toEqual([])
+  })
+
+  it('⚠️ 注释里的重复行 ⇒ 不报（注释先被剥成空格）', () => {
+    const inComment = ['<!--', 'wx:if="{{x}}">', 'wx:if="{{x}}">', '-->'].join('\n')
+    expect(lintDuplicateLine(inComment)).toEqual([])
   })
 })

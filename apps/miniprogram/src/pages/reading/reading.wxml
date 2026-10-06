@@ -43,7 +43,6 @@
        ⚠️ 只换**颜色**，宽度仍是 card 里的 border-2 —— 不动尺寸，卡片不会因此跳一下。 -->
   <view class="card p-3.5 mb-3 {{phase === 's2' ? 'border-bad' : phase === 's3' && hintLevel === 'warn' ? 'border-warn' : phase === 's3' && canSubmit ? 'border-ok' : ''}}"
         wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
-        wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
 
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
     <view class="flex items-center justify-between mb-3" wx:if="{{phase === 's1' || phase === 's3'}}">

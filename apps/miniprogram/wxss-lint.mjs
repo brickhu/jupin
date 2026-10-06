@@ -82,6 +82,61 @@ export function lintWxSource(text) {
   return problems
 }
 
+/**
+ * ⭐ **把注释换成等长空格**，保留行结构 —— 两个 lint 都要在"没有注释的文本"上判断。
+ *
+ * ⚠️⚠️ 不剥注释的话，**注释里举的反例会被当成真代码**（写 lint 时就被自己骗过一次）。
+ * ⚠️ 两种风格都要认：WXSS 用块注释，WXML 用 HTML 注释。
+ *    只认块注释的话，HTML 注释里的示例照样会被扫出来 —— 第一次就是这么挂的。
+ * ⚠️ 用**等长空格**替换（不是删掉）：这样行号、行内偏移都不动，
+ *    报出来的 line 就是源码里的真实行号。
+ */
+function stripComments(text) {
+  const out = []
+  let inBlock = false // wxss 那种块注释
+  let inHtml = false // wxml 那种 HTML 注释
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    const next = text[i + 1]
+    const next2 = text[i + 2]
+
+    if (c === NEWLINE) {
+      out.push(c)
+      continue
+    }
+    if (inBlock) {
+      if (c === STAR && next === SLASH) {
+        inBlock = false
+        out.push(' ', ' ')
+        i += 1
+      } else out.push(' ')
+      continue
+    }
+    if (inHtml) {
+      if (c === DASH && next === DASH && next2 === GT) {
+        inHtml = false
+        out.push(' ', ' ', ' ')
+        i += 2
+      } else out.push(' ')
+      continue
+    }
+    if (c === SLASH && next === STAR) {
+      inBlock = true
+      out.push(' ', ' ')
+      i += 1
+      continue
+    }
+    if (c === LT && next === BANG && next2 === DASH) {
+      inHtml = true
+      out.push(' ', ' ', ' ')
+      i += 2
+      continue
+    }
+    out.push(c)
+  }
+  return out.join('')
+}
+
 /** ────────────────────────────────────────────────────────────────
  * ⭐ WXML 专有：**<text> 的内容必须紧贴标签**（第二种构建期查不出、上线才看见的坑）。
  *
@@ -102,54 +157,10 @@ export function lintWxSource(text) {
  */
 export function lintMultilineText(text) {
   const problems = []
-  const lines = text.split(NEWLINE)
-  let inBlock = false // wxss 那种块注释
-  let inHtml = false // wxml 那种 HTML 注释
+  const lines = stripComments(text).split(NEWLINE)
 
   for (let i = 0; i < lines.length; i++) {
-    /**
-     * 先把这一行的注释剥掉 —— ⚠️ **不剥的话，注释里举的反例会被当成真代码**
-     * （写这条规则时就被自己骗过一次：注释里写着「不要写成这样」的示例，被报成了错误）。
-     *
-     * ⚠️⚠️ **两种注释风格都要认**：WXSS 用块注释，而 WXML 用 HTML 注释。
-     *    只认前者的话，上面那个"注释里的示例"照样会被扫出来 —— 第一次就是这么挂的。
-     * ⚠️ 写这段时又踩了一次本文件头警告过的坑：把块注释的**收尾符号**写进了这行注释里，
-     *    注释当场提前闭合、整个模块语法错误 —— 所以这里一律用「块注释」这个词，不写字面量。
-     */
-    const raw = lines[i]
-    let code = ''
-    for (let k = 0; k < raw.length; k++) {
-      const c = raw[k]
-      const next = raw[k + 1]
-      const next2 = raw[k + 2]
-      if (inBlock) {
-        if (c === STAR && next === SLASH) {
-          inBlock = false
-          k += 1
-        }
-        continue
-      }
-      if (inHtml) {
-        if (c === DASH && next === DASH && next2 === GT) {
-          inHtml = false
-          k += 2
-        }
-        continue
-      }
-      if (c === SLASH && next === STAR) {
-        inBlock = true
-        k += 1
-        continue
-      }
-      if (c === LT && next === BANG && next2 === DASH) {
-        inHtml = true
-        k += 2
-        continue
-      }
-      code += c
-    }
-
-    const t = code.replace(/[ \t]+$/, '')
+    const t = lines[i].replace(/[ \t]+$/, '')
     if (t.indexOf('<text') < 0) continue
     if (!t.endsWith('>')) continue
     if (t.endsWith('/>')) continue // 自闭合的没有内容
@@ -168,6 +179,31 @@ export function lintMultilineText(text) {
         what: '<text> 的内容另起了一行 —— <text> 保留换行，会白白多出一个空行（内容要紧贴标签）',
       })
     }
+  }
+  return problems
+}
+
+/**
+ * ⭐⭐ **连续两行一模一样（且是"属性样"的行）** —— 几乎一定是编辑残留。
+ *
+ * ⚠️⚠️ 为什么值得单独一条：这种残留**不会报错**，它会变成页面上的**可见文字**。
+ *    真实事故（2026-10）：改卡片那行 <view> 时，一次按行替换只覆盖了标签的**第一行**，
+ *    第二行（`wx:if="…">`）留在了原地 —— 于是卡片顶上多出一行 `wx:if="true"` 之类的字样，
+ *    而构建、类型检查、类名检查**全部通过**。
+ *
+ * ⚠️ 判据刻意收得很紧，只报「**连续两行完全相同 + 都含 ="**」：
+ *    一开始试的是"连续重复行"，全仓 54 处命中、**全是 `</view>`**（正常嵌套）；
+ *    加上"含 =" 之后是 0 处 —— 宁可漏，不要吵。
+ */
+export function lintDuplicateLine(text) {
+  const problems = []
+  const lines = stripComments(text).split(NEWLINE)
+  for (let i = 1; i < lines.length; i++) {
+    const prev = lines[i - 1].trim()
+    const cur = lines[i].trim()
+    if (prev === '' || prev !== cur) continue
+    if (prev.indexOf('="') < 0) continue // 闭合标签之类的正常重复，放行
+    problems.push({ line: i + 1, what: '与上一行完全相同（编辑残留？它会被当成可见文字渲染出来）' })
   }
   return problems
 }

@@ -28,7 +28,7 @@ import unoConfig, {
   escapeWxml,
   makeEscapeMap,
 } from './uno.config.mjs'
-import { lintMultilineText, lintWxSource } from './wxss-lint.mjs'
+import { lintDuplicateLine, lintMultilineText, lintWxSource } from './wxss-lint.mjs'
 import { missingHandlers } from './wxml-handlers.mjs'
 
 /**
@@ -436,9 +436,12 @@ async function assertWxSourceValid() {
       for (const p of lintWxSource(text)) {
         bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
       }
-      // ⭐ <text> 那条只对 WXML 有意义（wxss 里不会有这个标签）
+      // ⭐ 下面两条只对 WXML 有意义
       if (ext !== '.wxml') continue
       for (const p of lintMultilineText(text)) {
+        bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
+      }
+      for (const p of lintDuplicateLine(text)) {
         bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
       }
     }
@@ -448,7 +451,8 @@ async function assertWxSourceValid() {
     for (const b of bad) console.error('   · ' + b)
     console.error('')
     console.error('   改法：反引号用「」代替；注释块的开头结尾要成对；')
-    console.error('         <text> 的内容要紧贴标签（别另起一行，<text> 保留换行）。')
+    console.error('         <text> 的内容要紧贴标签（别另起一行，<text> 保留换行）；')
+    console.error('         删掉重复的那一行。')
     process.exit(1)
   }
 }
