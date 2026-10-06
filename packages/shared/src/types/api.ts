@@ -410,6 +410,39 @@ export type ExchangeFailureReason =
   /** 饼干不够换 1 点（< 40 块） */
   | 'not-enough-cookies'
 
+/**
+ * ⭐ **看激励视频补能量的结果**（`POST /api/user/ad-energy`）。
+ *
+ * ⚠️ 与补签 / 兑换同一约定：发不成**也返回 200**（`ok: false` 是业务结果）——
+ *    返回 4xx 只会让端侧弹一句无用的"网络异常"。
+ *
+ * ⚠️⚠️ 三种「成功」要分清（端侧文案全靠它）：
+ *    · `energyGained > 0`            —— 真发了；
+ *    · `ok && energyGained === 0`    —— ⭐ **重放**（同一个 requestId 又来了：
+ *      响应丢了客户端重试、或连点两下）。**点数没变**，所以**不能**再说一次"+1"；
+ *    · `ok === false`                —— 没发（原因见 `reason`）。
+ *
+ * ⚠️ 我们**没有**自己的日限（2026-10 用户定）：能看几次由微信广告系统决定
+ *    （官方口径「每个用户每天可观看激励式视频广告的次数有限」，数字未公布），
+ *    端侧表现为 `onError` / 拉取失败。服务端只有一个「最小间隔」挡脚本。
+ */
+export interface AdEnergyResponse {
+  ok: boolean
+  /** 这一次真发出去几点（重放 / 失败时是 0） */
+  energyGained: number
+  /** 发完（或重放）之后的能量余额 —— ⚠️ 端侧别自己加减 */
+  energy: number
+  /** 发不成的原因 */
+  reason?: AdEnergyFailureReason
+}
+
+/** 发不成的原因 */
+export type AdEnergyFailureReason =
+  /** 距上一次发放太近 —— ⚠️ 只有脚本会撞上（一次广告最短 6 秒），正常用户看不到 */
+  | 'too-soon'
+  /** 用户行不存在 —— ⚠️ 防御性分支：`/api/user/*` 的鉴权本该先 403 掉，理论上到不了 */
+  | 'unavailable'
+
 /** 补签补不了的原因 —— 与 `shared/makeup.ts` 的 `MakeupBlockReason` + 能量那条合起来 */
 export type MakeupFailureReason =
   | 'already-read-today'

@@ -8,6 +8,7 @@ import { getArenaStatsBatch, getRank } from '../services/leaderboard'
 import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
+import { grantAdEnergy } from '../services/ad-energy'
 import { exchangeCookiesForEnergy } from '../services/cookies'
 import { readStreakRecord } from '../services/streak-record'
 import { makeUpStreak } from '../services/makeup'
@@ -33,6 +34,7 @@ import {
   StreakRecordResponseSchema,
   MakeupResponseSchema,
   ExchangeResponseSchema,
+  AdEnergyResponseSchema,
 } from '../openapi/schemas'
 
 export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -555,6 +557,51 @@ userRoutes.openapi(exchangeRoute, async (c) => {
   const { requestId } = c.req.valid('json')
   // ⚠️ 换不成也返回 200（业务结果，不是请求错误）
   return c.json({ ok: true, data: await exchangeCookiesForEnergy(userId, requestId) }, 200)
+})
+
+/**
+ * ⭐⭐ **看激励视频补能量** —— 1 点/次（规格 prd §7.7；调研 docs/research/rewarded-ad-channel.md）。
+ *
+ * ⚠️ `requestId` 由**客户端按一次动作生成** —— 它就是 `energy_ledger` 的幂等键（`refType='ad'`），
+ *    响应丢包后的重试、连点两下都只会**发一次**（重放回 `ok: true` + `energyGained: 0`，
+ *    见 services/ad-energy.ts 的口径说明）。
+ *
+ * ⚠️ **不接受数量参数**：发几点是我们的事（`AD_REWARD_ENERGY` 常量）——
+ *    让端侧传等于让端侧定价，还多一处可能与承诺不符的地方。
+ *
+ * ⚠️ 我们**不做自己的日限**（2026-10 定）：能看几次由微信广告系统决定；
+ *    服务端只有一个 5 秒最小间隔挡脚本。
+ *
+ * ⚠️ 与补签 / 兑换同一约定：**发不成也返回 200**（业务结果，不是请求错误）。
+ */
+const adEnergyRoute = createRoute({
+  method: 'post',
+  path: '/ad-energy',
+  tags: ['我的'],
+  summary: '看激励视频补能量（1 点/次）',
+  security: [{ userToken: [] }],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ requestId: z.string().min(8).max(64) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: AdEnergyResponseSchema } },
+      description: '成功（⚠️ `data.ok` 才是"发了没有"，`data.energyGained` 才是"发了几点"）',
+    },
+  },
+})
+
+userRoutes.openapi(adEnergyRoute, async (c) => {
+  const userId = c.get('userId')
+  const { requestId } = c.req.valid('json')
+  // ⚠️ 发不成也返回 200（业务结果，不是请求错误）
+  return c.json({ ok: true, data: await grantAdEnergy(userId, requestId) }, 200)
 })
 
 const makeupRoute = createRoute({

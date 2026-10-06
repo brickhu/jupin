@@ -35,6 +35,12 @@ export const ENERGY_REASON = {
   makeup: 'streak_makeup',
   /** ⭐ 吃饼干换来的能量（见 services/cookies.ts 的 exchangeCookiesForEnergy） */
   exchange: 'exchange',
+  /**
+   * ⭐ 看激励视频广告补的能量（见 services/ad-energy.ts / prd §7.7）。
+   * ⚠️ `refType` 固定 `'ad'`、`refId` 是**客户端按一次动作生成的 requestId** ——
+   *    两者一起构成幂等键，所以连点 / 重试不会被发两次。
+   */
+  adReward: 'ad_reward',
 } as const
 
 /** 读余额（行锁住的版本，供事务内部复用） */

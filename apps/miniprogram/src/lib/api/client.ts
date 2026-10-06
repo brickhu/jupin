@@ -18,6 +18,7 @@ import type {
   LatestCardsResponse,
   MakeupResponse,
   ExchangeResponse,
+  AdEnergyResponse,
   UserListResponse,
   FavoritesResponse,
   ParticipationSubmissionsResponse,
@@ -896,6 +897,23 @@ export function fetchStreakRecord(month?: string): Promise<StreakRecordResponse>
  */
 export function exchangeCookies(requestId: string): Promise<ExchangeResponse> {
   return request<ExchangeResponse>('/api/user/exchange', {
+    method: 'POST',
+    data: { requestId },
+    budgetMs: LAUNCH_BUDGET_MS,
+  })
+}
+
+/**
+ * ⭐ **看激励视频补能量**（1 点/次，规格 prd §7.7）。
+ *
+ * ⚠️ `requestId` 由调用方按**一次观看**生成，重试时**必须复用同一个**：
+ *    服务端拿它当 `energy_ledger` 的幂等键 —— 换个 id 重试就是又发一次。
+ *    ⭐ 这条性质正是「看完没到账」能安全补发的原因（见 lib/ad-energy.ts 的待补发队列）。
+ *
+ * ⚠️ 发不成也返回 200（`ok:false` 是业务结果）—— 这里不会抛。
+ */
+export function claimAdEnergy(requestId: string): Promise<AdEnergyResponse> {
+  return request<AdEnergyResponse>('/api/user/ad-energy', {
     method: 'POST',
     data: { requestId },
     budgetMs: LAUNCH_BUDGET_MS,
