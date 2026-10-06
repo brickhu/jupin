@@ -20,7 +20,7 @@ import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
-import { gateMessage } from '../../lib/gate-message'
+import { isSlowReading, submitHintOf } from '../../lib/submit-hint'
 import { fetchArticleContent } from '../../lib/content'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
@@ -439,6 +439,13 @@ Page({
      */
     costEnergy: ENERGY_PER_CHALLENGE,
     /**
+     * ⭐⭐ **提交按钮下面那一行提示**的文案（见 lib/submit-hint.ts）。
+     * ⚠️ 只在 s3 显示；s1/s2 是空串（那时还没有判据）。
+     */
+    hintText: '',
+    /** ⭐ 刚拦下了一次提交 —— 把提示那行强调一下（光"点了没反应"会让人以为按钮坏了） */
+    hintHit: false,
+    /**
      * ⭐ 松手后的收尾中 —— 按钮显示「识别中…」。
      * ⚠️ 它必须**立刻**有反应：用户松手后如果按钮还写着"松开结束"，会以为自己没松开。
      */
@@ -475,6 +482,9 @@ Page({
    * 这期间录音还在继续、中间结果还在进来 —— 用来把最后那几个词追回来。
    */
   releasePending: false,
+
+  /** `hintHit` 的定时器 —— 强调一小会儿就恢复 */
+  hintHitTimer: null as ReturnType<typeof setTimeout> | null,
 
   /** 松手缓冲期的定时器（追上尾巴就提前清掉） */
   releaseTimer: null as ReturnType<typeof setTimeout> | null,
@@ -603,6 +613,11 @@ Page({
      *    用户以为"退出就不录了"，而麦克风其实还开着。
      */
     this.gone = true
+    // ⚠️ 强调的定时器也要清：页面没了它还会回来 setData
+    if (this.hintHitTimer !== null) {
+      clearTimeout(this.hintHitTimer)
+      this.hintHitTimer = null
+    }
     // ⚠️ 缓冲定时器也要清：页面没了它还会回来调 finishRecording
     if (this.releaseTimer !== null) {
       clearTimeout(this.releaseTimer)
@@ -859,6 +874,8 @@ Page({
             misread: misreadSet.has(i),
           })),
         })
+        // ⭐ 恢复出来的那一次也要有提示（时长一起恢复了，所以能重算）
+        this.syncSubmitHint(last.durationMs)
       }
       this.syncEnergyNote()
       /**
@@ -986,6 +1003,8 @@ Page({
     // ⚠️ 词上的标记也一起清（见 clearWordMarks）：判据清了、颜色还挂着的话，
     //    按住之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
     this.clearWordMarks()
+    // ⚠️ 提示同理：这一遍还没判过，不能挂着上一遍那句
+    this.setData({ hintText: '', hintHit: false })
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -1188,6 +1207,9 @@ Page({
         })),
       })
     }
+
+    // ⭐ 判据变了 ⇒ 提示跟着重算（唯一出口，见 syncSubmitHint）
+    this.syncSubmitHint(r.durationMs)
 
     /**
      * ⭐ 试听播的就是**录音落地的那个文件**，不再从帧拼 WAV。
@@ -1485,29 +1507,20 @@ Page({
      */
     if (this.missedIdx.length > 0) {
       /**
-       * ⭐ 用微信**原生弹窗**（`wx.showModal`）而不是页面上的一张卡：
-       *    它就是「一句话 + 一个底部按钮 + 点了关掉」，原生组件正好是这个形状 ——
-       *    不必新增状态、不必新增组件，也不会和朗读页自己的浮层（eval-dialog）抢注意力。
-       * ⚠️ `showCancel: false` + 自定义 confirmText 就是"只有一个按钮"。
-       * ⚠️ 刻意**没有**"继续提交"那个出口（用户 2026-10 定）：判为漏读就只提示、不放过。
+       * ⚠️⚠️ **拦下但不弹窗**（用户 2026-10 定）—— 该说的话已经在按钮下面那行提示里了，
+       *    再弹一次是同一件事的第二个说法。
+       * ⚠️ 但**必须给一个看得见的回应**：光"点了没反应"会让人以为按钮坏了。
+       *    所以把提示那行强调一下（`hintHit`），一会儿自己恢复。
+       * ⚠️ 强调用墨色加粗、不用红 —— 红是"判错"的颜色，这里只是"没读全"。
+       * ⚠️ 只有"漏读"拦 —— "读错"不可靠（ASR 听错占了很大一块，见 AlignmentDetail 的说明），
+       *    拿它拦人等于把"机器听错"变成"用户交不上去"。
        */
-      void wx.showModal({
-        title: '还有词没读好',
-        /**
-         * ⭐ **两件事分开说**（用户 2026-10 定）：
-         *    · **没读到** —— 那一位上什么都没有；
-         *    · **没读准** —— 读到了，但**机器听到的是另一个词**（把那个词显示出来）。
-         * ⚠️⚠️ "没读准"那行**必须**写成「识别成 X」而不是「你读错了 X」：
-         *    那是在陈述**机器听到了什么**，不是在判定用户读错了 ——
-         *    替换的成因里 ASR 听错占了很大一块（见 AlignmentDetail.substituted 的说明）。
-         */
-        content: gateMessage(
-          this.missedIdx.map((i) => this.plainWords[i] ?? '').filter(Boolean),
-          this.misreadList.map((m) => ({ ref: this.plainWords[m.at] ?? '', heard: m.heard })),
-        ),
-        showCancel: false,
-        confirmText: '我知道了',
-      })
+      this.setData({ hintHit: true })
+      if (this.hintHitTimer !== null) clearTimeout(this.hintHitTimer)
+      this.hintHitTimer = setTimeout(() => {
+        this.hintHitTimer = null
+        this.setData({ hintHit: false })
+      }, 1500)
       return
     }
 
@@ -2082,6 +2095,24 @@ Page({
     this.setData({ words: words.map((w) => ({ ...w, missed: false, misread: false })) })
   },
 
+  /**
+   * ⭐⭐ **算出提交按钮下面那句话** —— 唯一的出口。
+   *
+   * ⚠️⚠️ 为什么必须只有一处：判据来自三个数（漏读几个 / 读错几个 / 是不是偏慢），
+   *    而"这一次的结论变了"有好几个时刻（定稿、缓存恢复）。
+   *    分开各算一份，就会出现「提示说没事、门禁却拦着」这种自相矛盾。
+   *
+   * @param recordMs 这一次录音的时长（"按下到松手"，见 lib/submit-hint.ts 的说明）
+   */
+  syncSubmitHint(recordMs: number) {
+    const hintText = submitHintOf({
+      missed: this.missedIdx.length,
+      misread: this.misreadList.length,
+      slow: isSlowReading(recordMs, this.data.stdDurationMs),
+    })
+    if (hintText !== this.data.hintText) this.setData({ hintText })
+  },
+
   onRestart() {
     this.clearAttempt()
   },
@@ -2109,7 +2140,14 @@ Page({
     this.missedIdx = []
     this.misreadList = []
     this.clearWordMarks()
+    if (this.hintHitTimer !== null) {
+      clearTimeout(this.hintHitTimer)
+      this.hintHitTimer = null
+    }
     this.setData({
+      // ⚠️ 提示也要清：这一遍还没判过，不能挂着上一遍那句
+      hintText: '',
+      hintHit: false,
       phase: 's1',
       error: '',
       restored: false,

@@ -1,0 +1,62 @@
+/**
+ * ⭐⭐ **提交按钮下面那一行提示** —— 提交前唯一要说的那句话（用户 2026-10 定）。
+ *
+ * ⚠️ 它替代了早先的**弹窗**：信息在按提交**之前**就摆在那里，看得见、不用被弹窗打断。
+ *    ⇒ 措辞是**建议**（"建议重试"），不是判决 —— 判决是提交之后云端那一次。
+ *
+ * 六种情形（用户给的原话顺序，即优先级）：
+ *
+ *   1. 朗读完整，点击提交 AI 检测并打分
+ *   2. 漏读 N 个单词，建议重试
+ *   3. 读错 N 个单词，建议重试
+ *   4. 漏读 N 个单词，读错 M 个单词，建议重试
+ *   5. 读得有点慢，建议重读一遍后提交
+ *
+ * ⚠️ "读得慢"排在漏读/读错**之后**：读得不全比读得慢更该先说，两个都占时只报前者。
+ *
+ * ⚠️ 单独放一个纯函数（而不是写在页面里）有两个理由：
+ *    ① 措辞是**产品口径**，值得被单测钉住，不该散在页面逻辑中间；
+ *    ② 它是纯的 —— 给定几个数字，输出永远一样，没有任何页面状态混进来。
+ */
+
+/** 判断"读得有点慢"的倍数 —— 用户给的口径是 2 倍 */
+export const SLOW_RATIO = 2
+
+/**
+ * ⚠️ 标准音太短时不判"慢"：短句的比值**噪声太大** ——
+ *    标准音 1.2 秒的句子，用户 2.5 秒读完就是 2 倍，可那完全正常。
+ *    所以给一个绝对下限，低于它的句子不参与这个判断。
+ */
+export const MIN_STD_MS_FOR_SLOW = 2000
+
+/**
+ * ⚠️⚠️ 这个判断是**粗的**，别拿它当精确指标：`recordMs` 是"按下到松手"的时长，
+ *    里面还含**开口前的停顿**和**松手缓冲期（600ms）**—— 插件不给逐词时间戳，
+ *    拿不到真正的"开口时刻"，所以两者都去不掉。
+ *    ⇒ 阈值只能往宽了取，"有点慢"是个提示，不是测量结论。
+ */
+export function isSlowReading(recordMs: number, stdMs: number): boolean {
+  if (!Number.isFinite(stdMs) || stdMs < MIN_STD_MS_FOR_SLOW) return false
+  return recordMs > stdMs * SLOW_RATIO
+}
+
+export interface SubmitHintInput {
+  /** 漏读（没读到）几个词 */
+  missed: number
+  /** 读错（没读准）几个词 */
+  misread: number
+  /** 是不是读得明显偏慢（见 isSlowReading） */
+  slow: boolean
+}
+
+export function submitHintOf(input: SubmitHintInput): string {
+  const { missed, misread, slow } = input
+
+  if (missed > 0 && misread > 0) {
+    return '漏读 ' + missed + ' 个单词，读错 ' + misread + ' 个单词，建议重试'
+  }
+  if (missed > 0) return '漏读 ' + missed + ' 个单词，建议重试'
+  if (misread > 0) return '读错 ' + misread + ' 个单词，建议重试'
+  if (slow) return '读得有点慢，建议重读一遍后提交'
+  return '朗读完整，点击提交 AI 检测并打分'
+}
