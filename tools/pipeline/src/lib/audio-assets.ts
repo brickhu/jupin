@@ -28,8 +28,11 @@ import { synthesize, type Alignment } from './fishaudio'
 
 const run = promisify(execFile)
 
+/** 标准音的成品目录 —— ⚠️ 它是**内容**，进仓库（缓存才在 tools/pipeline/data/cache/） */
+const OUT = resolve(ROOT, 'content/audio')
+
 /** 标准音清单 —— 记「每一篇的音频是怎么来的」，见 writeManifest */
-const MANIFEST = resolve(ROOT, 'content/audio/manifest.json')
+const MANIFEST = resolve(OUT, 'manifest.json')
 
 /** 现有内容的音频参数 */
 const SAMPLE_RATE = 24000
@@ -48,7 +51,7 @@ export interface ProduceResult {
 }
 
 function audioPathOf(articleId: string, suffix = '.mp3'): string {
-  return resolve(ROOT, 'content/audio', `${articleId}${suffix}`)
+  return resolve(OUT, `${articleId}${suffix}`)
 }
 
 /**
@@ -151,4 +154,63 @@ export async function listArticleIdsOnDisk(): Promise<string[]> {
     .filter((n) => n.endsWith('.json'))
     .map((n) => n.replace(/\.json$/, ''))
     .sort()
+}
+
+/**
+ * ⭐⭐ **剪掉孤儿音频** —— 盘上有、但已经没有对应句子的那些。
+ *
+ * ⚠️⚠️ 为什么必须有这一步（2026-10 发现的真实事故）：
+ *    **句子 id 是内容哈希**（`sha256(text)` 前 16 位）⇒ **改一句文案就换一个 id**，
+ *    而旧音频与旧 manifest 条目**留在原地没人清**。
+ *    实测一次就攒了 3 个孤儿，其中一个还被提交进了仓库。
+ *
+ * ⚠️ 为什么不是「把 content/audio/*.mp3 加进 .gitignore」：
+ *    **那个目录里 18/19 是正经内容**（成品标准音），ignore 会把它们一起漏掉。
+ *    `.gitignore` 里对这件事的定性也是明写的：
+ *    「合成缓存不是产物 —— **成品在 content/audio/**」。
+ *
+ * ⚠️ 只扫**顶层** `{id}.mp3`：`{id}/w{i}.mp3`（逐词切片）2026-09 已经废除了，
+ *    万一盘上还留着旧目录，不动它 —— 那不是这一步的职责。
+ *
+ * @returns 被删掉的 id（调用方拿去打日志）
+ */
+export async function pruneOrphanAudio(): Promise<string[]> {
+  const { readdir, rm } = await import('node:fs/promises')
+  if (!existsSync(OUT)) return []
+
+  const valid = new Set(await listArticleIdsOnDisk())
+  const names = await readdir(OUT)
+
+  const removed: string[] = []
+  for (const name of names) {
+    if (!name.endsWith('.mp3')) continue
+    const id = name.replace(/\.mp3$/, '')
+    if (valid.has(id)) continue
+    await rm(resolve(OUT, name), { force: true })
+    removed.push(id)
+  }
+
+  /**
+   * ⚠️ manifest 里的条目**要跟着清**（不只是清掉被删 MP3 的那几条）：
+   *    留着它，下次这条 id 被复用时会因为「清单里已经有指纹」而**跳过合成**
+   *    —— 结果是新句子配着旧音频，而且没有任何报错。
+   *
+   * ⚠️⚠️ 所以判据是「**这个 id 还有没有句子**」，不是「刚刚有没有删掉它的 mp3」：
+   *    实测就漏过一条 —— manifest 里有、盘上没有 mp3（生成到一半失败 / 音频被单独删过），
+   *    按"跟着 mp3 删"的写法它永远不会被清掉。
+   */
+  let manifest: Record<string, string> = {}
+  try {
+    manifest = JSON.parse(await readFile(MANIFEST, 'utf8')) as Record<string, string>
+  } catch {
+    return removed
+  }
+  const staleManifest = Object.keys(manifest).filter((id) => !valid.has(id))
+  if (staleManifest.length > 0) {
+    for (const id of staleManifest) delete manifest[id]
+    await writeFile(MANIFEST, JSON.stringify(manifest, null, 2) + '\n')
+  }
+
+  // 返回值 = 盘上删掉的 + 清单里清掉的（去重），调用方打日志用
+  return [...new Set([...removed, ...staleManifest])]
 }

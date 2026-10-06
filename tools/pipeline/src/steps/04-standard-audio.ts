@@ -19,7 +19,12 @@
  *    （articles 表注释：文章 = 句子）。所以现在按**句**生产。
  */
 
-import { listArticleIdsOnDisk, produceStandardAudio, readArticleText } from '../lib/audio-assets'
+import {
+  listArticleIdsOnDisk,
+  produceStandardAudio,
+  pruneOrphanAudio,
+  readArticleText,
+} from '../lib/audio-assets'
 import type { Step } from './index'
 
 export const step04: Step = {
@@ -63,6 +68,20 @@ export const step04: Step = {
     }
 
     console.log(`  小计：处理 ${done}（其中复用已有音频 ${reused}），失败 ${failed}`)
+
+    /**
+     * ⭐⭐ **剪掉孤儿音频**（2026-10 加）。
+     *
+     * ⚠️ 为什么放在这一步的最后：句子 id 是**内容哈希**，改一句文案就换一个 id，
+     *    旧音频与旧 manifest 条目会留在原地 —— 不清的话它们会**越攒越多**，
+     *    而且看起来像是"凭空冒出来的文件"（实测攒了 3 个，一个还被提交进了仓库）。
+     * ⚠️ 必须在**全部生成完之后**跑：中途跑会把"这一批还没轮到"的当成孤儿删掉。
+     */
+    const orphans = await pruneOrphanAudio()
+    if (orphans.length > 0) {
+      console.log(`  🧹 清掉 ${orphans.length} 个孤儿音频（对应句子已被改写/删除）：${orphans.join(', ')}`)
+    }
+
     if (failed > 0) throw new Error(`④ 步有 ${failed} 条没跑成`)
   },
 }
