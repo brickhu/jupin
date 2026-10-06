@@ -31,6 +31,7 @@
 | [miniprogram-api-constraints.md](research/miniprogram-api-constraints.md) | **微信小程序 API 硬约束（官方文档核实）** | ⚠️ frameSize 单位 KB 且须整数 · sampleRate PC 不支持 · Worker 最大并发 1 |
 | [cloud-hosting-constraints.md](research/cloud-hosting-constraints.md) | **微信云托管约束**（部署方案） | ⭐ CallContainer 免域名免备案 · ⚠️ **音频必须走对象存储直传**（请求体有大小限制） |
 | [styling-decision.md](research/styling-decision.md) | 样式方案选型（StyleX / Tailwind / UnoCSS） | ⭐ 选 UnoCSS + preset-weapp —— **WXML 调不了 JS，CSS-in-JS 全部出局** · ⚠️ 变体分隔符必须是 `__` |
+| [rewarded-ad-channel.md](research/rewarded-ad-channel.md) | **看视频广告换能量**（激励视频选型 / 流量主门槛 / 服务端验证 / 单位经济与保本线） | ⚠️ **现在开不了**：流量主要累计 UV ≥ 1000 + 备案认证 · ⭐ 建议 **1 点/次、日限 2–3 次、只在余额不足时给入口** · ❓ 虚拟支付与广告并存须先问官方 |
 | [skyline-evaluation.md](research/skyline-evaluation.md) | **Skyline 渲染引擎评估**（官方文档核实） | ⭐ 现在不切、但按它的 WXSS 子集写 · ⚠️ **不开 AB 实验线上仍走 WebView** · ⚠️ 不支持 `*`/属性选择器/inline 布局/sticky/多层 shadow |
 
 ### design/ —— 设计稿

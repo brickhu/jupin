@@ -68,6 +68,11 @@ export function mountOpenApiDocs(app: ReturnType<typeof createApp>): void {
     description:
       '小程序走微信网关注入的 x-wx-openid（无需显式带头）；本地联调/公网走 Bearer token。',
   })
+  app.openAPIRegistry.registerComponent('securitySchemes', 'cronToken', {
+    type: 'http',
+    scheme: 'bearer',
+    description: '定时触发器：Authorization: Bearer <CRON_SECRET>（见 routes/cron.ts）',
+  })
   app.openAPIRegistry.registerComponent('securitySchemes', 'adminToken', {
     type: 'http',
     scheme: 'bearer',

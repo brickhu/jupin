@@ -128,7 +128,12 @@ const GUARDS = scan(/app\.use\('(\/api\/[a-z-]+)\/\*',\s*authMiddleware\)/)
  */
 // ⚠️ 2026-09 删掉 `/api/arenas`（那条"大而全"的竞技场接口拆成了
 //    /api/articles/{id} + /api/participations + /api/participations/stats + 两条鉴权接口）
-const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/article', '/api/stats', '/api/profile', '/api/challenge', '/api/admin', '/api/users', '/api/participation', '/api/tags'])
+/**
+ * ⚠️ `/api/cron` 是**定时触发器**用的（见 routes/cron.ts）：它没有"用户身份"这回事，
+ *    鉴权是 `CRON_SECRET`（Bearer），与 authMiddleware 那套完全是两回事 ——
+ *    挂上去只会让定时触发器 401。
+ */
+const PUBLIC_PREFIXES = new Set(['/api/auth', '/api/pay', '/api/articles', '/api/article', '/api/stats', '/api/profile', '/api/challenge', '/api/admin', '/api/users', '/api/participation', '/api/tags', '/api/cron'])
 const EXPECTED_PUBLIC = [...PUBLIC_PREFIXES].sort()
 
 describe('业务路由的鉴权覆盖 —— 「先注册，再用业务数据」', () => {

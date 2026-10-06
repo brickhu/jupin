@@ -148,6 +148,7 @@ describe('接口契约 —— 两个客户端调的路径都在 spec 里', () =>
      *    · `/api/pay/notify` —— 支付平台回调
      *    · `/api/auth/session` —— 只在刷新 session_key 时按需调（client 里是拼出来的）
      *    · `/health`、`/api/openapi.json`、`/api/docs` —— 运维/文档自身
+     *    · `/api/cron/sweep` —— **定时触发器**打的（微信云托管），调用方不是端侧
      */
     const serverOnly = [
       '/media',
@@ -156,6 +157,7 @@ describe('接口契约 —— 两个客户端调的路径都在 spec 里', () =>
       '/health',
       '/api/openapi.json',
       '/api/docs',
+      '/api/cron/sweep',
     ]
     const orphans = [...spec].filter((p) => {
       if (serverOnly.some((s) => p === s || p.startsWith(s + '/'))) return false

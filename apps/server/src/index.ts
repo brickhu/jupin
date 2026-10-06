@@ -16,6 +16,7 @@ import { submissionsRoutes } from './routes/submissions'
 import { uploadsRoutes } from './routes/uploads'
 import { userRoutes } from './routes/user'
 import { mediaRoutes } from './routes/media'
+import { cronRoutes } from './routes/cron'
 import { challengeRoutes, profileRoutes } from './routes/public'
 import { favoritesRoutes, favoritedRoutes } from './routes/favorites'
 import { articleRoutes } from './routes/article'
@@ -134,6 +135,13 @@ app.route('/api/auth', authRoutes)
  *    的资源都不能要求鉴权 —— 否则在开发者工具和真机上都是 401。
  */
 app.route('/media', mediaRoutes)
+
+/**
+ * ⭐⭐ **定时触发器**（微信云托管）打进来的运维接口 —— 见 routes/cron.ts。
+ * ⚠️ 刻意**不在 `/api/user/*` 下**：它没有"用户身份"这回事，
+ *    鉴权是 `CRON_SECRET`（Bearer），与用户那套完全是两回事。
+ */
+app.route('/api/cron', cronRoutes)
 
 /**
  * ⭐⭐ **公开页面** —— 首页 / 个人主页 / 挑战详情 / 竞技场。
