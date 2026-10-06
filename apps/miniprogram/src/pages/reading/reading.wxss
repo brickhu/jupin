@@ -1,0 +1,40 @@
+/**
+ * 朗读页专属样式 —— 目前只有录音中那颗红点的「呼吸」动效。
+ *
+ * ⚠️ 为什么动效不写在组件里、也不做成全站组件：
+ *    它只服务这一处（s2 顶行的录音指示点），抽出去反而是给一个用例建一个抽象。
+ *    全站通用的转圈走 UnoCSS 的 animate-spin（见 eval-dialog），那是另一回事。
+ *
+ * ⚠️⚠️ 这里**只有 transform / opacity，没有任何颜色** —— 是刻意的：
+ *    手写的 WXSS 取不到 uno.config.mjs 里那套 theme token（颜色改了这里不会跟着改），
+ *    所以手写 CSS 尽量别碰颜色。圆点的红色仍然由 WXML 上的 bg-bad 给。
+ */
+
+/**
+ * ⭐ **呼吸**：scale 与 opacity 一起走。
+ *
+ * ⚠️ 只做透明度（像 Tailwind 的 animate-pulse）在一个 20rpx 的小圆点上**几乎看不出来** ——
+ *    点太小，明暗变化没有面积感。加上 scale 才有"一鼓一收"的呼吸感。
+ *
+ * ⚠️ 用 transform: scale 而不是改 width/height：后者每帧都要重新布局（reflow），
+ *    而 scale 只走合成。这个区别在低端机上能看出来。
+ *
+ * ⚠️ 1.4s 是"呼吸"的常见节奏（人静息呼吸约 12–16 次/分 ≈ 4–5 秒一轮，
+ *    但界面上的指示点要明显得多才行 —— 4 秒一轮会让人以为它坏了）。
+ *    easing 用 ease-in-out：匀速看起来像机器，in-out 才像呼吸。
+ */
+.rec-breath {
+  animation: rec-breath 1.4s ease-in-out infinite;
+}
+
+@keyframes rec-breath {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.28);
+    opacity: 0.5;
+  }
+}

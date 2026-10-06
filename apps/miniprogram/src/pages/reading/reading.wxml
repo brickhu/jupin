@@ -66,7 +66,12 @@
             换成 audio-button 之后播放钮变 64，这里不跟着改就会**把那个跳动放回来**。 -->
     <view class="flex items-center justify-between mb-3 min-h-[64rpx]" wx:if="{{phase === 's2'}}">
       <view class="flex items-center">
-        <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0"></view>
+        <!-- ⭐ 录音指示点 —— **呼吸动效**（用户 2026-10 定）：一鼓一收，一眼看出"还在录"。
+             ⚠️ 动效本身在页面 wxss 的 .rec-breath 里（scale + opacity 一起走）——
+                只做透明度在小圆点上看不出来，见 reading.wxss 的说明。
+             ⚠️ **只在 s2 出现**：这个动的点本身就是"正在录"的信号，
+                静止的红点和一个普通的装饰圆没有区别。 -->
+        <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0 rec-breath"></view>
         <text class="text-28rpx text-body ml-2">录音中...</text>
       </view>
       <!-- -- 给改代码的人 --
