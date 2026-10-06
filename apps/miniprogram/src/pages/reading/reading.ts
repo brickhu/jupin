@@ -443,6 +443,13 @@ Page({
      * ⚠️ 只在 s3 显示；s1/s2 是空串（那时还没有判据）。
      */
     hintText: '',
+    /**
+     * ⭐ **是不是"朗读完整"** —— 界面据此选颜色（用户 2026-10 定）：
+     *    `true` ⇒ **绿**（可以提交）；`false` ⇒ **黄**（有事要说，含"读得有点慢"）。
+     * ⚠️ 它由 `submitHintOf` **连同文案一起返回**，界面不再自己比字符串 ——
+     *    各判一次会出现"文字是绿的、内容却说漏读"这种自相矛盾。
+     */
+    hintOk: true,
     /** ⭐ 刚拦下了一次提交 —— 把提示那行强调一下（光"点了没反应"会让人以为按钮坏了） */
     hintHit: false,
     /**
@@ -1004,7 +1011,7 @@ Page({
     //    按住之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
     this.clearWordMarks()
     // ⚠️ 提示同理：这一遍还没判过，不能挂着上一遍那句
-    this.setData({ hintText: '', hintHit: false })
+    this.setData({ hintText: '', hintOk: true, hintHit: false })
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -2105,12 +2112,15 @@ Page({
    * @param recordMs 这一次录音的时长（"按下到松手"，见 lib/submit-hint.ts 的说明）
    */
   syncSubmitHint(recordMs: number) {
-    const hintText = submitHintOf({
+    const hint = submitHintOf({
       missed: this.missedIdx.length,
       misread: this.misreadList.length,
       slow: isSlowReading(recordMs, this.data.stdDurationMs),
     })
-    if (hintText !== this.data.hintText) this.setData({ hintText })
+    // ⚠️ 颜色和文案一起更新（hintOk 与 hintText 同源，不能只更一个）
+    if (hint.text !== this.data.hintText || hint.ok !== this.data.hintOk) {
+      this.setData({ hintText: hint.text, hintOk: hint.ok })
+    }
   },
 
   onRestart() {
@@ -2147,6 +2157,7 @@ Page({
     this.setData({
       // ⚠️ 提示也要清：这一遍还没判过，不能挂着上一遍那句
       hintText: '',
+      hintOk: true,
       hintHit: false,
       phase: 's1',
       error: '',

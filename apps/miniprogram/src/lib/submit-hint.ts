@@ -49,14 +49,28 @@ export interface SubmitHintInput {
   slow: boolean
 }
 
-export function submitHintOf(input: SubmitHintInput): string {
+export interface SubmitHint {
+  /** 那一行写什么 */
+  text: string
+  /**
+   * ⭐ **是不是"朗读完整"那一种** —— 界面据此决定颜色（用户 2026-10 定）：
+   *    `true` ⇒ **绿**（一切正常，可以提交）；`false` ⇒ **黄**（有事要说）。
+   *
+   * ⚠️ 它和 `text` **一起返回**，而不是让界面再去比一遍字符串：
+   *    各判一次就会出现"文字是绿的、内容却说漏读"这种自相矛盾 ——
+   *    文案和它的性质必须同源。
+   */
+  ok: boolean
+}
+
+export function submitHintOf(input: SubmitHintInput): SubmitHint {
   const { missed, misread, slow } = input
 
   if (missed > 0 && misread > 0) {
-    return '漏读 ' + missed + ' 个单词，读错 ' + misread + ' 个单词，建议重试'
+    return { text: '漏读 ' + missed + ' 个单词，读错 ' + misread + ' 个单词，建议重试', ok: false }
   }
-  if (missed > 0) return '漏读 ' + missed + ' 个单词，建议重试'
-  if (misread > 0) return '读错 ' + misread + ' 个单词，建议重试'
-  if (slow) return '读得有点慢，建议重读一遍后提交'
-  return '朗读完整，点击提交 AI 检测并打分'
+  if (missed > 0) return { text: '漏读 ' + missed + ' 个单词，建议重试', ok: false }
+  if (misread > 0) return { text: '读错 ' + misread + ' 个单词，建议重试', ok: false }
+  if (slow) return { text: '读得有点慢，建议重读一遍后提交', ok: false }
+  return { text: '朗读完整，点击提交 AI 检测并打分', ok: true }
 }
