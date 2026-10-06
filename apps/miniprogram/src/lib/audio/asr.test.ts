@@ -78,7 +78,7 @@ describe('asr —— 正常一次识别', () => {
 
     const p = asr.startRecognize()
     expect(typeof mgr.onStop).toBe('function') // 挂上了属性 —— 不是方法调用
-    expect(mgr.start).toHaveBeenCalledWith({ lang: 'en_US', duration: 60000 })
+    expect(mgr.start).toHaveBeenCalledWith({ lang: 'en_US', duration: asr.ASR_MAX_RECORD_MS })
 
     // ⚠️ 先让时间走一点，否则 finalizeMs 恒为 0、测不出东西
     vi.advanceTimersByTime(20)
@@ -203,5 +203,27 @@ describe('asrErrorText —— 负数码要变成人话（-30003 真机遇到过�
     const p = asr.startRecognize()
     mgr.onError?.({ retcode: -30003, msg: '录音帧数据未产生' })
     await expect(p).rejects.toThrow(/开发者工具/)
+  })
+})
+
+describe('录音时长上限 —— 不要取插件的最大值', () => {
+  it('⭐ 默认值必须明显小于插件的上限 60000（否则忘了点停止就白挂一分钟）', async () => {
+    const asr = await freshAsr()
+    expect(asr.ASR_MAX_RECORD_MS).toBeLessThan(60_000)
+    expect(asr.ASR_MAX_RECORD_MS).toBeGreaterThanOrEqual(15_000) // 也别短到把正常朗读掐了
+  })
+
+  it('startRecognize 把它传给插件（不是硬编码 60000）', async () => {
+    const mgr = fakePlugin()
+    const asr = await freshAsr()
+    asr.startRecognize()
+    expect(mgr.start).toHaveBeenCalledWith({ lang: 'en_US', duration: asr.ASR_MAX_RECORD_MS })
+  })
+
+  it('调用方可以按句长覆盖', async () => {
+    const mgr = fakePlugin()
+    const asr = await freshAsr()
+    asr.startRecognize({ durationMs: 12_345 })
+    expect(mgr.start).toHaveBeenCalledWith({ lang: 'en_US', duration: 12_345 })
   })
 })

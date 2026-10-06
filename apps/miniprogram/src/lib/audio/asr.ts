@@ -109,6 +109,22 @@ export function describeAsrEvent(e: AsrEvent): string {
 export const ASR_LANG = 'en_US'
 
 /**
+ * ⭐ 默认录音时长上限（ms）—— 插件的 `duration`：到点**自动停**，并走 `onStop` 给结果。
+ *
+ * ⚠️ 插件**最大支持 60000**（官方文档原话），超了传进去也无效。
+ * ⚠️⚠️ 但**不要取 60000**（第一版就是这么写的，是错的）：它是"用户忘了点停止"的兜底，
+ *    取满额意味着**界面要白挂一分钟**。而这里的不对称是：
+ *      停早了 → 这一次结果不准，用户重录一下（代价小）
+ *      停晚了 → 界面挂住、配额白烧一分钟（代价大）
+ *    ⇒ 往**短**取。我们的句子念完约 5–10 秒（实测 4.6–8.2s），留出停顿与重来的余量，
+ *      **30 秒**足够；真读超了 30 秒的句子，本来也该拆。
+ * ⚠️ 配额是**按条**算的（250 条/分钟 · 3 万条/天），与时长无关 —— 所以改小它不省额度，
+ *    纯粹是为了不让界面挂住。
+ * ⚠️ 调用方可以按句长覆盖（见 `startRecognize` 的 `durationMs`）。
+ */
+export const ASR_MAX_RECORD_MS = 30_000
+
+/**
  * ⭐ 插件错误码 → 人话。
  *
  * ⚠️ 为什么要这张表：插件 `onError` 只给一个**负数码 + 一句很含糊的 msg**
@@ -324,7 +340,7 @@ export function startRecognize(opts: { durationMs?: number } = {}): Promise<Reco
     pending = { resolve, reject, startedAt, stoppedAt: null, started: false, startTimer, stopTimer: null }
     emit({ at: startedAt, kind: 'start-requested' })
     try {
-      m.start({ lang: ASR_LANG, duration: opts.durationMs ?? 60000 })
+      m.start({ lang: ASR_LANG, duration: opts.durationMs ?? ASR_MAX_RECORD_MS })
     } catch (e) {
       fail('启动识别失败：' + PLUGIN_HINT + (e instanceof Error ? ' · ' + e.message : ''))
     }
