@@ -11,11 +11,11 @@
     <text class="text-28rpx text-bad block leading-[1.6]">同声传译插件不可用：请确认已在公众平台添加「微信同声传译」，且 app.json 的 version 与平台一致。</text>
   </view>
 
-  <!-- ⭐⭐ 环境：这一行直接判掉一大类误判（模拟器上插件录音根本不工作） -->
+  <!-- ⭐⭐ 环境：这一行直接判掉一大类误判（插件在开发者工具里录不了音） -->
   <view class="card p-3 mb-3 border border-solid border-cardline">
     <text class="text-24rpx text-faint block">运行环境</text>
     <text class="text-30rpx font-semibold block mt-1 {{isDevtools ? 'text-bad' : 'text-ok'}}">{{platform}}</text>
-    <text wx:if="{{isDevtools}}" class="text-24rpx text-bad block mt-2 leading-[1.7]">⚠️ 你在开发者工具（模拟器）里。模拟器不产生真实录音帧，插件会立刻报 -30003 —— 请用右上角「预览」扫码，在真机上跑这一页。</text>
+    <text wx:if="{{isDevtools}}" class="text-24rpx text-bad block mt-2 leading-[1.7]">⚠️ 你在微信开发者工具里 —— 插件在这里录不了音（会立刻报 -30003）。注意：**裸录音器在开发者工具里是正常的**，所以这不是麦克风的问题。请用右上角「预览」扫码，在真机上跑这一页。</text>
   </view>
 
   <!-- ⭐⭐ 裸录音器自检：把「环境问题」和「插件问题」分开 -->
