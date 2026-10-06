@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, lt, ne, sql } from 'drizzle-orm'
 import {
   COOKIE_PASS_LINE,
   COOKIES_PER_ENERGY,
@@ -7,6 +7,7 @@ import {
   type ArticleLevel,
   type CookieAward,
   type CookieAwardView,
+  type CookiesResponse,
   type ExchangeResponse,
 } from '@jushuo/shared'
 
@@ -384,4 +385,43 @@ export async function exchangeCookiesForEnergy(
       energy: (row?.energy ?? 0) + gained,
     }
   })
+}
+
+/**
+ * ⭐ **饼干页的数据**：两个位置的余额 + 一页流水（游标分页）。
+ *
+ * ⚠️ 与能量页那份**同一套分页形状**（游标 = 上一条的 id，倒序）——
+ *    两页的翻页行为必须一样，否则用户会以为其中一页坏了。
+ * ⚠️ `nextBefore` 只在**刚好取满一页**时才给：少取一条就说明到底了
+ *    （比 `COUNT(*)` 便宜，也不会在翻页时出现"空跑一页"）。
+ */
+export async function readCookieLedger(
+  userId: number,
+  limit: number,
+  before: number | null,
+  tx: Executor = db,
+): Promise<CookiesResponse> {
+  const rows = await tx
+    .select()
+    .from(cookieLedger)
+    .where(
+      before === null
+        ? eq(cookieLedger.userId, userId)
+        : and(eq(cookieLedger.userId, userId), lt(cookieLedger.id, before)),
+    )
+    .orderBy(desc(cookieLedger.id))
+    .limit(limit)
+
+  return {
+    cookies: await readCookies(userId, tx),
+    items: rows.map((r) => ({
+      id: r.id,
+      delta: r.delta,
+      reason: r.reason,
+      refType: r.refType,
+      refId: r.refId,
+      createdAt: r.createdAt.toISOString(),
+    })),
+    nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
+  }
 }

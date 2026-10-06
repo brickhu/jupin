@@ -450,6 +450,34 @@ export type MakeupFailureReason =
   | 'too-long'
   | 'not-enough-energy'
 
+/**
+ * ⭐ **饼干流水的一条** —— 与 `EnergyLedgerItem` 同形（两张流水表结构一样，
+ *    见 schema 里 cookie_ledger 的注释：为什么它们是两张表而不是一张）。
+ *
+ * ⚠️ `reason` 是给端侧做文案映射用的（`conquer` → 「攻克句子」…），
+ *    端侧认不出来的一律叫「奖励」—— 加一种 reason 不该逼着端侧发版。
+ */
+export interface CookieLedgerItem {
+  id: number
+  /** 正数入账（攻克）、负数出账（换能量） */
+  delta: number
+  /** conquer | exchange | admin */
+  reason: string
+  refType: string
+  refId: string
+  /** ISO 时间串 */
+  createdAt: string
+}
+
+/** ⭐ 饼干页的数据：两个位置的余额 + 流水（分页） */
+export interface CookiesResponse {
+  /** 累计获得（只增）+ 可用（可花）—— 见 CookieView */
+  cookies: CookieView
+  items: CookieLedgerItem[]
+  /** 下一页游标（把最后一条的 id 当 before 传回来）；null = 没有更多了 */
+  nextBefore: number | null
+}
+
 /** 商店里的一件商品（价格由服务端给，端侧不写死） */
 export interface ShopGoodsItem {
   code: string

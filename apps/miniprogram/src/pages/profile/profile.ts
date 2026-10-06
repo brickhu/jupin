@@ -78,6 +78,8 @@ Page({
     avatarPlaceholder: '/assets/avatar-placeholder.png',
     /** ⭐ 能量 / 解冻卡只有本人才有（别人的主页服务端返回 null）—— 决定那一行显不显示 */
     hasEnergy: false,
+    /** ⭐ 是不是我自己 —— 决定饼干那两行能不能点进流水 */
+    isMe: false,
     energy: 0,
     streakDays: 0,
     conqueredCount: 0,
@@ -156,6 +158,7 @@ Page({
        *    看别人的主页时没有这一份 —— 那一行不显示（hasEnergy=false）。
        */
       hasEnergy: me.getState().userInfo?.id === p.id,
+      isMe: me.getState().userInfo?.id === p.id,
       energy: me.getState().userInfo?.energy ?? 0,
       streakDays: p.streakDays,
       conqueredCount: p.conqueredCount,
@@ -163,6 +166,16 @@ Page({
       cookieRows: toCookieRows(p.cookies),
     })
     this.loadAvatar(p.avatarUrl ?? '')
+  },
+
+  /**
+   * ⭐ 去「我的饼干」看流水。
+   * ⚠️ 只在**看自己**的时候可用（见 WXML 里的 isMe）——
+   *    别人的余额是公开的，但流水是私事。
+   */
+  onOpenCookies() {
+    if (!this.data.isMe) return
+    void wx.navigateTo({ url: '/pages/me/cookies/cookies' })
   },
 
   /**

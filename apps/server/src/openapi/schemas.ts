@@ -22,6 +22,8 @@ import type {
   EnergyResponse,
   MakeupResponse,
   ExchangeResponse,
+  CookieLedgerItem,
+  CookiesResponse,
   AdEnergyResponse,
   MakeupState,
   FavoriteItem,
@@ -918,6 +920,29 @@ export const UserListResponseSchema = okEnvelope(
 )
 
 /** 商店商品一项 */
+/** ⭐ 饼干流水的一条（与 EnergyLedgerItem 同形） */
+export const CookieLedgerItemSchema = z
+  .object({
+    id: z.number().int(),
+    delta: z.number().int().openapi({ description: '正数入账（攻克）、负数出账（换能量）' }),
+    reason: z.string().openapi({ description: 'conquer | exchange | admin' }),
+    refType: z.string(),
+    refId: z.string(),
+    createdAt: z.string(),
+  })
+  .openapi('CookieLedgerItem')
+
+/** ⭐ 饼干页：两个位置 + 流水（分页） */
+export const CookiesResponseSchema = okEnvelope(
+  z
+    .object({
+      cookies: CookieViewSchema,
+      items: z.array(CookieLedgerItemSchema),
+      nextBefore: z.number().int().nullable().openapi({ description: '下一页游标；null = 到底了' }),
+    })
+    .openapi('CookiesResponse'),
+)
+
 export const ShopGoodsItemSchema = z
   .object({
     code: z.string(),
@@ -1047,6 +1072,8 @@ type _LedgerParity = Equal<z.infer<typeof EnergyLedgerItemSchema>, EnergyLedgerI
 type _EnergyParity = Equal<z.infer<typeof EnergyResponseSchema>['data'], EnergyResponse>
 type _MakeupParity = Equal<z.infer<typeof MakeupResponseSchema>['data'], MakeupResponse>
 type _ExchangeParity = Equal<z.infer<typeof ExchangeResponseSchema>['data'], ExchangeResponse>
+type _CookieLedgerParity = Equal<z.infer<typeof CookieLedgerItemSchema>, CookieLedgerItem>
+type _CookiesParity = Equal<z.infer<typeof CookiesResponseSchema>['data'], CookiesResponse>
 type _AdEnergyParity = Equal<z.infer<typeof AdEnergyResponseSchema>['data'], AdEnergyResponse>
 type _MakeupStateParity = Equal<z.infer<typeof MakeupStateSchema>, MakeupState>
 type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
@@ -1142,6 +1169,8 @@ const _parityChecks: [
   _EnergyParity,
   _MakeupParity,
   _ExchangeParity,
+  _CookieLedgerParity,
+  _CookiesParity,
   _AdEnergyParity,
   _MakeupStateParity,
   _PartSubmissionParity,
@@ -1172,5 +1201,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

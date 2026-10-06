@@ -17,6 +17,7 @@ import type {
   ArticleListResponse,
   LatestCardsResponse,
   MakeupResponse,
+  CookiesResponse,
   ExchangeResponse,
   AdEnergyResponse,
   UserListResponse,
@@ -918,6 +919,18 @@ export function claimAdEnergy(requestId: string): Promise<AdEnergyResponse> {
     data: { requestId },
     budgetMs: LAUNCH_BUDGET_MS,
   })
+}
+
+/**
+ * ⭐ **我的饼干**：两个位置的余额 + 一页流水。
+ *
+ * @param before 游标 —— 传上一条的 id 就是翻更早的一页；不传 = 第一页
+ *   ⚠️ 与能量页那份**同一个分页形状**（`?before` 游标、倒序）——
+ *      两页的翻页行为必须一样，否则用户会以为其中一页坏了。
+ */
+export function fetchCookies(before?: number): Promise<CookiesResponse> {
+  const q = before === undefined ? '' : '?before=' + before
+  return request<CookiesResponse>('/api/user/cookies' + q, { budgetMs: LAUNCH_BUDGET_MS })
 }
 
 export function makeUpStreak(): Promise<MakeupResponse> {

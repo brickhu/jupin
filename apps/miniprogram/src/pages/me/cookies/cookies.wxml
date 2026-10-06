@@ -1,0 +1,70 @@
+<view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
+
+  <!-- ⭐ 启动遮罩：身份解析完成前整页盖住（见 components/boot-overlay） -->
+  <boot-overlay />
+  <nav-bar id="nav" title="我的饼干" />
+
+  <!-- ── ① 余额卡 ─────────────────────────────────────────────
+       ⭐ **两个数都在这一张卡上**（prd §7.6）：
+            · 大字 = 可用（能花多少）
+            · 小字 = 累计获得（**只增**，花饼干也不会让它变小）
+       ⚠️⚠️ 只给"可用"的话，换过一次能量就看起来像**退步**（损失厌恶）；
+          而"累计获得"才是那条只增的进步线 —— 它才是"我在变好"的证据。
+       ⚠️ 右侧放 🍪 而不是加个图标组件：这个 emoji 就是它的符号，
+          而"全站只有一个符号"本身是口径的一部分。 -->
+  <view class="card p-5 flex items-center">
+    <view class="flex-1">
+      <view class="flex items-baseline">
+        <text class="text-72rpx font-bold text-ink leading-[1]">{{balance}}</text>
+        <text class="text-24rpx text-faint ml-2">块</text>
+      </view>
+      <text class="text-22rpx text-faint block mt-3">累计获得 {{total}} 块（只增不减）</text>
+      <text class="text-22rpx text-faint block mt-1">{{cookiesPerEnergy}} 块 = 1 点能量</text>
+    </view>
+    <text class="text-120rpx leading-[1]">🍪</text>
+  </view>
+
+  <!-- ── ② 去换能量 ───────────────────────────────────────────
+       ⚠️ 只在**够换 1 点**时才出现：不够就是白跑一趟，
+          而一个点了没反应的按钮比没有按钮更糟。 -->
+  <view class="card p-4 mt-3 flex items-center" wx:if="{{balance >= cookiesPerEnergy}}"
+        bindtap="onOpenEnergy" hover-class="active__opacity-60">
+    <text class="text-28rpx text-ink flex-1">吃饼干补充能量</text>
+    <text class="text-24rpx text-brand">去换 ›</text>
+  </view>
+
+  <!-- ── ③ 流水 ─────────────────────────────────────────────── -->
+  <view class="card p-4 mt-3">
+    <text class="text-28rpx font-medium text-ink">饼干流水</text>
+
+    <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line" wx:for="{{rows}}" wx:key="id">
+      <view class="flex-1">
+        <text class="text-28rpx text-ink">{{item.label}}</text>
+        <text class="text-22rpx text-faint block mt-0.5">{{item.timeText}}</text>
+      </view>
+      <!-- ⚠️ 颜色跟着**方向**走（入账绿 / 出账灰），不是跟着位置 -->
+      <text class="text-30rpx font-medium {{item.income ? 'text-ok' : 'text-muted'}}">{{item.deltaText}}</text>
+    </view>
+
+    <!-- 空态：说清"怎么才会有"，而不是只说"没有" -->
+    <text class="text-24rpx text-faint block py-6 text-center" wx:if="{{!loading && rows.length === 0}}">还没有流水 —— 攻克一句就会有</text>
+
+    <!-- 加载中（首屏）—— 骨架比"空白 + 转圈"稳 -->
+    <view class="py-6 text-center" wx:if="{{loading}}">
+      <text class="text-24rpx text-faint">加载中…</text>
+    </view>
+
+    <!-- 还有更早的 -->
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-line text-faint text-26rpx"
+          wx:if="{{hasMore}}" bindtap="onMore" hover-class="active__opacity-60">
+      {{loadingMore ? '加载中…' : '加载更早的'}}
+    </view>
+  </view>
+
+  <!-- ── 连不上 ────────────────────────────────────────────── -->
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  </view>
+
+</view>

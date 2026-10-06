@@ -9,7 +9,7 @@ import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
 import { grantAdEnergy } from '../services/ad-energy'
-import { exchangeCookiesForEnergy } from '../services/cookies'
+import { exchangeCookiesForEnergy, readCookieLedger } from '../services/cookies'
 import { readStreakRecord } from '../services/streak-record'
 import { makeUpStreak } from '../services/makeup'
 import { readStreakView } from '../services/streak'
@@ -34,6 +34,7 @@ import {
   StreakRecordResponseSchema,
   MakeupResponseSchema,
   ExchangeResponseSchema,
+  CookiesResponseSchema,
   AdEnergyResponseSchema,
 } from '../openapi/schemas'
 
@@ -529,6 +530,38 @@ userRoutes.openapi(energyRoute, async (c) => {
  *    两个账本各用它挡重，连点 / 重试都不会换两次。
  *    没有它的话，双击一次按钮就会白扣 40 块。
  */
+/**
+ * ⭐ **饼干页**（`GET /api/user/cookies`）—— 两个位置的余额 + 流水（分页）。
+ *
+ * ⚠️ 与能量页那份流水**同一套分页形状**（`?limit` / `?before`，游标是上一条的 id）——
+ *    用户不该在两页看到两种翻页行为。
+ */
+const cookiesRoute = createRoute({
+  method: 'get',
+  path: '/cookies',
+  tags: ['我的'],
+  summary: '我的饼干：累计获得 / 可用 + 流水（分页）',
+  security: [{ userToken: [] }],
+  request: { query: z.object({ limit: z.string().optional(), before: z.string().optional() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: CookiesResponseSchema } },
+      description: '成功',
+    },
+  },
+})
+
+userRoutes.openapi(cookiesRoute, async (c) => {
+  const userId = c.get('userId')
+  // ⚠️ 与能量页同一套夹取：默认 30、最多 100、最少 5
+  const limitRaw = Number(c.req.query('limit'))
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(5, Math.trunc(limitRaw))) : 30
+  const beforeRaw = Number(c.req.query('before'))
+  const before = Number.isFinite(beforeRaw) && beforeRaw > 0 ? Math.trunc(beforeRaw) : null
+
+  return c.json({ ok: true, data: await readCookieLedger(userId, limit, before) }, 200)
+})
+
 const exchangeRoute = createRoute({
   method: 'post',
   path: '/exchange',

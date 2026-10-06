@@ -81,11 +81,15 @@
         </view>
       </view>
 
+      <!-- ⭐ 饼干那两个数**可点** —— 点进「我的饼干」看流水（那页回答"这些是哪来的"）。
+           ⚠️ 只有**看自己**的主页才有这个入口：看别人的时候那两行照样显示（饼干是公开的），
+              但流水是私事 ⇒ hasProfile 之外的判断见 profile.ts 的 hasEnergy 说明。 -->
       <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{cookieRows}}" wx:key="key">
-        <view class="flex items-center">
+        <view class="flex items-center" bindtap="onOpenCookies" hover-class="active__opacity-60">
           <text class="text-36rpx">{{item.icon}}</text>
           <text class="text-28rpx text-ink font-medium ml-2 flex-1">{{item.name}}</text>
           <text class="text-36rpx font-bold text-ink">{{item.value}}</text>
+          <text class="text-24rpx text-faint ml-2" wx:if="{{isMe}}">›</text>
         </view>
         <text class="text-22rpx text-faint block mt-1 leading-[1.6]">{{item.blurb}}</text>
       </view>
