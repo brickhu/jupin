@@ -25,6 +25,13 @@
     {{recording ? (waiting ? '正在出结果…' : '说完了') : '开始朗读'}}
   </view>
 
+  <!-- ⭐ 状态条：让"到底在不在录"一眼可见（卡住时这一行最关键） -->
+  <view wx:if="{{recording}}" class="mt-3 py-3 text-center">
+    <text class="text-26rpx {{liveStarted ? 'text-ok' : 'text-warn'}}">
+      {{liveStarted ? '● 正在录音 ' + recSec + 's' : '○ 已请求录音，插件还没回 onStart… ' + recSec + 's'}}
+    </text>
+  </view>
+
   <view wx:if="{{error}}" class="card p-4 mt-3 border border-solid border-cardline">
     <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
   </view>
@@ -57,6 +64,12 @@
 
   <view class="mt-4 text-center py-[22rpx] rounded-full bg-white text-28rpx text-muted" bindtap="onReset"
         hover-class="active__opacity-60">清空重来</view>
+
+  <!-- ⭐⭐ 插件事件流：卡住时**看它停在哪一步**就知道是谁的问题 -->
+  <view wx:if="{{events.length}}" class="card p-4 mt-3 border border-solid border-cardline">
+    <text class="text-24rpx text-faint block mb-2">插件事件流（最新在上）</text>
+    <text wx:for="{{events}}" wx:key="index" class="text-22rpx text-muted block leading-[1.8]">{{item}}</text>
+  </view>
 
   <text class="text-22rpx text-faint block mt-4 leading-[1.7]">⚠️ 探针不写库、不发能量、不调接口 —— 只调插件。测完这页要删。</text>
 </view>
