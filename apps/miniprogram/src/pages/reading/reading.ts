@@ -759,8 +759,7 @@ Page({
     const row = this.data.historyRows[i]
     if (!row) return
     // ⚠️ 别把正在响的声音带进详情页（历史行那颗播放钮的声音也算）
-    stopAudio()
-    this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' })
+    this.stopAllAudio()
     openChallengePage(row.submissionId)
   },
 
@@ -1086,6 +1085,22 @@ Page({
    */
   onPressStart() {
     if (this.data.phase === 's2' || this.data.phase === 'precheck') return
+
+    /**
+     * ⚠️⚠️ **按下录音前必须把正在响的声音全停掉**（用户 2026-10 定）。
+     *
+     *    理由不只是"别吵" —— **麦克风就在旁边，正在响的声音会被原样录进这一段**：
+     *      · 标准音还在播 ⇒ 录进去的是标准音，识别出来的转写当然全对，
+     *        而用户自己根本没出声（漏读判据与打分全废，却查不出原因）；
+     *      · 试听自己的录音还在播 ⇒ 等于把上一遍又录了一遍；
+     *      · 逐词发音还在响 ⇒ 录进去一两个孤立的单词。
+     *    这三件事**用户完全不知道为什么**，只会觉得"这个打分不准"。
+     *
+     * ⚠️ 放在 onPressStart 而不是 onStartRecord：后者要先 await 麦克风授权，
+     *    而声音必须**在手按下的那一刻**就停 —— 否则那几百毫秒还在往麦克风里灌。
+     */
+    this.stopAllAudio()
+
     this.pressActive = true
     void this.onStartRecord()
   },
@@ -1365,6 +1380,27 @@ Page({
    *
    * ⚠️ 这里只把「播完清掉正在播的标记」这件事接上来。
    */
+  /**
+   * ⭐⭐ **把正在响的声音全停掉** —— 标准音 / 逐词发音 / 试听，三路。
+   *
+   * ⚠️ 三路**共用同一个播放器**（lib/audio/play.ts 里那一个），但界面上是**三个独立状态** ——
+   *    只 `stopAudio()` 而不复位状态，按钮会永远停在"播放中"（那颗钮再也回不到 ▶）。
+   *    ⇒ 两件事必须一起做，所以收敛成一处（这个组合在页面里重复过好几处）。
+   *
+   * ⚠️⚠️ 它**同时是"取消正在取音、还没出声的那一路"的手段**：
+   *    三路的出声都是异步的（标准音要下载、逐词发音要 TTS 合成约 1s），
+   *    状态一旦被复位，"await 回来的那条路"会**自己放弃出声**（见下面两处守卫）。
+   *    ⇒ 所以**顺序要紧：先 stopAudio、再复位状态**，反过来会有"停完又被播起来"的窗口。
+   */
+  stopAllAudio() {
+    stopAudio()
+    const d = this.data
+    // ⚠️ 已经是干净的就别 setData（这条路会被"按下录音"这种高频动作调到）
+    if (d.playingWord !== -1 || d.sentenceState !== 'unplay' || d.replayState !== 'unplay') {
+      this.setData({ playingWord: -1, sentenceState: 'unplay', replayState: 'unplay' })
+    }
+  },
+
   playUrl(src: string, what: string, segment?: { startMs: number; endMs: number }): Promise<void> {
     // ⚠️ 播成功就把上一次的错误提示清掉 —— 这是原来那个实现里的一句
     //    setData({ error: '' })，搬走之后漏了它的话，
@@ -1464,6 +1500,15 @@ Page({
     let src: string
     try {
       src = await speak(this.plainWords[i] ?? '')
+      /**
+       * ⚠️⚠️ **取音期间可能已经被叫停** —— 那就别再出声。
+       *    逐词发音要先过 TTS 合成（约 1s），**这个窗口是三路里最大的**：
+       *    没有这道守卫，用户按下录音之后，那个词的声音才会响起来，
+       *    然后**被原样录进这一遍录音**。
+       * ⚠️ 判据与 onPlaySentence 同一套写法（await 之后重新看一眼状态）；
+       *    这里看的是 `playingWord` 还是不是自己 —— 被停掉时它会被复位成 -1。
+       */
+      if (this.data.playingWord !== i) return
     } catch (err) {
       /**
        * ⚠️⚠️ 失败时必须**把高亮清掉**。漏掉这一步的症状：那一个词永远亮着，
