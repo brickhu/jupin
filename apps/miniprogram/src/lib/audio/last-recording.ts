@@ -133,23 +133,31 @@ export interface LastRecording {
   savedAt: number
   /** 上传用的文件路径（录音原始文件的副本，扩展名与原件一致） */
   audioPath: string
+  /**
+   * ⚠️⚠️ **判据存的是"下标"，不是"词"**（`missedIdx` / `misreadPairs[].at`）。
+   *
+   *    存词的话，恢复时只能拿词去正文里**反查下标**（`findIndex`）——
+   *    而句子里**重复词很常见**（`…as simple as possible…` 里两个 `as`），
+   *    反查永远命中**第一个**，于是恢复出来的标记**标在了错的那个词上**。
+   *    下标是判据本身，文本只是显示 → **存下标**，显示时再取词。
+   */
   /** 试听用的文件路径（可能是空串，见 loadLastRecording） */
   playPath: string
   /**
    * ⭐ **这一段录音的预检判据**（朗读页那里的"哪几个词没读到"）。
    *
    * ⚠️⚠️ 必须跟着录音一起存，否则会出现一个真实的漏洞：
-   *    从缓存恢复的录音**没有走过识别**，`missedTexts` 会是空的 ⇒
+   *    从缓存恢复的录音**没有走过识别**，判据会是空的 ⇒
    *    **漏读门禁对它不生效** —— 用户读了一半、退出、再进来，就能直接提交。
    *    而音频还是那一段，判据当然也还是那一条，理应一起恢复。
    * ⚠️ 老缓存里没有这个字段 ⇒ 读出来是 `undefined`，按"没判过"处理（放行，不硬拦）。
    */
-  missedTexts?: string[]
+  missedIdx?: number[]
   /**
-   * ⭐ **没读准**的那些 `{ ref, heard }`（原文词 + 识别到的词）—— 与 missedTexts 同理，
-   *    必须跟着录音一起存，否则从缓存恢复时提示会缺掉"没读准"那一行。
+   * ⭐ **没读准**的那些：对到的参考词下标 + **识别到的那个词**。
+   *    与 missedIdx 同理，必须跟着录音一起存，否则从缓存恢复时提示会缺掉"没读准"那一行。
    */
-  misreadPairs?: { ref: string; heard: string }[]
+  misreadPairs?: { at: number; heard: string }[]
 }
 
 /**
@@ -258,10 +266,10 @@ export function saveLastRecording(input: {
   tempFilePath: string
   playPath: string
   durationMs: number
-  /** 预检判据，见 LastRecording.missedTexts */
-  missedTexts?: string[]
+  /** 预检判据，见 LastRecording.missedIdx */
+  missedIdx?: number[]
   /** 没读准的那些，见 LastRecording.misreadPairs */
-  misreadPairs?: { ref: string; heard: string }[]
+  misreadPairs?: { at: number; heard: string }[]
 }): void {
   const dir = slotDirOf(input.key)
   const audioPath = dir + '/' + savedNameOf(input.tempFilePath)
@@ -296,7 +304,7 @@ export function saveLastRecording(input: {
     durationMs: input.durationMs,
     savedAt: Date.now(),
     audioPath,
-    ...(input.missedTexts ? { missedTexts: input.missedTexts } : {}),
+    ...(input.missedIdx ? { missedIdx: input.missedIdx } : {}),
     ...(input.misreadPairs ? { misreadPairs: input.misreadPairs } : {}),
   }
 
@@ -341,7 +349,7 @@ export function loadLastRecording(key: string): LastRecording | null {
   return {
     ...found,
     // ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 门禁放行（不硬拦没见过的数据）
-    missedTexts: Array.isArray(found.missedTexts) ? found.missedTexts : [],
+    missedIdx: Array.isArray(found.missedIdx) ? found.missedIdx : [],
     misreadPairs: Array.isArray(found.misreadPairs) ? found.misreadPairs : [],
     // ⚠️ 试听文件可能根本没写成功（见 writePlayableWav 的 catch），
     //    那种情况下只恢复「能提交」，不能假装能试听

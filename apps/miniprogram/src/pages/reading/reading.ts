@@ -251,11 +251,19 @@ interface WordView {
    */
   ipa: string
   /**
-   * ⭐ **定稿后的预检结果**：这个词判为「没读到」。与提交后那套评分色**完全无关**（见 prd 7.2）。
-   * ⚠️ 只在**定稿那一刻**由 `missingWordsOf` 算一次 —— **录音过程中不逐词变色**
+   * ⭐ **定稿后的预检结果**（与提交后那套评分色**完全无关**，见 prd 7.2）。
+   * 两态**互斥**（一个词要么完全没对上、要么对上了但词不一样），视觉也分开：
+   *
+   * | | 含义 | 长什么样 |
+   * |---|---|---|
+   * | `missed` | **没读到** —— 那一位上什么都没有 | **灰色 + 灰色点线**（虚＝"这儿空着"） |
+   * | `misread` | **没读准** —— 读到了，但机器听到的是别的词 | **黄色 + 黄色实线**（实＝"有东西，但存疑"） |
+   *
+   * ⚠️ 只在**定稿那一刻**算一次 —— **录音过程中不逐词变色**
    *    （用户 2026-10 定：实时标色的延迟体验不理想，整套去掉）。
    */
   missed: boolean
+  misread: boolean
 }
 
 Page({
@@ -451,15 +459,16 @@ Page({
    * ⚠️ 空数组 = 没有拦的理由（包括"这一轮根本没做判断"，比如开发者工具里没有识别）——
    *    两种情况都放行，见 onSubmit 的门禁。
    */
-  missedTexts: [] as string[],
+  missedIdx: [] as number[],
 
   /**
-   * ⭐ **没读准**的那些词：`{ ref, heard }` —— 原文词 + **识别到的那个词**。
+   * ⭐ **没读准**的那些：对到的参考词下标 + **识别到的那个词**。
    * ⚠️⚠️ 措辞只能是「识别成 X」（机器听到了什么），**不能**写成「你读错了」：
    *    替换的成因里混着"真的读错了"和"ASR 听错了"两种，从转写里分不出来
    *    （2026-10 实测：正常读 `simpler`，ASR 听成 `similar` / `as simple` / `by the seminar` 都出现过）。
+   * ⚠️ 存**下标**不存词：句子里重复词很常见，反查会标错那一个（见 LastRecording 的说明）。
    */
-  misreadPairs: [] as { ref: string; heard: string }[],
+  misreadList: [] as { at: number; heard: string }[],
 
   /**
    * ⭐ **已经松手，但还在收尾**（松手缓冲期，见 RELEASE_HANGOVER_MS）。
@@ -744,6 +753,7 @@ Page({
         ipa: content.words[i]?.ipa ?? '',
         // ⭐ 一进来默认"读到了" —— 没有预检结果时不该有任何标记
         missed: false,
+        misread: false,
       }))
       const stdMs = readStdDurationMs(content.audio)
       this.setData({
@@ -828,11 +838,14 @@ Page({
          *    音频还是那一段，判据当然也还是那一条（见 LastRecording.missedTexts）。
          * ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 放行（不硬拦没见过的数据）。
          */
-        this.missedTexts = last.missedTexts ?? []
-        this.misreadPairs = last.misreadPairs ?? []
-        const missSet = new Set(
-          this.missedTexts.map((t) => this.plainWords.findIndex((w) => w === t)).filter((i) => i >= 0),
-        )
+        /**
+         * ⚠️⚠️ **判据存的是下标**，所以这里直接就能用 ——
+         *    不需要拿词去正文里反查（那样在重复词上会标错，见 LastRecording 的说明）。
+         */
+        this.missedIdx = last.missedIdx ?? []
+        this.misreadList = last.misreadPairs ?? []
+        const missSet = new Set(this.missedIdx)
+        const misreadSet = new Set(this.misreadList.map((m) => m.at))
         this.setData({
           phase: 's3',
           restored: true,
@@ -840,7 +853,11 @@ Page({
           playPath: last.playPath,
           durationMs: last.durationMs,
           recordDurationText: mmss(last.durationMs),
-          words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i) })),
+          words: this.data.words.map((w, i) => ({
+            ...w,
+            missed: missSet.has(i),
+            misread: misreadSet.has(i),
+          })),
         })
       }
       this.syncEnergyNote()
@@ -964,8 +981,8 @@ Page({
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
-    this.missedTexts = []
-    this.misreadPairs = []
+    this.missedIdx = []
+    this.misreadList = []
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
     if (this.releaseTimer !== null) {
@@ -1135,12 +1152,12 @@ Page({
      *    这就是 `missingWordsOf` 与 `wordProgressOf` 的分工（见 shared/word-align.ts）。
      *
      * ⚠️ **没有识别文本时（开发者工具 / 插件降级）什么都不标**：
-     *    那种环境压根没做判断，标出来的任何东西都是编的。`missedTexts` 保持空 ⇒ 门禁放行。
+     *    那种环境压根没做判断，标出来的任何东西都是编的。`missedIdx` 保持空 ⇒ 门禁放行。
      */
     const words = this.data.words
     if (r.text === null) {
-      this.missedTexts = []
-      this.misreadPairs = []
+      this.missedIdx = []
+      this.misreadList = []
       this.setData({ words: words.map((w) => ({ ...w, missed: false })) })
     } else {
       /**
@@ -1150,11 +1167,23 @@ Page({
        */
       const detail = alignmentDetailOf(this.refText, r.text.split(/\s+/).filter(Boolean))
       const missSet = new Set(detail.missing)
-      this.missedTexts = detail.missing.map((i) => words[i]?.text ?? '').filter(Boolean)
-      this.misreadPairs = detail.substituted
-        .map((sp) => ({ ref: words[sp.at]?.text ?? '', heard: sp.heard }))
-        .filter((x) => x.ref && x.heard && x.ref !== x.heard)
-      this.setData({ words: words.map((w, i) => ({ ...w, missed: missSet.has(i) })) })
+      /**
+       * ⚠️ 只给**真的会显示出来的**那些打黄标 —— 与弹窗用同一条列表：
+       *    两边不一致会出现"字是黄的、弹窗里却没提它"（或者反过来）。
+       */
+      const misreadList = detail.substituted
+        .map((sp) => ({ at: sp.at, heard: sp.heard }))
+        .filter((x) => (words[x.at]?.text ?? '') && x.heard && words[x.at]?.text !== x.heard)
+      const misreadSet = new Set(misreadList.map((x) => x.at))
+      this.missedIdx = detail.missing
+      this.misreadList = misreadList
+      this.setData({
+        words: words.map((w, i) => ({
+          ...w,
+          missed: missSet.has(i),
+          misread: misreadSet.has(i),
+        })),
+      })
     }
 
     /**
@@ -1176,8 +1205,8 @@ Page({
         durationMs: r.durationMs,
         // ⭐ 判据跟着录音一起存 —— 否则从缓存恢复的那一次会**绕过漏读门禁**
         //    （恢复的录音没走过识别，missedTexts 会是空的）。见 LastRecording.missedTexts
-        missedTexts: this.missedTexts,
-        misreadPairs: this.misreadPairs,
+        missedIdx: this.missedIdx,
+        misreadPairs: this.misreadList,
       })
     }
 
@@ -1451,7 +1480,7 @@ Page({
      *    ⇒ 必须留出口。⭐ 那个出口**同时是假阳性率的测量仪器**：每一次被点，
      *    就是一条已知误报，上线后能持续量到真实误报率（见 prd 7.3）。
      */
-    if (this.missedTexts.length > 0) {
+    if (this.missedIdx.length > 0) {
       /**
        * ⭐ 用微信**原生弹窗**（`wx.showModal`）而不是页面上的一张卡：
        *    它就是「一句话 + 一个底部按钮 + 点了关掉」，原生组件正好是这个形状 ——
@@ -1469,7 +1498,10 @@ Page({
          *    那是在陈述**机器听到了什么**，不是在判定用户读错了 ——
          *    替换的成因里 ASR 听错占了很大一块（见 AlignmentDetail.substituted 的说明）。
          */
-        content: gateMessage(this.missedTexts, this.misreadPairs),
+        content: gateMessage(
+          this.missedIdx.map((i) => this.plainWords[i] ?? '').filter(Boolean),
+          this.misreadList.map((m) => ({ ref: this.plainWords[m.at] ?? '', heard: m.heard })),
+        ),
         showCancel: false,
         confirmText: '我知道了',
       })
@@ -2052,8 +2084,8 @@ Page({
      *    上一遍那些红的 / 淡的词还挂在句子上，看起来像"这一遍也已经判过了"。
      *    而这些颜色说的是**上一次**那一遍，属于同一种"第二份真相"。
      */
-    this.missedTexts = []
-    this.misreadPairs = []
+    this.missedIdx = []
+    this.misreadList = []
     this.setData({
       phase: 's1',
       error: '',

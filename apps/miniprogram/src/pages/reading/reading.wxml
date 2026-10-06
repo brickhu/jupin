@@ -83,21 +83,23 @@
       <view class="flex flex-col items-center mr-2 mb-1" wx:for="{{words}}" wx:key="i"
             data-i="{{item.i}}" bindtap="onPlayWord">
         <!-- ⚠️ px-1 mr-1 的写法与迁移前一致：高亮底色的内边距不跟着 cls 走，着色时整行不抖 -->
-        <!-- ⭐⭐ **定稿后的预检色**（只判"读到了没"，与提交后的评分色无关，见 prd 7.2）：
-               · missed = 定稿时判为「没读到」→ **灰色 + 下划线**
-               · 否则   = 读到了 → 正常
+        <!-- ⭐⭐ **定稿后的预检色**（只判"读到了没"，与提交后的评分色无关，见 prd 7.2）。
+             两态**互斥**，而且**线型也要分开**（用户 2026-10 定）：
+
+               · 没读准 → **黄色 + 黄色实线**（「text-warn underline decoration-warn」）
+                 实线＝"这儿有东西，只是存疑"；黄是"待确认"，不是"错"
+               · 没读到 → **灰色 + 灰色点线**（「text-muted underline decoration-dotted decoration-muted」）
+                 点线＝"这儿空着"；灰是"不下判断"
+               · 都没有 → 正常（text-ink）
+
+             ⚠️⚠️ **不准用红**：红是**判错**的颜色（theme 的 bad），提交后的正式标色才用它。
+                这里两个状态都只是**预检**，用红等于替用户下结论，也会和正式标色撞车。
              ⚠️ **录音过程中不逐词变色**（用户 2026-10 定）：插件的中间结果约 550ms 才回一次，
                 字是一跳一跳地亮，延迟体验不理想 —— 与其做个迟钝的实时反馈，不如不做。
                 现在只在**松手定稿那一刻**算一次，是即时的、准的。
-             ⚠️⚠️ **颜色上不准用红、不准用黄，只准用灰**（用户 2026-10 定）：
-                红是**判错**的颜色（theme 的 bad，提交后的正式标色才用它），
-                黄是 **"警告"** 的颜色（theme 的 warn = 未征服）。
-                而"没读到"是**预检**，不是判决 —— 用那两个颜色等于替用户下结论。
-                ⇒ 灰（muted）+ 下划线：**下划线负责"是这一个"，灰色负责"不下判断"**，
-                  两件事分开，谁也不兼职。
              ⚠️ 用**下划线**而不是填充色块：提交后的正式标色是填充色块，
                 两套视觉语言分开，用户才不会以为系统在自相矛盾。 -->
-        <text class="text-44rpx leading-[1.35] px-1 {{item.missed ? 'text-muted underline' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
+        <text class="text-44rpx leading-[1.35] px-1 {{item.misread ? 'text-warn underline decoration-solid decoration-warn' : item.missed ? 'text-muted underline decoration-dotted decoration-muted' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
         <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 -->
         <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && item.ipa}}">{{item.ipa}}</text>
       </view>

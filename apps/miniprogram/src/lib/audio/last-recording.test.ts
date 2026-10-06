@@ -175,20 +175,22 @@ describe('保存与恢复', () => {
     // ⚠️ 这条盯的是一个真实漏洞：从缓存恢复的录音**没走过识别**，
     //    判据不一起恢复的话 missedTexts 是空的 ⇒ 漏读门禁对它完全失效，
     //    用户读了一半、退出、再进来就能直接提交。而音频还是那一段，判据当然也还是那一条。
-    save({ ...optsFor(KEY_A), missedTexts: ['simple', 'as'] })
-    expect(load(KEY_A)?.missedTexts).toEqual(['simple', 'as'])
+    // ⚠️ 存的是**下标**不是词：句子里重复词很常见（…as simple as possible… 两个 as），
+    //    存词的话恢复时只能反查，会永远命中第一个 ⇒ 标错那一个
+    save({ ...optsFor(KEY_A), missedIdx: [5, 6] })
+    expect(load(KEY_A)?.missedIdx).toEqual([5, 6])
   })
 
   it('⭐⭐ 「没读准」那些词也要一起恢复 —— 否则缓存恢复时提示会缺一行', async () => {
-    save({ ...optsFor(KEY_A), missedTexts: ['simple'], misreadPairs: [{ ref: 'simpler', heard: 'similar' }] })
-    expect(load(KEY_A)?.misreadPairs).toEqual([{ ref: 'simpler', heard: 'similar' }])
+    save({ ...optsFor(KEY_A), missedIdx: [5], misreadPairs: [{ at: 10, heard: 'similar' }] })
+    expect(load(KEY_A)?.misreadPairs).toEqual([{ at: 10, heard: 'similar' }])
   })
 
   it('⚠️ 老缓存里没有这两个字段 ⇒ 读出来是空数组（＝没判过 ⇒ 放行，不硬拦没见过的数据）', async () => {
     // ⚠️ 直接写一条**不带 missedTexts** 的老格式元信息，模拟升级前的缓存
     save(optsFor(KEY_B))
     const got = load(KEY_B)
-    expect(got?.missedTexts).toEqual([])
+    expect(got?.missedIdx).toEqual([])
     expect(got?.misreadPairs).toEqual([])
   })
 
