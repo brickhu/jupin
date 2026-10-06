@@ -65,14 +65,37 @@ Page({
     missingWords: [] as string[],
     /** 插件事件流（最近 12 条）—— 卡住时看它停在哪 */
     events: [] as string[],
+    /** ⭐ 运行环境：devtools = 开发者工具（模拟器），此时插件录音**不工作** */
+    platform: '',
+    isDevtools: false,
+    /** ⭐ 裸录音器自检结果 —— 绕开插件，直接看麦克风出不出帧 */
+    micCheck: '',
   },
+
+  /** 裸录音器（与插件用的是同一个全局单例，只是这里我们直接驱动它） */
+  _mic: null as WechatMiniprogram.RecorderManager | null,
 
   /** 录音计时器 —— 放实例上，不放 data（data 要可序列化） */
   _tick: null as ReturnType<typeof setInterval> | null,
 
   onLoad() {
     setAsrEventSink((e) => this.pushEvent(e))
-    this.setData({ navTop: navPadTop(), available: isAsrAvailable() })
+    /**
+     * ⭐⭐ 让页面**自己报出它在哪跑**：`devtools` = 开发者工具（模拟器）。
+     *    插件录音在模拟器上**拿不到真实音频帧**，症状就是"还没说话就报 -30003"——
+     *    所以这一行能直接判掉一大类误判，不用靠人回忆"我是在哪点的"。
+     */
+    let platform = 'unknown'
+    try {
+      // ⚠️ 新 API 优先（getSystemInfoSync 已不推荐），拿不到再退回旧的
+      const info = (
+        typeof wx.getDeviceInfo === 'function' ? wx.getDeviceInfo() : wx.getSystemInfoSync()
+      ) as { platform?: string }
+      platform = String(info?.platform ?? 'unknown')
+    } catch {
+      /* 拿不到就保持 unknown —— 不因为这个挡住探针 */
+    }
+    this.setData({ navTop: navPadTop(), available: isAsrAvailable(), platform, isDevtools: platform === 'devtools' })
   },
 
   onUnload() {
@@ -160,6 +183,69 @@ Page({
     // 说完了
     this.setData({ waiting: true })
     stopRecognize()
+  },
+
+  /**
+   * ⭐⭐ **裸录音器自检** —— 绕开插件，直接用 `wx.getRecorderManager()` 录 3 秒，
+   *    数一数到底有没有拿到音频帧。
+   *
+   *    这是把责任分开的那个实验：
+   *      · 裸录音器**也**拿不到帧  ⇒ 环境问题（模拟器 / 系统麦克风权限 / 设备被占）
+   *      · 裸录音器**能**拿到帧、只有插件不行 ⇒ 插件的问题
+   *
+   * ⚠️ 用的是**同一个全局单例**（`wx.getRecorderManager()` 返回的一直是它），
+   *    而且它没有 `off*`，监听挂了摘不掉 —— 所以本轮**不允许和插件识别同时跑**。
+   *    探针页是一次性的，这个副作用可接受。
+   */
+  onMicCheck() {
+    if (this.data.recording) {
+      this.setData({ micCheck: '插件识别正在进行中 —— 先等它结束（两者共用同一个录音器）' })
+      return
+    }
+    if (this._mic) {
+      this.setData({ micCheck: '已经跑过一次了（监听摘不掉）。重新编译这一页再跑。' })
+      return
+    }
+
+    let frames = 0
+    let bytes = 0
+    let firstFrameMs: number | null = null
+    const startedAt = Date.now()
+    const rm = wx.getRecorderManager()
+    this._mic = rm
+    this.setData({ micCheck: '录音中… 请对着手机说话（3 秒）' })
+
+    rm.onFrameRecorded((res) => {
+      frames++
+      bytes += res.frameBuffer.byteLength
+      if (firstFrameMs === null) firstFrameMs = Date.now() - startedAt
+    })
+    rm.onStop(() => {
+      const ok = frames > 0
+      this.setData({
+        micCheck:
+          `裸录音器：${frames} 帧 / ${bytes} 字节 · 首帧 ${firstFrameMs === null ? '—' : firstFrameMs + 'ms'} · ` +
+          (ok
+            ? '✅ 麦克风出帧正常 ⇒ 问题在插件那边'
+            : '❌ 一帧都没拿到 ⇒ 是环境问题（模拟器 / 系统麦克风权限 / 设备被占）'),
+      })
+    })
+    rm.onError((e) => {
+      this.setData({ micCheck: '裸录音器报错：' + JSON.stringify(e) })
+    })
+
+    try {
+      rm.start({
+        duration: 3000,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        // ⚠️ 只有 pcm / mp3 支持 onFrameRecorded（官方文档）；这里要的就是帧
+        format: 'PCM',
+        frameSize: 1,
+      })
+    } catch (e) {
+      this.setData({ micCheck: '裸录音器起不来：' + (e instanceof Error ? e.message : String(e)) })
+    }
   },
 
   onReset() {
