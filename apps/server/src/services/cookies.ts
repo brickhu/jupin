@@ -401,9 +401,32 @@ export async function readCookieLedger(
   before: number | null,
   tx: Executor = db,
 ): Promise<CookiesResponse> {
+  /**
+   * ⚠️⚠️ **LEFT JOIN submissions** 取「成就发生的时刻」。
+   *
+   * 为什么要这一列：**兜底清扫会补跑结算** —— 一条 9/28 的提交可能在 10/6 才被补上
+   * （进程死在写分数与结算之间）。只用 `cookie_ledger.created_at` 的话，
+   * 那行显示"刚刚"，而用户以为自己刚读的那次（54 分）发了 10 块 ⇒
+   * **看起来像规则算错了**，其实那条提交本来就得了 90.3 分。
+   * ⇒ 端侧显示 `achievedAt`（缺了才退回 `createdAt`）。
+   *
+   * ⚠️ 用 LEFT JOIN 不是 INNER：换能量/运营调整那些行没有对应的提交，
+   *    INNER 会把它们**整行丢掉**（流水少一条比时间不准严重得多）。
+   */
   const rows = await tx
-    .select()
+    .select({
+      id: cookieLedger.id,
+      delta: cookieLedger.delta,
+      reason: cookieLedger.reason,
+      refType: cookieLedger.refType,
+      refId: cookieLedger.refId,
+      createdAt: cookieLedger.createdAt,
+      /** 只有 refType='submission' 的行才接得上 */
+      achievedAt: submissions.createdAt,
+      score: submissions.score,
+    })
     .from(cookieLedger)
+    .leftJoin(submissions, eq(submissions.id, cookieLedger.refId))
     .where(
       before === null
         ? eq(cookieLedger.userId, userId)
@@ -421,6 +444,9 @@ export async function readCookieLedger(
       refType: r.refType,
       refId: r.refId,
       createdAt: r.createdAt.toISOString(),
+      // ⚠️ 没有对应提交（换能量 / 运营）时不给这两个键，而不是给 null —— 见契约里的说明
+      ...(r.achievedAt ? { achievedAt: r.achievedAt.toISOString() } : {}),
+      ...(r.score === null || r.score === undefined ? {} : { score: Number(r.score) }),
     })),
     nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
   }

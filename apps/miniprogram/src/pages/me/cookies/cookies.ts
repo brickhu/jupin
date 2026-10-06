@@ -48,12 +48,27 @@ interface LedgerRow {
 
 function toRow(item: CookieLedgerItem): LedgerRow {
   const income = item.delta > 0
+  /**
+   * ⚠️⚠️ 时间用 **achievedAt**（成就发生的那一刻），不是 `createdAt`（入账时刻）。
+   *
+   * 为什么：**兜底清扫会补跑结算** —— 一条 9/28 的提交可能在 10/6 才被补上。
+   * 那时 `createdAt` 是"刚刚"，用户会以为"我刚才那次 54 分发了 10 块"，
+   * 进而以为规则算错了（实际那条提交本来就得了 90.3 分）。
+   * ⇒ 出账（换能量）没有 achievedAt，自然退回 createdAt。
+   */
+  const at = item.achievedAt ?? item.createdAt
   return {
     id: item.id,
-    label: REASON_TEXT[item.reason] ?? '奖励',
+    /**
+     * ⭐ 攻克那一行把**分数**也带上：「攻克句子 · 90 分」——
+     *    用户能自己核对"为什么给了"（≥85 才给），这是这套规则唯一的解释成本。
+     */
+    label:
+      (REASON_TEXT[item.reason] ?? '奖励') +
+      (item.score === undefined ? '' : ' · ' + item.score + ' 分'),
     // ⚠️ 出账用**减号**（−，U+2212）而不是连字符：它和数字同宽，右对齐时才不歪
     deltaText: (income ? '+' : '−') + Math.abs(item.delta),
-    timeText: agoText(item.createdAt),
+    timeText: agoText(at),
     income,
   }
 }

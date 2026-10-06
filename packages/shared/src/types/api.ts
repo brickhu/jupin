@@ -465,8 +465,20 @@ export interface CookieLedgerItem {
   reason: string
   refType: string
   refId: string
-  /** ISO 时间串 */
+  /** **入账**时刻（ISO）—— 记账发生的时间 */
   createdAt: string
+  /**
+   * ⭐⭐ **成就发生的时刻**（ISO；只有 `conquer` 有）。
+   *
+   * ⚠️⚠️ 为什么它与 `createdAt` 是两个数：**兜底清扫会补跑结算** ——
+   *    一条 9 月 28 日的提交可能在 10 月 6 日才被补上（进程死在写分数与结算之间）。
+   *    那时 `createdAt` 是"刚刚"，而用户读到的是「**我什么时候做到的**」⇒
+   *    他会以为"我刚才那次 54 分居然给了 10 块"，进而以为规则算错了。
+   *    ⇒ **流水行要显示 `achievedAt`**（缺了才退回 `createdAt`）。
+   */
+  achievedAt?: string
+  /** ⭐ 那一次的得分（只有 `conquer` 有）—— 摆出来，用户能自己核对"为什么给了" */
+  score?: number
 }
 
 /** ⭐ 饼干页的数据：两个位置的余额 + 流水（分页） */

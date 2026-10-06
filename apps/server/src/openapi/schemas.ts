@@ -928,7 +928,12 @@ export const CookieLedgerItemSchema = z
     reason: z.string().openapi({ description: 'conquer | exchange | admin' }),
     refType: z.string(),
     refId: z.string(),
-    createdAt: z.string(),
+    createdAt: z.string().openapi({ description: '入账时刻' }),
+    achievedAt: z
+      .string()
+      .optional()
+      .openapi({ description: '⭐ 成就发生的时刻（只有 conquer 有）—— 补跑结算时会与 createdAt 差很远' }),
+    score: z.number().optional().openapi({ description: '⭐ 那一次的得分（只有 conquer 有）' }),
   })
   .openapi('CookieLedgerItem')
 
