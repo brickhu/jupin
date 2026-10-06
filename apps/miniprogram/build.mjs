@@ -28,7 +28,7 @@ import unoConfig, {
   escapeWxml,
   makeEscapeMap,
 } from './uno.config.mjs'
-import { lintWxSource } from './wxss-lint.mjs'
+import { lintMultilineText, lintWxSource } from './wxss-lint.mjs'
 import { missingHandlers } from './wxml-handlers.mjs'
 
 /**
@@ -432,7 +432,13 @@ async function assertWxSourceValid() {
   const bad = []
   for (const ext of ['.wxss', '.wxml']) {
     for (const file of await collectByExt(SRC, [ext])) {
-      for (const p of lintWxSource(readFileSync(file, 'utf8'))) {
+      const text = readFileSync(file, 'utf8')
+      for (const p of lintWxSource(text)) {
+        bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
+      }
+      // ⭐ <text> 那条只对 WXML 有意义（wxss 里不会有这个标签）
+      if (ext !== '.wxml') continue
+      for (const p of lintMultilineText(text)) {
         bad.push(relative(SRC, file) + ':' + p.line + '  →  ' + p.what)
       }
     }
@@ -441,7 +447,8 @@ async function assertWxSourceValid() {
     console.error('❌ WXSS / WXML 有问题（小程序编译器会直接报错，整个样式文件不生效）：')
     for (const b of bad) console.error('   · ' + b)
     console.error('')
-    console.error('   改法：反引号用「」代替；注释块的开头结尾要成对。')
+    console.error('   改法：反引号用「」代替；注释块的开头结尾要成对；')
+    console.error('         <text> 的内容要紧贴标签（别另起一行，<text> 保留换行）。')
     process.exit(1)
   }
 }

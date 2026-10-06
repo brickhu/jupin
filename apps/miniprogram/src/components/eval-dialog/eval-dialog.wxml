@@ -44,9 +44,10 @@
            ⚠️ 两个数都由页面从**服务端权威值**算好传进来（costEnergy / balanceEnergy ——
               后者是页面减好传的"确认后剩"），组件不做减法：端侧算余额就是第二份真相。
       -->
-      <text class="text-26rpx text-muted mt-3 leading-[1.7] text-center">
-        本次消耗 {{costEnergy}} 点能量，确认后剩 {{balanceEnergy - costEnergy}} 点
-      </text>
+      <!-- ⚠️⚠️ 内容必须**紧贴 <text> 标签**：小程序的 <text> 会保留换行与空格，
+           写成「标签独占一行、内容另起一行」会渲染出「空行 + 缩进的文案 + 空行」，
+           整块**白白高一截**（用户 2026-10 就是照着这个症状报上来的）。 -->
+      <text class="text-26rpx text-muted mt-3 leading-[1.7] text-center">本次消耗 {{costEnergy}} 点能量，确认后剩 {{balanceEnergy - costEnergy}} 点</text>
       <text class="text-22rpx text-faint mt-2">每天补到 3 点 · 评测失败不扣能量</text>
     </view>
 
@@ -55,9 +56,8 @@
             （而那正是要拦的行为，同 reading.ts 里 ENERGY_EXHAUSTED 那段口径）。 -->
     <view class="ed-body" wx:else>
       <text class="text-34rpx font-bold text-ink">能量不够了</text>
-      <text class="text-26rpx text-muted mt-3 leading-[1.7] text-center">
-        现在有 {{balanceEnergy}} 点，本次评测需要 {{costEnergy}} 点
-      </text>
+      <!-- ⚠️ 同上：内容紧贴标签，别另起一行 -->
+      <text class="text-26rpx text-muted mt-3 leading-[1.7] text-center">现在有 {{balanceEnergy}} 点，本次评测需要 {{costEnergy}} 点</text>
       <text class="text-22rpx text-faint mt-2">明天会补到 3 点；也可以现在充值</text>
     </view>
 
@@ -92,9 +92,8 @@
       <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 ——
            和页面上原来那张 s4 卡用的是同一套（不另造一个 CSS ring）。 -->
       <ui-icon class="text-56rpx {{phase === 'uploading' ? 'text-brand' : 'text-ok'}} animate-spin" name="mdi:loading" />
-      <text class="text-34rpx font-bold mt-3 {{phase === 'uploading' ? 'text-brand' : 'text-ok'}}">
-        {{phase === 'uploading' ? '正在上传录音' : 'AI评测中'}}
-      </text>
+      <!-- ⚠️ 同上：内容紧贴标签，别另起一行 -->
+      <text class="text-34rpx font-bold mt-3 {{phase === 'uploading' ? 'text-brand' : 'text-ok'}}">{{phase === 'uploading' ? '正在上传录音' : 'AI评测中'}}</text>
       <!-- ⚠️ 上传百分比来自真实的 onProgress（见 uploadAudio）——
            等待期最怕的是"看不出在动"，所以先把能报的进度报出来。
            ⚠️ 100% 之后到出分之间还有十几秒（打分本身），那时换下面那句。 -->

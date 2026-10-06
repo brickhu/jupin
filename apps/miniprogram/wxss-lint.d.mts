@@ -13,3 +13,8 @@ export interface WxProblem {
 }
 
 export function lintWxSource(text: string): WxProblem[]
+/**
+ * ⭐ WXML 专有：`<text>` 的内容另起一行会被渲染出一个空行（`<text>` 保留换行）。
+ * 与 lintWxSource 分开：那条逐字符扫结构，这条要按行看上下文。
+ */
+export function lintMultilineText(text: string): WxProblem[]
