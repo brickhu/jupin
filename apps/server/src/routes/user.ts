@@ -9,6 +9,7 @@ import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
 import { readStreakRecord } from '../services/streak-record'
+import { makeUpStreak } from '../services/makeup'
 import { readStreakView } from '../services/streak'
 import { ENERGY_DAILY_FLOOR, ENERGY_PER_CHALLENGE, plainWordsOf } from '@jushuo/shared'
 import type {
@@ -29,6 +30,7 @@ import {
   ParticipationRecordResponseSchema,
   ProfileUpdateResponseSchema,
   StreakRecordResponseSchema,
+  MakeupResponseSchema,
 } from '../openapi/schemas'
 
 export const userRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
@@ -496,6 +498,45 @@ userRoutes.openapi(energyRoute, async (c) => {
       nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
     },
     }, 200)
+})
+
+/**
+ * ⭐⭐ **补签** —— 断档之后花能量把缺口填上。规格：prd §7.8 / plan B50。
+ *
+ * ⚠️ 它是**用户主动点的**，不会被任何自动流程调用。
+ *
+ * ⚠️⚠️ 客户端拿到成功之后要**立刻引导他去读今天这一句**：
+ *    补签只是把缺口填上、**本身不加天数**，今天不读，今天就成了新的缺口
+ *    （见 shared/makeup.ts 的说明）。文案说「补上了，今天读一句就接上」，
+ *    而不是「连战已恢复」。
+ *
+ * ⚠️ 失败有两种**完全不同**的原因，端侧要分开说：
+ *    · 连战那边：今天已读 / 没断档 / 断太久（`too-long` ⇒ 说成"重新开始"，别说失败）
+ *    · 能量那边：`not-enough-energy` ⇒ 带上 `shortfall`，指向"吃饼干 / 充值"
+ */
+const makeupRoute = createRoute({
+  method: 'post',
+  path: '/makeup',
+  tags: ['我的'],
+  summary: '补签（花能量填断档）—— 一天只能补一次，最多补 3 天',
+  security: [{ userToken: [] }],
+  responses: {
+    200: {
+      content: { 'application/json': { schema: MakeupResponseSchema } },
+      description: '成功（⚠️ `data.ok` 才是"补成了没有"；补不成也走 200，靠 reason 区分）',
+    },
+  },
+})
+
+userRoutes.openapi(makeupRoute, async (c) => {
+  const userId = c.get('userId')
+  const r = await makeUpStreak(userId)
+  /**
+   * ⚠️ 补不成**也返回 200**，不返回 4xx：
+   *    这不是"请求错了"，是一个正常的业务结果（今天读过了 / 断太久了 / 能量不够），
+   *    而 4xx 会让端侧的通用错误处理弹一句无用的"网络异常"。
+   */
+  return c.json({ ok: true, data: r }, 200)
 })
 
 /**

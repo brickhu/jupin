@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { applyRead, today, type StreakState, type StreakView } from '@jushuo/shared'
-import { db } from '../db'
+import { db, type Executor } from '../db'
 import { users } from '../db/schema'
 import type { User } from './user'
 
@@ -17,7 +17,8 @@ import type { User } from './user'
  *    合并进来只会让"谁在动用户的资产"变得说不清。
  */
 
-function stateOf(user: User): StreakState {
+/** ⚠️ 导出给 services/makeup.ts 复用 —— 认 streak 状态的规则只能有一处 */
+export function stateOf(user: User): StreakState {
   return {
     streakDays: user.streakDays,
     streakBest: user.streakBest,
@@ -49,6 +50,23 @@ export async function readStreakView(userId: number, date: string = today()): Pr
     ? stateOf(row[0] as User)
     : { streakDays: 0, streakBest: 0, lastReadDate: null }
   return streakView(state, date)
+}
+
+/**
+ * ⭐ **把 lastReadDate 往前推**（补签用）—— 值是"昨天"，调用方算好传进来。
+ *
+ * ⚠️⚠️ 为什么它必须在这里、而不是在补签那边直接写库：
+ *    `users.last_read_date` 的**含义**（它是懒算的基准：与今天的间隔 =1 才算续上、
+ *    ≠1 就把 streakDays 归 1）只有这个模块知道。别处直接写它，
+ *    等于绕过这条规则去改连战 —— 那种错不会崩，只会让连战算错。
+ *
+ * ⚠️⚠️ 它**接受调用方的事务**（`ex`），这是刻意的：
+ *    补签要和**扣能量**在同一个事务里。旧版解冻卡绕开这个模块自己写库，
+ *    理由是"走 streak.ts 会再开一次写、重复读状态"—— 那个理由成立，
+ *    但解法是**把事务传进来**，不是在数据所有权上开一个豁免口子。
+ */
+export async function shiftLastReadDate(ex: Executor, userId: number, day: string): Promise<void> {
+  await ex.update(users).set({ lastReadDate: day }).where(eq(users.id, userId))
 }
 
 export interface ReadResult {

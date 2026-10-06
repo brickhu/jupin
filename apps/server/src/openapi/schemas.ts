@@ -572,6 +572,33 @@ export const StreakRecordResponseSchema = okEnvelope(
     .openapi('StreakRecordResponse'),
 )
 
+/**
+ * ⭐ 补签的结果（`POST /api/user/makeup`）。
+ *
+ * ⚠️ `reason` 与 `shortfall` 都必须回给端侧 —— 它们决定用户看到的是
+ *    「先补再读」「断太久了，重新开始」还是「还差 2 点能量（吃饼干 / 充值）」。
+ *    只回一个 `ok: false` 等于什么都没说。
+ */
+export const MakeupResponseSchema = okEnvelope(
+  z
+    .object({
+      /** 补成了没有（⚠️ 与外层的 ok 不同层：外层是"这个请求成不成"） */
+      ok: z.boolean(),
+      /** 缺口几天（0 = 没断档） */
+      gapDays: z.number().int(),
+      /** 补签本身要花几点能量 */
+      cost: z.number().int(),
+      /** 当天总共要几点（补签 + 还要读的那一句） */
+      totalCost: z.number().int(),
+      /** 还差几点能量（只在 not-enough-energy 时有意义） */
+      shortfall: z.number().int(),
+      streak: StreakViewSchema,
+      /** already-read-today | no-gap | too-long | not-enough-energy */
+      reason: z.string().optional(),
+    })
+    .openapi('MakeupResponse'),
+)
+
 /** 保存资料之后回传的权威值（`POST /api/user/profile`） */
 export const ProfileUpdateResponseSchema = okEnvelope(
   z

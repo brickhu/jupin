@@ -31,6 +31,8 @@ export const ENERGY_REASON = {
   release: 'challenge_release',
   purchase: 'purchase',
   admin: 'admin',
+  /** ⭐ 补签（花能量填断档，见 services/makeup.ts / prd §7.8） */
+  makeup: 'streak_makeup',
 } as const
 
 /** 读余额（行锁住的版本，供事务内部复用） */
@@ -125,22 +127,20 @@ export async function holdChallengeEnergy(
   await topUpEnergy(userId, now)
 
   return db.transaction(async (tx) => {
-    // ① 已经锁过这条提交了？（重试 / 并发）—— 幂等命中就当成功
-    if (await ledgerRow(tx, ENERGY_REASON.hold, userId, submissionId)) return true
-
-    // ② 余额够不够（行锁住，避免并发把同一份能量用两遍）
-    const energy = await lockedEnergy(tx, userId)
-    if (energy === null || energy < ENERGY_PER_CHALLENGE) return false
-
-    await tx.update(users).set({ energy: energy - ENERGY_PER_CHALLENGE }).where(eq(users.id, userId))
-    await tx.insert(energyLedger).values({
+    /**
+     * ⚠️ 走公用的 spendEnergy（扣减的唯一实现），而不是在这里再写一遍
+     *    "读改写余额 + 记流水"。
+     * ⚠️ 'duplicate'（重试 / 并发重复锁同一条提交）在这里**要当成功** ——
+     *    调用方只关心"这条提交的能量锁住了没有"。
+     */
+    const spent = await spendEnergy(tx, {
       userId,
-      delta: -ENERGY_PER_CHALLENGE,
+      amount: ENERGY_PER_CHALLENGE,
       reason: ENERGY_REASON.hold,
       refType: 'submission',
       refId: submissionId,
     })
-    return true
+    return spent === 'ok' || spent === 'duplicate'
   })
 }
 
@@ -212,6 +212,59 @@ export async function addEnergy(
     refId: input.refId,
   })
   return true
+}
+
+/**
+ * ⭐⭐ **花能量**（出账）—— 与 `addEnergy` 方向相反的那一头。
+ *
+ * ⚠️⚠️ 它是**能量扣减的唯一实现**：`holdChallengeEnergy`（挑战锁）与补签都走它。
+ *    以前扣减的代码有两份（各自读改写余额 + 记流水），改一处漏一处就会
+ *    "余额扣了但流水没记"——而那种错在对账时才看得出来。
+ *
+ * ⚠️ 余额检查与扣减**必须在同一个事务里**（传进来的 `ex` 就是事务），
+ *    否则两个人能同时通过检查、把同一份能量花两遍。
+ *
+ * @returns
+ *   · 'ok'           真的扣了
+ *   · 'duplicate'    这一笔（reason + refType + refId）已经扣过 —— **没重复扣**
+ *   · 'insufficient' 余额不够 —— **一行流水都没留**
+ */
+export type SpendResult = 'ok' | 'duplicate' | 'insufficient'
+
+export async function spendEnergy(
+  ex: Executor,
+  input: { userId: number; amount: number; reason: string; refType: string; refId: string },
+): Promise<SpendResult> {
+  if (!Number.isFinite(input.amount) || input.amount <= 0) return 'insufficient'
+
+  // ① 这一笔扣过没有？幂等键是 (reason, ref_type, ref_id, user_id) —— 与入账同一个
+  const [dup] = await ex
+    .select({ id: energyLedger.id })
+    .from(energyLedger)
+    .where(
+      and(
+        eq(energyLedger.reason, input.reason),
+        eq(energyLedger.refType, input.refType),
+        eq(energyLedger.refId, input.refId),
+        eq(energyLedger.userId, input.userId),
+      ),
+    )
+    .limit(1)
+  if (dup) return 'duplicate'
+
+  // ② 余额够不够（行锁住）
+  const energy = await lockedEnergy(ex, input.userId)
+  if (energy === null || energy < input.amount) return 'insufficient'
+
+  await ex.update(users).set({ energy: energy - input.amount }).where(eq(users.id, input.userId))
+  await ex.insert(energyLedger).values({
+    userId: input.userId,
+    delta: -input.amount,
+    reason: input.reason,
+    refType: input.refType,
+    refId: input.refId,
+  })
+  return 'ok'
 }
 
 /**
