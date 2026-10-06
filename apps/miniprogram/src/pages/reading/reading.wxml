@@ -24,27 +24,25 @@
        ⚠️⚠️ 提交之后的三个态（上传中 / 评测中 / s5 / s6）**不在这张卡里** ——
           用户 2026-09 把它们整体搬进了 components/eval-dialog 的浮层：
           等待期天然禁止点击，结果也不再和句子挤在同一屏。 -->
-  <!-- ⭐⭐ **卡片边框跟着状态走**（用户 2026-10 定）：
-         · 录音中（s2）        → **红**（border-bad），与红点 / 红计时器 / 红按钮同一套
-         · 待提交（s3 且可提交）→ **绿**（border-ok = #16a34a），与那颗绿 ✓ **同一个色值**
-           （按钮是 color="success" ⇒ ub-c-success 的 #16a34a，正是 uno theme 的 ok）
-         · 其余                → 不覆盖，用 card 自己的灰（border-cardline #cccccc）
-       ⚠️ 判据**从已有的 phase / canSubmit 派生**，不新增一个"边框色"字段 ——
+  <!-- ⭐⭐ **卡片边框和按钮是一致的**（用户 2026-10 定）—— 两边都跟着 hintLevel 走：
+         · 录音中（s2）              → **红** border-bad  #dc2626 —— 与红点 / 红计时器 / 红按钮同一套
+         · 待提交 · 朗读完整（ok）    → **绿** border-ok   #16a34a —— 与那颗绿 ✓ 同一个色值
+         · 待提交 · 只是读错（warn）  → **黄** border-warn #f59e0b —— 与那颗黄按钮同一个色值
+         · 待提交 · 被拦住（block）   → 不覆盖，用 card 自己的灰 border-cardline #cccccc
+                                        （那时按钮也是灰的 ⇒ 仍然"和按钮一致"）
+       ⚠️ 为什么不只是"录音红、待提交绿"：按钮已经按三档上色了（绿 / 黄 / 灰），
+          边框只跟两档的话，**读错那一档会出现"黄按钮 + 绿边框"** ——
+          两个颜色说的是同一件事，不该互相打脸。
+
+       ⚠️ 判据**从已有的 phase / hintLevel / canSubmit 派生**，不新增"边框色"字段 ——
           新增字段就等于多几个"忘了同步"的地方（这类 bug 这个页面犯过几次）。
        ⚠️⚠️ 与 .card 是"同特异度、后写的赢"（都设 border-color）：靠产物里
-          .border-bad / .border-ok 排在 .card 之后。已核对 uno.wxss 确实如此；
-          改 uno 配置时要重新确认，否则会**静默失效**（边框不变色，且没有任何报错）。 -->
-  <!-- ⭐⭐ **录音中整张卡片的边框变红**（用户 2026-10 定）：
-       红点、红计时器、红按钮都只在卡片**内部**，而录音是"整个页面此刻在做什么"——
-       边框是唯一能表达这一层的东西，扫一眼就知道"还在录"。
-       ⚠️ 只换**颜色**（border-cardline #cccccc → border-bad #dc2626），
-          宽度仍是 card 里的 border-2 —— 不动尺寸，卡片不会因此跳一下。
-       ⚠️⚠️ **它与 .card 是"同特异度、后写的赢"**：两者都设 border-color，
-          靠的是产物里 .border-bad（第 88 行）排在 .card（第 4 行）**之后** ——
-          已核对过 uno.wxss，确实如此（shortcut 先出、工具类后出）。
-          改 uno 配置（shortcuts / preset 顺序）时**要重新确认这一条**，
-          否则它会**静默失效**：边框变不回红色，而没有任何报错。 -->
-  <view class="card p-3.5 mb-3 {{phase === 's2' ? 'border-bad' : phase === 's3' && canSubmit ? 'border-ok' : ''}}"
+          .border-bad / .border-ok / .border-warn 排在 .card 之后（工具类都在 shortcut 之后）。
+          已核对 uno.wxss 确实如此；改 uno 配置时要重新确认，
+          否则会**静默失效**：边框不变色，而没有任何报错。
+       ⚠️ 只换**颜色**，宽度仍是 card 里的 border-2 —— 不动尺寸，卡片不会因此跳一下。 -->
+  <view class="card p-3.5 mb-3 {{phase === 's2' ? 'border-bad' : phase === 's3' && hintLevel === 'warn' ? 'border-warn' : phase === 's3' && canSubmit ? 'border-ok' : ''}}"
+        wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
         wx:if="{{phase === 's1' || phase === 's2' || phase === 's3'}}">
 
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
@@ -225,12 +223,17 @@
         <!-- ⭐⭐ **漏读时这颗钮要禁用 + 变灰**（用户 2026-10 定）：
              它是"这一步过不去"，不是"你可以考虑一下" —— 留着可以按，
              用户会反复按、反复没反应，而下面那行字已经说了要重新朗读。
+             ⚠️ **颜色也跟着 hintLevel 走**（用户 2026-10 定）：ok → 绿（success）、
+                warn（只是读错 / 读得慢）→ **黄（warning #f59e0b）**、block → 灰（default）。
+                按钮和下面那行提示说的是同一件事，不该一个绿一个黄 ——
+                卡片边框同理（见本页开头那段）。
              ⚠️ 变灰用 color="default"（#111111）+ disabled（opacity .45），
                 落在白卡上就是灰的；只 disabled 的话是**半透明的绿**，那不是灰。
-             ⚠️ 两处都由 canSubmit 一个字段派生 —— 写两遍迟早只改一处。 -->
+             ⚠️ 颜色与 disabled 都从 hintLevel / canSubmit **派生**，不新增字段 ——
+                写两遍（或存一份）迟早只改一处。 -->
         <ui-button onlyIcon="{{true}}" size="xl" variant="fill"
-                   color="{{canSubmit ? 'success' : 'default'}}" disabled="{{!canSubmit}}"
-                   bind:press="onSubmit">
+                   color="{{hintLevel === 'ok' ? 'success' : hintLevel === 'warn' ? 'warning' : 'default'}}"
+                   disabled="{{!canSubmit}}" bind:press="onSubmit">
           <!-- ⚠️⚠️ **✓ 的颜色要跟着按钮状态走**（用户 2026-10 定）：
                disabled 时底是 color="default" 的 #111111 + opacity .45（≈#999 中灰），
                而正常态的字是 text-ink —— **和 #111 的底同色，等于没画**。
