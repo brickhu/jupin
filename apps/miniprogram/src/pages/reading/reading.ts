@@ -1,12 +1,8 @@
 import {
   ENERGY_PER_CHALLENGE,
   PREFLIGHT,
-  RECORD_SPEC,
   formatDuration,
   formatScore,
-  peakBars,
-  samplesFromPcm16,
-  sniffAudioContainer,
 } from '@jushuo/shared'
 import { missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
 import type { GrowthView, SubmitResponse } from '@jushuo/shared'
@@ -21,7 +17,6 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
@@ -223,75 +218,9 @@ function zeroGrowthCards(): GrowthCard[] {
 const ROLL_MS = 600
 const ROLL_FRAME_MS = 16
 
-/**
- * ⭐ 声波监测：**以中线对称的实心柱条**，画在 canvas 上。
- *
- * ⚠️ 为什么是 canvas 而不是一排 <view>：
- *    一帧 1024 个采样点，用节点画就是 1024 个节点 × 每秒 15 帧 —— 小程序扛不住，
- *    而且柱条会糊成一条实心色块。canvas 一次 draw 搞定，且能按设备像素画，边缘不发虚。
- *
- * ⚠️ 小程序的 canvas 2d **没有 AnalyserNode**（那是浏览器 Web Audio 的东西，
- *    参见 docs/research/platform-decision.md），所以波形只能从录音帧自己算 ——
- *    数据源是 Recorder 交上来的 PCM 帧（已归一化到 16kHz 小端）。
- */
-/** canvas 的 id —— 只在 s2 那一块里存在（wx:if） */
-const WAVE_CANVAS_ID = '#wave'
-/**
- * 一屏最多画多少根柱条。
- *
- * ⚠️ 不是"越多越准"：柱条数超过画布物理像素的一半之后，相邻柱条之间的空隙
- *    就没有渲染意义了（会糊成实心块），白白多画一倍 rect。
- *    64 根 ≈ 每个柱子覆盖 16 个采样点，肉眼刚好能看出"起伏"。
- * ⚠️ 取的是**峰值**而不是均值：均值会把一帧里的爆破音抹平，
- *    看起来像音量一直很小 —— 而用户盯着这条波形就是要看"我声音够不够大"。
- */
-const WAVE_MAX_BARS = 64
-
-/**
- * ⭐ 连续解码失败几次才认定「这个环境解不开帧」。
- *
- * ⚠️ 不能一帧失败就下结论：帧是**流**，某一帧恰好在编码边界上解不开是正常的。
- *    取 3：既有容错，又不会让开发者工具里白等太久（每帧还带 1.5 秒超时）。
- */
-const FRAME_DECODE_TRIES = 3
-/** 柱条填充色 —— 与 uno.config.mjs 的 theme.colors.brand 保持一致（手写 CSS 取不到那个 token） */
-const WAVE_COLOR = '#4f46e5'
-
-/**
- * ⚠️⚠️ 这一帧里装的是**采样**（能画波形），还是**编码后的码流**（画不了）？
- *
- *    ⭐ 判据直接复用 @jushuo/shared 的 `sniffAudioContainer` —— **服务端解码前
- *    用的是同一个函数**。两端各写一份的话，会出现「服务端解得开、客户端却认定
- *    它不能画」这种谁也说不清的状态。
- *
- *    ⚠️ 为什么非要认这一步：`frameBuffer` 官方只写了「录音分片数据」四个字，
- *       而本项目**实测**同一个 API 会给两种完全不同的东西 ——
- *       真机（format:'PCM'）是裸 PCM，开发者工具是 WebM/Opus 压缩块
- *       （见 docs/research/recorder-output-formats.md）。
- *       把压缩字节按 16bit PCM 读，得到的是「接近满量程的噪声」（RMS ≈ -4.8dB）——
- *       每根柱子都被拉满、一动不动，用户看到的就是一整条不响应的色块。
- *
- *    ⚠️ `raw-pcm` 是**兜底**值（裸 PCM 没有任何 magic）：判不出来是正常的，
- *       那正是真机的情况 —— 照画。
- */
-function framesAreSamples(pcm: ArrayBuffer): boolean {
-  return sniffAudioContainer(new Uint8Array(pcm)) === 'raw-pcm'
-}
-
 /** 只在开发者工具里为真 */
 const IS_DEVTOOLS = PLATFORM === 'devtools'
 
-/**
- * ⭐ **实时波形有没有数据源** —— 由录音格式决定（见 RECORD_SPEC）。
- *
- * ⚠️ `onFrameRecorded` 只在 `format` 是 **mp3 / pcm** 时才回调（官方文档）：
- *    选 mp3 就是为了「压缩」和「有帧」两个都要 —— 见 RECORD_SPEC 里那张对照表。
- *
- * ⚠️ 它只是**初始值**：真机上一旦发现帧其实是压缩块（不是 PCM），
- *    会当场把 waveOn 置 false（见 handleFrame 的三种结局）—— 宁可没有波形，
- *    也不能拿压缩字节当振幅画一条骗人的柱子。
- */
-const WAVE_ON = RECORD_SPEC.frames
 
 /** 逐词视图 —— 词 + 它自己的音标（音标开关打开时挂在词下面） */
 interface WordView {
@@ -411,13 +340,6 @@ Page({
     recordDurationText: '',
     /** s2 顶行那个红色计时器 `00:23`（在 TS 里按毫秒格式化，见 mmss） */
     elapsedText: '00:00',
-    /**
-     * ⭐ 这一轮要不要画实时波形 —— 由录音格式决定（见 WAVE_ON）。
-     * ⚠️ 它必须是 data：WXML 里读不到模块常量，而画布在 wx:if 里。
-     */
-    // ⚠️ 显式标成 boolean：RECORD_SPEC.frames 是 as const 的 true，
-    //    不标的话这个字段会被推断成字面量类型 true，而运行时还要能置成 false（见 handleFrame）。
-    waveOn: WAVE_ON as boolean,
     /** 上传进度（0–100）—— 'uploading' 那一态给真实进度（别让「AI评测中」盖住还在传的那几秒） */
     uploadPercent: 0,
 
@@ -533,8 +455,6 @@ Page({
    */
   pressActive: false,
 
-  /** 这一轮用的哪个录音后端（'plugin' | 'local'）—— 决定"该不该等音频帧" */
-  speechBackend: 'local' as 'plugin' | 'local',
 
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
   gone: false,
@@ -546,213 +466,7 @@ Page({
    */
   historyRetried: false,
 
-  /**
-   * ⭐ 这一轮的帧**走哪条路**：
-   *   'deciding' …… 还没定，正在试解码；
-   *   'decoded'  …… 平台解码器能用（真机上的正常路径）；
-   *   'pcm'      …… 这一片本来就是裸 PCM，按 16bit 读；
-   *   'off'      …… 解不开又不是 PCM → 不画了。
-   * ⚠️ 定下来之后不再反复改判：每帧都重新试一遍会让波形忽有忽无。
-   */
-  frameMode: 'deciding' as 'deciding' | 'decoded' | 'pcm' | 'off',
-  /** 连续解码失败次数 —— 到 FRAME_DECODE_TRIES 次才认定这条路走不通 */
-  frameFails: 0,
 
-  /**
-   * canvas 2d 的绘制上下文 —— 没拿到之前 drawSamples 直接跳过。
-   * ⚠️ 类型来自小程序自己的命名空间：小程序的 tsconfig 不含 DOM lib，
-   *    全局的 CanvasRenderingContext2D 在这里根本不存在。
-   */
-  waveCtx: null as WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D | null,
-  /** 画布的**设备像素**尺寸 —— 绘制坐标全部用它 */
-  waveW: 0,
-  waveH: 0,
-  /** 本轮收到多少帧 —— 只用于开发者工具里那行诊断 */
-  waveFrames: 0,
-  /** 「一帧都没收到」只提示一次，别每 100ms 刷一遍 */
-  waveWarned: false,
-
-  /**
-   * ⭐ 拿画布节点。
-   *
-   * ⚠️ 必须在**画布渲染出来之后**才拿得到（它在 wx:if 里，录音开始前根本不存在），
-   *    所以这个函数从 setData 的回调里调 —— 那正是"视图已经更新完"的时刻。
-   *
-   * ⚠️ backing store 按**设备像素**开（尺寸 × dpr），否则在 2x/3x 屏上整条波形发虚 ——
-   *    这是 canvas 最常见的"看着就是不对劲"。开了之后所有绘制坐标都用设备像素，
-   *    **不调 ctx.scale**（scale 会累积，重复进入录音时会越缩越小）。
-   */
-  prepareWaveCanvas(attempt = 0) {
-    // ⚠️ 用全局的 wx.createSelectorQuery：this.createSelectorQuery 只有**组件**实例上有
-    //    （类型声明也只写在 Component 上）。画布是页面自己的节点，全局查询就够。
-    wx.createSelectorQuery()
-      .select(WAVE_CANVAS_ID)
-      .fields({ node: true, size: true })
-      .exec((res) => {
-        const info = res?.[0] as { node?: WechatMiniprogram.Canvas; width?: number; height?: number } | undefined
-        const node = info?.node
-        /**
-         * ⚠️⚠️ 拿不到就**重试几次**，不要一次失败就整轮不画。
-         *
-         *    "节点在、但尺寸还是 0"是会发生的：setData 的回调保证的是**逻辑层数据已下发**，
-         *    而布局在渲染层是异步的 —— 恰好在那一瞬间量到 0 的概率不小。
-         *    一次失败就放弃的话，表现是"波形整轮都不出来"，而**不报任何错**。
-         */
-        if (!node || !info?.width || !info?.height) {
-          if (attempt < 3 && this.data.phase === 's2') {
-            setTimeout(() => this.prepareWaveCanvas(attempt + 1), 120)
-            return
-          }
-          // ⚠️ 诊断只进控制台（用户 2026-09：界面上不要这些工程信息）。
-          //    WXML 那一块这时只留一条中线，"帧没来"与"画得不对"在屏幕上本来就分不出来 ——
-          //    要查就看这行日志。
-          console.warn('[wave] 没拿到画布节点，这一轮不画波形', info ?? null)
-          return
-        }
-        // ⚠️ getWindowInfo 要 2.20.1+，与 lib/nav.ts 一样留一条老基础库的退路
-        const info2 = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync()
-        const dpr = info2.pixelRatio || 2
-        node.width = Math.round(info.width * dpr)
-        node.height = Math.round(info.height * dpr)
-        this.waveCtx = node.getContext('2d')
-        this.waveW = node.width
-        this.waveH = node.height
-        this.waveFrames = 0
-        // ⭐ 先画一条极淡的中线：它让"画布在哪儿、有多大"当场可见。
-        //    没有它，一块什么都没画的 canvas 和"这个功能不存在"长得一模一样 ——
-        //    排查时会一直怀疑代码没生效（这个坑本次就踩了）。
-        this.drawBaseline()
-        // ⚠️ 这里原来还往屏幕上写一行「画布就绪 N×M，等音频帧…」——
-        //    用户 2026-09 要求删掉（界面上不要工程信息）。要查就 console.log：
-        console.log('[wave] 画布就绪 ' + node.width + '×' + node.height)
-      })
-  },
-
-  /**
-   * ⭐ 收到一帧「录音分片」—— 先解码，再画。
-   *
-   * ⚠️⚠️ mp3 格式下帧里装的是 **mp3 码流**，不是采样，所以必须先解码：
-   *    用平台自带的 WebAudioContext.decodeAudioData（见 lib/audio/frame-decode.ts）。
-   *    那条路**只在真机上成立**（开发者工具里那个 API 直接不工作）。
-   *
-   * 三种结局，各自都有明确退路：
-   *   ① 解得出采样 → 照画（真机上的正常路径）；
-   *   ② 解不出来、而这一片本来就是裸 PCM → 按 16bit 小端读着画（老链路）；
-   *   ③ 解不出来、而这一片是压缩块 → **停掉波形**（宁可没有，也不画假的）。
-   */
-  handleFrame(frame: ArrayBuffer) {
-    // ⚠️ 停止之后可能还会到几帧（最后一帧在路上），那时画上去会闪一下；
-    //    页面销毁之后一帧都不该画（见 onUnload）
-    if (this.gone || this.data.phase !== 's2') return
-    if (this.frameMode === 'off') return
-
-    // 已经确认是裸 PCM：直接读，不再走解码（省一次异步往返）
-    if (this.frameMode === 'pcm') {
-      this.drawSamples(samplesFromPcm16(new Uint8Array(frame)), frame.byteLength)
-      return
-    }
-
-    void this.drawDecodedFrame(frame)
-  },
-
-  /**
-   * 解一帧再画。解不出来时，**只有在还没定下模式的情况下**才去决定退路 ——
-   * 已经确认能解码之后再偶发失败，丢掉这一帧就好，不必把整条波形关掉。
-   */
-  async drawDecodedFrame(frame: ArrayBuffer) {
-    const samples = await decodeFrameToSamples(frame)
-    if (this.gone) return
-
-    if (samples && samples.length > 0) {
-      this.frameMode = 'decoded'
-      this.frameFails = 0
-      this.drawSamples(samples, frame.byteLength)
-      return
-    }
-
-    /**
-     * ⚠️ 解码失败不立刻改判：帧是**流**，某一帧恰好在边界上解不开是正常的。
-     *    连续几帧都解不开，才说明这个环境 / 这个格式根本解不了。
-     */
-    this.frameFails++
-    if (this.frameMode !== 'deciding' || this.frameFails < FRAME_DECODE_TRIES) return
-
-    if (framesAreSamples(frame)) {
-      this.frameMode = 'pcm'
-      console.warn('[wave] 解码这条路走不通，但这一片本身就是裸 PCM —— 按 PCM 画')
-      this.drawSamples(samplesFromPcm16(new Uint8Array(frame)), frame.byteLength)
-      return
-    }
-
-    this.frameMode = 'off'
-    console.warn(
-      '[wave] 帧是编码后的音频，而这个环境解不开它（开发者工具的 WebAudio 不工作）—— ' +
-        '已停掉波形。见 docs/research/recorder-output-formats.md',
-    )
-    /**
-     * ⭐ 停掉波形、那一格退回一条中线（见 WXML）——**绝不摆一条不动的假波形**：
-     *    一块不动的空画布比没有更糟，用户会以为是自己手机 / 麦克风的问题。
-     * ⚠️ 这里原来还往屏幕上写一句「模拟器不提供音频解码通路」—— 用户 2026-09 要求删掉
-     *    （界面上不要工程信息）。上面那行 console.warn 保留：排查要靠它。
-     */
-    this.setData({ waveOn: false })
-  },
-
-  /**
-   * ⭐ 把一段**采样**画成波形。
-   *
-   * 形状：**以中线对称的实心柱条**，左边是这一帧最早的声音、右边是最新的。
-   * 幅度取每个柱条覆盖范围内的**峰值**（理由见 WAVE_MAX_BARS）。
-   *
-   * ⚠️ 柱高算在 @jushuo/shared 的 peakBars 里（纯函数、有单测）——
-   *    采样有两个来源（解码 / 裸 PCM），但「每根柱子多高」只能有一份实现。
-   * ⚠️ 这里**不再统计 maxPeak**：原来它只为画布下方那行诊断服务，
-   *    那行诊断已按用户要求从界面上删掉（要看就去控制台临时加一行）。
-   */
-  drawSamples(samples: Float32Array, byteLength = 0) {
-    const ctx = this.waveCtx
-    // ⚠️ 画布还没准备好（第一帧常常比它早到几十毫秒）→ 丢这一帧，
-    //    下一帧就画得上；**不要**在这里重试查询，那会变成每帧一次 selectorQuery
-    if (!ctx || samples.length === 0) return
-
-    const w = this.waveW
-    const h = this.waveH
-    const mid = h / 2
-    const barCount = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
-    const heights = peakBars(samples, barCount)
-    if (heights.length === 0) return
-
-    const step = w / heights.length
-    const barW = Math.max(1, step * 0.6)
-    ctx.clearRect(0, 0, w, h)
-    ctx.fillStyle = WAVE_COLOR
-
-    for (let i = 0; i < heights.length; i++) {
-      const peak = heights[i] as number
-      // ⚠️ 最低 2px：静音时也留一条细线，不然整条波形会消失，
-      //    看起来像画布没渲染出来（与参考实现里的 Math.max(2, ...) 同理）
-      const barH = Math.max(2, peak * h * 0.92)
-      ctx.fillRect(i * step + (step - barW) / 2, mid - barH / 2, barW, barH)
-    }
-
-    /**
-     * ⚠️ 帧计数**留着**（不渲染，只给下面那个"2 秒没帧"的看门狗用）—— 别顺手删。
-     * ⚠️ 这里原来每个几帧往画布下方写一行「第 N 帧 · 字节 · 峰值 · 走的哪条路」，
-     *    用户 2026-09 要求删掉（界面上不要工程信息）。
-     *    要查就临时 console.log —— 真机上本来就看不到那行字。
-     */
-    this.waveFrames++
-  },
-
-  /** 画一条极淡的中线 —— 让"画布在哪儿"当场可见，见 prepareWaveCanvas 的说明 */
-  drawBaseline() {
-    const ctx = this.waveCtx
-    if (!ctx) return
-    const h = this.waveH
-    ctx.clearRect(0, 0, this.waveW, h)
-    ctx.fillStyle = '#eeecfd'
-    ctx.fillRect(0, Math.round(h / 2) - 1, this.waveW, 2)
-  },
 
   // ⚠️ 这里原来有一个页面私有的 InnerAudioContext —— 已搬到 lib/audio/play.ts，
   //    因为「我的挑战」列表也要播录音，两个实例会互相抢（见那个文件的说明）。
@@ -861,7 +575,6 @@ Page({
     // ⚠️ 还要把它从「当前那个录音器 / 识别管理器」上摘下来：两者都是全局单例、
     //    监听摘不掉，留着它下一帧还会往这个已经没了的页面上写（见 recorder.ts / asr.ts）
     this.session?.dispose()
-    this.waveCtx = null
     this.stopTimer()
     // ⚠️ 数字滚动的定时器也要停：它每 16ms setData 一次，
     //    页面销毁后不停会一直往已销毁的页面上写（rollNumbers 里还有一道 gone 判活）
@@ -1081,6 +794,17 @@ Page({
 
       const last = this.recordingKey ? loadLastRecording(this.recordingKey) : null
       if (last) {
+        /**
+         * ⚠️⚠️ **判据要跟着一起恢复** —— 恢复的录音没走过识别，
+         *    不恢复的话 `missedTexts` 是空的，**漏读门禁对它完全失效**：
+         *    用户读了一半、退出、再进来，就能直接提交。
+         *    音频还是那一段，判据当然也还是那一条（见 LastRecording.missedTexts）。
+         * ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 放行（不硬拦没见过的数据）。
+         */
+        this.missedTexts = last.missedTexts ?? []
+        const missSet = new Set(
+          this.missedTexts.map((t) => this.plainWords.findIndex((w) => w === t)).filter((i) => i >= 0),
+        )
         this.setData({
           phase: 's3',
           restored: true,
@@ -1088,6 +812,8 @@ Page({
           playPath: last.playPath,
           durationMs: last.durationMs,
           recordDurationText: mmss(last.durationMs),
+          words: this.data.words.map((w, i) => ({ ...w, missed: missSet.has(i), pending: false })),
+          gateOpen: false,
         })
       }
       this.syncEnergyNote()
@@ -1199,8 +925,6 @@ Page({
     this.session = createSpeechSession({
       // ⭐ 流式中间结果 → 逐词上色（只有插件后端会调）
       onPartial: (t) => this.applyProgress(t),
-      // ⭐ 音频帧 → 波形（只有本地后端会调）
-      onFrame: (frame) => this.handleFrame(frame),
       onDone: (r) => this.handleSpoken(r),
       onError: (e) => {
         this.stopTimer()
@@ -1210,15 +934,11 @@ Page({
         this.setData({ phase: 's1', error: e.message })
       },
     })
-    this.speechBackend = this.session.backend
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     // ⚠️ 门禁状态也一起清：录音若中途报错，旧的 missedTexts 会把这一次也拦住
     this.missedTexts = []
     this.gateBypassed = false
-    this.frameMode = 'deciding'
-    this.frameFails = 0
-    this.waveWarned = false
 
     /**
      * ⚠️⚠️ **开始录新音 = 上一次那次结果作废**：把本地的「上次结果」缓存也清掉。
@@ -1231,12 +951,11 @@ Page({
      */
     if (this.recordingKey) clearLastResult(this.recordingKey)
 
-    this.setData(
-      {
-        phase: 's2',
-        error: '',
-        // ⚠️ 起新录音 = 上一次的门禁提示作废（否则它会挂在新一轮上）
-        gateOpen: false,
+    this.setData({
+      phase: 's2',
+      error: '',
+      // ⚠️ 起新录音 = 上一次的门禁提示作废（否则它会挂在新一轮上）
+      gateOpen: false,
         elapsedText: '00:00',
         // ⚠️ 一旦开始录新的，上一段的提示就不该再挂着
         restored: false,
@@ -1254,14 +973,6 @@ Page({
         // ⚠️ 同 onRestart：入场开关要复位
         failDetail: '',
       },
-      /**
-       * ⭐ 画布是跟着 phase 一起被 wx:if 创建出来的，所以只能在 setData **回调**里拿 ——
-       *    那正是"视图已经更新完"的时刻。放在 start() 之前还有个好处：
-       *    等第一批帧到达（约 64ms 后）时画布多半已经就绪了。
-       */
-      () => {
-        if (WAVE_ON) this.prepareWaveCanvas()
-      },
     )
 
     const startedAt = Date.now()
@@ -1271,19 +982,7 @@ Page({
       // ⚠️ 计时器这一格必须**每 100ms 都有值**（mmss 恒返回，不像 formatDuration 会给空串）
       this.setData({ elapsedText: mmss(Date.now() - startedAt) })
 
-      /**
-       * ⚠️ 录了两秒还一帧都没收到，**主动说一句**（只进控制台 —— 用户 2026-09 要求
-       *    界面上不要工程信息）。"帧没来"和"画得不对"在屏幕上长得一模一样，
-       *    没有这条日志就只能反复猜（本项目为此白跑过两轮）。
-       *    ⚠️ 复用这个 100ms 的计时器，不为一行诊断再开一个 setTimeout。
-       */
-      // ⚠️ 只有**本地后端**才该有帧（真机走插件时实测 0 帧，等它必然误报）
-      if (IS_DEVTOOLS && this.speechBackend === 'local' && sec > 2 && this.waveFrames === 0 && !this.waveWarned) {
-        this.waveWarned = true
-        console.warn(
-          '[wave] 录了 2 秒还没收到任何音频帧（' + (this.waveCtx ? '画布已就绪' : '画布没就绪') + '）',
-        )
-      }
+      // ⚠️ 这里原来有一条"录了 2 秒还没收到帧"的诊断 —— 波形删掉之后它没有意义了
     }, 100)
 
     this.session.start()
@@ -1408,6 +1107,9 @@ Page({
         tempFilePath: r.audioPath,
         playPath,
         durationMs: r.durationMs,
+        // ⭐ 判据跟着录音一起存 —— 否则从缓存恢复的那一次会**绕过漏读门禁**
+        //    （恢复的录音没走过识别，missedTexts 会是空的）。见 LastRecording.missedTexts
+        missedTexts: this.missedTexts,
       })
     }
 

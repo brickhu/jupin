@@ -86,7 +86,7 @@
                · 都没有  = 读到了 → 正常
              ⚠️ 用**下划线**而不是填充色块：提交后的正式标色是填充色块，
                 两套视觉语言分开，用户才不会以为系统在自相矛盾。 -->
-        <text class="text-44rpx leading-[1.35] px-1 {{item.missed ? 'text-bad font-semibold underline' : item.pending ? 'text-faint' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
+        <text class="text-44rpx leading-[1.35] px-1 transition-colors duration-150 {{item.missed ? 'text-bad font-semibold underline' : item.pending ? 'text-faint' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
         <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 -->
         <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && phase !== 's2' && item.ipa}}">{{item.ipa}}</text>
       </view>
@@ -95,61 +95,29 @@
     <!-- ⚠️ 译文**不放**（用户 2026-09 明确：阅读卡片不用显示翻译）。
          朗读练习看中文是上一版的旧口径，已作废 —— 别看着"空了一块"又加回来。 -->
 
-    <!-- ── s1 底部：红色描边胶囊「🎤 点击录音并朗读」─────────────
-         ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）。
-         ⚠️ 左侧那颗麦克风字形是 2026-09 补进 iconfont 子集的（第 13 个字形，
-            见 tools/iconfont/build.mjs 的 ICONS）—— 之前没有它，只留了文字。 -->
-    <view class="mt-5" wx:if="{{phase === 's1'}}">
-      <!-- ⭐⭐ **按住说话**（用户 2026-10 定）：按住的物理动作本身就是"我在录"，
-           松手 = 读完了 —— 它取代了原来那条实时波形的作用（见 prd 7.2）。
-           ⚠️ 三个触摸事件都要接，缺一不可：
+    <!-- ── 底部录音键：**同一颗按钮，两种状态**（用户 2026-10 定）─────────
+         ⭐⭐ 早期版本在录音时会换成「↺ ｜ 实时波形 ｜ 松手结束」一整行，用户明确要去掉：
+            录音中**不换布局**，就改这一颗按钮的文字与配色 —— 位置不跳，视线不用移。
+
+         ⚠️ 按住说话取代了原来那条实时波形的作用：**按住的物理动作本身就是"我在录"**，
+            而"松手 = 读完了"语义正好对上（见 prd 7.2）。
+            ⇒ 波形连同它的画布、帧解码一整套都删掉了（插件录音本来就拿不到帧）。
+
+         ⚠️ 三个触摸事件都要接，缺一不可：
               · touchstart = 开始录
               · touchend   = 松手，说完了
               · ⚠️ **touchcancel = 手指滑出按钮**（这时**没有** touchend）——
                 漏了它录音就停不下来，用户要等 30 秒的 duration 兜底。
-           ⚠️ 放在外层 view 上而不是 ui-button 上：ui-button 只发「press」（tap），
-             但它用的是 catchtap、**不拦触摸事件**，所以触摸照常冒泡到这一层。 -->
+         ⚠️ 放在外层 view 上而不是 ui-button 上：ui-button 只发「press」（tap），
+            但它用的是 catchtap、**不拦触摸事件**，所以触摸照常冒泡到这一层。
+         ⚠️ 红色是设计稿口径（录音这个动作走语义色，不是品牌紫）：
+            待录 = 红描边；录音中 = **红实心**（状态差别一眼可见，且不新增颜色）。 -->
+    <view class="mt-5" wx:if="{{phase === 's1' || phase === 's2'}}">
       <view bindtouchstart="onPressStart" bindtouchend="onPressEnd" bindtouchcancel="onPressEnd">
-        <ui-button variant="outline" color="error" size="xl" width="full" icon="mdi:microphone">
-          按住朗读
+        <ui-button variant="{{phase === 's2' ? 'fill' : 'outline'}}" color="error" size="xl" width="full"
+                   icon="mdi:microphone">
+          {{phase === 's2' ? '松开结束' : '按住朗读'}}
         </ui-button>
-      </view>
-    </view>
-
-    <!-- ── s2 底部：↺（禁用占位）｜实时波形｜结束录音 ─────────────
-         ⚠️ 三态里的圆钮**一律 size="xl"**（= 100rpx）：s2 的结束录音、s3 的 ↺ / ✓、
-            s1 的 CTA 都是这一档。它们在同一张卡里、同一个位置、隔一帧就换 ——
-            尺寸不一致（88 vs 100rpx）在切换时会明显"跳一下"。
-            ⚠️ 中间那颗胶囊是 **md**：它是 UI 模板宽度的一段内容，不是圆钮，
-              行高由 xl 的圆钮撑开，它自己居中即可。 -->
-    <view class="mt-5 flex items-center" wx:if="{{phase === 's2'}}">
-      <!-- ⚠️ 录音中这颗 ↺ 是**禁用的**（用户已确认：录音中不给重录，只作占位）。
-           ⚠️ ↺ 用的是 unicode 字符：iconfont 子集里没有重录字形（见 ui-button 的说明） -->
-      <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" disabled="{{true}}">
-        <text class="text-36rpx text-ink">↺</text>
-      </ui-button>
-
-      <view class="flex-1 min-w-0 mx-3">
-        <!-- ⭐ 声波监测：以中线对称的实心柱条，一帧画一次（见 reading.ts 的 drawSamples）。
-             ⚠️ 它回答的是**用户唯一能自查的问题**：「麦克风到底收到我的声音没有」。
-                没有它，用户只能靠"读完了分数很低"倒推，而那时已经晚了。
-             ⚠️ 用 canvas 而不是一排 <view>：一帧 1024 个采样点，节点方案既扛不住也会糊成一块。
-             ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开。 -->
-        <canvas type="2d" id="wave" class="w-full h-[64rpx]" wx:if="{{waveOn}}"></canvas>
-        <!-- ⚠️⚠️ 画不画由 waveOn 决定，而它取决于**这一轮真的收到了能解码的帧没有**
-             （开发者工具的 WebAudio 解不开 mp3 码流，那里恒为 false）。
-             这时只留一条中线 —— 绝不摆一条不动的假波形：那比没有更糟，
-             会让人以为是自己手机 / 麦克风的问题（这是踩过的坑）。 -->
-        <view class="h-[64rpx] flex items-center" wx:else>
-          <view class="w-full h-[4rpx] rounded-full bg-line"></view>
-        </view>
-      </view>
-
-      <!-- ⚠️ 原来这里有一颗红色「结束录音」钮 —— **按住说话之后它够不着了**
-           （手指正按在下面那颗按钮上），留着只会让人以为要再点一次。
-           改成一句提示，告诉用户怎么结束。 -->
-      <view class="shrink-0 py-3 px-2">
-        <text class="text-24rpx text-faint">松手结束</text>
       </view>
     </view>
 

@@ -71,6 +71,20 @@
 - [ ] **C9** **审计里需要产品/运维拍板才动的项**（本轮**故意没做**，逐条附理由）：`/api/auth/session` 零调用但**是当前唯一的部署验证探针**（别删）；`POST /api/user/unfreeze` 界面没有入口（接上还是砍）；`ArticleDetail.challenge`/`.advice` 与 `SubmitResponse.dimensions` 服务端给了但端侧从不读；三张零引用表 `subscriptions`/`likes`/`reviews` 与六个零读列（`memberUntil`/`likeCount`/`prepayId`/`refund*`/`startsAt`）—— **不可逆且 refund 系是未实现的 roadmap 位**；`paths-ignore` 可能跳过与后端 lockfile 相关的改动；`MYSQL_*`/`TOKEN_SECRET` 的 **GitHub Secrets 与本地 .env 两份真相**（本地改对了、CI 会覆盖回去）；CI 那条路**仍然产不出版本**（要查得先 `gh auth login`）。
 - [ ] **C10** **本地开发镜像是"残留档案"，不是当前代码的镜像**：`docker-compose` 挂的是源码 + `Dockerfile.development` 用 `tsx` 直跑，而 `apps/server/dist/index.mjs` 是 **9/21 的旧构建产物**（连 `attemptId` 都没有）却没被清理 ⇒ 我按它判断"本地容器跑的是旧代码"，**结论下反了**（本地确实跑新源码）。⇒ 要做的：① `docker-compose` 或 entrypoint 里打印一次"当前生效的提交 / 是否 tsx 直跑"，让判断有据可依；② 把 `apps/server/dist` 加进 `.gitignore` 或让 dev 容器启动时重建一次，别让一个从不被执行的产物误导人（`AGENT.md` 里那条"判断运行时代码要看行为、不要看产物"也补一句）。
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
+- [ ] **B45** **清掉实时波形留下的一整条死链**（B44 把波形从界面上拿掉之后，它的数据源没有任何消费者了）。
+  **已经删掉的**（B44 一并做了）：朗读页的画布、`prepareWaveCanvas` / `handleFrame` / `drawSamples` /
+  `drawBaseline` / `framesAreSamples`、`WAVE_*` 常量与字段、`speech-session` 的 `onFrame`。
+  **还没删的（本条）**：
+  · `lib/audio/frame-decode.ts`（133 行，**零引用**）；
+  · `lib/audio/recorder.ts` 的帧管道 —— `onFrame` / `acceptFrame` / `m.onFrameRecorded(...)` /
+    `frameSizeKb`（`RECORD_SPEC.frames` 也已经零引用）；
+  · `RECORD_SPEC.frames` / `frameSizeKb`（`@jushuo/shared`，删之前要连带改那段 mp3-vs-aac 的说明）。
+  ⚠️⚠️ **为什么单独一条、不顺手做**：`recorder.ts` **没有测试文件** —— 它是我现在唯一没有测试网的核心模块，
+  而录音是整条链路的地基。在同一个已经很长的改动里大切除，出错只会在**真机**上暴露。
+  ⇒ **做完的标志**：删干净（`grep` 无残留）+ **真机验一次「按住 → 松手 → 提交」全通**。
+  ⚠️ 保留 `docs/research/recorder-output-formats.md`：代码删了，但那份"文件 ≠ 帧、devtools 给 WebM"的
+  调查结论**仍然有用**（服务端 `normalizeAudio` 的整个设计就是为它写的）。
+
 ### C. 上线 / 运维
 
 - [ ] **C1** dev / prod 跑迁移 **0031–0034** —— 内容是「清库 + id 缩到 16 位 + 删冗余列」；跑完靠 `SEED_ON_START` 重灌种子并上传新音频。⚠️ 推 `dev` 会自动触发（AUTO_MIGRATE + SEED_ON_START）

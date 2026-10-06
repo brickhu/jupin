@@ -135,6 +135,16 @@ export interface LastRecording {
   audioPath: string
   /** 试听用的文件路径（可能是空串，见 loadLastRecording） */
   playPath: string
+  /**
+   * ⭐ **这一段录音的预检判据**（朗读页那里的"哪几个词没读到"）。
+   *
+   * ⚠️⚠️ 必须跟着录音一起存，否则会出现一个真实的漏洞：
+   *    从缓存恢复的录音**没有走过识别**，`missedTexts` 会是空的 ⇒
+   *    **漏读门禁对它不生效** —— 用户读了一半、退出、再进来，就能直接提交。
+   *    而音频还是那一段，判据当然也还是那一条，理应一起恢复。
+   * ⚠️ 老缓存里没有这个字段 ⇒ 读出来是 `undefined`，按"没判过"处理（放行，不硬拦）。
+   */
+  missedTexts?: string[]
 }
 
 /**
@@ -243,6 +253,8 @@ export function saveLastRecording(input: {
   tempFilePath: string
   playPath: string
   durationMs: number
+  /** 预检判据，见 LastRecording.missedTexts */
+  missedTexts?: string[]
 }): void {
   const dir = slotDirOf(input.key)
   const audioPath = dir + '/' + savedNameOf(input.tempFilePath)
@@ -277,6 +289,7 @@ export function saveLastRecording(input: {
     durationMs: input.durationMs,
     savedAt: Date.now(),
     audioPath,
+    ...(input.missedTexts ? { missedTexts: input.missedTexts } : {}),
   }
 
   // ⚠️ 封顶：本地文件总量只有 10MB、超了静默失败，
@@ -319,6 +332,8 @@ export function loadLastRecording(key: string): LastRecording | null {
 
   return {
     ...found,
+    // ⚠️ 老缓存没有这个字段 ⇒ 空数组 = 「没判过」⇒ 门禁放行（不硬拦没见过的数据）
+    missedTexts: Array.isArray(found.missedTexts) ? found.missedTexts : [],
     // ⚠️ 试听文件可能根本没写成功（见 writePlayableWav 的 catch），
     //    那种情况下只恢复「能提交」，不能假装能试听
     playPath: exists(replayPathOf(key)) ? replayPathOf(key) : '',

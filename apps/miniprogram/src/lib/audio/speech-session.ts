@@ -56,11 +56,6 @@ export interface SpeechCallbacks {
    * ⚠️ 文本是**整段当前结果**（可能是修正而不是追加），上层按整段处理，别自己拼接。
    */
   onPartial?: (text: string) => void
-  /**
-   * 音频帧 —— **只有本地后端有**（插件不给帧，实测 0 帧）。
-   * ⚠️ 帧是压缩码流（mp3），要画波形得先解码，见 `frame-decode.ts`。
-   */
-  onFrame?: (frame: ArrayBuffer) => void
   onDone: (r: SpeechResult) => void
   onError: (e: Error) => void
 }
@@ -112,7 +107,6 @@ function pluginSession(cb: SpeechCallbacks): SpeechSession {
  */
 function localSession(cb: SpeechCallbacks): SpeechSession {
   const recorder = new Recorder({
-    onFrame: cb.onFrame,
     onStop: (r) => cb.onDone({ audioPath: r.tempFilePath, durationMs: r.durationMs, text: null }),
     onError: (e) => cb.onError(e),
   })

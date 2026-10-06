@@ -171,6 +171,21 @@ describe('保存与恢复', () => {
     expect(files.has(got?.audioPath ?? '')).toBe(true)
   })
 
+  it('⭐⭐ 预检判据要跟着录音一起恢复 —— 否则缓存恢复会绕过漏读门禁', async () => {
+    // ⚠️ 这条盯的是一个真实漏洞：从缓存恢复的录音**没走过识别**，
+    //    判据不一起恢复的话 missedTexts 是空的 ⇒ 漏读门禁对它完全失效，
+    //    用户读了一半、退出、再进来就能直接提交。而音频还是那一段，判据当然也还是那一条。
+    save({ ...optsFor(KEY_A), missedTexts: ['simple', 'as'] })
+    expect(load(KEY_A)?.missedTexts).toEqual(['simple', 'as'])
+  })
+
+  it('⚠️ 老缓存里没有这个字段 ⇒ 读出来是空数组（＝没判过 ⇒ 放行，不硬拦没见过的数据）', async () => {
+    // ⚠️ 直接写一条**不带 missedTexts** 的老格式元信息，模拟升级前的缓存
+    save(optsFor(KEY_B))
+    const got = load(KEY_B)
+    expect(got?.missedTexts).toEqual([])
+  })
+
   it('⚠️ 文件名沿用原件 —— 扩展名丢了播放器会按错的解码器去解', () => {
     save(optsFor(KEY_A))
     expect(load(KEY_A)?.audioPath.endsWith('cached-rec.webm')).toBe(true)

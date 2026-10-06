@@ -101,15 +101,6 @@ describe('本地后端（开发者工具 / 插件降级）', () => {
     expect(done).toHaveBeenCalledWith({ audioPath: '/tmp/local.mp3', durationMs: 4321, text: null })
   })
 
-  it('本地后端把帧转出来（只有它有帧，波形靠它）', () => {
-    h.platform = 'devtools'
-    const onFrame = vi.fn()
-    createSpeechSession({ onFrame, onDone: () => {}, onError: () => {} })
-    const buf = new ArrayBuffer(8)
-    rec.cbs?.onFrame?.(buf)
-    expect(onFrame).toHaveBeenCalledWith(buf)
-  })
-
   it('录音器报错 ⇒ 走 onError', () => {
     h.platform = 'devtools'
     const onError = vi.fn()
