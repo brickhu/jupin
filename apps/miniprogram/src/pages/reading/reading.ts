@@ -503,10 +503,16 @@ Page({
   misreadList: [] as { at: number; heard: string }[],
 
   /**
-   * ⭐ **已经松手，但还在收尾**（松手缓冲期，见 RELEASE_HANGOVER_MS）。
-   * 这期间录音还在继续、中间结果还在进来 —— 用来把最后那几个词追回来。
+   * ⭐ **已经松手，但这一遍还没定稿** —— 从按下松手那一刻起，一直**留到真的出结果**。
+   *
+   * ⚠️⚠️ 它驱动按钮的「识别中…」文案与 disabled，**必须活到 phase 变 s3 为止**：
+   *    提前清掉会让按钮在等待期间退回「松开结束」（见 finishRecording 的说明）。
+   *    清除点只有三个：handleSpoken · onError · 停止看门狗超时。
    */
   releasePending: false,
+
+  /** 已经跟会话说过"停"了 —— finishRecording 可能被两条路调到，只真的停一次 */
+  stopSent: false,
 
   /** 松手缓冲期的定时器（追上尾巴就提前清掉） */
   releaseTimer: null as ReturnType<typeof setTimeout> | null,
@@ -1007,7 +1013,9 @@ Page({
         // ⚠️ 会话作废，否则下一次按下会被"上一次还没结束"挡住
         this.session?.dispose()
         this.session = null
-        this.setData({ phase: 's1', error: e.message })
+        // ⚠️ 同样是 releasePending 的清除点：出错也要把「识别中…」收掉
+        this.releasePending = false
+        this.setData({ phase: 's1', releasePending: false, error: e.message })
       },
     })
 
@@ -1022,6 +1030,7 @@ Page({
     this.setData({ hintText: '', hintLevel: 'ok', canSubmit: true })
     // ⚠️ 收尾状态也复位：上一轮的缓冲定时器若还挂着，会把这一轮提前停掉
     this.releasePending = false
+    this.stopSent = false
     if (this.releaseTimer !== null) {
       clearTimeout(this.releaseTimer)
       this.releaseTimer = null
@@ -1136,15 +1145,28 @@ Page({
    * ⭐ 真正结束这一轮录音 —— 松手的缓冲期走完（或提前追上）之后调它。
    * ⚠️ 与 onStopRecord 分开是为了让"缓冲"这件事只有一个出口，
    *    不会出现"缓冲还没走完又被别处停了一次"。
+   *
+   * ⚠️⚠️ **它只负责"跟会话说停"，不负责关掉「识别中…」** —— 这是踩过的坑：
+   *    原来这里把 `releasePending` 置回 false 再停，而**停止是异步的**
+   *    （要等插件的 onStop 回来、走 handleSpoken 才变 s3）。
+   *    ⇒ 从清掉标记到结果到达之间，`phase` 还是 s2，按钮的文案三元就落到了
+   *      「松开结束」——**用户看到按钮"退回"到录音态**，而不是进 s3。
+   *      识别越慢这个窗口越长，看起来就像"松手没生效"。
+   *    ⇒ 所以 `releasePending` 的**唯一清除点**是"真的定稿了"：
+   *      handleSpoken（s3）· onError · 停止看门狗超时。三个出口见各自的注释。
    */
   finishRecording() {
     if (this.releaseTimer !== null) {
       clearTimeout(this.releaseTimer)
       this.releaseTimer = null
     }
-    if (!this.releasePending) return
-    this.releasePending = false
-    this.setData({ releasePending: false })
+    /**
+     * ⚠️ 定时器与"追上就提前收工"两条路都会走到这里，**只真的停一次**。
+     *    原来靠 `releasePending` 兼职这个判断，现在它得一直留到定稿，
+     *    所以另立一个只进不出的标记。
+     */
+    if (this.stopSent) return
+    this.stopSent = true
     this.onStopRecord()
   },
 
@@ -1162,7 +1184,8 @@ Page({
    * ⚠️ 传进来的文本是**整段当前结果**（可能是修正而不是追加），所以每次都整体重算。
    */
   onInterimText(spokenText: string) {
-    if (this.gone || !this.releasePending) return
+    // ⚠️ stopSent 之后不用再判"追上没" —— 停已经发出去了，剩下的交给 onStop
+    if (this.gone || !this.releasePending || this.stopSent) return
     const spoken = spokenText.split(/\s+/).filter(Boolean)
     /**
      * ⚠️ 判据是 `pending` 为空（没有"还没读到"的词了）—— 说明转写已经追上了用户实际读到的位置。
@@ -1179,7 +1202,10 @@ Page({
       this.stopWatchdog = null
       if (this.data.phase !== 's2') return
       this.stopTimer()
-      this.setData({ phase: 's1', error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
+      // ⚠️ 这里也要关掉「识别中…」：这是 releasePending 的清除点之一，
+      //    漏了它按钮会永远停在"识别中"（而 phase 已经回 s1 了）
+      this.releasePending = false
+      this.setData({ phase: 's1', releasePending: false, error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
     }, 3000)
   },
 
@@ -1273,6 +1299,11 @@ Page({
 
     this.setData({
       phase: 's3',
+      /**
+       * ⚠️⚠️ **「识别中…」在这里才收掉**（与 phase 变 s3 同一帧）——
+       *    这是它最主要的清除点：早一步清，按钮就会在等待期间退回「松开结束」。
+       */
+      releasePending: false,
       restored: false,
       // ⭐ 新录音 = 新的一次尝试（幂等键在这里诞生，之后重试一直用它）
       attemptId: newAttemptId(),
@@ -2204,12 +2235,20 @@ Page({
      */
     this.missedIdx = []
     this.misreadList = []
+    /**
+     * ⚠️ 收尾状态也要一起复位（这两个都是"这一次录音"的状态）：
+     *    漏了 `releasePending` 的话，回 s1 之后按钮会**停在「识别中…」且 disabled** ——
+     *    用户再也按不动那颗钮，而界面上没有任何解释。
+     */
+    this.releasePending = false
+    this.stopSent = false
     this.clearWordMarks()
     this.setData({
       // ⚠️ 提示也要清：这一遍还没判过，不能挂着上一遍那句
       hintText: '',
       hintLevel: 'ok',
       canSubmit: true,
+      releasePending: false,
       phase: 's1',
       error: '',
       restored: false,
