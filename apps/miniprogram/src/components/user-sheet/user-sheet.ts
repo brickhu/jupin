@@ -121,7 +121,6 @@ Component({
     energy: 0,
     /** ⭐ 三个成长值（并排展示，**不合成总分**） */
     growth: { self: 0, diligence: 0, standout: 0 },
-    streak: null as StreakView | null,
     /**
      * ⭐ 菜单项。
      * ⚠️ 「通知」暂时没有页面 —— 点了给一句「敬请期待」，
@@ -200,7 +199,6 @@ Component({
         conqueredCount: p?.conqueredCount ?? 0,
         energy: p?.energy ?? 0,
         cookies: p?.cookies ?? { total: 0, balance: 0 },
-        streak: st.userInfo?.streak ?? null,
       })
 
       // ⚠️ 库里存的是 cloud:// fileID，不能直接给 <image src> —— 先换成临时地址。

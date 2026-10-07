@@ -142,33 +142,6 @@
   opacity: 0.6;
 }
 
-.us-stats {
-  display: flex;
-  padding: 24rpx 0;
-  border-top: 1rpx solid #f0f0f0;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.us-stat {
-  flex: 1;
-  text-align: center;
-}
-
-.us-stat-v {
-  display: block;
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #111;
-  line-height: 1.2;
-}
-
-.us-stat-k {
-  display: block;
-  margin-top: 6rpx;
-  font-size: 22rpx;
-  color: #999;
-}
-
 /* ⭐ 菜单 —— 一行一个入口。
    ⚠️ 这里原来是一整张「等级徽章」阶梯（.us-sec / .us-scroll / .us-item* / .us-foot*），
       已按产品要求整体去掉：拉开面板是来找入口的，不是来读等级表的。 */
