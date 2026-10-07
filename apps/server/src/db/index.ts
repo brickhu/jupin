@@ -321,8 +321,47 @@ export async function runMigrations(): Promise<void> {
   await refreshTableList('迁移前')
 
   console.log(`[db] 应用迁移：${migrationsFolder}`)
-  await migrate(db, { migrationsFolder })
-  console.log('[db] 迁移完成')
+
+  /**
+   * ⚠️⚠️ **重试是必需的，而且只有在迁移幂等时才安全** —— 这两件事是一套的。
+   *
+   * ## 为什么必须重试
+   *
+   * 云托管 MySQL 是 **serverless + 自动暂停**（600 秒空闲即暂停，恢复中的第一个连接会报
+   * `CynosDB serverless instance is resuming`）。`waitForDatabase` 早就为这件事重试了
+   * （见那边的注释），**而迁移这一段没有** —— 结果 2026-10 在 dev 上：
+   *
+   *     migrateError: "Can't add new command when connection is in closed state"
+   *     migrated: false
+   *
+   * 症状是"**新代码 + 旧表**"⇒ 所有用户接口 500，而 `/health` 里那一行是唯一线索。
+   * 一次瞬时断连就让整个环境停在半路上，**必须靠重新部署才能再试一次** ✗
+   *
+   * ## ⚠️ 为什么这里敢重试
+   *
+   * 因为**迁移被写成了幂等的**：删列/删索引一律是"存在才删"
+   * （`information_schema` + PREPARE，见 drizzle/0059 的说明 —— MySQL 8 没有
+   * `DROP COLUMN IF EXISTS`）。⚠️ **MySQL 的 DDL 不是事务性的**，断在中途就是部分执行；
+   * 若迁移不幂等，重试会在"已经删掉的东西"上报错，把环境**彻底卡死**。
+   * ⇒ 所以这条重试与"迁移必须幂等"是**互相依赖**的，改一处要想着另一处。
+   */
+  const ATTEMPTS = 3
+  for (let i = 1; i <= ATTEMPTS; i++) {
+    try {
+      await migrate(db, { migrationsFolder })
+      console.log('[db] 迁移完成')
+      return
+    } catch (err) {
+      const msg = (err as Error).message
+      if (i === ATTEMPTS) throw err
+      // ⚠️ 退避但不放弃：与 waitForDatabase 同一个理由（serverless 库在恢复）
+      const delayMs = 2000 * i
+      console.warn(
+        `[db] 迁移第 ${i}/${ATTEMPTS} 次失败（${delayMs}ms 后重试）：${msg}`,
+      )
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
 }
 
 /**
