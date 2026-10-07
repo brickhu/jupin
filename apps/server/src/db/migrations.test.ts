@@ -49,4 +49,41 @@ describe('迁移文件', () => {
 
     expect(problems).toEqual([])
   })
+
+  /**
+   * ⚠️⚠️ **文件不能以 breakpoint 结尾** —— 2026-10 为此在 dev 上卡了一轮。
+   *
+   * drizzle 是按 `--> statement-breakpoint` **切块**执行的（切完逐块发出去）。
+   * 结尾多一个标记 ⇒ 切出来的**最后一块是空的** ⇒ MySQL 报
+   *
+   *     Query was empty
+   *
+   * ⚠️ 这个错**本地看不出来**（和上面那条同一个道理）：本地那条迁移早就 applied 了，
+   *    drizzle 按 `__drizzle_migrations.created_at` 直接跳过，**根本没读文件**。
+   *    于是它只在云上第一次真正执行那份文件时才暴露。
+   *
+   * ⚠️ 上面那条检查抓不到它：它查的是"语句后面有没有标记"，而这个是"标记后面有没有语句"。
+   */
+  it('不以 statement-breakpoint 结尾（结尾会切出一个空语句）', () => {
+    const problems: string[] = []
+
+    for (const file of files.sort()) {
+      const text = readFileSync(`${DRIZZLE_DIR}/${file}`, 'utf8')
+      if (text.trimEnd().endsWith(BREAKPOINT)) {
+        problems.push(`${file} 以 ${BREAKPOINT} 结尾 —— 末尾会切出一个空语句，MySQL 报 Query was empty`)
+      }
+      /**
+       * ⚠️ 顺带查**中间**的空块：连续两个标记之间什么都没有，同样会发一条空语句。
+       *    比只查结尾更彻底 —— 反正判据一样（切出来不能有空块）。
+       */
+      const chunks = text.split(BREAKPOINT)
+      chunks.forEach((chunk, i) => {
+        // 最后一块允许为空（正常文件本来就以换行结束）
+        if (i === chunks.length - 1) return
+        if (!chunk.trim()) problems.push(`${file} 第 ${i + 1} 块是空的（两个标记之间没有语句）`)
+      })
+    }
+
+    expect(problems).toEqual([])
+  })
 })

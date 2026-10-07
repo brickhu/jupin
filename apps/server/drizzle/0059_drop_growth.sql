@@ -83,4 +83,4 @@ DEALLOCATE PREPARE s;--> statement-breakpoint
 SET @ddl = IF(EXISTS(SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'growth_standout'), 'ALTER TABLE `users` DROP COLUMN `growth_standout`', 'DO 0');--> statement-breakpoint
 PREPARE s FROM @ddl;--> statement-breakpoint
 EXECUTE s;--> statement-breakpoint
-DEALLOCATE PREPARE s;--> statement-breakpoint
+DEALLOCATE PREPARE s;
