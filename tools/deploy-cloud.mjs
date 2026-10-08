@@ -353,7 +353,20 @@ function buildAndPushImage(tag) {
   }
   const registry = tag.split('/')[0]
   console.log(`· docker login ${registry} …`)
-  run('docker', ['login', registry, '-u', user, '--password-stdin'], { input: pass, stdio: 'inherit' })
+  /**
+   * ⚠️⚠️ **`stdio` 必须显式写成 `['pipe','inherit','inherit']`** ✗
+   *
+   * 原来这里给的是 `stdio: 'inherit'` ✗ —— 而 **`input` 与 `stdio:'inherit'` 同时给时，
+   * Node 会忽略 `input`** ✓ ⇒ 密码根本没喂进去 ⇒ docker 退回**交互式**输入
+   * ⇒ CI 没有 TTY ⇒ `Cannot perform an interactive login from a non TTY device` ✗✗
+   *   （2026-10 CI 实测：登录就挂在这里，而报错信息离"密码没喂进去"很远 ✓）
+   *
+   * ⭐ stdin 用 `pipe`（让 `input` 生效 ✓），stdout/stderr 仍 `inherit`（错误照常打出来 ✓）
+   */
+  run('docker', ['login', registry, '-u', user, '--password-stdin'], {
+    input: pass,
+    stdio: ['pipe', 'inherit', 'inherit'],
+  })
   console.log(`· docker build -f apps/server/Dockerfile -t ${tag} .`)
   run('docker', ['build', '-f', 'apps/server/Dockerfile', '-t', tag, '.'])
   console.log(`· docker push ${tag}`)
