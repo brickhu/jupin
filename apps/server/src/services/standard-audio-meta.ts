@@ -1,4 +1,5 @@
 import { readStaticFile, staticFileStamp } from './content'
+import { getStorage } from '../storage'
 import { mp3DurationMs } from './mp3-duration'
 import { audioKeyOf, audioRefOf } from './standard-audio'
 
@@ -36,9 +37,33 @@ function warnMissing(articleId: string, why: string): void {
   )
 }
 
+/**
+ * ⭐ **从对象存储取标准音**（⭐ `content/` 移出仓库之后的唯一来源 ✓）
+ *
+ * ⚠️⚠️ 为什么必须有这条回退：标准音本来就在 COS 里（⭐ admin 上传时写的 ✓），
+ *    而 `readStaticFile` 读的是 **content/audio/** ✗ —— 那个目录 2026-10 已从 git 移除 ✓
+ *    ⇒ ⚠️ 没有这条回退时 `standardAudioMs` 永远返回 null ✗
+ *    ⇒ ⭐ **客户端的「读完自动结束」就永远不触发** ✗✓（用户 2026-10-09 报的就是这个 ✓）
+ * ⚠️ 一次下载 ~30-80KB ✓ 之后走内存缓存 ✓（⭐ 只读一次 ✓）
+ */
+async function readFromStorage(key: string): Promise<Buffer | null> {
+  try {
+    const bytes = await getStorage().get(key)
+    return bytes ? Buffer.from(bytes) : null
+  } catch (err) {
+    console.warn('[audio] 从对象存储取标准音失败（' + key + '）：' + (err as Error).message)
+    return null
+  }
+}
+
 export async function standardAudioMs(articleId: string): Promise<number | null> {
   const key = audioKeyOf(articleId)
-  const stamp = await staticFileStamp(key)
+  /**
+   * ⚠️⚠️ **缓存键不能只靠 `staticFileStamp`** ✗ —— 盘上没有那个文件时它是 `null` ✓
+   *    而 `content/` 已经不在仓库里了 ✗ ⇒ ⚠️ 永远 miss ⇒ ⭐ 每个请求都重下一次音频 ✗✗
+   * ⭐ 用对象存储的 key 当戳（⭐ 音频极少变 ✓ 变了换 key ✓）
+   */
+  const stamp = (await staticFileStamp(key)) ?? 'store:' + key
   const hit = cache.get(articleId)
   if (hit && hit.stamp === stamp) return hit.ms
 
@@ -51,7 +76,8 @@ export async function standardAudioMs(articleId: string): Promise<number | null>
      *    我第一版写成 'audio/{id}.mp3' ⇒ 永远读不到文件 ⇒ 时长永远不显示，
      *    而且**不报错**。用 audioKeyOf 就不会再犯：磁盘路径与对象存储 key 同源。
      */
-    const bytes = await readStaticFile(key)
+    // ⭐ 两处来源【只取一次】: 盘上文件（本机联调 ✓）或对象存储（云端 ✓）
+    const bytes = (await readStaticFile(key)) ?? (await readFromStorage(key))
     if (bytes) {
       value = mp3DurationMs(Buffer.from(bytes))
       if (value === null) warnMissing(articleId, '文件在、但解析不出时长（编码不认？）')
