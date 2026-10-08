@@ -335,11 +335,14 @@ function buildAndPushImage(tag) {
   const pass = (process.env.CCR_PASSWORD ?? '').trim()
   if (!user || !pass) {
     throw new Error(
-      '镜像方式部署需要 CCR_USERNAME / CCR_PASSWORD —— 它们是【微信云托管给这个服务分配的\n' +
-        '   那个镜像仓库】的凭据，不是腾讯云账号的！\n' +
+      '镜像方式部署需要 CCR_USERNAME / CCR_PASSWORD ——\n' +
+        '   它们是【微信云托管给这个服务分配的那个镜像仓库】的登录凭据：\n' +
         '   ⭐ 去哪拿：微信云托管控制台 → 该服务 →「服务设置」TAB →【镜像仓库】链接\n' +
         '            → 【重置密码】（⚠️ 首次必须先重置一次，默认没有密码）\n' +
-        '   ⭐ 用户名固定是 root（官方文档：「镜像仓库账号默认为 root，不可更改」）\n' +
+        '   ⭐ 用户名是【仓库名里 tcb- 后面那 12 位数字】（如 100009157251）——\n' +
+        '      云托管文档「二、本地登录镜像仓库」原文：根据 tcb- 后面的 12 位数字填写\n' +
+        '      ⚠️ 文档另一节写着「账号默认为 root」—— 两处自相矛盾 ✗ 以控制台显示的为准 ✓\n' +
+        '      ⚠️ 建议先本机 docker login 验一次（见 AGENT.md 的部署一节）\n' +
         '      密码就是你刚重置的那个（8-64 位、至少三种字符类型）\n' +
         '   CI 里把它们加成仓库 secrets；本机填 .env.dev / 临时 export 都行。',
     )
