@@ -7,31 +7,26 @@
  *
  * 开发者工具**不支持调试这个 API** ✗ —— 实测原文：
  *   `createInferenceSession:fail 开发者工具暂时不支持此 API 调试，请使用真机进行开发`
- * ⇒ 在模拟器里看到那句"不能加载"是**预期的**，不是模型的错 ✓
- *   （和音频解码那次一模一样的模式：**模拟器验不了，必须真机** ✓）
  *
- * ## 为什么只验"加载"、不跑推理
+ * ## 真机实测（2026-10）已经把问题缩小到"文件路径"这一步
  *
- * 仓库端侧调研里的失败现象是「换了很多 onnx 模型**都不让用**」与
- * 「运行到 **createInferenceSession** 就闪退」—— 都是**加载/创建阶段**就挂 ✗
- * ⇒ 不需要真的跑推理（那还得自己算 fbank 特征 ✗）✓
+ *   基础库 3.17.3 · API 存在 ✓
+ *   直接给**代码包路径**（带/不带前导斜杠都试过）⇒
+ *     `{"errno":2004000,"errMsg":"...model path invalid : failed to find model on path ..."}`
  *
- * ⚠️ 它**不回答**准确率 / 速度 / 实时性 —— 那些等"能加载"之后再说 ✓
+ * ⭐ 注意这**不是**算子错、也**不是**动态轴错 —— 是"**找不到这个文件**" ✓
+ *   ⇒ API 本身能跑 ✓ 只是它**读不到分包里的文件** ✗
  *
- * ## 模型从哪来
- *
- * ⭐ **代码包路径**（本页与 .onnx 同在 subpackages/kws/ ✓ 已实测构建会拷进 dist ✓）
- * ⇒ 真机上**不联网、不需要域名白名单** ✓
+ * ⭐ 而仓库的调研里写着它认两种路径：**代码包路径** 或 **`wx.env.USER_DATA_PATH`**
+ *   ⇒ 所以这一版**先把文件读出来、落到 USER_DATA_PATH，再把那个路径交给它** ✓
  */
-const CANDIDATES = [
-  '/subpackages/kws/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx',
-  'subpackages/kws/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx',
-]
+const MODEL = 'encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx'
+/** ⚠️ 读代码包文件时，路径带不带前导斜杠的约定不明确 ⇒ 两种都试 ✓ */
+const PKG_PATHS = [`subpackages/kws/${MODEL}`, `/subpackages/kws/${MODEL}`]
 
 Page({
   data: {
     running: false,
-    /** 'ok' | 'fail' | '' */
     verdict: '' as '' | 'ok' | 'fail',
     lines: [] as string[],
   },
@@ -48,7 +43,6 @@ Page({
   },
 
   async probe() {
-    // ── ① 环境：API 在不在、基础库版本多少（版本门槛很关键）──────────
     this.log('基础库 ' + wx.getAppBaseInfo?.().SDKVersion)
     const has = typeof wx.createInferenceSession === 'function'
     this.log('wx.createInferenceSession：' + (has ? '存在 ✓' : '不存在 ✗'))
@@ -57,24 +51,39 @@ Page({
       return
     }
 
-    // ── ② 模型就在**同一个分包**里 ⇒ 不需要任何加载动作 ✓ ───────────
-    //  （访问本页会**自动加载本分包** ✓ 模型随之可读 ✓ —— 比 loadSubpackage / require
-    //    都省事，也不依赖我记对 API ✗）
-    this.log('模型在同一个分包里 ✓（无需加载）')
-
-    // ── ③ 创建 session —— 这一步就是结论 ───────────────────────────
+    // ── ① 把模型从代码包读出来 → 写到 USER_DATA_PATH ────────────────
     /**
-     * ⚠️ **两种路径写法都试**：代码包路径带不带前导斜杠，文档没写死 ✓
-     *    ⇒ 自动依次试、成功即止 —— 省你一次真机往返 ✓
+     * ⚠️ 为什么要绕这一下：真机实测直接给代码包路径会报
+     *    `model path invalid : failed to find model on path ...` ✗
+     *    ⇒ 而调研里写着它认 `wx.env.USER_DATA_PATH` ✓
      */
-    for (const path of CANDIDATES) {
-      this.log('createInferenceSession(' + (path.startsWith('/') ? '带斜杠' : '不带斜杠') + ') …')
-      if (await this.tryLoad(path)) {
-        this.setData({ verdict: 'ok', running: false })
-        return
+    const fs = wx.getFileSystemManager()
+    const dest = `${wx.env.USER_DATA_PATH}/kws-encoder.onnx`
+    let ok = false
+    for (const p of PKG_PATHS) {
+      try {
+        const buf = fs.readFileSync(p) as ArrayBuffer
+        const bytes = (buf as ArrayBuffer).byteLength ?? 0
+        if (bytes < 1024 * 1024) throw new Error('读到的太小：' + bytes + ' 字节')
+        fs.writeFileSync(dest, buf)
+        this.log(`读代码包(${p.startsWith('/') ? '带斜杠' : '不带斜杠'}) ✓ ${(bytes / 1048576).toFixed(2)} MB`)
+        this.log('已写入 USER_DATA_PATH ✓')
+        ok = true
+        break
+      } catch (e) {
+        this.log(`读代码包(${p.startsWith('/') ? '带斜杠' : '不带斜杠'}) ✗ ` + ((e as Error).message || String(e)).slice(0, 90))
       }
     }
-    this.setData({ verdict: 'fail', running: false })
+    if (!ok) {
+      this.log('⚠️ 两种路径都读不到 —— 代码包里的文件读法还要再查')
+      this.setData({ running: false, verdict: 'fail' })
+      return
+    }
+
+    // ── ② 创建 session —— 这一步就是结论 ───────────────────────────
+    this.log('createInferenceSession（USER_DATA_PATH）…')
+    const created = await this.tryLoad(dest)
+    this.setData({ verdict: created ? 'ok' : 'fail', running: false })
   },
 
   /** ⭐ 试着用某个路径建 session；成败都写在屏幕上 ✓ */
@@ -101,12 +110,12 @@ Page({
 
       /**
        * ⚠️ 必须有超时：这个 API 是 **Beta**，**卡住不回调是可能的** ✗
-       *    （开发者工具里它直接回"不支持调试该 API" ✓ 真机行为未知 ✓）
+       *    （真机上它回得很快 ✓ 但 Beta 的事说不准 ✓）
        */
       timer = setTimeout(() => {
-        this.log('  ✗ 15 秒没有任何回调（卡住了）')
+        this.log('  ✗ 20 秒没有任何回调（卡住了）')
         done(false)
-      }, 15000)
+      }, 20000)
 
       session.onLoad?.(() => {
         this.log('  ✅ session 创建成功')
