@@ -16,6 +16,7 @@
  *    不检查 docs/archive（那是历史，本来就该过时）。宁可漏，不可误报 ——
  *    一条会误报的检查很快就会被无视，那就等于没有。
  */
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -67,6 +68,41 @@ for (const rel of DOCS) {
     }
   }
 
+  /**
+   * ⭐⭐ **被 .gitignore 排除的路径不算"不存在"** ✗（2026-10-08 修）
+   *
+   * ⚠️ 起因：CI 的「文档检查」挂了 6 条 ✗ —— 全是 `content/` 与 `apps/server/dist` ✓
+   *    而**本机是过的** ✓ —— 因为这两样在我机器上都有：
+   *      · `content/`   ⇒ 内容产物（句子 json / 标准音 / seed 素材 ✓ 刻意不进 git ✓）
+   *      · `apps/server/dist` ⇒ 构建产物（跑过 build 才有 ✓）
+   *    ⇒ ⭐ **"不在仓库里"和"不存在"是两件事** ✗ 而原来的裸 `existsSync` 把两者混了 ✓
+   *
+   * ⭐ 用 `git check-ignore` 精确判断（不是"没被跟踪就放过"✗）：
+   *    没被跟踪但**也没被忽略**的路径（比如写错的 `apps/server/typo.ts`）
+   *    仍然会被抓出来 ✓ —— 那才是这个检查真正的价值 ✓
+   */
+  function isGitIgnored(p) {
+    /**
+     * ⚠️⚠️ **必须同时试"带尾斜杠"的形式** ✗ —— 踩过：
+     *
+     * `.gitignore` 里的 `dist/` **带尾斜杠 = 只匹配目录** ✓
+     * ⚠️ 而目录**不存在**时，git 无从判断 `apps/server/dist` 是不是目录 ⇒ **匹配失败** ✗
+     *    ⇒ ⭐ 于是 CI（干净 checkout，`dist/` 本来就不存在）仍然报"路径不存在" ✗✗
+     *    ⚠️ 而我本机测试时目录还在 ⇒ 匹配成功 ⇒ **假绿** ✓（同一个坑踩了两次 ✓）
+     *
+     * ⭐ 加一个 `p + '/'` 的形式：尾斜杠强制按目录解释 ✓ 不依赖文件系统 ✓
+     */
+    for (const cand of [p, p + '/']) {
+      try {
+        execFileSync('git', ['check-ignore', '-q', cand], { cwd: ROOT, stdio: 'ignore' })
+        return true // exit 0 ⇒ 被忽略 ✓
+      } catch {
+        /* 换个形式再试 ✓ */
+      }
+    }
+    return false // 两种形式都不匹配 ⇒ 没被忽略 ✓
+  }
+
   // ---- ② 反引号里的仓库根路径 ----
   for (const m of text.matchAll(/`([^`\n]+)`/g)) {
     const raw = m[1].trim()
@@ -74,7 +110,8 @@ for (const rel of DOCS) {
     // 去掉可能的尾部说明（如 `apps/x.ts` 的注释）与行号
     const path = raw.replace(/:\d+(-\d+)?$/, '').replace(/[，。、）)]$/, '')
     if (isGlob(path) || ALLOW_GONE.has(path)) continue
-    if (!existsSync(join(ROOT, path))) {
+    // ⚠️ 被 gitignore 的（内容产物 / 构建产物）"不在仓库里"是设计如此 ✓ 不算问题 ✓
+    if (!existsSync(join(ROOT, path)) && !isGitIgnored(path)) {
       problems.push(rel + '：引用的路径不存在 → ' + raw)
     }
   }
