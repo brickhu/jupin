@@ -17,10 +17,16 @@ import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } fro
 import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
+import { claimCookies, sentenceCookiesOf } from '../services/cookies'
 import { describe } from '../services/submission-view'
 import type { Variables } from '../middleware/auth'
 import { defaultHook } from '../openapi'
-import { errorResponse, okEnvelope, SubmissionStatusResponseSchema } from '../openapi/schemas'
+import {
+  ClaimCookiesResponseSchema,
+  errorResponse,
+  okEnvelope,
+  SubmissionStatusResponseSchema,
+} from '../openapi/schemas'
 
 export const submissionsRoutes = new OpenAPIHono<{ Variables: Variables }>({ defaultHook })
 
@@ -448,7 +454,14 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
 
   if (row.status !== 'scoring') {
     const done = await describe(userId, id)
-    return c.json({ ok: true, data: done ?? { submissionId: id, status: 'failed' as const } }, 200)
+    /**
+     * ⭐ 出分这一支附上"这一句我一共攒了多少"（用户 2026-10 定）——
+     *    朗读页本来就在轮询这个接口，多开一个请求只为了一个数字不划算。
+     * ⚠️ 只在**已出分**时算：没出分时它没有意义，也算不出来（账本里还没有这笔）。
+     */
+    const data = done ?? { submissionId: id, status: 'failed' as const }
+    const sentenceCookies = await sentenceCookiesOf(userId, row.articleId)
+    return c.json({ ok: true, data: { ...data, sentenceCookies } }, 200)
   }
 
   // ---- 还在打分：先看心跳 ----
@@ -503,6 +516,45 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
  * ⚠️ 提交时**不问**用户（默认私密），只在这里改 —— 语音是生物特征，默认不公开，
  *    公开是用户自己打开的结果。
  */
+/**
+ * ⭐⭐ **领取这一把的饼干**（用户 2026-10 定：改成"点了结果那颗钮才发放"）。
+ *
+ * ⚠️ 为什么要有这个接口，而不是在结算时直接发：
+ *    饼干是"攻克"的奖赏，而**攻克要被看见才算数** —— 用户点下那颗状态胶囊
+ *    = "我看到了，这一把结束"，那一刻才入账 ✓
+ *
+ * ⚠️⚠️ 调用方（朗读页）在**"结果被收起来"的每一条路上**都要调它，不只是点击那一次：
+ *    另一条路是"直接开始下一次录音"（那会清掉结果缓存）——
+ *    只在点击时发放的话，走那条路的人**永远拿不到** ✗
+ *    （他确实攻克了、规则也判了，只是没点那颗钮 —— 那是最糟的失败方式。）
+ *
+ * ⚠️ 幂等：服务层靠账本的唯一键 + affectedRows 保证重复调用**不会多发** ✓
+ *    ⇒ 两条路都调、或者连点两下，都只会发一次 ✓
+ */
+const submissionClaimRoute = createRoute({
+  method: 'post',
+  path: '/{id}/claim',
+  tags: ['挑战提交'],
+  summary: '领取这一把的饼干（点开结果之后才入账）',
+  security: [{ userToken: [] }],
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: ClaimCookiesResponseSchema } },
+      description: '成功（重复领取也回 200，金额不会再涨）',
+    },
+    404: errorResponse('提交记录不存在（或不属于当前用户）'),
+  },
+})
+
+submissionsRoutes.openapi(submissionClaimRoute, async (c) => {
+  const userId = c.get('userId')
+  const r = await claimCookies(userId, c.req.param('id'))
+  // ⚠️ 不属于本人一律当作不存在（与状态接口同一条：不区分 403/404，那会泄露 id 是否存在）
+  if (!r) return c.json({ ok: false, error: '提交记录不存在' }, 404)
+  return c.json({ ok: true as const, data: { claimed: r.claimed, cookies: r.cookies } }, 200)
+})
+
 const submissionVisibilityRoute = createRoute({
   method: 'post',
   path: '/{id}/visibility',

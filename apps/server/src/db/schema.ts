@@ -1116,9 +1116,25 @@ export const cookieLedger = mysqlTable('cookie_ledger', {
   /** submission | exchange | admin */
   refType: varchar('ref_type', { length: 16 }).notNull(),
   refId: varchar('ref_id', { length: 64 }).notNull(),
+
+  /**
+   * ⭐ **这一笔属于哪一次参与**（用户 2026-10 定）—— 让"我在这一句上攒了多少"能直接汇总。
+   *
+   * ⚠️ 为什么记 participation 而不是 article：participation 是「一次挑战」
+   *    （一句 + 局内所有人），它天然带着 article ✓；反过来只记 article 就拿不回局信息 ✗。
+   *    两个维度最终都从这一列 + submissions 推得出来，不必各存一份。
+   *
+   * ⚠️ **可空**：换能量 / 运营调整那些行**不属于任何参与**（不是"读出来的"）。
+   *    空就是空，**不是空串** —— 所以既不给 DEFAULT 也不 NOT NULL。
+   *    （与 0057/0058 那条"非空列要先给 DEFAULT 再回填再 DROP DEFAULT"是两回事：
+   *      那些是本来就必须有值的列。）
+   */
+  participationId: varchar('participation_id', { length: PARTICIPATION_ID_LENGTH }),
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
 }, (t) => [
   uniqueIndex('cookie_ledger_idem_idx').on(t.reason, t.refType, t.refId, t.userId),
+  /** ⭐ 按参与汇总（"这一局/这一句我攒了多少"）—— 没有它每次都要全表扫 */
+  index('cookie_ledger_participation_idx').on(t.participationId),
   index('cookie_ledger_user_idx').on(t.userId, t.createdAt),
 ])
 

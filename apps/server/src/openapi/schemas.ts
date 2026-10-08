@@ -24,6 +24,7 @@ import type {
   ExchangeResponse,
   CookieLedgerItem,
   CookiesResponse,
+  ClaimCookiesResponse,
   AdEnergyResponse,
   MakeupState,
   FavoriteItem,
@@ -545,6 +546,7 @@ export const SubmissionStatusResponseSchema = okEnvelope(
       result: SubmitResponseSchema.optional(),
       /** 只在 failed 时存在 */
       error: z.string().optional(),
+    sentenceCookies: z.number().int().optional().openapi({ description: '⭐ 这一句总共攒了多少饼干（只算已领取的）' }),
     })
     .openapi('SubmissionStatusResponse'),
 )
@@ -920,6 +922,15 @@ export const UserListResponseSchema = okEnvelope(
 )
 
 /** 商店商品一项 */
+export const ClaimCookiesResponseSchema = okEnvelope(
+  z
+    .object({
+      claimed: z.number().int().openapi({ description: '这一次实际到账的饼干；0 = 没攻克或已领过' }),
+      cookies: CookieViewSchema,
+    })
+    .openapi('ClaimCookiesResponse'),
+)
+
 /** ⭐ 饼干流水的一条（与 EnergyLedgerItem 同形） */
 export const CookieLedgerItemSchema = z
   .object({
@@ -1079,6 +1090,7 @@ type _MakeupParity = Equal<z.infer<typeof MakeupResponseSchema>['data'], MakeupR
 type _ExchangeParity = Equal<z.infer<typeof ExchangeResponseSchema>['data'], ExchangeResponse>
 type _CookieLedgerParity = Equal<z.infer<typeof CookieLedgerItemSchema>, CookieLedgerItem>
 type _CookiesParity = Equal<z.infer<typeof CookiesResponseSchema>['data'], CookiesResponse>
+type _ClaimParity = Equal<z.infer<typeof ClaimCookiesResponseSchema>['data'], ClaimCookiesResponse>
 type _AdEnergyParity = Equal<z.infer<typeof AdEnergyResponseSchema>['data'], AdEnergyResponse>
 type _MakeupStateParity = Equal<z.infer<typeof MakeupStateSchema>, MakeupState>
 type _PartSubmissionParity = Equal<z.infer<typeof ParticipationSubmissionItemSchema>, ParticipationSubmissionItem>
@@ -1176,6 +1188,7 @@ const _parityChecks: [
   _ExchangeParity,
   _CookieLedgerParity,
   _CookiesParity,
+  _ClaimParity,
   _AdEnergyParity,
   _MakeupStateParity,
   _PartSubmissionParity,
@@ -1206,5 +1219,5 @@ const _parityChecks: [
   _FavCountItemParity,
   _FavCountsParity,
   _SubAudioParity,
-] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
 void _parityChecks

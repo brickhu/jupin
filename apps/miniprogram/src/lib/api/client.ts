@@ -18,6 +18,7 @@ import type {
   LatestCardsResponse,
   MakeupResponse,
   CookiesResponse,
+  ClaimCookiesResponse,
   ExchangeResponse,
   AdEnergyResponse,
   UserListResponse,
@@ -928,6 +929,26 @@ export function claimAdEnergy(requestId: string): Promise<AdEnergyResponse> {
  *   ⚠️ 与能量页那份**同一个分页形状**（`?before` 游标、倒序）——
  *      两页的翻页行为必须一样，否则用户会以为其中一页坏了。
  */
+/**
+ * ⭐⭐ **领取这一把的饼干**（用户 2026-10 定：点开结果之后才入账）。
+ *
+ * ⚠️⚠️ 调用方要在**"结果被收起来"的每一条路上**都调它，不只是点那颗钮那一次 ——
+ *    另一条路是"直接开始下一次录音"（那会清掉结果缓存）。
+ *    只在点击时发放的话，走那条路的人**永远拿不到** ✗
+ *    （他确实攻克了、规则也判了，只是没点那颗钮。）
+ *
+ * ⚠️ **幂等**：服务端靠账本的唯一键 + affectedRows 保证重复调用不会多发 ✓
+ *    ⇒ 连点两下、或两条路都走到，也只会发一次 ✓
+ */
+export function claimCookies(submissionId: string): Promise<ClaimCookiesResponse> {
+  return request<ClaimCookiesResponse>('/api/user/submissions/' + submissionId + '/claim', {
+    method: 'POST',
+    // ⚠️ 这个 client 的约定是 data（不是 body）；没有参数也要给个空对象，
+    //    否则 request() 不会带上 content-type，服务端解析不到 body
+    data: {},
+  })
+}
+
 export function fetchCookies(before?: number): Promise<CookiesResponse> {
   const q = before === undefined ? '' : '?before=' + before
   return request<CookiesResponse>('/api/user/cookies' + q, { budgetMs: LAUNCH_BUDGET_MS })

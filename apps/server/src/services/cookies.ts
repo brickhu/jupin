@@ -7,6 +7,7 @@ import {
   type ArticleLevel,
   type CookieAward,
   type CookieAwardView,
+  type CookieView,
   type CookiesResponse,
   type ExchangeResponse,
 } from '@jushuo/shared'
@@ -223,25 +224,129 @@ export async function readCookies(userId: number, tx: Executor = db): Promise<Co
  */
 export async function grantCookies(
   tx: Executor,
-  input: { userId: number; submissionId: string; earned: number },
-): Promise<void> {
-  if (input.earned <= 0) return
+  input: { userId: number; submissionId: string; participationId?: string | null; earned: number },
+): Promise<boolean> {
+  if (input.earned <= 0) return false
+
+  /**
+   * ⚠️⚠️ **先查重，再锁用户行，最后才写** —— 顺序和理由都照抄 services/energy.ts 的 addEnergy。
+   *
+   * ## 为什么不能用 affectedRows 判（我第一版就是这么写的，**实测重复发了** ✗）
+   *
+   * 第一版：先 `INSERT ... ON DUPLICATE KEY UPDATE delta = delta`，再看 affectedRows 是不是 1。
+   * 理论上"值没变 ⇒ 0" —— 实测不成立：**第二次领取照样把余额加了 10** ⇒ 用户白拿一倍 ✗
+   * ⚠️ energy.ts 顶上那句注释早就写着这一课：「要靠 affectedRows 判断，**很容易漏**」。
+   *    我又踩了一遍。
+   *
+   * ## 正确做法
+   *   ① SELECT 查 (reason, refType, refId, userId) 有没有 —— 有就说明**发过了** ⇒ 直接返回 false
+   *   ② **锁住这个用户那一行**（FOR UPDATE）—— 两个并发请求在这里**串行化**，
+   *      否则①②之间存在竞态：两边都查到"没有"，然后各插一次（唯一键只挡住第二条 insert，
+   *      而余额已经加了两遍 ✗）
+   *   ③ 加余额 + 插账本
+   */
+  const [dup] = await tx
+    .select({ id: cookieLedger.id })
+    .from(cookieLedger)
+    .where(
+      and(
+        eq(cookieLedger.reason, 'conquer'),
+        eq(cookieLedger.refType, 'submission'),
+        eq(cookieLedger.refId, input.submissionId),
+        eq(cookieLedger.userId, input.userId),
+      ),
+    )
+    .limit(1)
+  if (dup) return false
+
+  // ⭐ 锁住用户行：并发领取在这条 SELECT ... FOR UPDATE 上排队（详见上面那段）
+  const [locked] = await tx
+    .select({ cookies: users.cookies })
+    .from(users)
+    .where(eq(users.id, input.userId))
+    .for('update')
+    .limit(1)
+  if (!locked) return false
 
   await tx
     .update(users)
     .set({ cookies: sql`${users.cookies} + ${input.earned}` })
     .where(eq(users.id, input.userId))
 
-  await tx
-    .insert(cookieLedger)
-    .values({
-      userId: input.userId,
-      delta: input.earned,
-      reason: 'conquer',
-      refType: 'submission',
-      refId: input.submissionId,
+  await tx.insert(cookieLedger).values({
+    userId: input.userId,
+    delta: input.earned,
+    reason: 'conquer',
+    refType: 'submission',
+    refId: input.submissionId,
+    // ⭐ 记下"这一笔属于哪一次参与" —— 账本按参与/句子汇总要用（见 schema 里的说明）
+    participationId: input.participationId ?? null,
+  })
+
+  return true
+}
+
+/**
+ * ⭐⭐ **领取这一把的饼干**（用户 2026-10 定：改成"点了那颗按钮才发放"）。
+ *
+ * ## 为什么发放要跟"看到结果"绑在一起
+ *
+ * 饼干是"攻克"的奖赏，而**攻克这件事要被看见才算数** ——
+ * 用户点下那颗状态胶囊 = "我看到了，这一把结束"，那一刻才入账 ✓
+ *
+ * ⚠️⚠️ 但它**不能只认那一个点击**：用户还有另一条路离开结果态 ——
+ *    **直接开始下一次录音**（reading.ts 的 startRecording 会清掉结果缓存）。
+ *    若只在点击时发放，走那条路的人**永远拿不到** ✗ —— 那是最糟的失败方式
+ *    （他确实攻克了，规则也判了，只是没点那颗钮）。
+ *    ⇒ 所以调用方在**"结果被收起来"的任意一条路上**都要调这个函数。
+ *
+ * ⚠️ **幂等**：`grantCookies` 靠账本唯一键 + affectedRows 保证重复调用不会多发 ✓
+ *    ⇒ 两条路都调、或者连点两下，都只会发一次 ✓
+ *
+ * ⚠️ 金额**不在这里算**：结算时已经算好并落进 `submissions.cookies_earned`
+ *    （那是"这一把该得多少"的唯一事实）。这里只负责"发"。
+ *
+ * @returns null = 这条提交不存在 / 不属于这个人（调用方回 404）
+ */
+export async function claimCookies(
+  userId: number,
+  submissionId: string,
+): Promise<{ claimed: number; cookies: CookieView } | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        earned: submissions.cookiesEarned,
+        participationId: submissions.participationId,
+      })
+      .from(submissions)
+      .where(and(eq(submissions.id, submissionId), eq(submissions.userId, userId)))
+      .limit(1)
+
+    if (!row) return null
+
+    /**
+     * ⚠️ 结算还没跑完（cookiesEarned 为 null）时**什么都不发**：
+     *    那说明这一把还没出分，页面根本没到结果态 —— 这时候"领"是没有依据的。
+     *    返回 0 而不是报错：调用方可能只是抢跑了一帧。
+     */
+    const earned = row.earned ?? 0
+    const granted = await grantCookies(tx, {
+      userId,
+      submissionId,
+      participationId: row.participationId,
+      earned,
     })
-    .onDuplicateKeyUpdate({ set: { delta: sql`${cookieLedger.delta}` } })
+
+    /**
+     * ⚠️⚠️ 回的是"**这一次真的发了多少**"，不是"这一把该得多少" ✗
+     *
+     * 重复领取时 `grantCookies` 会返回 false（查重挡住了）⇒ 这里必须是 0 ✓
+     * ⚠️ 我第一版回的是 `earned` ⇒ 客户端每次都会看到 `claimed: 10`，
+     *    于是它会**把"这一句共攒了多少"再加 10** ✗✗ —— 余额没重复发，
+     *    但页面上那个总数会一路虚涨（比余额错更难发现）。
+     */
+    return { claimed: granted ? earned : 0, cookies: await readCookies(userId, tx) }
+  })
 }
 
 /**
@@ -495,4 +600,36 @@ export async function readCookieLedger(
     })),
     nextBefore: rows.length === limit ? (rows[rows.length - 1]?.id ?? null) : null,
   }
+}
+
+/**
+ * ⭐⭐ **这一句我一共攒了多少饼干**（用户 2026-10 定）—— 朗读页要显示它。
+ *
+ * ⚠️ 口径是「**这一句**」，不是「这一局」：
+ *    同一句话会在**不同的参与**里被反复挑战（每次都是一局新的），
+ *    而用户想问的是"这句我总共练出来多少" ⇒ 按 **article** 汇总 ✓
+ *    （账本上记的是 participation_id，所以这里要 JOIN 回 submissions 拿 article_id；
+ *      见 schema 里"为什么记 participation 而不是 article"那段 —— 两个维度都推得出来。）
+ *
+ * ⚠️ 只算 `conquer`（读出来的）：换能量 / 运营调整那些行**不是"攒"出来的 ✗**
+ * ⚠️ 只算**已领取**的（账本里有行 = 已发放）——
+ *    没点结果那颗钮的还在 `submissions.cookies_earned` 里躺着，不算"攒到" ✓
+ */
+export async function sentenceCookiesOf(
+  userId: number,
+  articleId: string,
+  tx: Executor = db,
+): Promise<number> {
+  const [row] = await tx
+    .select({ total: sql<number | null>`SUM(${cookieLedger.delta})` })
+    .from(cookieLedger)
+    .innerJoin(submissions, eq(submissions.id, cookieLedger.refId))
+    .where(
+      and(
+        eq(cookieLedger.userId, userId),
+        eq(cookieLedger.reason, 'conquer'),
+        eq(submissions.articleId, articleId),
+      ),
+    )
+  return Number(row?.total ?? 0)
 }

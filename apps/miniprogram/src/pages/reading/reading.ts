@@ -10,6 +10,7 @@ import { pointsToConquer, type CookieAwardView, type SubmitResponse } from '@jus
 import { PLATFORM } from '../../config'
 import {
   ApiError,
+  claimCookies,
   fetchParticipationSubmissions,
   fetchSubmissionStatus,
   getUserId,
@@ -455,6 +456,17 @@ Page({
     resultLine: null as { form: string; text: string } | null,
     /** ⭐ 结果弹窗里那句**逐词着色**的原文（与评测详情页共用 lib/word-colors） */
     resultWords: [] as ColoredWord[],
+
+    /**
+     * ⭐ **这一句我一共攒了多少饼干**（用户 2026-10 定）—— 由**轮询响应的
+     *    `sentenceCookies`** 带回来（服务端按 article 汇总，只算已领取的）。
+     *
+     * ⚠️ 口径是「这一句」不是「这一局」：同一句话会在不同的参与里被反复挑战，
+     *    而用户想问的是"这句我总共练出来多少" ✓
+     * ⚠️ null = 还不知道（还没出过分）；0 = 真的还没攒到 —— 两者要分开，
+     *    因为界面上「0 🍪」**永远不出现**（那是把"你什么都没得到"说出来）✓
+     */
+    sentenceCookies: null as number | null,
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -900,6 +912,8 @@ Page({
             this.submissionId = pending.submissionId
             // ⚠️ roll=false：这是**二次进入**恢复出来的 s5，不播数字滚动
             this.applyResult(st.result, false)
+            // ⭐ 这一句共攒了多少（服务端按 article 汇总）—— 与结果一起摆出来
+            this.setData({ sentenceCookies: st.sentenceCookies ?? 0 })
             return
           }
           /**
@@ -1105,6 +1119,17 @@ Page({
      *    （缓存本身是必需的：出分那一刻用户被叫走，回来要能看到分。
      *      所以只在"用户明确开始新一次录音"时清。）
      */
+    /**
+     * ⚠️⚠️ **清掉结果缓存之前，先把这一把的饼干领了**（用户 2026-10 定）。
+     *
+     * 这是"离开结果态"的第二条路：用户没点那颗胶囊，直接又录了一遍。
+     * 缓存一清，端侧就再也没有指针指向那条提交 ⇒ 不在这里领，他**永远拿不到** ✗
+     * （服务端 cookies_earned 还躺着，但没有任何入口会去看它。）
+     * ⚠️ 领取是幂等的：点过胶囊的人再走这条路也不会多发 ✓
+     * ⚠️ 不 await：领饼干不该挡住"开始录音"这件用户已经决定的事 ✓
+     */
+    void this.claimCookiesIfAny()
+
     if (this.recordingKey) clearLastResult(this.recordingKey)
 
     this.setData({
@@ -1951,6 +1976,9 @@ Page({
       if (st.status === 'scored' && st.result) {
         // ⚠️ roll=true：轮询拿到分 = 刚出分（等待态 → s5），要播数字滚动
         this.applyResult(st.result, true)
+        // ⭐ 这一句共攒了多少 —— 注意它**不含刚领取的这一把**（那时还没点那颗钮，
+        //    账本里还没有这一笔；点完之后 dismissResult 会再拉一次历史，口径就对了）
+        this.setData({ sentenceCookies: st.sentenceCookies ?? 0 })
         return
       }
       if (st.status === 'failed') {
@@ -2229,9 +2257,56 @@ Page({
    *    （「重新挑战」这个动作就并进了确认 —— 反正弹窗关掉之后卡片本来就是 s1）。
    */
   onConfirmResult() {
-    this.clearAttempt()
-    this.submissionId = ''
+    void this.dismissResult()
     void this.loadHistory()
+  },
+
+  /**
+   * ⭐⭐ **"结果被收起来"的唯一出口**（用户 2026-10 定）——
+   *    领取这一把的饼干 + 清掉这一把的本地缓存。
+   *
+   * ⚠️⚠️ 饼干改成"点开结果才入账"，所以**每一个**离开结果态的入口都要经过这里：
+   *    ① 用户点结果弹窗那颗状态胶囊（onConfirmResult）
+   *    ② 用户**直接开始下一次录音**（startRecording 里清结果缓存那一处）
+   *    只在①发的话，走②的人**永远拿不到** ✗ —— 他确实攻克了、规则也判了，
+   *    只是没点那颗钮；而缓存一清，端侧再没有任何指针指向那条提交。
+   *
+   * ⚠️ 领取**失败不阻断**：饼干没领到是可惜，但"关不掉结果窗"是坏掉 ✗
+   *    ⇒ 只记日志、照常往下走。服务端是幂等的，下次进这一页的恢复路径还会再试 ✓
+   * ⚠️ 只在**出分**时领（失败态没有饼干；scoring 时 cookies_earned 还是 null）。
+   */
+  async dismissResult() {
+    await this.claimCookiesIfAny()
+    this.submissionId = ''
+    this.clearAttempt()
+  },
+
+  /**
+   * ⭐ 只领、不清 —— 给"开始下一次录音"那条路用。
+   *
+   * ⚠️ 与 dismissResult 分开是有意的：那条路**还要接着走录音流程**，
+   *    清缓存是它自己那一行的事。把清理写两遍，迟早两处不一致 ✗
+   */
+  async claimCookiesIfAny() {
+    const sid = this.submissionId
+    if (!sid || this.data.phase !== 's5') return
+    try {
+      const r = await claimCookies(sid)
+      // ⚠️ 余额用**服务端返回的**，不在端侧自己加（那是第二份真相）
+      me.applyCookieBalance(r.cookies.balance)
+      /**
+       * ⭐ "这一句共攒了多少"要**补上刚领的这一把**。
+       *
+       * ⚠️ 轮询那时算的总数里**没有**这一笔（领取发生在它之后）——
+       *    不补的话，用户点完那颗钮会发现总数**没变** ✗
+       *    （而它明明刚刚到账）。补 `claimed` 比再发一次请求省，也不会闪 ✓
+       */
+      if (r.claimed > 0) {
+        this.setData({ sentenceCookies: (this.data.sentenceCookies ?? 0) + r.claimed })
+      }
+    } catch (err) {
+      console.warn('[reading] 领取饼干失败（不阻断）：' + (err as Error).message)
+    }
   },
 
   /**

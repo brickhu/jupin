@@ -595,6 +595,24 @@ export function applyFavoriteCounts(items: ArticleFavoriteCount[]): void {
  * ⚠️ streak 落在 userInfo 里（它是 /me 的一部分）；服务端没给 streak 时
  *    保留旧值，账号信息还没有时也不凭空造一份 —— 下一次 /me 会补齐。
  */
+/**
+ * ⭐ **只把"可用饼干"写回全局**（用户 2026-10 定：饼干改成"点开结果才入账"）。
+ *
+ * ⚠️ 为什么单开一个而不是复用 applySubmissionResult：
+ *    领饼干发生在**结果被收起来那一刻**，那时分数/streak 早就写过了 ——
+ *    再走一遍那个函数会把"这一句的参与记录"又标一次未知，
+ *    而用户可能正在看这一页（表现是列表莫名其妙重拉一次）。
+ *
+ * ⚠️ 余额**只用服务端返回的那个数**：端侧自己 `+N` 就是第二份真相，
+ *    而"余额对不上"是最难查的一类问题。
+ */
+export function applyCookieBalance(balance: number): void {
+  const base = state.userInfo ?? ensureUserInfo()
+  if (base.cookies.balance === balance) return
+  // ⚠️ 这个 store 的写入口是 commit()（不是 setState）—— 它会通知所有订阅者
+  commit({ ...state, userInfo: { ...base, cookies: { ...base.cookies, balance } } })
+}
+
 export function applySubmissionResult(input: {
   articleId: string
   score: number

@@ -107,6 +107,17 @@ export interface SubmissionStatusResponse {
   result?: SubmitResponse
   /** ⚠️ 只在 status === 'failed' 时存在 */
   error?: string
+  /**
+   * ⭐ **这一句（article）我一共攒了多少饼干**（用户 2026-10 定）。
+   *
+   * ⚠️ 口径是「这一句」不是「这一局」：同一句话会在**不同的参与**里被反复挑战，
+   *    而用户想问的是"这句我总共练出来多少" ⇒ 按 article 汇总。
+   * ⚠️ 只算**已领取**的（账本里有行）：还没点结果那颗钮的还在
+   *    `submissions.cookies_earned` 里躺着，不算"攒到" ✓
+   * ⚠️ 附在轮询响应上而不是另开一个接口：朗读页本来就在轮询它，
+   *    多一个请求只为了一个数字不划算。
+   */
+  sentenceCookies?: number
 }
 
 export interface SubmitResponse {
@@ -449,6 +460,19 @@ export type MakeupFailureReason =
   | 'no-gap'
   | 'too-long'
   | 'not-enough-energy'
+
+/**
+ * ⭐ **领取这一把饼干的响应**（用户 2026-10 定：点开结果之后才入账）。
+ *
+ * ⚠️ 重复领取也回 200，但 `claimed` 只会是**第一次**那个金额
+ *    （幂等由账本的唯一键 + affectedRows 保证，见服务端 claimCookies）。
+ */
+export interface ClaimCookiesResponse {
+  /** 这一次实际到账的饼干；0 = 本来就没攻克，或者之前已经领过了 */
+  claimed: number
+  /** 领取之后的余额（用它刷新界面，别在端侧自己加） */
+  cookies: CookieView
+}
 
 /**
  * ⭐ **饼干流水的一条** —— 与 `EnergyLedgerItem` 同形（两张流水表结构一样，

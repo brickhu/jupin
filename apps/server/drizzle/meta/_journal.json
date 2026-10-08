@@ -428,6 +428,13 @@
       "when": 1791300229884,
       "tag": "0061_drop_unfreeze",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1791432222098,
+      "tag": "0062_fresh_zombie",
+      "breakpoints": true
     }
   ]
 }

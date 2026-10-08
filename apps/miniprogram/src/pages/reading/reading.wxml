@@ -348,6 +348,17 @@
          ⚠️⚠️ 它与下面「历史挑战」的行**口径不同**：这张卡说的是"我在这一句上的全部"
             （含当前这一把），行那一列免掉"当前这一次" —— 见 lib/article-history.ts 的说明。
          ⚠️ 只在真的拿到过数据时画（historyReady）：否则会先闪一张全是「—」的卡。 -->
+
+    <!-- ⭐ 这一句一共攒了多少饼干（用户 2026-10 定）
+         ⚠️⚠️ **屏幕永不出现「0 🍪」**（prd §7.6）—— 一句都没攻克过时这一行**整块不画**，
+            而不是画一行"0 🍪"把"你什么都没得到"说出来。
+         ⚠️ 数量由服务端的 sentenceCookies 给（按 article 汇总、只算已领取的），
+            端侧不自己加：领取那一刻只在"刚领到的 +N"上补一次（见 reading.ts）。 -->
+    <view class="card p-4 mb-3 flex items-center" wx:if="{{sentenceCookies > 0}}">
+      <text class="text-26rpx text-muted flex-1">这一句共攒了</text>
+      <text class="text-32rpx font-bold text-ink">{{sentenceCookies}}</text>
+      <text class="text-32rpx ml-1">🍪</text>
+    </view>
     <view class="card p-4 mb-3" wx:if="{{historyReady}}">
       <view class="flex">
         <view class="flex-1">

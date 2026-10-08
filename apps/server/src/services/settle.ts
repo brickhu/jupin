@@ -5,7 +5,7 @@ import { db } from '../db'
 import { submissions, users } from '../db/schema'
 import type { CookieAward } from '@jushuo/shared'
 
-import { arenaSnapshot, computeCookies, difficultyOf, grantCookies, highestInSentence } from './cookies'
+import { arenaSnapshot, computeCookies, difficultyOf, highestInSentence } from './cookies'
 import { evaluateRewards, type GrantedReward } from './rewards'
 import { recordRead } from './streak'
 
@@ -143,7 +143,18 @@ async function settleInner(userId: number, submissionId: string): Promise<Settle
      * ⚠️ 用 `users.cookies + n` 而不是"读出来再加"：读改写要 `FOR UPDATE`，
      *    而这里已经在一人一行的事务里，交给数据库自增更简单也更准。
      */
-    await grantCookies(tx, { userId, submissionId, earned: cookies.earned })
+    /**
+     * ⚠️⚠️ **这里不再直接发饼干**（用户 2026-10 定）。
+     *
+     * 改成"用户点了结果弹窗那颗状态胶囊（或者直接开始下一次录音）才入账" ——
+     * 见 services/cookies.ts 的 `claimCookies`。
+     * ⭐ 结算这一步只负责**算出该得多少并落库**（`submissions.cookies_earned` +
+     *    `cookie_meta`）—— 那是"这一把该得多少"的**唯一事实**，领取时照它发。
+     *
+     * ⚠️ 所以 `users.cookies`（可用余额）里**不含未领取的部分** ✗ —— 这是刻意的：
+     *    没看到结果就不算拿到 ✓
+     * ⚠️ 别把 `grantCookies` 调回来：那样会**发两次**（一次这里、一次领取）✗
+     */
   })
 
   return {
