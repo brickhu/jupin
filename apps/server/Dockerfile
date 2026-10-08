@@ -36,8 +36,16 @@ COPY content ./content
 #    会自动把它带过去 ✓ 而服务端**不需要额外的路径解析** —— 现有的 readStaticFile
 #    就能读到它（那是本仓库明确写过的一条教训：不要两处各自解析路径 ✓）
 #    ⚠️ alpine 的 tar 解 .tar.bz2 需要 bzip2 包 ⇒ 一起装 ✓
+# ⚠️⚠️ **这一步失败不许把整个部署弄挂** ✗
+#    模型只是个**可选资源**：没有它，只有「逐词标注」这一个功能降级 ✓
+#    （路由会回 404「模型未就绪」✓ 端侧探针会明确报出来 ✓）
+#    而它要从 GitHub releases 拉 31MB ✗ —— 构建机网络抽风是常事 ✓
+#    ⇒ 用 `|| echo` 兜住：**构建照常成功**，只是 KWS 功能没就绪 ✓
+#    ⚠️ 反过来（让它 fatal）的代价是：一次网络抖动 = **整个 dev 部署失败** ✗
+#       而部署一挂，**所有别的改动也一起上不去** ✗ —— 那个代价大得多 ✓
 RUN apk add --no-cache curl bzip2 \
- && node apps/server/scripts/fetch-kws-model.mjs
+ && (node apps/server/scripts/fetch-kws-model.mjs \
+     || echo '⚠️ [kws] 模型没抓到 —— 构建继续，逐词标注功能降级（其余功能不受影响）')
 
 RUN pnpm --filter @jushuo/server build
 
