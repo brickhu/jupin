@@ -244,3 +244,13 @@ export function playBeep(): void {
 export function playDing(): void {
   playCue('/assets/ding.wav')
 }
+/**
+ * ⭐ **「嗖」—— 「重新挑战」的听觉回应**（⭐ 用户 2026-10-09 要的 ✓）
+ *
+ * ⚠️ 素材是 **1900Hz → 380Hz 的下滑扫频 + 一点噪声**（⭐ 0.26s / 11.5KB ✓）：
+ *    下滑听感是"**清掉、重来**"✓ —— ⚠️ 比一声"嘟"更贴合"重置"这个动作 ✓
+ * ⚠️ 它和「嘟」「叮」共用同一个播放器 ✓（⭐ 见 playCue 的说明 ✓）
+ */
+export function playWhoosh(): void {
+  playCue('/assets/whoosh.wav')
+}

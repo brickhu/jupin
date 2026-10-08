@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, playBeep, playDing, stopAudio } from '../../lib/audio/play'
+import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -2550,6 +2550,13 @@ Page({
    *    按钮说"点它会怎样"，结论说"刚才怎么样"，两件事不塞进同一颗按钮 ✗
    */
   onRetryChallenge() {
+    /**
+     * ⭐ **「嗖」** —— 「重新挑战」的听觉回应（⭐ 用户 2026-10-09 要的 ✓）
+     * ⚠️ 下滑扫频 = "清掉、重来" ✓ —— ⚠️ 与「嘟」（开始）「叮」（结束）区分得开 ✓
+     * ⚠️ 放在**最前面**：⭐ 让反馈和手指抬起同一瞬发生 ✓（⚠️ 后面还有清缓存等动作 ✓）
+     * ⚠️ 全链路 try/catch 在 playCue 内部 ✓：音效失败绝不影响重录 ✓
+     */
+    playWhoosh()
     void this.dismissResult()
     void this.loadHistory()
   },
