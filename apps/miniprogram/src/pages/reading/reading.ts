@@ -39,7 +39,7 @@ import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
 import { decodeFrameToSamples, frameKindOf, pcmFrameToSamples } from '../../lib/audio/frame-decode'
-import { peakBars } from '../../lib/audio/wave'
+import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
 import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
 import type { ColoredWord } from '../../lib/word-colors'
@@ -624,6 +624,12 @@ Page({
   waveTries: 0,
   /** ⭐ 静音自停的两个计数器（见 lib/audio/vad.ts） */
   vad: { ...VAD_STATE_ZERO } as VadState,
+  /**
+   * ⭐ 波形的**自动增益**（"这一轮见过的最强音" = 满格）。
+   * ⚠️⚠️ 它**只作用于画图** —— 静音判据吃的仍是原始采样 ✓
+   *    （把增益套到判据上会让它永远判不出静音 ⇒ 永不自动结束 ✗，见 wave.ts）
+   */
+  waveGain: { ...WAVE_GAIN_ZERO },
   /** ⭐ 录音超时的定时器（见 MAX_RECORD_MS） */
   recordTimeout: null as ReturnType<typeof setTimeout> | null,
   /**
@@ -1175,6 +1181,7 @@ Page({
      *   · lastFrameAt —— 帧间隔要重新量（跨轮的间隔是几分钟，不能用）
      */
     this.vad = { ...VAD_STATE_ZERO }
+    this.waveGain = { ...WAVE_GAIN_ZERO }
     this.frameKind = 'unknown'
     if (this.data.frameNote) this.setData({ frameNote: '' })
     this.lastFrameAt = 0
@@ -1532,8 +1539,17 @@ Page({
     if (!ctx || w <= 0 || h <= 0) return
 
     const barCount = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
-    const heights = peakBars(samples, barCount)
-    if (heights.length === 0) return
+    const raw = peakBars(samples, barCount)
+    if (raw.length === 0) return
+
+    /**
+     * ⭐⭐ **按"见过的最强音"放大再画** —— 人说话的峰值通常只到满量程的 0.2~0.5，
+     *    照原样画柱子只有半高的两三成（用户真机实测：「其它都对，就是幅度不够」）✓
+     * ⚠️⚠️ 增益**只在这里用** —— 上面喂给 VAD 的 `samples` 是**原始**的 ✓
+     *    （VAD 的阈值 0.02 是绝对值；把增益套上去会让静音判不出来 ✗）
+     */
+    this.waveGain = advanceWaveGain(this.waveGain, raw)
+    const heights = applyWaveGain(raw, this.waveGain)
 
     const mid = h / 2
     const step = w / heights.length

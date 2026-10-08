@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { peakBars } from './wave'
+import {
+  WAVE_DECAY,
+  WAVE_GAIN_ZERO,
+  WAVE_MIN_PEAK,
+  advanceWaveGain,
+  applyWaveGain,
+  peakBars,
+} from './wave'
 
 describe('peakBars —— 采样压成柱子', () => {
   it('柱数永远等于要的个数', () => {
@@ -45,5 +52,49 @@ describe('peakBars —— 采样压成柱子', () => {
     expect(bars[0]).toBeCloseTo(0.1, 5)
     expect(bars[3]).toBeCloseTo(0.9, 5)
     expect(bars[0]!).toBeLessThan(bars[3]!)
+  })
+})
+
+describe('自动增益 —— 让柱子撑满（只作用于画图）', () => {
+  const F = (v: number) => new Array(4).fill(v)
+
+  it('⭐ 弱音也会被拉到接近满格（这就是"幅度不足"的修法）', () => {
+    let g = WAVE_GAIN_ZERO
+    g = advanceWaveGain(g, F(0.3)) // 见到 0.3 ⇒ 它成了"满格"基准
+    const out = applyWaveGain(F(0.3), g)
+    expect(out[0]).toBeCloseTo(1, 5) // 最强的那一帧顶到满格 ✓
+  })
+
+  it('⚠️ 相对关系保留（大声那帧仍然比小声高）', () => {
+    let g = advanceWaveGain(WAVE_GAIN_ZERO, F(0.4))
+    const out = applyWaveGain([0.1, 0.2, 0.4], g)
+    expect(out[0]!).toBeLessThan(out[1]!)
+    expect(out[1]!).toBeLessThan(out[2]!)
+  })
+
+  it('⚠️ 上去快：后来一帧更大，基准立刻跟上（第一声不会被画小）', () => {
+    let g = advanceWaveGain(WAVE_GAIN_ZERO, F(0.1))
+    g = advanceWaveGain(g, F(0.8))
+    expect(g.peak).toBeCloseTo(0.8, 5)
+  })
+
+  it('⚠️ 下来慢：安静之后基准只按 DECAY 缓慢回落（否则会一跳一跳）', () => {
+    let g = advanceWaveGain(WAVE_GAIN_ZERO, F(0.8))
+    g = advanceWaveGain(g, F(0))
+    expect(g.peak).toBeCloseTo(0.8 * WAVE_DECAY, 5)
+    expect(g.peak).toBeGreaterThan(0.5) // 掉得很慢 ✓
+  })
+
+  it('⚠️⚠️ 有下限：极安静时不再放大（否则底噪会被画成满格噪声）', () => {
+    let g = WAVE_GAIN_ZERO
+    for (let i = 0; i < 200; i++) g = advanceWaveGain(g, F(0.001))
+    expect(g.peak).toBe(WAVE_MIN_PEAK)
+    // 底噪 0.001 / 下限 0.04 ⇒ 只有一点点高，不会满格 ✓
+    expect(applyWaveGain(F(0.001), g)[0]!).toBeLessThan(0.05)
+  })
+
+  it('⚠️ 结果夹到 1（浮点误差不许画到带子外面）', () => {
+    const g = advanceWaveGain(WAVE_GAIN_ZERO, F(1))
+    expect(applyWaveGain([1.2], g)[0]).toBe(1)
   })
 })
