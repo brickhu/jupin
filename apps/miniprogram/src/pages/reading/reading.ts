@@ -1,7 +1,9 @@
 import {
+  COOKIE_PASS_LINE,
   ENERGY_PER_CHALLENGE,
   PREFLIGHT,
   formatScore,
+  resultFormOf,
 } from '@jushuo/shared'
 import { alignmentDetailOf, missingWordsOf, plainWordsOf, wordProgressOf } from '@jushuo/shared'
 import { pointsToConquer, type CookieAwardView, type SubmitResponse } from '@jushuo/shared'
@@ -35,6 +37,8 @@ import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, isUnregistered } from '../../l
 import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
+import { renderWordColors } from '../../lib/word-colors'
+import type { ColoredWord } from '../../lib/word-colors'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
 /**
@@ -96,6 +100,65 @@ import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
  *    在屏幕上长得一模一样，而它们该说的话完全不同。
  *    ⚠️ 页面上真正"盖住一切"的那一层由组件按这两个值 + s5/s6 决定画不画。
  */
+/**
+ * ⭐⭐ **卡片形态**（用户 2026-10 定的新流程）—— 只有这四种，`reading.wxml` 只认它。
+ *
+ * ## 为什么要把「卡片」和「弹窗」拆成两个值
+ *
+ * 原来只有一个 `phase`，九种值里前四种是卡片、后五种是弹窗 —— 两者**共用一个变量**。
+ * 后果：点下确认之后 `phase` 变成 'uploading'，卡片于是**离开了 s3** ⇒
+ * 那颗 ✓（检测）、↺（重录）、试听**整排消失**，页面被弹窗接管。
+ *
+ * ⭐ 用户 2026-10 定的新流程要求：**确认之后弹窗关掉、卡片留在 s3**，
+ *    靠卡片上的按钮表达"正在检测"（✓ 转圈、↺ 变灰）。
+ *    ⇒ 于是"这一把在检测中"必须与"卡片长什么样"**解耦**。
+ *
+ * ⚠️ 做法是**保留 `phase` 的九种值不变**（弹窗那边一行都不用改），
+ *    另加一个**派生**的 `cardPhase`：检测中的三个值（precheck / uploading / scoring）
+ *    以及结果态（s5 / s6）一律映射成 `'s3'`。
+ *    ⚠️ 结果态也映射成 s3 是**故意**的：那时弹窗盖着，卡片本来就看不见；
+ *       万一弹窗被关掉，露出来的是"这一把还能重录"的 s3，而不是一张空的句子卡。
+ */
+type CardPhase = 'loading' | 's1' | 's2' | 's3'
+
+/** ⭐ `phase` → `cardPhase` 的映射（唯一一处；别在别处再算一遍） */
+const CARD_OF: Record<Phase, CardPhase> = {
+  loading: 'loading',
+  s1: 's1',
+  s2: 's2',
+  s3: 's3',
+  // ⚠️ 下面这些都不是"卡片的形态"，卡片停在 s3 不动
+  precheck: 's3',
+  uploading: 's3',
+  scoring: 's3',
+  s5: 's3',
+  s6: 's3',
+}
+
+/**
+ * ⭐ 改 `phase` 时**必须**走这里 —— 它顺手把派生的 `cardPhase` 一起写进去。
+ *
+ * ⚠️⚠️ 不要手写 `{ ...phasePatch('s3') }`：那样 `cardPhase` 会**停在旧值**，
+ *    而 TypeScript 抓不到（两个字段都是合法的）—— 症状是"卡片忽然变了个样子"，
+ *    而且只在某几条路径上出现（比如"检测失败 → 重录"之后卡片停在检测中的样子）。
+ *    ⇒ 全文件只有这一处把两者绑在一起，改的时候 `grep "phase: '"` 应该**只在 CARD_OF 里**命中。
+ */
+function phasePatch(p: Phase): { phase: Phase; cardPhase: CardPhase; detecting: boolean } {
+  return {
+    phase: p,
+    cardPhase: CARD_OF[p],
+    /**
+     * ⭐ **这一把正在检测中**（上传或等打分）—— 卡片上那三颗钮靠它决定样子：
+     *   · ✓  → 转圈 + 禁用（"正在检测"）
+     *   · ↺  → 禁用（⚠️ 检测中绝不能重录，见 clearAttempt 的守卫）
+     *   · 试听 → 照常（听自己刚录的那一遍，正是这时候想听的）
+     * ⚠️ 由这里派生而不是各写一处：它与 `phase` 必须**永远一致**，
+     *    而"某个 setData 忘了带上它"正是这类派生字段最典型的错法（卡片会停在转圈上）。
+     */
+    detecting: p === 'uploading' || p === 'scoring',
+  }
+}
+
 type Phase =
   | 'loading'
   | 's1'
@@ -251,6 +314,14 @@ Page({
 
     articleId: '',
     /** 六态 + 一个「句子还没拉到」的前置态，见文件头的状态机说明 */
+    /**
+     * ⚠️ **卡片的形态**（reading.wxml 只认它）—— 由 `phasePatch()` 与 `phase` 一起写。
+     *    检测中它**停在 's3'**：用户要求确认之后弹窗关掉、卡片留在 s3，
+     *    靠 ✓ 转圈 / ↺ 变灰来表达"正在检测"（见 CardPhase 的说明）。
+     */
+    cardPhase: 'loading' as CardPhase,
+    /** ⭐ 正在检测（上传 / 等打分）—— 与 phase 一起由 phasePatch() 写 */
+    detecting: false,
     phase: 'loading' as Phase,
     /** 横跨所有状态的一句人话（不改变状态） */
     error: '',
@@ -374,6 +445,17 @@ Page({
      *         见 cookieLineOf 与 WXML 里 s6 那一块）。
      */
     cookieLine: null as CookieLine | null,
+
+    /**
+     * ⭐⭐ **结果弹窗底部那颗状态胶囊**（用户 2026-10 定的新结果弹窗）。
+     *
+     * 它有四种形态（alert1–4），由 `resultFormOf`（@jushuo/shared）按
+     * 「这一把攻没攻克」×「之前攻克过没有」判出来 —— 判据**不在模板里**，
+     * 因为其中"已经攻克过的人目标换成刷新记录"那条是有前提的，写进 wxml 就没人测得到。
+     */
+    resultLine: null as { form: string; text: string } | null,
+    /** ⭐ 结果弹窗里那句**逐词着色**的原文（与评测详情页共用 lib/word-colors） */
+    resultWords: [] as ColoredWord[],
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -747,7 +829,7 @@ Page({
   async loadContent() {
     // ⚠️ 新的一次加载 ⇒ 「历史那一拉」的冷启动重试机会也要复位（见 historyRetried）
     this.historyRetried = false
-    this.setData({ phase: 'loading', error: '' })
+    this.setData({ ...phasePatch('loading'), error: '' })
     try {
       const content = await fetchArticleContent(this.data.articleId)
       // ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
@@ -781,7 +863,7 @@ Page({
         audioKind: content.audio?.kind ?? 'http',
         // ⚠️ 详情接口**没有**时长（见 stdDurationMs 的说明）—— 有就显示，没有就空着
         stdDurationMs: stdMs,
-        phase: 's1',
+        ...phasePatch('s1'),
       })
 
       // ⭐ 内容一到就**后台**把标准音拉到本地 —— 用户点那颗圆钮时就不用等网络了
@@ -833,7 +915,7 @@ Page({
           if (st.status === 'scoring') {
             this.submissionId = pending.submissionId
             // ⚠️ uploadPercent=100：上传早就完成了，弹窗该显示"AI 评测中"而不是进度条
-            this.setData({ phase: 'scoring', uploadPercent: 100 })
+            this.setData({ ...phasePatch('scoring'), uploadPercent: 100 })
             void this.pollResult(pending.submissionId)
             return
           }
@@ -862,7 +944,7 @@ Page({
         const missSet = new Set(this.missedIdx)
         const misreadSet = new Set(this.misreadList.map((m) => m.at))
         this.setData({
-          phase: 's3',
+          ...phasePatch('s3'),
           restored: true,
           audioPath: last.audioPath,
           playPath: last.playPath,
@@ -892,7 +974,7 @@ Page({
        */
       void this.loadHistory()
     } catch (err) {
-      this.setData({ phase: 'loading', error: (err as Error).message })
+      this.setData({ ...phasePatch('loading'), error: (err as Error).message })
     }
   },
 
@@ -994,7 +1076,7 @@ Page({
         this.session = null
         // ⚠️ 同样是 releasePending 的清除点：出错也要把「识别中…」收掉
         this.releasePending = false
-        this.setData({ phase: 's1', releasePending: false, error: e.message })
+        this.setData({ ...phasePatch('s1'), releasePending: false, error: e.message })
       },
     })
 
@@ -1027,7 +1109,7 @@ Page({
     if (this.recordingKey) clearLastResult(this.recordingKey)
 
     this.setData({
-      phase: 's2',
+      ...phasePatch('s2'),
       error: '',
       // ⚠️ 起新录音 = 上一次的门禁提示作废（否则它会挂在新一轮上）
         elapsedText: '00:00',
@@ -1184,7 +1266,7 @@ Page({
       // ⚠️ 这里也要关掉「识别中…」：这是 releasePending 的清除点之一，
       //    漏了它按钮会永远停在"识别中"（而 phase 已经回 s1 了）
       this.releasePending = false
-      this.setData({ phase: 's1', releasePending: false, error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
+      this.setData({ ...phasePatch('s1'), releasePending: false, error: '录音没有正常结束（3 秒内没收到停止回调），请重试' })
     }, 3000)
   },
 
@@ -1277,7 +1359,7 @@ Page({
     }
 
     this.setData({
-      phase: 's3',
+      ...phasePatch('s3'),
       /**
        * ⚠️⚠️ **「识别中…」在这里才收掉**（与 phase 变 s3 同一帧）——
        *    这是它最主要的清除点：早一步清，按钮就会在等待期间退回「松开结束」。
@@ -1612,7 +1694,7 @@ Page({
      */
     this.setData({
       confirmOpen: true,
-      phase: 'precheck',
+      ...phasePatch('precheck'),
       error: '',
       confirmEnergy: this.data.energy,
     })
@@ -1637,7 +1719,7 @@ Page({
        */
       this.setData({
         confirmOpen: false,
-        phase: 's3',
+        ...phasePatch('s3'),
         error: auth === 'unknown' ? AUTH_RETRY_HINT : '',
       })
       this.syncEnergyNote()
@@ -1654,7 +1736,7 @@ Page({
     if (typeof balance !== 'number') {
       this.setData({
         confirmOpen: false,
-        phase: 's3',
+        ...phasePatch('s3'),
         error: '暂时取不到能量余额，检查网络后再点一次',
       })
       this.syncEnergyNote()
@@ -1664,7 +1746,7 @@ Page({
     // ⚠️ 够不够**不在这里判**：给 WXML 的是余额本身，比大小是模板里的事（两个数都来自服务端）
     this.setData({
       // 停在 s3 等用户决定：够 → 「确认提交」；不够 → 「去补能量」
-      phase: 's3',
+      ...phasePatch('s3'),
       confirmEnergy: balance,
       // ⚠️ 顺手把权威余额写进页面那一格（底部那行小字当场跟着变，见 syncEnergyNote）
       energy: balance,
@@ -1688,7 +1770,7 @@ Page({
 
   /** 确认层上那颗「取消」—— 什么都没发生：不锁能量、不上传，录音还在 */
   onConfirmCancel() {
-    this.setData({ confirmOpen: false, phase: 's3' })
+    this.setData({ confirmOpen: false, ...phasePatch('s3') })
   },
 
   /** 确认层上那颗「去补能量」—— 这一层**不关**（回来接着确认），有余额了再点 ✓ */
@@ -1714,7 +1796,7 @@ Page({
        *    上传有真实百分比、打分只能转圈 —— 合成一个态会让"卡在 0%"和"卡在 99%"
        *    在屏幕上长得一模一样。页面状态机里它们仍然统称等待。
        */
-      phase: 'uploading',
+      ...phasePatch('uploading'),
       error: '',
       uploadPercent: 0,
       restored: false,
@@ -1743,7 +1825,7 @@ Page({
         onProgress: (p) => this.setData({ uploadPercent: p }),
       })
       // ⚠️ 上传完了就换「AI评测中」：不换的话进度条会停在 100%，而后面还有十几秒打分
-      if (this.data.phase === 'uploading') this.setData({ phase: 'scoring' })
+      if (this.data.phase === 'uploading') this.setData({ ...phasePatch('scoring') })
 
       // ⭐ 只受理，不等打分（打分要 10–20 秒，见 lib/api/client.ts 的注释）
       // ⚠️ **不传日期**（2026-09 删）：归哪一天由服务端受理时取它的今天，端侧不碰这个决定。
@@ -1797,13 +1879,13 @@ Page({
       if (e.code === 'ENERGY_EXHAUSTED') {
         const p = e.payload as { energy?: number } | undefined
         this.setData({
-          phase: 's3',
+          ...phasePatch('s3'),
           error:
             '能量不够了（还差 ' + Math.max(0, ENERGY_PER_CHALLENGE - (p?.energy ?? 0)) +
             ' 点）—— 明天会补到 3 点，也可以充值',
         })
       } else {
-        this.setData({ phase: 's3', error: e.message })
+        this.setData({ ...phasePatch('s3'), error: e.message })
       }
       this.syncEnergyNote()
     }
@@ -1858,7 +1940,7 @@ Page({
         if (failedPolls >= 5) {
           // ⚠️ 退回 s3：录音还在手上，用户点一下 ✓ 就能重新提交（幂等，不会重复计费）
           this.setData({
-            phase: 's3',
+            ...phasePatch('s3'),
             error: '网络不稳定，暂时取不到打分结果。分数仍在云端计算，回到首页就能看到。',
           })
           this.syncEnergyNote()
@@ -1896,7 +1978,7 @@ Page({
     this.stopRoll()
     stopAudio()
     this.setData({
-      phase: 's6',
+      ...phasePatch('s6'),
       failDetail: detail || '录音不符合规范，无法检测发音',
       scoreText: '',
       scoreSubtitle: '',
@@ -1960,8 +2042,28 @@ Page({
      *       清早了按钮就点了没反应。真正的清理在 onUnload（见那里的说明）。
      */
     const cookie = cookieAwardOf(result)
+    /**
+     * ⭐⭐ 结果弹窗的两样新数据（用户 2026-10 定的那四种形态）。
+     *
+     * ⚠️ 形态文案由 `resultFormOf` 判（@jushuo/shared，有测试）——
+     *    判据是**两个布尔**：这一把攻没攻克、之前攻克过没有。
+     *    最容易错的是"已经攻克过的人"：那时"离 85 分还差多少"对他没有意义，
+     *    目标该换成**刷新自己的记录**（否则一句话就把整套规则说穿了）。
+     */
+    const line = resultFormOf({
+      score: result.score,
+      // ⚠️ 用服务端那个权威判断，不从饼干推（饼干那段在有些回包里是 null）
+      conquered: result.isConquered,
+      earned: cookie?.earned ?? 0,
+      passLine: cookie?.passLine ?? COOKIE_PASS_LINE,
+      previousBest: result.previousBest ?? null,
+    })
     this.setData({
-      phase: 's5',
+      ...phasePatch('s5'),
+      resultLine: line,
+      // ⚠️ 逐词用 lib/word-colors（与评测详情页**同一个函数**）——
+      //    各写一遍的话，同一个词会在弹窗和详情页显示成两种颜色 ✗
+      resultWords: renderWordColors(result.text ?? '', result.words ?? []),
       error: '',
       // ⚠️ 先落**最终值**：数字滚动只是"盖在上面"的临时显示，
       //    任何一帧被打断（定时器被清）都不能让界面停在半路。
@@ -2199,6 +2301,21 @@ Page({
    * ⚠️ 只清**这一句**的槽位：别的句子的录音不该被连坐。
    */
   clearAttempt() {
+    /**
+     * ⚠️⚠️ **检测中绝不允许重录**（用户 2026-10 定的新流程带来的新风险）。
+     *
+     * 原来这里不需要守卫：检测期间 `phase` 不是 's3' ⇒ 卡片整排钮**压根没渲染**。
+     * ⭐ 而新流程要求确认之后**卡片留在 s3**（靠钮的样子表达"正在检测"）⇒
+     *    这颗 ↺ 从此**有机会被按到**。
+     *
+     * 按下去的后果：本地缓存（录音 + 结果）被清掉，而**服务端那一笔照旧在跑** ——
+     *    ⇒ 它出分时端侧已经没有任何指针指向它，结果被**孤立**；
+     *    ⇒ 用户还会以为"我取消了"，但能量已经扣了、历史里也多了一条。
+     *
+     * ⚠️ UI 上这颗钮同时是 disabled 的（见 wxml 的 detecting），但**两处都要有**：
+     *    光靠 disabled 挡不住别的入口调这个方法（将来可能还有）。
+     */
+    if (this.data.phase !== 's3') return
     // ⚠️ 先停数字滚动：不停的话它会继续往 s1 的界面上写 scoreText（见 rollNumbers）
     this.stopRoll()
     if (this.recordingKey) clearLastRecording(this.recordingKey)
@@ -2225,7 +2342,7 @@ Page({
       hintLevel: 'ok',
       canSubmit: true,
       releasePending: false,
-      phase: 's1',
+      ...phasePatch('s1'),
       error: '',
       restored: false,
       audioPath: '',

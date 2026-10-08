@@ -1,9 +1,6 @@
 import {
-  alignWordScores,
   formatScore,
-  plainWordsOf,
   resolveTheme,
-  wordLevel,
   WORD_GREEN_LINE,
   WORD_RED_LINE,
 } from '@jushuo/shared'
@@ -30,6 +27,7 @@ import { ensureLocalAudio } from '../../lib/audio/standard'
 import { navPadTop } from '../../lib/nav'
 import { ROUTES, goPublic, replace } from '../../lib/route'
 import { agoText } from '../../lib/time'
+import { renderWordColors } from '../../lib/word-colors'
 
 /**
  * ⭐ 「挑战结果」页 —— **一屏装下一次挑战的全部结果**。
@@ -366,17 +364,9 @@ Page({
    *    按下标硬套会让从错位处往后**每个词的颜色都是别人的**（见那个函数的说明）。
    */
   renderWords(text: string, scored: { word?: string; score: number; dp?: string }[]): WordView[] {
-    const plain = plainWordsOf(text)
-    const align = alignWordScores(text, scored.map((w) => w.word ?? ''))
-    return plain.map((t, i) => {
-      const at = align[i]
-      const w = at === null || at === undefined ? undefined : scored[at]
-      // ⚠️ 对不上（插入 / 漏读，或老成绩没有逐词）→ 不上色，继承 currentColor，不猜
-      // ⚠️ 正常词也继承 currentColor（原来是 text-ink）：卡片换成主题底之后，
-      //    固定墨色在深色主题上会看不见 —— 颜色一律跟着 currentColor 走。
-      const lvl = w ? wordLevel(w.score, w.dp) : ''
-      return { i, text: t, cls: lvl && lvl !== 'ink' ? 'text-' + lvl : '' }
-    })
+    // ⚠️ 上色逻辑已抽到 lib/word-colors（结果弹窗用的是**同一份**）——
+    //    两边各写一遍的话，同一个词会在弹窗和这一页显示成两种颜色 ✗
+    return renderWordColors(text, scored)
   },
 
   /**

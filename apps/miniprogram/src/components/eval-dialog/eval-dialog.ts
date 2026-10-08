@@ -71,6 +71,19 @@ Component({
      */
     cookieLine: { type: null, value: null as CookieLine | null },
     /** s6 的副标题（默认「录音不符合规范」；超时那次会换一句真话） */
+    /**
+     * ⭐⭐ 结果态底部那颗**状态胶囊**的文案（用户 2026-10 定的四种形态 alert1–4）。
+     * ⚠️ 它是组件在结果态**唯一的出口**，所以不能是空的 —— 页面给不出来时
+     *    组件兜一句「知道了」（见 wxml），绝不画一颗没有字的按钮。
+     * ⚠️ 文案由页面的 `resultFormOf` 判（@jushuo/shared），组件**不自己算**。
+     */
+    resultLine: { type: null, value: null as { form: string; text: string } | null },
+    /**
+     * ⭐ 结果态那句**逐词着色**的原文（lib/word-colors 算好，组件只画）。
+     * ⚠️ 空数组 = 拿不到逐词 ⇒ 那一块整块不渲染（不画一句没颜色的原文假装判过了）。
+     */
+    resultWords: { type: Array, value: [] as { i: number; text: string; cls: string }[] },
+
     failDetail: { type: String, value: '' },
     /** 底部那行能量小字（成品文本，页面拼） */
     energyNote: { type: String, value: '' },
@@ -144,21 +157,27 @@ Component({
 
     /**
      * 点遮罩 —— **只有"可以退出"的那几态才关得掉**：
-     *   · 结果态（s5 / s6）：与「确认」同一个动作（关窗、回 s1、这一次进历史）；
      *   · 确认能量态（'confirm' / 'no-energy'）：等于取消，什么都没发生（录音还在）。
      *
-     * ⚠️⚠️ 其余三态点遮罩必须**什么都不做**：
+     * ⚠️⚠️ **结果态（s5 / s6）点遮罩什么都不做**（用户 2026-10 定）。
+     *
+     *    原来这里是"与「确认」同一个动作"，那正好违反了这次的口径：
+     *    **结果必须被看见，不能被顺手划掉** —— 不点那颗状态胶囊，
+     *    下次回到这一页还要再弹一次（缓存不清）。手一滑就把结果划掉、
+     *    还顺手把缓存清了 ⇒ 用户永远没看到自己得了几分。
+     *
+     *    ⇒ 结果态的**唯一出口**是底部那颗状态胶囊（它同时是"我看到了"的确认）。
+     *
+     * ⚠️ 其余几态同样什么都不做：
      *    · 'asking'（正在问权威余额）—— 还没问完就关，用户会以为没反应；
-     *    · 'uploading' / 'scoring' —— 能量已经锁了、云端已经在打分，
-     *      关掉只会让他以为白花了一次（同时这几态也不画 ×，两条路都堵死）。
+     *    · 'uploading' / 'scoring' —— 这次改版后**弹窗根本不在**这两态出现
+     *      （等待改由卡片表达），这里留着只是防御。
      */
     onMaskTap() {
       const { mode, phase } = this.data
       if (mode === 'precheck') {
         if (phase === 'confirm' || phase === 'no-energy') this.onCancel()
-        return
       }
-      if (phase === 's5' || phase === 's6') this.onConfirm()
     },
 
     /** 结果态：确认 / 右上角 × —— 关窗 + 回 s1 + 把这一次追加进历史 */

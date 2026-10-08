@@ -6,6 +6,7 @@ import {
   cookieBaseOf,
   cookieRankFactor,
   pointsToConquer,
+  resultFormOf,
 } from './cookies'
 
 describe('cookieBaseOf —— 难度基准', () => {
@@ -115,7 +116,83 @@ describe('pointsToConquer —— 「还差多少分」（屏幕上永不出现 0
     expect(pointsToConquer(86, 85)).toBe(0)
   })
 
+  it('⚠️ 分数带小数时**向上取整**（屏幕上不该出现「还差 51.2 分」）', () => {
+    // 85 + 1 - 34.8 = 51.2 ⇒ 52。说 51 的话 34.8 + 51 = 85.8 仍在线下 ⇒ 那句邀请是假的
+    expect(pointsToConquer(34.8, 85)).toBe(52)
+    expect(pointsToConquer(84.5, 85)).toBe(2)
+    // ⚠️ 整数进来必须原样出去，不能被 ceil 改动
+    expect(pointsToConquer(83, 85)).toBe(3)
+    expect(Number.isInteger(pointsToConquer(71.3, 85))).toBe(true)
+  })
+
   it('⭐ 攻克线是个人最好时同理（最好 90、这次 88 ⇒ 差 3）', () => {
     expect(pointsToConquer(88, 90)).toBe(3)
+  })
+})
+
+/**
+ * ⭐⭐ 结果弹窗的四种形态（2026-10 定的 alert1–alert4）。
+ *
+ * ⚠️ 这四条测试盯的是**文案与判据的对应关系**，不是"函数能跑"：
+ *    最容易写错的是 c 与 d —— 它们都只在"已经攻克过"的前提下才成立，
+ *    而写错了屏幕上看不出来（照样显示一句话），只有用户会觉得莫名其妙。
+ */
+describe('resultFormOf —— 四种结果形态（alert1–4）', () => {
+  const passLine = 85
+
+  it('a：第一次攻克 ⇒「攻克本句，+N 🍪」', () => {
+    const r = resultFormOf({ score: 99.2, conquered: true, earned: 8, passLine, previousBest: 78 })
+    expect(r.form).toBe('a')
+    expect(r.text).toBe('攻克本句，+8 🍪')
+  })
+
+  it('d：之前攻克过、这次又攻下 ⇒「再次攻克，+N 🍪」', () => {
+    const r = resultFormOf({ score: 94.7, conquered: true, earned: 9, passLine, previousBest: 90 })
+    expect(r.form).toBe('d')
+    expect(r.text).toBe('再次攻克，+9 🍪')
+  })
+
+  it('b：还没攻克过 ⇒「差X分，攻克本句」，基准是**攻克线**', () => {
+    const r = resultFormOf({ score: 34.8, conquered: false, earned: 0, passLine, previousBest: 30 })
+    expect(r.form).toBe('b')
+    // 86 - 34.8 = 51.2 ⇒ **向上取整** 52（说 51 的话 85.8 仍在线下，那句邀请就是假的）
+    // ⚠️ 不是设计稿那张图上的 20 —— 图里的数字是占位的
+    expect(r.text).toBe('差52分，攻克本句')
+  })
+
+  it('c：已经攻克过 ⇒ 目标换成**刷新记录**，基准是**个人最好**', () => {
+    const r = resultFormOf({ score: 91, conquered: false, earned: 0, passLine: 92, previousBest: 92 })
+    expect(r.form).toBe('c')
+    // 92 + 1 - 91 = 2
+    expect(r.text).toBe('差2分刷新记录')
+  })
+
+  it('⚠️ 已经攻克过的人**绝不**该看到「攻克本句」（那说明规则说穿了）', () => {
+    const r = resultFormOf({ score: 88, conquered: false, earned: 0, passLine: 95, previousBest: 95 })
+    expect(r.text).not.toContain('攻克本句')
+    expect(r.text).toContain('刷新记录')
+  })
+
+  it('⚠️ 没见过这条句子（previousBest 为 null）走 b，不能当"已攻克过"', () => {
+    const r = resultFormOf({ score: 40, conquered: false, earned: 0, passLine, previousBest: null })
+    expect(r.form).toBe('b')
+    expect(r.text).toBe('差46分，攻克本句')
+  })
+
+  it('⚠️ 屏幕上永远不出现「0 🍪」—— 四个形态的文案都不含它', () => {
+    const cases = [
+      { score: 99, conquered: true, earned: 8, passLine, previousBest: 70 },
+      { score: 99, conquered: true, earned: 8, passLine: 90, previousBest: 90 },
+      { score: 40, conquered: false, earned: 0, passLine, previousBest: 30 },
+      { score: 88, conquered: false, earned: 0, passLine: 92, previousBest: 92 },
+    ]
+    for (const c of cases) {
+      expect(resultFormOf(c).text).not.toContain('0 🍪')
+    }
+  })
+
+  it('⚠️「差X分」永远是正数（哪怕边界上算出来是 0）', () => {
+    // 已经攻克过、这次正好等于最好成绩 ⇒ 要再高 1 分才算刷新
+    expect(resultFormOf({ score: 92, conquered: false, earned: 0, passLine: 92, previousBest: 92 }).text).toBe('差1分刷新记录')
   })
 })

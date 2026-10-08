@@ -159,8 +159,93 @@ export function cookieAwardOf(input: CookieAwardInput): CookieAward {
  *    "0 🍪"是把"你什么都没得到"说出来；"还差 3 分"说的是同一件事，
  *    但它是**邀请**，不是判决（目标梯度效应）。
  *
- * @returns >0 = 还差这么多分；0 = 已经攻克（或本来就过了线）
+ * ⚠️⚠️ **返回值一定是整数，而且是向上取整**（2026-10 修）。
+ *
+ *    讯飞的分数带**一位小数** ⇒ 不取整时屏幕上是「再高 51.2 分就能攻克」✗
+ *    （用户报的正是这种半截数字）。而**必须向上**，不能四舍五入也不能截断：
+ *    34.8 分距 85 线实际需要 51.2 分（`85 + 1 - 34.8`，目标是**安全跨过** 85），
+ *    说 51 分就**做不到**（34.8 + 51 = 85.8，仍在线下 ✗）—— 那句邀请就成了假的。
+ *
+ * @returns 整数，>0 = 还差这么多分；0 = 已经攻克（或本来就过了线）
  */
 export function pointsToConquer(score: number, passLine: number): number {
-  return Math.max(0, passLine + 1 - score)
+  return Math.max(0, Math.ceil(passLine + 1 - score))
+}
+
+/**
+ * ⭐⭐ **这一把的结果属于哪一种形态**（2026-10 定的四个结果弹窗：alert1–alert4）。
+ *
+ * ## 两把尺子，四种组合
+ *
+ * 攻克线是 `max(85, 个人最好)`（见 computeCookies）—— 于是"这一把怎么样"其实由
+ * **两个布尔**决定，而不是分数本身：
+ *
+ *   · `conquered`  = 这一把攻下了（`earned > 0`）
+ *   · `hadConquered` = **之前**就攻下过（个人最好 ≥ 85）
+ *
+ * | conquered | hadConquered | 形态 | 口径 |
+ * |---|---|---|---|
+ * | ✅ | ❌ | **a** | 第一次攻下 ⇒「攻克本句，+N 🍪」 |
+ * | ✅ | ✅ | **d** | 又攻下一次 ⇒「再次攻克，+N 🍪」 |
+ * | ❌ | ❌ | **b** | 还没攻下 ⇒「差X分，攻克本句」 |
+ * | ❌ | ✅ | **c** | 已经攻下过 ⇒ 目标换成**刷新记录** ⇒「差X分刷新记录」 |
+ *
+ * ⚠️⚠️ **a/d 与 b/c 的差别不在分数高低，在"要不要继续追"**：
+ *    一个已经攻克过的句子，"离 85 分还差多少"对他**没有意义**（他早就过了）——
+ *    那时唯一还值得追的是**自己的记录**。这就是 c 存在的理由。
+ *
+ * ⚠️ 为什么是纯函数而不是写在 wxml 里：这四种形态的判据（尤其 c 那条
+ *    "换成追记录"）是有前提条件的，写在模板里就变成没人测得到的散装逻辑。
+ */
+export type ResultForm = 'a' | 'b' | 'c' | 'd'
+
+export interface ResultLine {
+  form: ResultForm
+  /** 底部那颗**状态胶囊**的文案（它同时是唯一的出口，所以必须说清"然后呢"） */
+  text: string
+}
+
+export function resultFormOf(input: {
+  score: number
+  /**
+   * ⭐ **这一把攻没攻克** —— 用服务端那个权威判断（`result.isConquered`）。
+   *
+   * ⚠️ 刻意**不**从 `earned > 0` 推：饼干那一段（`CookieAwardView`）在有些回包里是 null
+   *    （没配奖励规则 / 老成绩），推的话会把"攻克了"显示成"没攻克" ——
+   *    而那是**两个不同的字段**，各说各的，不该从一个推另一个。
+   */
+  conquered: boolean
+  /** 这一把拿到的饼干（没攻克时是 0；拿不到奖励数据时也传 0） */
+  earned: number
+  /** 攻克线（服务端给的 passLine，= max(85, 个人最好)） */
+  passLine: number
+  /**
+   * **这一把之前**的个人最好；null = 这条句子没读过（或查不到）。
+   * ⚠️ 是"之前"不是"含这一把"—— 传进来之前服务端已经把它取成历史最好。
+   */
+  previousBest: number | null
+}): ResultLine {
+  const conquered = input.conquered
+  const hadConquered = input.previousBest !== null && input.previousBest >= COOKIE_PASS_LINE
+
+  if (conquered) {
+    return {
+      form: hadConquered ? 'd' : 'a',
+      text: (hadConquered ? '再次攻克' : '攻克本句') + '，+' + input.earned + ' 🍪',
+    }
+  }
+
+  /**
+   * ⚠️ 两条"还差多少"用的是**不同的基准**：
+   *    · 还没攻克过 ⇒ 基准是**攻克线**（差多少能攻下）
+   *    · 已经攻克过 ⇒ 基准是**自己的记录**（差多少能刷新）
+   *   混用会出现"差 3 分攻克本句"而用户早就在 90 分上 —— 一句话就把整套规则说穿了。
+   */
+  if (hadConquered) {
+    // previousBest 在这一支里一定不是 null（hadConquered 已经保证了）
+    const best = input.previousBest as number
+    // ⚠️ 与 pointsToConquer 同一条规矩：**向上取整**，说少了就成了假承诺
+    return { form: 'c', text: '差' + Math.max(1, Math.ceil(best + 1 - input.score)) + '分刷新记录' }
+  }
+  return { form: 'b', text: '差' + pointsToConquer(input.score, input.passLine) + '分，攻克本句' }
 }
