@@ -23,6 +23,17 @@
  * ⭐ **代码包路径**（本页与 .onnx 同在 subpackages/kws/ ✓ 已实测构建会拷进 dist ✓）
  * ⇒ 真机上**不联网、不需要域名白名单** ✓
  */
+/**
+ * ⚠️ `wx.loadSubpackage` **不在本仓装的类型定义里** ✗（类型版本旧）
+ *    —— 运行时是有的 ✓（官方 API ✓）⇒ 这里自己补一个结构类型 ✓
+ *    ⚠️ 真跑不通的话，探针页会把错误原文写在屏幕上 ✓
+ */
+type LoadSubpackageFn = (opts: {
+  name: string
+  success?: () => void
+  fail?: (e: unknown) => void
+}) => unknown
+
 const CANDIDATES = [
   '/subpackages/kws/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx',
   'subpackages/kws/encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx',
@@ -57,8 +68,25 @@ Page({
       return
     }
 
-    // ── ② 模型走代码包路径（不联网 ✓）────────────────────────────
-    this.log('模型走代码包路径（subpackages/kws/…int8.onnx）✓')
+    // ── ② 先把模型所在的分包加载进来 ─────────────────────────────
+    /**
+     * ⚠️ 模型 4.4MB > 主包上限 2MB ✗ ⇒ 只能放**分包** ✓
+     *    ⚠️ 而分包里的文件**要等分包加载完**才存在 ✗ ⇒ 这里必须先 loadSubpackage ✓
+     *    （探针页自己在**主包** ⇒ 编译模式的路径不用改 ✓）
+     */
+    this.log('加载 kws 分包（里面是模型）…')
+    try {
+      const loadSubpackage = (wx as unknown as { loadSubpackage: LoadSubpackageFn }).loadSubpackage
+      if (typeof loadSubpackage !== 'function') throw new Error('这个基础库没有 wx.loadSubpackage')
+      await new Promise<void>((res, rej) =>
+        loadSubpackage({ name: 'kws', success: () => res(), fail: (e: unknown) => rej(new Error(JSON.stringify(e))) }),
+      )
+      this.log('分包已加载 ✓')
+    } catch (e) {
+      this.log('分包加载失败 ✗ ' + (e as Error).message.slice(0, 160))
+      this.setData({ running: false, verdict: 'fail' })
+      return
+    }
 
     // ── ③ 创建 session —— 这一步就是结论 ───────────────────────────
     /**

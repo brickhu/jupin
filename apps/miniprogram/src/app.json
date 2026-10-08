@@ -15,7 +15,8 @@
     "pages/challenge/challenge",
     "pages/participation/participation",
     "pages/tags/tags",
-    "pages/browse/browse"
+    "pages/browse/browse",
+    "pages/dev-probe/dev-probe"
   ],
   "window": {
     "navigationStyle": "custom",
@@ -39,8 +40,9 @@
   "subpackages": [
     {
       "root": "subpackages/kws",
+      "name": "kws",
       "pages": [
-        "dev-probe"
+        "index"
       ]
     }
   ]
