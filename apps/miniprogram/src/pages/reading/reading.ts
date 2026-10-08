@@ -583,13 +583,13 @@ Page({
      */
     canSubmit: true,
     /**
-     * ⭐ 松手后的收尾中 —— 按钮显示「识别中…」。
-     * ⚠️ 它必须**立刻**有反应：用户松手后如果按钮还写着"松开结束"，会以为自己没松开。
+     * ⭐ **这一遍正在定稿**（已经说了停、但还没拿到结果）—— 按钮显示「识别中…」。
+     * ⚠️ 它必须**立刻**有反应：用户点了结束之后如果按钮还写着「结束」，会以为自己没点上。
      */
     releasePending: false,
   },
 
-  /** 这一轮朗读的录音会话（插件或本地，见 speech-session）—— 按下时建，抬起后作废 */
+  /** 这一轮朗读的录音会话（只剩我们自己的录音器，见 speech-session）—— 开始时建，结束后作废 */
   session: null as SpeechSession | null,
 
   /**
@@ -629,7 +629,7 @@ Page({
   misreadList: [] as { at: number; heard: string }[],
 
   /**
-   * ⭐ **已经松手，但这一遍还没定稿** —— 从按下松手那一刻起，一直**留到真的出结果**。
+   * ⭐ **已经说了停，但这一遍还没定稿** —— 从点结束那一刻起，一直**留到真的出结果**。
    *
    * ⚠️⚠️ 它驱动按钮的「识别中…」文案与 disabled，**必须活到 phase 变 s3 为止**：
    *    提前清掉会让按钮在等待期间退回「松开结束」（见 finishRecording 的说明）。
@@ -640,16 +640,19 @@ Page({
   /** 已经跟会话说过"停"了 —— finishRecording 可能被两条路调到，只真的停一次 */
   stopSent: false,
 
-  /** 松手缓冲期的定时器（追上尾巴就提前清掉） */
+  /** ⚠️ 松手缓冲期的定时器 —— 缓冲本身已删（识别随插件一起去掉），这个字段现在恒为 null */
   releaseTimer: null as ReturnType<typeof setTimeout> | null,
 
   /**
-   * ⭐ 手指**此刻**还按在录音按钮上。
-   * ⚠️ 为什么需要它：要权限那一步是异步的（`ensureRecordAuth`），用户可能在它返回之前就松手了。
-   *    那时**不该开始录** —— 录下来的是用户没在说话的音频，而且 `touchend` 已经过去、
-   *    没人再来停它（要等 30 秒 duration 兜底）。
+   * ⭐⭐ **正在起录**（从点按钮到会话真的建起来，中间隔着一次麦克风授权）。
+   *
+   * ⚠️⚠️ 为什么需要它（删掉"按住"那套之后**新出现**的风险）：
+   *    授权是异步的，那几百毫秒里 `phase` **还是 s1** ⇒ 用户再点一下，
+   *    `onTapRecord` 会再走一遍 `startRecording` ⇒ **建出第二个会话** ✗
+   *    （两个录音器抢麦克风，而且第一个永远停不下来。）
+   *    ⚠️ 按住时代不需要这个：那时"手指还在不在"顺手就挡住了重复触发 ✗
    */
-  pressActive: false,
+  starting: false,
 
 
   /** 页面已销毁 —— 录音回调不再往页面上写（见 onUnload 的说明） */
@@ -1108,29 +1111,24 @@ Page({
   },
 
   async onStartRecord() {
+    // ⚠️⚠️ 防连点：见 starting 的说明。**必须在 await 之前置位**
+    if (this.starting) return
+    this.starting = true
+
     const ok = await this.ensureRecordAuth()
     if (!ok) {
+      this.starting = false
       this.setData({ error: '需要麦克风权限：请在小程序设置里打开「录音」' })
       return
     }
 
     /**
-     * ⚠️⚠️ **授权是异步的** —— 用户完全可能在这一两百毫秒里已经松手了
-     *    （手抖一下、或者只想着点一下）。
-     *    那时**什么都不要做**：既不该建会话，也不该切到 s2 ——
-     *    否则会先闪一下录音界面再退回来，而用户根本没打算录。
-     *    ⚠️ 检查要放在**所有副作用之前**（第一版放在 start() 前，会白闪一帧 s2）。
-     */
-    if (!this.pressActive) return
-
-    /**
-     * ⭐⭐ **按住说话**（用户 2026-10 定）：按下建一个会话，松手结束。
+     * ⭐⭐ **建会话**（用户 2026-10 定：点一下开始、点一下结束、读完/超时自动结束）。
      *
-     * ⚠️ 会话有两个后端（见 lib/audio/speech-session）：
-     *    · **真机** → 微信插件：**同时**给音频和**流式识别文本** ⇒ 能边读边变色；
-     *    · **开发者工具 / 插件失败** → 我们自己的录音器：只给音频 ⇒ **没有变色**，但按住录音照常。
-     * ⚠️ 所以下面每一处用到"帧"或"识别"的地方，都必须先问**这一轮是哪个后端** ——
-     *    真机走插件时**永远不会有帧**（实测 0 帧），照旧等帧就会误报。
+     * ⚠️ 只剩**一套后端**（我们自己的录音器，见 lib/audio/speech-session）——
+     *    插件的流式识别已经砍掉，所以这里不再需要"这一轮是哪个后端"那种判断 ✗
+     *    （那段判断是旧的：真机走插件时永远没有帧，所以要按后端分支。
+     *      现在每一轮都有帧 ✓）
      */
     this.session = createSpeechSession({
       /**
@@ -1146,7 +1144,7 @@ Page({
       onDone: (r) => this.handleSpoken(r),
       onError: (e) => {
         this.stopTimer()
-        // ⚠️ 会话作废，否则下一次按下会被"上一次还没结束"挡住
+        // ⚠️ 会话作废，否则下一次开始会被"上一次还没结束"挡住
         this.session?.dispose()
         this.session = null
         // ⚠️ 同样是 releasePending 的清除点：出错也要把「识别中…」收掉
@@ -1258,13 +1256,11 @@ Page({
       this.stopSent = true
       this.onStopRecord()
     }, MAX_RECORD_MS)
+
+    // ⚠️ 会话真的建起来了 ⇒ 解除防连点（此后由 phase === 's2' 挡重复开始 ✓）
+    this.starting = false
   },
 
-  /**
-   * ⭐ **按下**（`bindtouchstart`）—— 开始这一次朗读。
-   * ⚠️ 与"点一下开始"不同：**按住的物理动作本身就是"我在录"**，
-   *    这正好取代了原来那条实时波形的作用（见 prd 7.2）。
-   */
   /**
    * ⭐⭐ **点一下那颗按钮**（用户 2026-10 定：去掉按住说话）—— 同一个按钮两种含义：
    *
@@ -1277,18 +1273,19 @@ Page({
    */
   onTapRecord() {
     if (this.data.phase === 's1') {
-      this.onPressStart()
+      this.startRecording()
       return
     }
-    if (this.data.phase === 's2') this.onPressEnd()
+    if (this.data.phase === 's2') this.stopRecordingByUser()
     // ⚠️ 其余状态（precheck / uploading / scoring / s5 / s6）什么都不做 ✓
   },
 
   /**
-   * ⭐ **开始录音**（用户点了「开始朗读」）。
-   * ⚠️ 名字里带 press 是历史原因（那时是按住说话）—— 留着是为了不惊动别处的引用 ✓
+   * ⭐ **开始录音**（用户点了「开始朗读」）—— 点击模式，没有"按住/松手"这回事 ✓
+   * ⚠️ 从按下算起的三百毫秒里用户点了别的？不存在这个状态：
+   *    点击是一次动作，`s2` 才是"正在录"，中途没有"手指还压着吗"要判 ✓
    */
-  onPressStart() {
+  startRecording() {
     /**
      * ⚠️ `phase === 's2'` 这一条**同时挡掉了「识别中…」那一态** ——
      *    那时手已松、正在定稿，但 phase 还是 s2（要到 handleSpoken 才变 s3）。
@@ -1306,25 +1303,18 @@ Page({
      *      · 逐词发音还在响 ⇒ 录进去一两个孤立的单词。
      *    这三件事**用户完全不知道为什么**，只会觉得"这个打分不准"。
      *
-     * ⚠️ 放在 onPressStart 而不是 onStartRecord：后者要先 await 麦克风授权，
+     * ⚠️ 放在 startRecording 的最前面（**在 await 麦克风授权之前**）——
      *    而声音必须**在手按下的那一刻**就停 —— 否则那几百毫秒还在往麦克风里灌。
      */
     this.stopAllAudio()
 
-    this.pressActive = true
     void this.onStartRecord()
   },
 
   /**
-   * ⭐ **松手**（`bindtouchend` / `bindtouchcancel`）—— 说完了。
-   *
-   * ⚠️⚠️ `touchcancel` 也走这里，而且必须走**"停止并保留"**、不能当"取消"：
-   *    手指从按钮上滑出去时**只有 cancel 会来**（没有 touchend），漏了它录音停不下来；
-   *    而 WeChat 语音消息那套"上滑取消"的语义在这里是错的 ——
-   *    **弄丢一次朗读比留着一次不想要的糟得多**。
+   * ⭐ **用户点了「结束」** —— 说完了（也可以什么都不点：读完会静音自停 ✓）。
    */
-  onPressEnd() {
-    this.pressActive = false
+  stopRecordingByUser() {
     if (this.data.phase !== 's2') return
 
     /**
@@ -1344,9 +1334,8 @@ Page({
   },
 
   /**
-   * ⭐ 真正结束这一轮录音 —— 松手的缓冲期走完（或提前追上）之后调它。
-   * ⚠️ 与 onStopRecord 分开是为了让"缓冲"这件事只有一个出口，
-   *    不会出现"缓冲还没走完又被别处停了一次"。
+   * ⭐ 真正结束这一轮录音 —— 三个"该结束了"（用户点击 / 静音自停 / 超时）都汇到这里。
+   * ⚠️ 与 onStopRecord 分开是为了让"只停一次"这件事只有一个出口。
    *
    * ⚠️⚠️ **它只负责"跟会话说停"，不负责关掉「识别中…」** —— 这是踩过的坑：
    *    原来这里把 `releasePending` 置回 false 再停，而**停止是异步的**
