@@ -38,3 +38,189 @@
     opacity: 0.5;
   }
 }
+
+
+/* ══════════════════════════════════════════════════════════
+   ★ 结果态（2026-10：结果**并进朗读卡片**，不再是浮层）
+
+   ⚠️ 这一段的尺寸全部来自设计稿（Figma 节点 482:951）的**精确值**，
+      单位是 px、画布宽 377px ⇒ 本项目的 rpx 是 ×2。
+   ⚠️⚠️ **不要在这里用 UnoCSS 工具类**：组件那版就是这么写的，
+      而工具类"没生效"时是**静默失效** —— 当时的表现是「得分详情」掉到第二行、
+      整句挤成一行还溢出被裁 ✗（详见那次提交）。
+      布局与颜色一律写死在这个文件里。
+   ⚠️ 注释里不要写反引号（wxss 编译器会报 unexpected）。
+   ══════════════════════════════════════════════════════════ */
+.rd-head {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/**
+ * 绿圆：设计稿 32×32、圆角 20（其实是全圆）、#00DD04。
+ * ⚠️ #00DD04 是设计稿里的原色（很亮的一档绿）—— 它**不等于**全站的 text-ok(#16a34a)。
+ *    这里按设计稿写死；要统一到全站色板的话改这一个值即可。
+ */
+.rd-check {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #00dd04;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rd-check-icon {
+  font-size: 32rpx;
+  color: #ffffff;
+}
+
+.rd-score {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #000000;
+  margin-left: 16rpx;
+  line-height: 1;
+}
+
+/**
+ * 「得分详情」：设计稿 85×32 的胶囊（内边距 10、圆角 40、白底）。
+ * ⚠️ margin-left: auto 让它贴右 —— 这里手写而不是用 ml-auto：
+ *    本文件的规矩是"布局不依赖工具类"（正是那个坑）。
+ */
+.rd-detail {
+  margin-left: auto;
+  padding: 6rpx 28rpx;
+  border-radius: 9999rpx;
+  border: 2rpx solid #e5e5e5;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.rd-detail-hover {
+  opacity: 0.6;
+}
+
+.rd-detail-text {
+  font-size: 24rpx;
+  color: #000000;
+  line-height: 1.6;
+}
+
+/**
+ * 设计稿：Inter 20px、行高 32px、左对齐、三色分段 ⇒ 40rpx / line-height 64rpx。
+ * ⚠️ 它是**一个 text**（里面的词是嵌套 text）—— 这样才是段落排版：
+ *    词与词之间只靠**空格**分隔，折行由文本流自己决定。
+ */
+.rd-sentence {
+  display: block; /* ⚠️ text 默认是 inline；不写这个，上下 margin 不生效、还会和头挤一行 */
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  line-height: 64rpx;
+  color: #000000;
+}
+
+/**
+ * ⚠️ 三档颜色**来自设计稿的分段着色**（Figma characterStyleOverrides）：
+ *      #00DD04 亮绿 = 读得好
+ *      #000000 黑   = 中性（不染色，继承父级）
+ *      #EC9B4A 橙   = 要练
+ *
+ * ⚠️ 类名是 lib/word-colors 拼出来的 text-ok / text-warn（那个函数与评测详情页共用），
+ *    而**颜色在这里被局部覆盖**成设计稿那套色值 —— 因为设计稿的绿(#00DD04)与橙(#EC9B4A)
+ *    跟全站 token（ok #16a34a / warn #f59e0b）并不是同一个色。
+ *    ⚠️ 作用域限制在 .rd-sentence 里：别让这两个覆盖漏到卡片的其它地方。
+ *
+ * ⚠️ 橙而不是红：红在全站是"判错"（错误条、结果页红块），
+ *    而一个词读得不够准是"**去练这个**"，不是"你错了"。
+ */
+.rd-sentence .text-ok { color: #00dd04; }
+.rd-sentence .text-warn { color: #ec9b4a; }
+
+/**
+ * 设计稿：323×52、圆角 40、内边距 10、底色 #F6DE8F、黑字 14px。
+ *
+ * ⚠️⚠️ **高度与录音按钮一致 = 100rpx**（用户 2026-10 定）——
+ *    那边是 ui-button 的 size="xl"（见 ui-button.wxss 的 .ub-s-xl: height 100rpx）。
+ *    两处都是"这一页的主行动按钮"，高度不一致会被看出来 ✗
+ *    （设计稿的 52px 换算过来是 104rpx，与 100rpx 只差 4rpx —— 对齐后者更值：
+ *      它是**同一页里已有的实物**，而设计稿那个数还得猜它的画布基准。）
+ * ⚠️ 用 flex 居中而不是 padding 撑高：写死高度之后 padding 不再是高度的来源，
+ *    两种一起写只会让人以为高度由它决定 ✗
+ * ⚠️ 它同时是结果态**唯一的出口**，所以点击面积也给足（整条 100rpx 高、整屏宽）。
+ */
+.rd-pill {
+  margin-top: 36rpx;
+  width: 100%;
+  height: 100rpx;
+  border-radius: 9999rpx;
+  background: #f6de8f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rd-pill-hover {
+  opacity: 0.85;
+}
+
+.rd-pill-text {
+  font-size: 28rpx;
+  color: #000000;
+  line-height: 32rpx;
+}
+
+/**
+ * ⚠️ 红圆 + 白叉 = 出分那颗绿圆 + 白勾的**同构版本**（同一个位置、同一种画法）。
+ *    图标字体里既没有 check-circle 也没有 close-circle，所以圆都自己画、叉用 mdi:close。
+ * ⚠️ 红是"判错"的颜色，在这里**用对了**：引擎真的说这段音频不行 ✓
+ *    （而逐词那个橙不是判错，是"去练这个" —— 两者的区别见 word-colors 的说明。）
+ */
+.rd-check-bad {
+  background: #dc2626;
+}
+
+.rd-fail-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #000000;
+  margin-left: 16rpx;
+  line-height: 1;
+}
+
+.rd-fail-detail {
+  display: block;
+  margin-top: 32rpx;
+  font-size: 28rpx;
+  line-height: 48rpx;
+  color: #666666;
+}
+
+.rd-energy {
+  display: block;
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: #999999;
+  line-height: 1.6;
+}
+
+/**
+ * ⭐ 结论那一行：**放在「重新挑战」下面**（用户 2026-10 定）。
+ *
+ * ⚠️ 与按钮分开的理由：按钮的职责是"点它会怎样"（统一叫重新挑战），
+ *    结论的职责是"刚才怎么样"（六种口径之一）。塞进一颗按钮里会读成
+ *    "点了才能拿到那个结论" ✗
+ * ⚠️ 居中、比按钮淡一档：它是**说明**，不该抢按钮的位置。
+ */
+.rd-conclusion {
+  display: block;
+  width: 100%;
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: #666666;
+  text-align: center;
+}

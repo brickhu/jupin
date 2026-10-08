@@ -41,8 +41,72 @@
           已核对 uno.wxss 确实如此；改 uno 配置时要重新确认，
           否则会**静默失效**：边框不变色，而没有任何报错。
        ⚠️ 只换**颜色**，宽度仍是 card 里的 border-2 —— 不动尺寸，卡片不会因此跳一下。 -->
-  <view class="card p-3.5 mb-3 {{cardPhase === 's2' ? 'border-bad' : cardPhase === 's3' && hintLevel === 'warn' ? 'border-warn' : cardPhase === 's3' && canSubmit ? 'border-ok' : ''}}"
+  <!-- ⚠️ 结果态（s5/s6）**不套那三档边框色**：
+       cardPhase 把结果也映射成 's3'，于是它会顶着"可以提交"的绿边 ✗ ——
+       而那时卡片里画的是结果，不是待提交的录音 ✓ -->
+  <view class="card p-3.5 mb-3 {{phase === 's5' || phase === 's6' ? '' : cardPhase === 's2' ? 'border-bad' : cardPhase === 's3' && hintLevel === 'warn' ? 'border-warn' : cardPhase === 's3' && canSubmit ? 'border-ok' : ''}}"
         wx:if="{{cardPhase === 's1' || cardPhase === 's2' || cardPhase === 's3'}}">
+
+    <!-- ══════════ ★ 结果态（用户 2026-10 定：结果**就是卡片的一个状态**）══════════
+         ⚠️⚠️ 原来它是一个浮层（components/result-dialog），盖住整页、还要处理
+             "能不能划掉 / 要不要重新弹" ✗ —— 现在它只是这个卡片的又一个状态，
+             和 s1/s2/s3 同一套画法 ✓
+         ⚠️ 为什么这样更好：① 不挡任何东西（下面的历史、参与都看得见）
+             ② "必须被看见"**自然成立** —— 回到这一页就看见卡片上的结果 ✓
+             ③ 状态维持与卡片共用同一套缓存（loadLastResult）✓
+         ⚠️ 下面判的是 phase，**不是 cardPhase** —— 因为 cardPhase 把 s5/s6
+            都映射成 's3'（为了让卡片照常画），拿它判"现在是不是结果态"会永远为真 ✗ -->
+    <block wx:if="{{phase === 's5' || phase === 's6'}}">
+
+      <!-- ── 检测不合法（s6）：❌ + 一句为什么 ────────────────────
+           ⚠️⚠️ **绝不出现任何「+0」/「0 🍪」**（prd §7.6）—— 失败态整块不提奖励 ✓ -->
+      <block wx:if="{{phase === 's6'}}">
+        <view class="flex items-center">
+          <!-- ⚠️ 红圆 + 白叉，与出分那颗绿圆 + 白勾同构；
+               图标字体里没有 close-circle，所以圆自己画、叉用 mdi:close -->
+          <view class="rd-check rd-check-bad">
+            <ui-icon class="rd-check-icon" name="mdi:close" />
+          </view>
+          <text class="rd-fail-title">检测失败</text>
+        </view>
+        <text class="rd-fail-detail">{{failDetail || '录音不符合规范，无法检测发音'}}</text>
+      </block>
+
+      <!-- ── 出分（s5）：✅ + 分数 ｜ 得分详情 + 逐词原文 ───────────── -->
+      <block wx:else>
+        <view class="flex items-center">
+          <view class="rd-check">
+            <ui-icon class="rd-check-icon" name="mdi:check" />
+          </view>
+          <text class="rd-score">{{scoreText}}</text>
+          <view class="rd-detail" bindtap="onOpenDetail" hover-class="rd-detail-hover">
+            <text class="rd-detail-text">得分详情</text>
+          </view>
+        </view>
+
+        <!-- ⚠️⚠️ 逐词必须【一个 text 里嵌 text】：设计稿就是一个 TEXT 节点 + 分段着色。
+             并列 text 在小程序里会被当**块**排 —— 空格丢掉、不折行、整段溢出被裁 ✗
+             ⚠️ 词与词之间只靠**每个词后面那个空格**（text 会保留它），不能指望 margin -->
+        <text class="rd-sentence" wx:if="{{resultWords.length > 0}}"><text wx:for="{{resultWords}}" wx:key="i" class="{{item.cls}}">{{item.text}} </text></text>
+      </block>
+
+      <!-- ── 出口：统一叫「重新挑战」，结论放在它**下面**（用户 2026-10 定）─────
+           ⚠️ 按钮文案**统一**（原来是把结论写进按钮里）——
+              按钮的职责是"告诉我点它会怎样"，结论的职责是"告诉我刚才怎么样"；
+              两件事塞进一颗按钮，读起来会像"点了才能拿到那个结论" ✗
+           ⚠️ 结论只在**出分**时给（失败态没有结论可给） -->
+      <view class="rd-pill" bindtap="onRetryChallenge" hover-class="rd-pill-hover">
+        <text class="rd-pill-text">重新挑战</text>
+      </view>
+      <text class="rd-conclusion" wx:if="{{phase === 's5' && resultLine}}">{{resultLine.text}}</text>
+      <!-- ⚠️ 能量那行小字：失败时**必须说清扣没扣**，不说用户默认自己白花了一次 ✗ -->
+      <text class="rd-energy" wx:if="{{energyNote}}">{{energyNote}}</text>
+
+    </block>
+
+    <!-- ⚠️ 下面整块是 s1/s2/s3 —— 结果态时不画（与上面那个 wx:if 互斥） -->
+    <block wx:else>
+
 
     <!-- ── s1 / s3 顶行：标准音试听（▶ + 时长）｜IPA 开关 ────── -->
     <view class="flex items-center justify-between mb-3" wx:if="{{cardPhase === 's1' || cardPhase === 's3'}}">
@@ -278,6 +342,8 @@
            ⇒ 别看着这块"少了一行"又加回来。 -->
     </view>
 
+    </block>
+
   </view>
 
   <!-- ══ 评测弹窗 ══════════════════════════════════════════════
@@ -303,12 +369,6 @@
        卡片看 cardPhase（检测中停在 s3），弹窗看 phase（要区分 uploading / scoring / s5 / s6）。
        两者由 reading.ts 的 phasePatch() 一起写。
        ⚠️ 注释里**不能写反引号** —— 小程序的 wxss 编译器会直接报 unexpected（这条是被 lint 挡下来的）。 -->
-  <!-- ⭐⭐ 结果弹窗：**独立组件**（用户 2026-10 定）—— 只有出分/失败时才存在 -->
-  <result-dialog wx:if="{{phase === 's5' || phase === 's6'}}"
-                 failed="{{phase === 's6'}}"
-                 scoreText="{{scoreText}}" resultLine="{{resultLine}}" resultWords="{{resultWords}}"
-                 failDetail="{{failDetail}}" energyNote="{{energyNote}}"
-                 bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
 
   <!-- ⭐ 确认能量那一层：**只在 confirmOpen 时存在**（用户 2026-10 定）。
        ⚠️⚠️ 确认之后它整个消失 —— 检测期间页面**没有遮罩**，
@@ -316,7 +376,8 @@
        ⚠️ 这里**不再传 mode**：它只做确认能量一件事，存在与否就够了
           （以前用 mode 在同一组件里切四种形态，结果层与卡片的判据不一致，
            检测期间只剩一层黑遮罩、没有卡片 ✗）。
-       ⚠️ 结果（含检测失败）由下面那个独立的 result-dialog 负责。 -->
+       ⚠️ 结果（含检测失败）**并进了上面那张朗读卡片**（用户 2026-10 定）——
+           它现在是卡片的一个状态，不再是浮层 ✓ -->
   <eval-dialog wx:if="{{confirmOpen}}"
                phase="{{phase}}"
                costEnergy="{{costEnergy}}" balanceEnergy="{{confirmEnergy}}"
