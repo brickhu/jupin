@@ -73,3 +73,9 @@ apps/miniprogram/dist
 #    所以：目录写 `dir/**`；至于 `!`，在没有确认安全之前同样别用。
 .env
 .env.*
+
+# ⚠️ KWS 模型（4.4MB）—— **构建时不从上下文拷**，由 Dockerfile 里那条 RUN 自己下 ✓
+#    ⚠️ 这是为了**本地与 CI 一致**：本地 `apps/server/assets/kws/` 里有文件（跑过抓取 ✓）
+#       而 CI 的干净 checkout 里没有 ✓ —— 不排除的话本地多拷 4.4MB，还会让那层失效 ✓
+#    ⭐ `.dockerignore` 只影响"从上下文 COPY"✓ **不影响构建阶段里自己下载出来的文件** ✓
+apps/server/assets

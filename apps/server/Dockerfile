@@ -27,6 +27,19 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
+# ⭐⭐ **只提前拷这一个脚本**（不是整个 apps/server）——
+#    ⚠️⚠️ 原来这条 RUN 放在 `COPY apps/server` **之后** ✗ ⇒ **源码一改这层就失效**
+#       ⇒ **每次构建都重新下载 31MB** ✗（实测要多花 20-60 秒 ✓）
+#    ⭐ 挪到前面之后：只有**这个脚本本身**变了才会重下 ✓
+COPY apps/server/scripts/fetch-kws-model.mjs ./apps/server/scripts/
+
+RUN apk add --no-cache curl bzip2 \
+ && mkdir -p apps/server/assets/kws \
+ && (node apps/server/scripts/fetch-kws-model.mjs \
+     || echo '⚠️ [kws] 模型没抓到 —— 构建继续，逐词标注功能降级（其余功能不受影响）')
+
+# ⚠️ 后面这条 COPY 会把 apps/server 的其余部分盖上来 ——
+#    COPY 是**合并**不是替换 ✓ ⇒ 上面那个 assets/kws 不会被删掉 ✓
 COPY apps/server ./apps/server
 # ⚠️⚠️ **不再 COPY content，也不 mkdir** ✗ —— 它已经从 git 里移除
 #    （用户明确要求 ✓ 内容是**产物**不是源码 ✓）
@@ -46,10 +59,6 @@ COPY apps/server ./apps/server
 #    ⇒ 用 `|| echo` 兜住：**构建照常成功**，只是 KWS 功能没就绪 ✓
 #    ⚠️ 反过来（让它 fatal）的代价是：一次网络抖动 = **整个 dev 部署失败** ✗
 #       而部署一挂，**所有别的改动也一起上不去** ✗ —— 那个代价大得多 ✓
-RUN apk add --no-cache curl bzip2 \
- && mkdir -p apps/server/assets/kws \
- && (node apps/server/scripts/fetch-kws-model.mjs \
-     || echo '⚠️ [kws] 模型没抓到 —— 构建继续，逐词标注功能降级（其余功能不受影响）')
 
 RUN pnpm --filter @jushuo/server build
 
