@@ -131,3 +131,33 @@ export function decodeFrameToSamples(
     }
   })
 }
+
+/**
+ * ⭐⭐ **把一帧「裸 PCM」读成采样**（-1..1）。
+ *
+ * ## ⚠️⚠️ 它和 `decodeFrameToSamples` 是**两条完全不同的路**，别混
+ *
+ *   · `decodeFrameToSamples` 走 **`decodeAudioData`** —— 那是解**完整音频文件**的
+ *     （要有容器/头）。拿它去解**一帧压缩块**必然报
+ *     `Unable to decode audio data` ✗ —— 这正是 2026-10 那个 bug：
+ *     格式是 mp3 ⇒ 帧是压缩块 ⇒ 波形画不出、静音检测拿不到采样 ✗
+ *   · **PCM 帧根本没有头** —— 它就是连续的 16bit 小端采样 ✓
+ *     直接按 Int16 读、再除以 32768 就是采样 ✓
+ *
+ * ⭐ 所以 `RECORD_SPEC.format` 是 `'PCM'` 时**只走这条路**，一次解码都不需要 ✓
+ *    （顺便还省掉了每帧一次 decodeAudioData 的开销和它那个 1.5 秒超时 ✗）
+ *
+ * ⚠️ 小端：微信的 `onFrameRecorded` 给的是 little-endian ✓
+ * ⚠️ 奇数长度要去尾：按 Int16 读越界会读到相邻字节，尾部留一个孤字节是无意义的 ✓
+ */
+export function pcmFrameToSamples(frame: ArrayBuffer): Float32Array {
+  const usable = frame.byteLength - (frame.byteLength % 2)
+  const view = new DataView(frame)
+  const out = new Float32Array(usable / 2)
+  for (let i = 0; i < out.length; i++) {
+    // ⚠️ 除以 32768（不是 32767）：16bit 有符号的范围是 -32768..32767，
+    //    这样 −32768 映射到 −1.0、32767 映射到 0.99997，不会越界 ✓
+    out[i] = view.getInt16(i * 2, true) / 32768
+  }
+  return out
+}

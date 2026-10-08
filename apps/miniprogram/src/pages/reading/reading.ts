@@ -38,7 +38,7 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
+import { pcmFrameToSamples } from '../../lib/audio/frame-decode'
 import { peakBars } from '../../lib/audio/wave'
 import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
@@ -1403,16 +1403,28 @@ Page({
    *
    * 一次解码两处用 —— 见 lib/audio/wave.ts 与 lib/audio/vad.ts。
    *
-   * ⚠️⚠️ **解码失败（samples 为 null）必须分开处理**，绝不能当成"静音"：
-   *    在不支持 decodeAudioData 的环境里会**连着一路攒静音** ⇒ 一秒多之后把录音掐断 ✗✗
-   *    （而那个环境正是开发者工具 —— 正在调这个功能的地方。）
-   *    ⇒ `classifyChunk` 给的是**三态**，这里按 'undecodable' 走"当成他在说话"那条 ✓
+   * ⚠️ 判"静音/有声音"用的是**音量能量**（RMS），不是识别 —— 见 lib/audio/vad.ts ✓
+   * ⚠️ `classifyChunk` 给的是**三态**：拿不到采样时走 'undecodable'（当成他在说话）✓
+   *    那是安全方向 —— 绝不因为"读不出数据"就把用户的录音掐断 ✗
    */
-  async onRecordFrame(frame: ArrayBuffer) {
+  onRecordFrame(frame: ArrayBuffer) {
     if (this.gone) return
 
-    const samples = await decodeFrameToSamples(frame)
-    if (this.gone) return
+    /**
+     * ⭐⭐ **裸 PCM 直接按 Int16 读** —— 不走 decodeAudioData ✓
+     *
+     * ⚠️⚠️ 这正是 2026-10 那个 bug 的修法：格式是 mp3 时帧是**压缩块**，
+     *    交给 decodeAudioData（它解的是**完整音频文件**）必然报
+     *    `Unable to decode audio data` ✗ ⇒ 波形画不出、静音检测拿不到采样 ✗
+     *    ⇒ 「读完自动结束」根本不触发（只剩 30 秒超时）✗
+     * ⭐ 换成 PCM 之后帧本身就是采样 ⇒ 一行字节转换就够，**同步、无开销** ✓
+     *    （连 decodeAudioData 那个 1.5 秒超时兜底都不需要了 ✓）
+     *
+     * ⚠️ 模拟器仍然是例外：它的帧是 WebM/Opus（平台行为）⇒ 按 PCM 读出来是噪声 ✗
+     *    `classifyChunk` 会把噪声判成 'voice' ⇒ **永不自动结束**（安全方向）✓
+     *    ⇒ 这个功能**只能在真机上验** ✗ 开发时要记住 ✓
+     */
+    const samples = pcmFrameToSamples(frame)
 
     // ── ① 波形 ──────────────────────────────────────────────
     /**
