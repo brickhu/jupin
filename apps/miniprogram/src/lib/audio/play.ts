@@ -222,6 +222,20 @@ export function stopAudio(): void {
  */
 const cues = new Map<string, WechatMiniprogram.InnerAudioContext>()
 /**
+ * ⭐ **每个提示音自己的音量**（⭐ 别用一个全局值 ✗）
+ *
+ * ⚠️ 三个音的**听感响度本来就不一样** ✗ —— 即使素材峰值相同：
+ *    · 「嗖」是**扫频 + 噪声**，跨频段宽 ⇒ ⭐ 明显比单音更"冲"✓
+ *      （⭐ 用户 2026-10-09 就是先说它太大 ✓）
+ *    · 「嘟」「叮」是窄带单音 ⇒ ⭐ 同样的峰值听起来温和得多 ✓
+ *    ⇒ ⭐ 所以音量必须分开定 ✓ 一处一个数，好调 ✓
+ */
+const CUE_VOLUME: Record<string, number> = {
+  '/assets/beep.wav': 0.7,
+  '/assets/ding.wav': 0.7,
+  '/assets/whoosh.wav': 0.35,
+}
+/**
  * ⭐ 播放一个提示音
  * ⚠️ 换音源时才重设 `src` ✓ —— 见上面那段（⭐ 这条是修"没声音"的关键 ✓）
  */
@@ -230,7 +244,7 @@ function playCue(src: string): void {
     let a = cues.get(src)
     if (!a) {
       a = wx.createInnerAudioContext()
-      a.volume = 0.9
+      a.volume = CUE_VOLUME[src] ?? 0.7
       a.src = src
       a.onError((err) => {
         console.warn('[play] 提示音播放失败（' + src + '）：' + JSON.stringify(err ?? null).slice(0, 120))
