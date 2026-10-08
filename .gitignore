@@ -98,4 +98,11 @@ apps/miniprogram/dist.old
 apps/miniprogram/src/subpackages/kws/*.int8.bin
 
 # ⚠️ KWS 模型（4.4MB，第三方预训练产物）—— 构建时拉，不进仓库
-content/kws/
+apps/server/assets/kws/
+
+# ⚠️⚠️ content/ **不进 git**（用户明确要求过多次）——
+#    它是**内容产物**（句子 json / 标准音 / seed 素材），不是源码 ✓
+#    云端根本不需要它：句子在库、标准音在对象存储（admin.ts 明说
+#    "服务端读音频只认 standard_audio 这一列，不再依赖仓库里的 content/audio/"）✓
+#    ⇒ 它进 git 的唯一效果是**每次部署都把代码包撑大** ✗（实测上传要 6 分钟）
+content/

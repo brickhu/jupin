@@ -28,14 +28,20 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
-# 静态内容（contentJson 写成相对路径时从这里读）
-COPY content ./content
+# ⚠️⚠️ **不再 COPY content** ✗ —— 它已经从 git 里移除（用户明确要求 ✓）
+#    而且云端本来就**不需要**它：句子在库 ✓ 标准音在对象存储 ✓
+#    （本机联调才用它，见 routes/media.ts 那条"云端根本不走"的路由 ✓）
+#    ⚠️ 留一个空目录：services/content.ts 的 resolveStaticRoot() 靠"有没有 content/"
+#       来判根在哪 ✓ 没有它只是"静态资源读不到"（返回 null ✓ 不报错 ✓）
+RUN mkdir -p content
 
 # ⭐⭐ KWS 模型（端侧逐词标注用）—— **不进 git** ✗（4.4MB 的第三方预训练产物）
 #    构建时拉一次，落在 content/kws/ ⇒ 下面运行阶段的 `COPY --from=build /app/content`
 #    会自动把它带过去 ✓ 而服务端**不需要额外的路径解析** —— 现有的 readStaticFile
 #    就能读到它（那是本仓库明确写过的一条教训：不要两处各自解析路径 ✓）
 #    ⚠️ alpine 的 tar 解 .tar.bz2 需要 bzip2 包 ⇒ 一起装 ✓
+#    ⚠️ 落点是 **apps/server/assets/kws/**（服务端资产 ✓）而**不是 content/** ✗ ——
+#       见 scripts/fetch-kws-model.mjs 里的说明 ✓
 # ⚠️⚠️ **这一步失败不许把整个部署弄挂** ✗
 #    模型只是个**可选资源**：没有它，只有「逐词标注」这一个功能降级 ✓
 #    （路由会回 404「模型未就绪」✓ 端侧探针会明确报出来 ✓）
@@ -67,6 +73,9 @@ ENV MIGRATIONS_DIR=drizzle
 COPY --from=build /app/apps/server/drizzle ./drizzle
 # 静态内容 —— services/content.ts 的 CONTENT_DIR 候选之一就是 /app/content
 COPY --from=build /app/content ./content
+# ⭐ KWS 模型（服务端资产）—— 显式 COPY，不搭 content 的车 ✓
+#    模型不在时这里会 COPY 失败 ✗ ⇒ 用通配兜一层（构建阶段那条 RUN 允许失败 ✓）
+COPY --from=build /app/apps/server/assets* ./assets
 COPY --from=build /app/apps/server/dist/index.mjs ./index.mjs
 COPY --from=build /app/apps/server/dist/index.mjs.map ./index.mjs.map
 

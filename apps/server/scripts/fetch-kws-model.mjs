@@ -26,7 +26,16 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 /** ⚠️ 从脚本位置往上推仓库根，不要依赖 cwd（Docker 与本地 dev 的 cwd 不同 ✗） */
 const REPO = resolve(HERE, '../../..')
-const OUT_DIR = resolve(REPO, 'content/kws')
+/**
+ * ⚠️⚠️ **放在服务端自己的 assets/ 下，不搭 `content/` 的车** ✗
+ *
+ *    原来我图省事放进 `content/kws/`（好复用 readStaticFile ✓）—— 那是错的 ✓
+ *    `content/` 是**内容**（句子、标准音、种子 ✓），而这是**服务端资产** ✓
+ *    ⚠️ 更要紧的是：`content/` 这个 COPY 本身在云端已经基本是历史包袱 ✗
+ *      （标准音云端走对象存储 ✓ admin.ts 明说"不再依赖仓库里的 content/audio/" ✓）
+ *      ⇒ 把模型挂在它上面 = 哪天清理它就把模型一起弄丢 ✗
+ */
+const OUT_DIR = resolve(REPO, 'apps/server/assets/kws')
 
 const RELEASE = 'sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20'
 const URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/${RELEASE}.tar.bz2`
