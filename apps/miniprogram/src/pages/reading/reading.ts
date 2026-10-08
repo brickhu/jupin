@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, playDing, stopAudio } from '../../lib/audio/play'
+import { playAudioUrl, playBeep, playDing, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -1315,6 +1315,21 @@ Page({
      *    而声音必须**在手按下的那一刻**就停 —— 否则那几百毫秒还在往麦克风里灌。
      */
     this.stopAllAudio()
+    /**
+     * ⭐ **「嘟」** —— 录音开始的听觉确认（⭐ 用户 2026-10-09 要的 ✓）
+     *
+     * ⚠️ 位置很讲究：⭐ **在 `stopAllAudio()` 之后、`onStartRecord()` 之前** ✓
+     *    · 前面：⚠️ 上面那段讲的"正在响的声音会被录进去" ✗ ——
+     *      ⭐ 所以必须先把标准音 / 试听 / 逐词发音全停掉 ✓
+     *    · 后面：⭐ 让它和"麦克风打开"同一瞬发生 ✓（⚠️ 不是之后 ✓）
+     *    ⇒ ⭐ 于是它是**唯一**一个会被录进去的声音 ✓✓
+     *
+     * ⚠️ 已知副作用：⭐ 它会被录进这一段（⭐ 0.13 秒 ✓）
+     *    ⚠️ 顶多让 VAD 以为说了 0.13s ✓ ——
+     *       而自动结束的门槛是"词数 × 400 × 0.85"（⭐ 11 个词 = 3740ms ✓）
+     *    ⇒ ⭐ 影响可忽略 ✓（⚠️ 真机上若发现它被当成语音，再说 ✓）
+     */
+    playBeep()
 
     void this.onStartRecord()
   },
