@@ -1,4 +1,5 @@
 import { AUDIO_SPEC, RECORD_SPEC } from '@jushuo/shared'
+import { PLATFORM } from '../../config'
 
 /**
  * 录音适配层 —— 只做「挂监听 → 原样转发帧 → 转发停止/错误」，不做任何加工。
@@ -134,7 +135,23 @@ export class Recorder {
     active = this
     this.startedAt = Date.now()
 
-    const format = opts.format ?? RECORD_SPEC.format
+    /**
+     * ⭐⭐ **录音格式按平台选**（2026-10）。
+     *
+     *   · **真机** ⇒ `RECORD_SPEC.format`（mp3）：文件小 ✓ 而且实测**帧能解码** ✓
+     *     ⇒ 波形 ✓ + 静音检测 ✓ + 上传小 ✓ **三个目标同时达成** ✓
+     *   · **开发者工具** ⇒ **PCM**：它的帧是 WebM/Opus ✗（`decodeAudioData` 解不开，
+     *     见 frame-decode 的文件头）⇒ 那里**永远没有音量数据** ⇒ 波形与静音自停都废 ✗
+     *     ⭐ 换请求 PCM 是**唯一还没试过**的可能：如果工具的 PCM 帧是裸 PCM，
+     *        那模拟器里也能开发这个功能了 ✓
+     *     ⚠️ 上传体积在开发环境**无所谓**（不产生真实成本）✓
+     *     ⚠️ 这不影响生产：真机那一支一个字都没变 ✓
+     *
+     * ⚠️⚠️ 关键区分（我在这里绕过一次）：**"判断读完"要的是帧，"上传"要的是文件** ——
+     *    仓库自己的文档标题就是「文件 ≠ 帧」。微信的 `format` 恰好同时影响两者，
+     *    所以很容易误以为"想改上传格式就得连判断逻辑一起改" ✗ —— 不成立 ✓
+     */
+    const format = opts.format ?? (PLATFORM === 'devtools' ? 'PCM' : RECORD_SPEC.format)
     /**
      * ⚠️ 只有 mp3 / pcm 支持帧回调（官方文档）。给不支持的格式传 frameSize，
      *    轻则被忽略、重则整个 start 失败 —— 而后者表现为「点了开始朗读没反应」，
