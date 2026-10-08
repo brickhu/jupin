@@ -1465,7 +1465,7 @@ Page({
      * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束
      * ⚠️ 拿不到标准音时长时 autoStopAfter 一律返回 false（宁可让用户自己点）✓
      */
-    if (autoStopAfter({ ...this.vad, expectedMs: this.expectedReadMs() })) {
+    if (autoStopAfter(this.vad)) {
       /**
        * ⚠️⚠️ **必须防重入**：满足条件之后**每一帧**都会再判一次 ✓ ⇒
        *    不拦的话会连着调好几次 `session.stop()` ✗（并反复重置那个 3 秒看门狗，
@@ -1480,11 +1480,6 @@ Page({
     }
   },
 
-  /** ⭐ 这一句的**标准音时长**（自动结束的时长下限靠它）；拿不到时 null */
-  expectedReadMs(): number | null {
-    const ms = this.data.stdDurationMs
-    return typeof ms === 'number' && ms > 0 ? ms : null
-  },
 
   /** ⭐ 把这一帧的采样画成柱子（直接画在 canvas 上，**不走 setData**） */
   drawWave(samples: Float32Array) {

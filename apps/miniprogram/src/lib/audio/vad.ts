@@ -38,17 +38,22 @@ export const SILENCE_RMS = 0.02
 export const AUTO_STOP_SILENCE_MS = 1200
 
 /**
- * ⭐ **净说话时长**至少要达到标准音时长的多少倍，才允许自动结束。
+ * ⭐ **净说话时长的绝对下限** —— 低于它就绝不判"读完"。
  *
- * ⚠️ 这个下限的作用只有一个：**别在读一两个词的时候就因为一个停顿判"读完"** ✓
- *    （⭐ 短句里"嗯…"一下太常见 ✓）
+ * ⚠️ 唯一作用是**防抖**：短句里"嗯…"一下、或念第一个词前深吸一口气，
+ *    都可能出现一个 1.2 秒的停顿 ✗ —— 那时不该判读完 ✓
  *
- * ⚠️⚠️ **必须 < 1** ✗ —— 标准音的时长**含词间停顿**，而 `voicedMs` 只算净语音 ✓
- *    （⭐ 用户把标准音从头念一遍，`voicedMs` 必然**短于** `expectedMs` ✓）
- * ⚠️ 也不能太小：0.3 的话读前三个词停一下就被判读完了 ✗
- * ⭐ 0.5 = "至少说够半句话"，既保得住慢读的人 ✓，也不会读两个词就收工 ✓
+ * ⚠️⚠️ **刻意做成固定毫秒数，而不是"标准音时长 × 比例"** ✗（2026-10-09 用户指出）
+ *    比例那条路要求客户端**知道标准音多长** ✗ ⇒ 而那个值来自服务端 ✓
+ *    ⇒ ⚠️ 于是"读完自动结束"这个**纯本地**的判断，被绑上了"必须先取回标准音时长"✗
+ *    ⇒ ⚠️ 取不到（老内容 / 离线 / 接口慢 / 后端出错）就**永不自动结束** ✗✗
+ *      —— ⭐ 今天那个 bug 的表面症状正是这个 ✓
+ *    ⭐ 而"读完了没"只需要听：⭐ 说过话 + 然后安静下来 ✓ ⇒ 固定下限就够 ✓
+ *      ⭐ 零服务端依赖 ✓ 零网络 ✓
+ *
+ * ⭐ 800ms ≈ 两三个词的净语音：读两个词就停不会被误判 ✓，正常朗读也不受影响 ✓
  */
-export const AUTO_STOP_MIN_RATIO = 0.5
+export const AUTO_STOP_MIN_VOICED_MS = 800
 
 /**
  * ⭐⭐ 一帧属于哪一种 —— **刻意做成三态而不是布尔**。
@@ -124,24 +129,26 @@ export function advanceVad(state: VadState, kind: ChunkKind, frameMs: number): V
 }
 
 /**
- * ⭐⭐ **这一帧之后，该不该自动结束录音**（= 判断"读完了"）。
+ * ⭐ **该不该判"读完了"** —— 纯本地判断，**不依赖任何服务端数据** ✓。
  *
- * @param recordedMs 已经录了多久（调用方按帧累计，见 frameSizeKb 的说明：1KB ≈ 170ms）
- * @param silentMs   当前**连续**静音了多久（有声音时会被调用方清零）
- * @param expectedMs 这一句的标准音时长；**拿不到时传 null**
+ * 判据两条，缺一不可：
+ *   ① ⭐ 净说话时长 ≥ `AUTO_STOP_MIN_VOICED_MS`（⭐ 防"嗯…"一下就被判完 ✓）
+ *   ② ⭐ 连续静音 ≥ `AUTO_STOP_SILENCE_MS`
  *
- * ⚠️⚠️ `expectedMs` 为 null（这一句没有标准音）时**一律不自动结束** ✗：
- *    没有一个可信的时长下限，就只能靠用户自己点结束 ——
- *    硬用一个默认值会在长句上提前掐断 ✗
+ * ⚠️⚠️ 2026-10-09 之前这里还有第三条：`expectedMs`（⭐ 标准音时长 × 1.2 ✗）——
+ *    **拆掉了** ✗，两个理由：
+ *      · 它用的是墙钟时长 ⇒ ⭐ 读得快的人永远到不了 ⇒ **读完永不停** ✗✓（用户报的 bug ✓）
+ *      · 那个时长来自**服务端** ⇒ ⚠️ 把纯本地的判断绑上了网络与后端 ✗
+ *        （⭐ 取不到就永不自动结束 ✗）
+ *    ⭐ 而"读完了没"只需要听：**说过话 + 然后安静下来** ✓
  */
 export function autoStopAfter(input: {
   /** ⭐ 累计净说话时长（⭐ 判据看它 ✓） */
   voicedMs: number
   silentMs: number
-  expectedMs: number | null
 }): boolean {
-  if (input.expectedMs === null || input.expectedMs <= 0) return false
   // ⭐ 看【净说话时长】而不是墙钟（⚠️ 后者会把开头静音和用户停顿都算进去 ✗）
-  if (input.voicedMs < input.expectedMs * AUTO_STOP_MIN_RATIO) return false
+  // ⚠️ 下限是固定值，**不依赖标准音时长** ✓（⭐ 见常量的说明 ✓）
+  if (input.voicedMs < AUTO_STOP_MIN_VOICED_MS) return false
   return input.silentMs >= AUTO_STOP_SILENCE_MS
 }

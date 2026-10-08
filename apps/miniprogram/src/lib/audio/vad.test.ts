@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  AUTO_STOP_MIN_RATIO,
+  AUTO_STOP_MIN_VOICED_MS,
   AUTO_STOP_SILENCE_MS,
   VAD_STATE_ZERO,
   advanceVad,
@@ -47,48 +47,41 @@ describe('classifyChunk —— 一帧属于哪一种（三态）', () => {
 })
 
 describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
-  const expected = 5000
-  it('⭐ 两个条件都满足才结束', () => {
-    expect(
-      autoStopAfter({ voicedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
-    ).toBe(true)
+  it('⭐ 说过话 + 静音够久 ⇒ 结束', () => {
+    expect(autoStopAfter({ voicedMs: AUTO_STOP_MIN_VOICED_MS, silentMs: AUTO_STOP_SILENCE_MS })).toBe(true)
   })
-  it('⚠️⚠️ 净说话时长不够时，静音再久也不结束（读到一半的停顿不能掐断录音）', () => {
-    expect(autoStopAfter({ voicedMs: 1000, silentMs: 5000, expectedMs: expected })).toBe(false)
+  it('⚠️ 只说了很短（低于固定下限）⇒ 静音再久也不结束（防"嗯…"一下就判完）', () => {
+    expect(autoStopAfter({ voicedMs: AUTO_STOP_MIN_VOICED_MS - 1, silentMs: 5000 })).toBe(false)
   })
-  it('⚠️ 说够了但静音不够也不结束（刚说完一个词）', () => {
-    expect(autoStopAfter({ voicedMs: 4000, silentMs: 300, expectedMs: expected })).toBe(false)
+  it('⚠️ 一个字都没说 ⇒ 永不结束（安静的房间不能自己停）', () => {
+    expect(autoStopAfter({ voicedMs: 0, silentMs: 999_999 })).toBe(false)
   })
-  it('⚠️ 这一句没有标准音时**一律不自动结束**（宁可让用户自己点）', () => {
-    expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, expectedMs: null })).toBe(false)
-    expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, expectedMs: 0 })).toBe(false)
+  it('⚠️ 说够了但静音不够 ⇒ 不结束（刚说完一个词）', () => {
+    expect(autoStopAfter({ voicedMs: 3000, silentMs: 300 })).toBe(false)
   })
   it('⚠️ 边界：正好等于下限时算满足（>= 而不是 >）', () => {
-    expect(
-      autoStopAfter({ voicedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
-    ).toBe(true)
+    expect(autoStopAfter({ voicedMs: AUTO_STOP_MIN_VOICED_MS, silentMs: AUTO_STOP_SILENCE_MS })).toBe(true)
   })
 
   /**
-   * ⭐⭐ **回归测试：用户 2026-10-09 报的那个 bug** ✓
+   * ⭐⭐ **回归测试：用户 2026-10-09 报的 bug** ✓
    *
-   * ⚠️ 起因：判据原来用的是 `recordedMs`（⭐ 录音墙钟总时长 ✗）——
-   *    它把**开头静音**和**用户读的时候自己的停顿**全算进去了 ✗
-   *    ⇒ ⚠️ 于是"净说话时长"必须超过 `expectedMs × 1.2` 才可能成立 ✗
-   *    ⇒ ⭐ 而人把一句话念完，净语音**一定短于**标准音时长（含词间停顿 ✓）
-   *    ⇒ ⭐⭐ **结果就是自动结束永远不触发** ✗✓ —— 用户看到的行为是"按秒数停，不是按读完停" ✓
-   *
-   * ⭐ 现在看 `voicedMs`，门槛 0.5：⭐ 说了半句话以上 + 静音够久 ⇒ 判读完 ✓
+   * ⚠️ 症状：**读完不会自动结束**，只有录到某个时长才停（⭐ 用户原话 ✓）
+   * ⚠️ 根因一：判据原来用 `recordedMs`（⭐ 录音墙钟 ✗）—— 把开头静音和
+   *    用户自己的停顿全算进去了 ✗ ⇒ 净语音要超过 标准音×1.2 才可能成立 ✗
+   *    ⇒ ⭐ 而人念完一句的净语音**必然短于**标准音时长（⭐ 标准音含词间停顿 ✓）
+   *      ⇒ ⭐⭐ **永远不触发** ✗✓
+   * ⚠️ 根因二（⭐ 用户随后指出）：那个下限来自**服务端的标准音时长** ✗
+   *    ⇒ ⚠️ 把"纯本地的判断"绑上了网络与后端 ✗
+   *    ⇒ ⭐ 现在：固定下限 800ms + 静音 1.2s ⇒ ⭐ **零服务端依赖** ✓✓
    */
-  it('⭐⭐ 读得快的人（净语音不到标准音时长）也该能自动结束', () => {
-    // ⭐ 标准音 5s，用户净说了 2.75s 就停了 —— 旧判据（recordedMs ≥ 6000）永远到不了 ✗
-    expect(autoStopAfter({ voicedMs: 2750, silentMs: 1300, expectedMs: expected })).toBe(true)
+  it('⭐⭐ 净说话够 800ms 就该能结束（⭐ 不需要知道标准音多长 ✓）', () => {
+    expect(autoStopAfter({ voicedMs: 900, silentMs: 1300 })).toBe(true)
   })
-  it('⚠️ 但只念了两个词就停 ⇒ 仍不结束（下限要继续守住）', () => {
-    expect(autoStopAfter({ voicedMs: expected * 0.2, silentMs: 5000, expectedMs: expected })).toBe(false)
-  })
-  it('⭐ 门槛必须 < 1（⚠️ 标准音含停顿，净语音必然更短 ✓）', () => {
-    expect(AUTO_STOP_MIN_RATIO).toBeLessThan(1)
+  it('⭐⭐ 签名里【不】再有 expectedMs（⭐ 判据不依赖服务端数据 ✓）', () => {
+    // ⚠️ 这条测试是"契约"：参数里出现 expectedMs 就说明依赖又回来了 ✗
+    const ok = autoStopAfter({ voicedMs: 900, silentMs: 1300 })
+    expect(ok).toBe(true)
   })
 })
 describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
@@ -114,13 +107,13 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
     for (let i = 0; i < 100; i++) st = advanceVad(st, 'undecodable', F)
     expect(st.recordedMs).toBe(100 * F)
     expect(st.silentMs).toBe(0)
-    expect(autoStopAfter({ ...st, expectedMs: 5000 })).toBe(false)
+    expect(autoStopAfter(st)).toBe(false)
   })
 
   it('⭐ 正常读完：说够了时长 + 静音 1.2 秒 ⇒ 结束', () => {
     let st = VAD_STATE_ZERO
     for (let i = 0; i < 40; i++) st = advanceVad(st, 'voice', F) // 6.8s 说话
     for (let i = 0; i < 8; i++) st = advanceVad(st, 'silence', F) // 1.36s 静音
-    expect(autoStopAfter({ ...st, expectedMs: 5000 })).toBe(true)
+    expect(autoStopAfter(st)).toBe(true)
   })
 })
