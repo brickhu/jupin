@@ -287,15 +287,17 @@
       <!-- ⭐ **结束录音**（手动）—— 不点也行：读完静音自停、30 秒也会超时兜底 ✓
            ⚠️ 「识别中…」那一态要 disabled：那时已经说了停、正在定稿，
               还画成可点的红实心钮会让用户以为自己没点上 ✗ -->
-      <view class="shrink-0">
-        <!-- ⚠️ 同上：事件挂 bind:press，不挂外层 view 的 bindtap ✗
-             ⚠️ disabled 时 ui-button **自己就不再 triggerEvent** ⇒ 定稿中那几百毫秒
-                点它确实没反应 ✓ 那是对的（onTapRecord 里也有 phase 判断兜底 ✓） -->
-        <ui-button variant="fill" color="error" size="xl" disabled="{{releasePending}}"
-                   bind:press="onTapRecord">
-          <text class="text-34rpx">{{releasePending ? '识别中…' : '结束'}}</text>
-        </ui-button>
-      </view>
+      <!-- ⭐ **结束**：只用图标（用户 2026-10 定），与 s3 那两颗圆钮同款 ——
+           一个圆 + 一个字形，尺寸都是 size="xl" ⇒ 三态之间切换时位置与大小都不跳 ✓
+           ⚠️ 用图标不用文字：它是个**圆钮**，塞两个字进去会撑破那个圆 ✗
+           ⚠️ 字形用 mdi:stop（停）—— 与试听那颗"停止播放"同一个字形，
+              同一个动作在全站用同一个符号 ✓
+           ⚠️ 事件挂 ui-button 自己的 bind:press，**不能挂外层 view 的 bindtap** ✗
+              （它的根节点用 catchtap 截住冒泡，外层 tap 永远收不到）
+           ⚠️ disabled 时 ui-button 自己就不再 triggerEvent ⇒ 定稿中那几百毫秒
+              点它确实没反应 ✓ 那是对的（onTapRecord 里也有 phase 判断兜底 ✓） -->
+      <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="error" icon="mdi:stop"
+                 disabled="{{releasePending}}" bind:press="onTapRecord" />
     </view>
 
     <!-- ⭐ 交互说明（s1 / s2 共用同一块、位置固定 ⇒ 卡片高度不变、按钮不跳） -->
@@ -303,7 +305,7 @@
       <!-- ⚠️⚠️ **这是用户唯一看到的操作说明**，交互改了它必须跟着改 ✗
            ⭐ 顺带把"自动结束"说出来：不告诉他的话，用户会一直等着自己点结束，
               而其实读完静音一会儿就自动进 s3 了 ✓ -->
-      <text class="text-24rpx leading-[1.6] text-faint">{{releasePending ? '正在识别你的朗读，请稍等' : cardPhase === 's2' ? '读完会自动结束，也可以点「结束」' : '点一下开始朗读，读完会自动结束'}}</text>
+      <text class="text-24rpx leading-[1.6] text-faint">{{releasePending ? '正在识别你的朗读，请稍等' : cardPhase === 's2' ? '读完会自动结束，也可以手动结束' : '点一下开始朗读，读完会自动结束'}}</text>
     </view>
 
     <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
