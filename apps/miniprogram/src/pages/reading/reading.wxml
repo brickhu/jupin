@@ -250,12 +250,16 @@
             s1 的 CTA 都是这一档。它们在同一张卡里、同一个位置、隔一帧就换 ——
             尺寸不一致在切换时会明显"跳一下" ✗ -->
     <view class="mt-5" wx:if="{{cardPhase === 's1'}}">
-      <!-- ⚠️ 用 bindtap（不是 touchstart/touchend）：点击是**一次动作** ✓ -->
-      <view bindtap="onTapRecord">
-        <ui-button variant="outline" color="error" size="xl" width="full" icon="mdi:microphone">
-          点击录音并朗读
-        </ui-button>
-      </view>
+      <!-- ⚠️⚠️ **事件必须挂在 ui-button 自己的 bind:press 上，不能挂外层 view 的 bindtap** ✗
+           原因在 ui-button.ts 里写着：它的根节点用 **catchtap**（截住原生冒泡）+
+             事件名不叫 tap —— 就是为了防止"原生 tap 与外层 tap 各触发一次"。
+           ⇒ 挂在外层的 bindtap **永远收不到**（点了毫无反应 ✓ 这就是踩过的坑）
+           ⚠️ （旧代码之所以能挂在外层，是因为它挂的是 touchstart/touchend ——
+              触摸事件是另一条链、会冒泡 ✓ 而 tap 被 catchtap 截断了 ✗） -->
+      <ui-button variant="outline" color="error" size="xl" width="full" icon="mdi:microphone"
+                 bind:press="onTapRecord">
+        点击录音并朗读
+      </ui-button>
     </view>
 
     <!-- ── s2：**录音模式**（↺ 禁用占位 ｜ 实时波形 ｜ 结束录音）────────── -->
@@ -283,8 +287,12 @@
       <!-- ⭐ **结束录音**（手动）—— 不点也行：读完静音自停、30 秒也会超时兜底 ✓
            ⚠️ 「识别中…」那一态要 disabled：那时已经说了停、正在定稿，
               还画成可点的红实心钮会让用户以为自己没点上 ✗ -->
-      <view bindtap="onTapRecord" class="shrink-0">
-        <ui-button variant="fill" color="error" size="xl" disabled="{{releasePending}}">
+      <view class="shrink-0">
+        <!-- ⚠️ 同上：事件挂 bind:press，不挂外层 view 的 bindtap ✗
+             ⚠️ disabled 时 ui-button **自己就不再 triggerEvent** ⇒ 定稿中那几百毫秒
+                点它确实没反应 ✓ 那是对的（onTapRecord 里也有 phase 判断兜底 ✓） -->
+        <ui-button variant="fill" color="error" size="xl" disabled="{{releasePending}}"
+                   bind:press="onTapRecord">
           <text class="text-34rpx">{{releasePending ? '识别中…' : '结束'}}</text>
         </ui-button>
       </view>
