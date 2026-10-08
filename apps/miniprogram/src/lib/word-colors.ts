@@ -32,6 +32,17 @@ export function renderWordColors(
     // ⚠️ 正常词也继承 currentColor（不是固定墨色）：卡片换成主题底之后，
     //    固定墨色在深色主题上会看不见 —— 颜色一律跟着 currentColor 走。
     const lvl = w ? wordLevel(w.score, w.dp) : ''
-    return { i, text: t, cls: lvl && lvl !== 'ink' ? 'text-' + lvl : '' }
+    /**
+     * ⚠️⚠️ `bad` 映射到 **warn（橙）**，不是 `text-bad`（红）—— 2026-10 按设计稿标定。
+     *
+     * 设计稿里"读得不够好的词"是**橙色**，而不是红色：
+     *     Innovation is not merely the / introduction 黑 / willingness **橙**
+     * 红在全站是"**判错**"的颜色（结果页那些红块、错误条），含义完全不同：
+     * 一个词读得不够准是"**去练这个**"，不是"你错了" ✗
+     * ⚠️ `wordLevel` 返回的仍是 'bad'（那是**语义**，在 shared 里），
+     *    颜色是**界面**的事，所以这层映射在端侧。
+     */
+    if (!lvl || lvl === 'ink') return { i, text: t, cls: '' }
+    return { i, text: t, cls: lvl === 'bad' ? 'text-warn' : 'text-ok' }
   })
 }

@@ -54,6 +54,9 @@ export const COOKIE_RANK_MIN_SAMPLE = 10
  *    想靠饼干无限读，得先不停地攻克新句子，而新句子受内容更新速度限制
  *    （见 prd §7.6 的核算）。
  */
+/** ⭐ 分数的最小步长（一位小数）—— 所有"还差多少分"的计算都以它为粒度 */
+export const SCORE_STEP = 0.1
+
 export const COOKIES_PER_ENERGY = 40
 
 /**
@@ -169,7 +172,16 @@ export function cookieAwardOf(input: CookieAwardInput): CookieAward {
  * @returns 整数，>0 = 还差这么多分；0 = 已经攻克（或本来就过了线）
  */
 export function pointsToConquer(score: number, passLine: number): number {
-  return Math.max(0, Math.ceil(passLine + 1 - score))
+  /**
+   * ⚠️⚠️ 是 **+0.1**，不是 +1（2026-10 按设计稿标定）。
+   *
+   * 判据是 `score > passLine`（computeCookies），而**分数带一位小数** ——
+   * 所以"刚好跨过 85"的那一分是 **85.1**，不是 86。
+   * 用 +1 会**多报一分**：34.8 分的实际缺口是 `85.1 - 34.8 = 50.3` ⇒ 51 分，
+   *   而 34.8 + 51 = 85.8 > 85 ⇒ 确实攻下了 ✓
+   *   原来写 +1 得 52，多算的那一分会让用户白练一轮 ✗
+   */
+  return Math.max(0, Math.ceil(passLine + SCORE_STEP - score))
 }
 
 /**
@@ -180,19 +192,22 @@ export function pointsToConquer(score: number, passLine: number): number {
  * 攻克线是 `max(85, 个人最好)`（见 computeCookies）—— 于是"这一把怎么样"其实由
  * **两个布尔**决定，而不是分数本身：
  *
- *   · `conquered`  = 这一把攻下了（`earned > 0`）
- *   · `hadConquered` = **之前**就攻下过（个人最好 ≥ 85）
+ *   · `conquered` = 这一把攻下了（服务端那个权威判断）
+ *   · `hasRecord` = **这一句之前读过**（个人最好不是 null）
  *
- * | conquered | hadConquered | 形态 | 口径 |
+ * | conquered | hasRecord | 形态 | 口径 |
  * |---|---|---|---|
- * | ✅ | ❌ | **a** | 第一次攻下 ⇒「攻克本句，+N 🍪」 |
+ * | ✅ | ❌ | **a** | 第一次就攻下 ⇒「攻克本句，+N 🍪」 |
  * | ✅ | ✅ | **d** | 又攻下一次 ⇒「再次攻克，+N 🍪」 |
- * | ❌ | ❌ | **b** | 还没攻下 ⇒「差X分，攻克本句」 |
- * | ❌ | ✅ | **c** | 已经攻下过 ⇒ 目标换成**刷新记录** ⇒「差X分刷新记录」 |
+ * | ❌ | ❌ | **b** | 第一次读、没攻下 ⇒「差X分，攻克本句」 |
+ * | ❌ | ✅ | **c** | 读过、这次没攻下 ⇒ 目标换成**刷新记录** ⇒「差X分刷新记录」 |
  *
- * ⚠️⚠️ **a/d 与 b/c 的差别不在分数高低，在"要不要继续追"**：
- *    一个已经攻克过的句子，"离 85 分还差多少"对他**没有意义**（他早就过了）——
- *    那时唯一还值得追的是**自己的记录**。这就是 c 存在的理由。
+ * ⚠️⚠️ **那个开关是"有没有记录"，不是"之前攻克过没有"** —— 这是按设计稿
+ *    （alert3）标定出来的：`78.3 分 ⇒「差5分刷新记录」`，而记录只有 83.x，
+ *    **低于 85 那条线** ✗ ⇒ 记录在攻克林之下时，目标照样是"刷新记录"。
+ *
+ * ⭐ 两种尺子：**攻克看 85 那条线，刷新记录看自己的历史** ——
+ *    读过这句之后，唯一还值得追的就是自己的记录。
  *
  * ⚠️ 为什么是纯函数而不是写在 wxml 里：这四种形态的判据（尤其 c 那条
  *    "换成追记录"）是有前提条件的，写在模板里就变成没人测得到的散装逻辑。
@@ -226,12 +241,23 @@ export function resultFormOf(input: {
   previousBest: number | null
 }): ResultLine {
   const conquered = input.conquered
-  const hadConquered = input.previousBest !== null && input.previousBest >= COOKIE_PASS_LINE
+  /**
+   * ⚠️⚠️ 判据是「**这条句子有没有记录**」，**不是**"之前攻克过没有"（2026-10 按设计稿修正）。
+   *
+   * 我第一版写成 `previousBest >= COOKIE_PASS_LINE`（之前攻克过）—— 那是**错的**，
+   * 设计稿 alert3 一句话就把它否掉了：
+   *
+   *     78.3 分 ⇒「差5分刷新记录」 ⇒ 78.3 + 5 = **83.3 < 85**
+   *
+   * 记录**低于攻克线**时也要说"刷新记录" ✗ —— 所以"有没有记录"才是那个开关：
+   * 读过这句 ⇒ 目标是**自己的记录**；第一次读 ⇒ 目标是**攻克**（85 那条线）。
+   */
+  const hasRecord = input.previousBest !== null
 
   if (conquered) {
     return {
-      form: hadConquered ? 'd' : 'a',
-      text: (hadConquered ? '再次攻克' : '攻克本句') + '，+' + input.earned + ' 🍪',
+      form: hasRecord ? 'd' : 'a',
+      text: (hasRecord ? '再次攻克' : '攻克本句') + '，+' + input.earned + ' 🍪',
     }
   }
 
@@ -241,11 +267,13 @@ export function resultFormOf(input: {
    *    · 已经攻克过 ⇒ 基准是**自己的记录**（差多少能刷新）
    *   混用会出现"差 3 分攻克本句"而用户早就在 90 分上 —— 一句话就把整套规则说穿了。
    */
-  if (hadConquered) {
-    // previousBest 在这一支里一定不是 null（hadConquered 已经保证了）
+  if (hasRecord) {
+    // previousBest 在这一支里一定不是 null（hasRecord 已经保证了）
     const best = input.previousBest as number
-    // ⚠️ 与 pointsToConquer 同一条规矩：**向上取整**，说少了就成了假承诺
-    return { form: 'c', text: '差' + Math.max(1, Math.ceil(best + 1 - input.score)) + '分刷新记录' }
+    // ⚠️ 与 pointsToConquer 同一条规矩：**+0.1、向上取整**——
+    //    刷新记录要的是"比记录高一点点"，而分是一位小数
+    //    （设计稿 alert3：83.3 + 0.1 - 78.3 = 5.0 ⇒ 差 5 分 ✓）
+    return { form: 'c', text: '差' + Math.max(1, Math.ceil(best + SCORE_STEP - input.score)) + '分刷新记录' }
   }
   return { form: 'b', text: '差' + pointsToConquer(input.score, input.passLine) + '分，攻克本句' }
 }

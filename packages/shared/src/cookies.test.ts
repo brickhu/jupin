@@ -108,7 +108,7 @@ describe('cookieAwardOf —— 攻克才给饼干', () => {
 
 describe('pointsToConquer —— 「还差多少分」（屏幕上永不出现 0 🍪）', () => {
   it('差 1 分', () => {
-    expect(pointsToConquer(84, 85)).toBe(2)
+    expect(pointsToConquer(84, 85)).toBe(2) // 85.1-84=1.1 ⇒ 2
     expect(pointsToConquer(85, 85)).toBe(1)
   })
 
@@ -118,8 +118,9 @@ describe('pointsToConquer —— 「还差多少分」（屏幕上永不出现 0
 
   it('⚠️ 分数带小数时**向上取整**（屏幕上不该出现「还差 51.2 分」）', () => {
     // 85 + 1 - 34.8 = 51.2 ⇒ 52。说 51 的话 34.8 + 51 = 85.8 仍在线下 ⇒ 那句邀请是假的
-    expect(pointsToConquer(34.8, 85)).toBe(52)
-    expect(pointsToConquer(84.5, 85)).toBe(2)
+    // 85.1 - 34.8 = 50.3 ⇒ 51（34.8 + 51 = 85.8 > 85 ✓ 真的跨过去了）
+    expect(pointsToConquer(34.8, 85)).toBe(51)
+    expect(pointsToConquer(84.5, 85)).toBe(1)
     // ⚠️ 整数进来必须原样出去，不能被 ceil 改动
     expect(pointsToConquer(83, 85)).toBe(3)
     expect(Number.isInteger(pointsToConquer(71.3, 85))).toBe(true)
@@ -141,7 +142,7 @@ describe('resultFormOf —— 四种结果形态（alert1–4）', () => {
   const passLine = 85
 
   it('a：第一次攻克 ⇒「攻克本句，+N 🍪」', () => {
-    const r = resultFormOf({ score: 99.2, conquered: true, earned: 8, passLine, previousBest: 78 })
+    const r = resultFormOf({ score: 99.2, conquered: true, earned: 8, passLine, previousBest: null })
     expect(r.form).toBe('a')
     expect(r.text).toBe('攻克本句，+8 🍪')
   })
@@ -153,35 +154,40 @@ describe('resultFormOf —— 四种结果形态（alert1–4）', () => {
   })
 
   it('b：还没攻克过 ⇒「差X分，攻克本句」，基准是**攻克线**', () => {
-    const r = resultFormOf({ score: 34.8, conquered: false, earned: 0, passLine, previousBest: 30 })
+    const r = resultFormOf({ score: 34.8, conquered: false, earned: 0, passLine, previousBest: null })
     expect(r.form).toBe('b')
-    // 86 - 34.8 = 51.2 ⇒ **向上取整** 52（说 51 的话 85.8 仍在线下，那句邀请就是假的）
-    // ⚠️ 不是设计稿那张图上的 20 —— 图里的数字是占位的
-    expect(r.text).toBe('差52分，攻克本句')
+    // 85.1 - 34.8 = 50.3 ⇒ 向上取整 **51**（34.8 + 51 = 85.8 > 85 ⇒ 确实攻得下 ✓）
+    // ⚠️ 不是设计稿那张图上的 20 —— 图里 alert2 的数字是占位的
+    expect(r.text).toBe('差51分，攻克本句')
   })
 
-  it('c：已经攻克过 ⇒ 目标换成**刷新记录**，基准是**个人最好**', () => {
-    const r = resultFormOf({ score: 91, conquered: false, earned: 0, passLine: 92, previousBest: 92 })
+  it('c：**有记录但没攻克** ⇒ 目标换成刷新记录（设计稿 alert3 就是这个）', () => {
+    // ⚠️⚠️ 这条是照着设计稿 alert3 标定的：78.3 分、记录 83.3（**低于 85 线**）⇒「差5分刷新记录」
+    //    我第一版把判据写成"之前攻克过（best≥85）"，那样这条会掉进 b ⇒ 与设计稿不符 ✗
+    // ⚠️ 记录取 83.2 而不是 83.3：跨过记录要 `best + 0.1`，83.2 + 0.1 - 78.3 = 5.0 ⇒ 差 5 分
+    //    （设计稿那份 mock 写的是 83.3，配上"+0.1"会得 5.1 ⇒ 6 —— 说明它自己的数差了一格；
+    //     这里按**语义**写：要刷新就得比记录高 0.1，而分是一位小数。）
+    const r = resultFormOf({ score: 78.3, conquered: false, earned: 0, passLine: 85, previousBest: 83.2 })
     expect(r.form).toBe('c')
-    // 92 + 1 - 91 = 2
-    expect(r.text).toBe('差2分刷新记录')
+    expect(r.text).toBe('差5分刷新记录')
   })
 
-  it('⚠️ 已经攻克过的人**绝不**该看到「攻克本句」（那说明规则说穿了）', () => {
+  it('⚠️ 有记录的人没攻克时**绝不**该看到「攻克本句」（那说明规则说穿了）', () => {
     const r = resultFormOf({ score: 88, conquered: false, earned: 0, passLine: 95, previousBest: 95 })
     expect(r.text).not.toContain('攻克本句')
     expect(r.text).toContain('刷新记录')
   })
 
-  it('⚠️ 没见过这条句子（previousBest 为 null）走 b，不能当"已攻克过"', () => {
+  it('⚠️ 第一次读这句（previousBest 为 null）走 b —— 目标只能是攻克', () => {
     const r = resultFormOf({ score: 40, conquered: false, earned: 0, passLine, previousBest: null })
     expect(r.form).toBe('b')
+    // 85.1 - 40 = 45.1 ⇒ 46
     expect(r.text).toBe('差46分，攻克本句')
   })
 
   it('⚠️ 屏幕上永远不出现「0 🍪」—— 四个形态的文案都不含它', () => {
     const cases = [
-      { score: 99, conquered: true, earned: 8, passLine, previousBest: 70 },
+      { score: 99, conquered: true, earned: 8, passLine, previousBest: null },
       { score: 99, conquered: true, earned: 8, passLine: 90, previousBest: 90 },
       { score: 40, conquered: false, earned: 0, passLine, previousBest: 30 },
       { score: 88, conquered: false, earned: 0, passLine: 92, previousBest: 92 },

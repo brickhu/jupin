@@ -126,7 +126,9 @@
         <text class="text-64rpx font-bold text-ink ml-2">{{scoreText}}</text>
         <!-- ⭐「得分详情」是这一层唯一的次级入口 —— 五维/排名/建议都在那一页。
              ⚠️ 它**不关弹窗**：看完详情回来，这条结果还在（缓存没清，见 onMaskTap）。 -->
-        <view class="ml-auto px-4 py-[10rpx] rounded-full bg-line shrink-0"
+        <!-- ⚠️ 它是**白底 + 浅灰描边**（设计稿口径），不是灰底 ——
+             灰底看起来像"已经按下的次级按钮"，而这里它是一个**入口**。 -->
+        <view class="ml-auto px-4 py-[10rpx] rounded-full bg-white border-2 border-solid border-line shrink-0"
               bindtap="onOpenDetail" hover-class="active__opacity-60">
           <text class="text-24rpx text-body">得分详情</text>
         </view>
@@ -161,9 +163,14 @@
              （见 onMaskTap 的说明）。不点它，下次回到这一页**还会再弹**（缓存没清）。
          ⚠️ 失败态（s6）保留一颗「确认」：那次没有结论可给，只需要关掉它。 -->
     <view class="ed-actions" wx:if="{{phase === 's5'}}">
-      <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onConfirm">
-        <text class="text-32rpx">{{resultLine ? resultLine.text : '知道了'}}</text>
-      </ui-button>
+      <!-- ⚠️⚠️ 这里**刻意不用 ui-button**（2026-10 按设计稿标定）：
+           ui-button 的 warning 是 **#f59e0b 实心 + 白字**，而设计稿那颗是
+           **浅黄底 + 黑字**（琥珀色调、很轻）—— 两者不是同一个东西 ✗
+           ⇒ 用朴素 view + 手写底色（与 energy 页 .energy-sandbox 同一个做法）。
+           ⚠️ 手写颜色要自己补 hover 反馈（ui-button 自带，view 没有）。 -->
+      <view class="ed-pill" bindtap="onConfirm" hover-class="ed-pill-hover">
+        <text class="text-32rpx text-ink">{{resultLine ? resultLine.text : '知道了'}}</text>
+      </view>
     </view>
     <view class="ed-actions" wx:elif="{{phase === 's6'}}">
       <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onConfirm">

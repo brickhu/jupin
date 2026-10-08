@@ -87,3 +87,25 @@
   width: 100%;
   margin-top: 40rpx;
 }
+
+/**
+ * ⭐ 结果态底部那颗**状态胶囊**（用户 2026-10 定的四种形态 alert1–4）。
+ *
+ * ⚠️⚠️ 为什么手写颜色而不用 ui-button：设计稿那颗是**浅黄底 + 黑字**，
+ *    而 ui-button 的 warning 是 #f59e0b **实心 + 白字** —— 完全不是一回事 ✗
+ *    （同样的做法见 energy 页的 .energy-sandbox，理由相同：一次性的颜色不值得
+ *     往 uno 的色板里加 token。）
+ * ⚠️ 它同时是结果态**唯一的出口**（遮罩点不动、× 已删），所以要够显眼、够像能点。
+ */
+.ed-pill {
+  width: 100%;
+  padding: 30rpx 0;
+  border-radius: 9999rpx;
+  background: #fde68a; /* amber-200 —— 设计稿那颗浅黄 */
+  text-align: center;
+}
+
+/* ⚠️ ui-button 自带按下反馈，手写的 view 要自己补一条 */
+.ed-pill-hover {
+  opacity: 0.85;
+}
