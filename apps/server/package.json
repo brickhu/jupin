@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx src/db/seed.ts",
     "content:import": "tsx scripts/import-content-files.ts",
-    "kws:fetch": "node scripts/fetch-kws-model.mjs"
+    "kws:fetch": "node scripts/fetch-kws-model.mjs",
+    "audio:backfill": "tsx scripts/backfill-audio-ms.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

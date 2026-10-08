@@ -78,8 +78,18 @@ export async function standardAudioMs(articleId: string): Promise<number | null>
 export async function standardAudioOf(article: {
   id: string
   standardAudio: string | null
+  /** ⭐ 时长已经在库里（admin 上传音频时量好存下的 ✓ 见 0063 迁移） */
+  standardAudioMs?: number | null
 }): Promise<{ full: string; kind: 'cloud' | 'http'; durationMs: number | null } | null> {
   const ref = audioRefOf(article)
   if (!ref) return null
-  return { full: ref.full, kind: ref.kind, durationMs: await standardAudioMs(article.id) }
+  /**
+   * ⭐⭐ **优先用库里那一列** —— 它是**写入时**量好的元数据 ✓ 零成本 ✓
+   * ⚠️ 只有老内容（迁移之前入库的）才退回**读文件现算** ✓ ——
+   *    那条路依赖 `content/audio/` ✗ 而那个目录**已经不在生产镜像里** ✓
+   *    ⇒ 没回填过的老内容会显示成"没有时长" ✓（不是 0 ✓ 见下面 standardAudioMs 的说明）
+   */
+  const stored = article.standardAudioMs
+  const durationMs = typeof stored === 'number' && stored > 0 ? stored : await standardAudioMs(article.id)
+  return { full: ref.full, kind: ref.kind, durationMs }
 }

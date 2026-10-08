@@ -65,3 +65,31 @@ describe.skipIf(!hasAudio)('standardAudioOf —— 可播引用 + 时长（阅�
     expect(await standardAudioOf({ id: '99999', standardAudio: null })).toBeNull()
   })
 })
+
+describe('⭐ standardAudioOf：优先用库里的时长（0063 之后）', () => {
+  /**
+   * ⚠️⚠️ 这一组**不需要 content/** —— 它正是在钉"content/ 退出生产运行时"这件事 ✓
+   *    （上面那两组要真音频才能测 ✓ 所以 skipIf ✓ 而这一组不能再依赖它 ✗）
+   */
+  it('⭐ 库里有时长 ⇒ 直接用，不去碰文件', async () => {
+    const a = await standardAudioOf({ id: 'deadbeefdeadbeef', standardAudio: 'cloud://x/y.mp3', standardAudioMs: 23_400 })
+    expect(a).not.toBeNull()
+    expect(a!.durationMs).toBe(23_400)
+  })
+
+  it('⚠️ 库里是 0 ⇒ 当成"不知道"，**不要**原样显示成 0 毫秒', async () => {
+    // ⚠️ 0 和"不知道"是两件事（迁移把没回填的行留成 NULL ✓ 但防一手 0 ✓）
+    const a = await standardAudioOf({ id: 'deadbeefdeadbeef', standardAudio: 'cloud://x/y.mp3', standardAudioMs: 0 })
+    // 库里是 0 ⇒ 退回读文件 ⇒ 这个 id 没有音频文件 ⇒ null（而不是 0 ✓）
+    expect(a!.durationMs).not.toBe(0)
+  })
+
+  it('⚠️ 库里没有这一列（老行）⇒ 退回读文件；文件也没有 ⇒ null', async () => {
+    const a = await standardAudioOf({ id: 'deadbeefdeadbeef', standardAudio: 'cloud://x/y.mp3' })
+    expect(a!.durationMs).toBeNull()
+  })
+
+  it('没有标准音时整体返回 null（客户端据此不渲染播放入口 ✓）', async () => {
+    expect(await standardAudioOf({ id: 'x', standardAudio: null, standardAudioMs: 1000 })).toBeNull()
+  })
+})

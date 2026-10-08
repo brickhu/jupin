@@ -72,10 +72,12 @@ COPY --from=build /app/apps/server/drizzle ./drizzle
 # ⚠️⚠️ **不再 COPY content** ✗ —— 它已经从 git 里移除（用户明确要求 ✓ 内容产物不是源码 ✓）
 #    云端**用不到它**：句子在库 ✓ 标准音在对象存储 ✓（admin.ts 明说服务端读音频
 #    只认 `standard_audio` 那一列 ✓）
-#    ⚠️ 但有一条**已知的功能代价**（记在这里免得忘）：
-#      `standardAudioMs()` 是从 `content/audio/*.mp3` **现算**时长的 ✗
-#      ⇒ 没有它，**阅读页那个 `00:23` 会变成空** ✗ —— 见 services/standard-audio-meta.ts
-#      要修就得把时长**在 admin 上传时存进库** ✓（那是正解 ✓ 只是还没做）
+#    ⭐ 曾经有一条代价：`standardAudioMs()` 从 `content/audio/*.mp3` **现算**时长 ✗
+#       ⇒ 没有 content 就会让阅读页那个 `00:23` 变空 ✓
+#       现在**已经修掉** ✓ —— 时长改成**写入时量一次、存进 `articles.standard_audio_ms`**
+#       （见 0063 迁移 + services/standard-audio.ts ✓）
+#       ⚠️ 老内容要先跑一次回填：`pnpm --filter @jushuo/server audio:backfill`
+#          —— 它**从对象存储读音频** ✓ 不需要 content/ ✓
 #
 # ⭐ KWS 模型（服务端资产）—— 显式 COPY ✓
 #    ⚠️ 路径**不带通配**：构建阶段已经 `mkdir -p apps/server/assets/kws` ✓

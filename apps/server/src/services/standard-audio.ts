@@ -7,6 +7,7 @@ import { articles } from '../db/schema'
 import { env } from '../env'
 import { getStorage } from '../storage'
 import { hasContent, readStaticFile, resolveStaticRoot } from './content'
+import { mp3DurationMs } from './mp3-duration'
 
 /**
  * ⭐ 标准音进对象存储 —— 内容侧唯一的「写」。
@@ -43,7 +44,17 @@ export async function storeStandardAudio(
 ): Promise<{ audioKey: string }> {
   const key = audioKeyOf(articleId)
   await getStorage().put(key, bytes)
-  await db.update(articles).set({ standardAudio: key }).where(eq(articles.id, articleId))
+  /**
+   * ⭐⭐ **时长在这里量一次、存进库** —— 这一刻我们手里就有字节 ✓
+   *    ⚠️ 原来是**每次读的时候**去读文件现算 ✗ —— 那让 `content/` 成了
+   *       生产运行时依赖 ✗，而它是个早该没了的遗留目录 ✓（见 0063 迁移的说明）
+   *    ⚠️ 量不出来就存 null（不是 0 ✓）—— "不知道"和"零毫秒"是两件事 ✓
+   */
+  const ms = mp3DurationMs(Buffer.from(bytes))
+  await db
+    .update(articles)
+    .set({ standardAudio: key, standardAudioMs: ms })
+    .where(eq(articles.id, articleId))
   return { audioKey: key }
 }
 

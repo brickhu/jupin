@@ -270,6 +270,22 @@ export const articles = mysqlTable('articles', {
   /** 标准发音 MP3 地址 */
   standardAudio: varchar('standard_audio', { length: 512 }),
   /**
+   * ⭐⭐ **标准音的时长（毫秒）** —— 阅读页顶行那个 `00:23`。
+   *
+   * ## ⚠️⚠️ 为什么要存这一列，而不是每次去读音频文件现算
+   *
+   * 原来是 `standardAudioMs()` 读 `content/audio/<id>.mp3` 现算 ✗ —— 那有两个毛病：
+   *   ① **它让 `content/` 成了生产运行时的依赖** ✗ —— 而 `content/` 是个遗留目录 ✓
+   *      （句子在库 ✓ 音频在对象存储 ✓ 它早该没了 ✓）
+   *   ② 每次冷启动都要**读一遍文件 + 解析 mp3 头** ✗ —— 而这是**元数据** ✓
+   *      它在**写入的那一刻**就知道（admin 上传音频时手里就有字节 ✓）
+   *
+   * ⭐ 所以：**写的时候量一次、存起来** ✓ 读的时候零成本 ✓
+   * ⚠️ 可空：老内容没有这一列的值（见 backfill 脚本 ✓）——
+   *    读不到时**退回**读文件（本机联调仍然照常 ✓）而**不是**显示成 0 ✗
+   */
+  standardAudioMs: int('standard_audio_ms'),
+  /**
    * ⭐ 视觉主题 —— { image, background, foreground }（见 shared 的 ArticleTheme）。
    * ⚠️ 整份可空：老内容没有主题，端侧退回默认配色。
    */

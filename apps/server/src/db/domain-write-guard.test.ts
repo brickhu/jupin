@@ -316,6 +316,12 @@ const EXEMPTIONS: Exemption[] = [
     why: '本机联调开会员，只连本地 docker 容器；会员概念已被能量取代，脚本留着是为了旧数据，等清掉 member_until 后整个删。',
   },
   {
+    audit: '—',
+    file: 'apps/server/scripts/backfill-audio-ms.ts',
+    tables: ['articles'],
+    why: '一次性回填：把标准音时长写进 articles.standard_audio_ms（0063 新增的列）。⚠️ 它只写这一列、只补空值 ✓ 而且从对象存储读音频（不读遗留的 content/ ✓）。⭐ 为什么是一次性的：新内容的时长在 admin 上传那一刻就写好了（services/standard-audio.ts 的 storeStandardAudio ✓）—— 只有 0063 之前入库的行需要补 ✓',
+  },
+  {
     audit: '#11',
     file: 'apps/server/scripts/wipe-history.ts',
     tables: [
