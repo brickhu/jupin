@@ -1,5 +1,5 @@
-import { BASE_URL } from '../../config'
 import { resolveCloudFileUrl } from '../../lib/cloud-file'
+import { fetchKwsModel } from '../../lib/api/client'
 /**
  * ⚠️ **临时探针页**（验完就删）—— 只回答一个问题：
  *
@@ -73,20 +73,18 @@ Page({
      */
     let modelUrl = ''
     try {
-      const r = await new Promise<{ data?: { ok?: boolean; data?: { fileId?: string }; error?: string } }>(
-        (res, rej) =>
-          wx.request({
-            url: BASE_URL + '/media/kws-model',
-            success: res as never,
-            fail: rej,
-          }) as unknown as void,
-      )
-      if (!r.data?.ok || !r.data.data?.fileId) throw new Error(r.data?.error || '服务端没给 fileId')
-      this.log('服务端给了 fileId ✓')
-      modelUrl = await resolveCloudFileUrl(r.data.data.fileId)
+      const info = await fetchKwsModel()
+      if (!info?.fileId) throw new Error('服务端没给 fileId')
+      this.log('服务端给了 fileId ✓（' + Math.round(info.bytes / 1048576 * 100) / 100 + ' MB）')
+      modelUrl = await resolveCloudFileUrl(info.fileId)
       this.log('换到可下载地址 ✓')
     } catch (e) {
-      this.log('取模型地址失败 ✗ ' + ((e as Error).message || String(e)).slice(0, 140))
+      /**
+       * ⚠️⚠️ **错误对象必须 stringify**，不能读 `.message` ✗
+       *    `wx.request` 的 fail 给的是一个普通对象（没有 message ✓）⇒
+       *    上一版打出来是 `[object Object]`，等于没报错 ✓（这条踩过）
+       */
+      this.log('取模型地址失败 ✗ ' + JSON.stringify(e).slice(0, 200))
       this.setData({ running: false, verdict: 'fail' })
       return
     }
@@ -111,7 +109,7 @@ Page({
       if (size < 1024 * 1024) throw new Error('下到的太小：' + size + ' 字节')
       this.log('已存到 USER_DATA_PATH ✓ ' + (size / 1048576).toFixed(2) + ' MB')
     } catch (e) {
-      this.log('下载失败 ✗ ' + ((e as Error).message || String(e)).slice(0, 140))
+      this.log('下载失败 ✗ ' + JSON.stringify(e).slice(0, 200))
       this.setData({ running: false, verdict: 'fail' })
       return
     }

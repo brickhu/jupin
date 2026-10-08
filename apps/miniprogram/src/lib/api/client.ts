@@ -754,6 +754,23 @@ async function doLogin(): Promise<void> {
  *
  * ⚠️ **带 `date`**（服务端的今天）：端侧拿它判"首屏缓存是不是今天的"（见 store）。
  */
+/**
+ * ⭐⭐ **KWS 模型在哪**（端侧逐词标注用）—— 只取一个地址，**不取 4.4MB 字节** ✓
+ *
+ * ⚠️⚠️ 为什么必须走这个 `request`（而不是自己 `wx.request`）：
+ *    真机/预览环境走的是 **`callContainer`** 那条通道 ✗ —— 那时 `BASE_URL` 是
+ *    **空字符串**（见 config.ts 的 ENVS：dev/prod 的 httpUrl 都是 '' ✓）
+ *    ⇒ 自己拼 `BASE_URL + path` 会得到一个**相对地址** ⇒ 网络层直接失败 ✗
+ *      （症状：`wx.request` 的 fail 回调，错误对象 stringify 出来是空/无信息 ✓）
+ *    ⭐ `request` 把两条通道都处理了 ✓ 端侧要拿云端的东西就必须用它 ✓
+ *
+ * ⚠️ 字节不从这里走：4.4MB 走容器公网是 **0.8 元/GB**，而对象存储 CDN 是
+ *    **0.18 元/GB**（还有免费额度 ✓）—— 见服务端 services/kws-model.ts 的说明 ✓
+ */
+export function fetchKwsModel(): Promise<{ fileId: string; key: string; bytes: number }> {
+  return request<{ fileId: string; key: string; bytes: number }>('/media/kws-model')
+}
+
 export function fetchLatestCards(limit = 6): Promise<LatestCardsResponse> {
   // ⭐ 首页的第一个请求 —— 冷启动就撞在它身上，给足预算（见 LAUNCH_BUDGET_MS）
   return request<LatestCardsResponse>('/api/articles/latest?limit=' + limit, {
