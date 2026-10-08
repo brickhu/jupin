@@ -28,14 +28,12 @@ WORKDIR /app
 # ⇒ ⭐ 从 /etc/alpine-release 现取 ✓
 # ⚠️ 保留原源当兜底（⭐ 阿里云偶尔抖 ✓）—— 用 `--repository` 叠加而不是替换 ✓
 #
+# ⭐ 只换 npm registry（⭐ 实测 27.7s → 22.8s ✓ 有净收益 ✓）
+# ⚠️⚠️ **apk 源不要换** ✗ —— 踩过：2026-10-09 换成阿里云之后，
+#    alpine v3.23 在阿里云【还没有】✗ ⇒ ⚠️ apk 对每个包先试阿里云再等超时 ✗
+#    ⇒ ⭐ `apk add ffmpeg` 从 39.4s 变成 **218.9s** ✗✗（⭐ 慢 5.5 倍 ✓）
+#    ⚠️ 教训：换源前必须确认【该镜像有这个 alpine 版本】✓ 否则比不换更糟 ✗
 RUN set -eux; \
-    ver="$(cut -d. -f1,2 /etc/alpine-release)"; \
-    printf '%s\n' \
-      "https://mirrors.aliyun.com/alpine/v${ver}/main" \
-      "https://mirrors.aliyun.com/alpine/v${ver}/community" \
-      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" \
-      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" \
-      > /etc/apk/repositories; \
     npm config set registry https://registry.npmmirror.com; \
     echo "registry=https://registry.npmmirror.com" > /root/.npmrc; \
     npm i -g pnpm@9
@@ -74,15 +72,6 @@ RUN pnpm --filter @jushuo/server build
 # ---- 运行阶段 ----
 FROM node:20-alpine
 WORKDIR /app
-# ⚠️ 运行阶段也要换源 ✗ —— `apk add ffmpeg`（⭐ 39.4s / 134MB）在这个阶段 ✓
-RUN set -eux; \
-    ver="$(cut -d. -f1,2 /etc/alpine-release)"; \
-    printf '%s\n' \
-      "https://mirrors.aliyun.com/alpine/v${ver}/main" \
-      "https://mirrors.aliyun.com/alpine/v${ver}/community" \
-      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" \
-      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" \
-      > /etc/apk/repositories
 
 # ⭐ ffmpeg —— 音频归一化用（services/audio.ts）。
 # ⚠️ 为什么服务端必须能解码：客户端传上来的**不一定是裸 PCM** ——
