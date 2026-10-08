@@ -20,9 +20,22 @@
  * ⭐ 而仓库的调研里写着它认两种路径：**代码包路径** 或 **`wx.env.USER_DATA_PATH`**
  *   ⇒ 所以这一版**先把文件读出来、落到 USER_DATA_PATH，再把那个路径交给它** ✓
  */
-const MODEL = 'encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx'
+/**
+ * ⭐⭐ **模型在代码包里叫 `.bin`，不叫 `.onnx`** —— 这是本轮扫描得出的硬结论 ✓
+ *
+ * 真机实测（主包与分包结果一致 ✓ 说明分包没问题 ✓）：
+ *
+ *     .onnx ✗   .bin ✓   .mp3 ✓   .dat ✗   .txt ✗   .wasm ✓
+ *
+ * ⇒ ⚠️ **打包器把 `.onnx` 丢掉了** ✗（不是路径问题、也不是分包问题 ✓）
+ * ⇒ 所以进包时用 `.bin` ✓ 读出来之后再**在 USER_DATA_PATH 里叫回 `.onnx`** ✓
+ *    （那个目录不受打包器管 ✓ 而且调研里写着这个 API 认 USER_DATA_PATH ✓）
+ */
+const MODEL_BIN = 'encoder-epoch-13-avg-2-chunk-8-left-64.int8.bin'
+/** ⚠️ 落到 USER_DATA_PATH 时改回 .onnx（API 可能按扩展名认模型 ✓ 那个目录不受过滤 ✓） */
+const MODEL_OUT = 'kws-encoder.onnx'
 /** ⚠️ 读代码包文件时，路径带不带前导斜杠的约定不明确 ⇒ 两种都试 ✓ */
-const PKG_PATHS = [`subpackages/kws/${MODEL}`, `/subpackages/kws/${MODEL}`]
+const PKG_PATHS = [`subpackages/kws/${MODEL_BIN}`, `/subpackages/kws/${MODEL_BIN}`]
 
 Page({
   data: {
@@ -84,7 +97,7 @@ Page({
      *    ⇒ 而调研里写着它认 `wx.env.USER_DATA_PATH` ✓
      */
     const fs = wx.getFileSystemManager()
-    const dest = `${wx.env.USER_DATA_PATH}/kws-encoder.onnx`
+    const dest = `${wx.env.USER_DATA_PATH}/${MODEL_OUT}`
     let ok = false
     for (const p of PKG_PATHS) {
       try {
