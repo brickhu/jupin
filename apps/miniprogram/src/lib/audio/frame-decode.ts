@@ -1,4 +1,3 @@
-import { sniffAudioContainer } from '@jushuo/shared'
 
 import { samplesFromByteTimeDomain } from '@jushuo/shared'
 
@@ -132,53 +131,4 @@ export function decodeFrameToSamples(
       done(null)
     }
   })
-}
-
-/**
- * ⭐⭐ **把一帧「裸 PCM」读成采样**（-1..1）。
- *
- * ## ⚠️⚠️ 它和 `decodeFrameToSamples` 是**两条完全不同的路**，别混
- *
- *   · `decodeFrameToSamples` 走 **`decodeAudioData`** —— 那是解**完整音频文件**的
- *     （要有容器/头）。拿它去解**一帧压缩块**必然报
- *     `Unable to decode audio data` ✗ —— 这正是 2026-10 那个 bug：
- *     格式是 mp3 ⇒ 帧是压缩块 ⇒ 波形画不出、静音检测拿不到采样 ✗
- *   · **PCM 帧根本没有头** —— 它就是连续的 16bit 小端采样 ✓
- *     直接按 Int16 读、再除以 32768 就是采样 ✓
- *
- * ⭐ 所以 `RECORD_SPEC.format` 是 `'PCM'` 时**只走这条路**，一次解码都不需要 ✓
- *    （顺便还省掉了每帧一次 decodeAudioData 的开销和它那个 1.5 秒超时 ✗）
- *
- * ⚠️ 小端：微信的 `onFrameRecorded` 给的是 little-endian ✓
- * ⚠️ 奇数长度要去尾：按 Int16 读越界会读到相邻字节，尾部留一个孤字节是无意义的 ✓
- */
-export function pcmFrameToSamples(frame: ArrayBuffer): Float32Array {
-  const usable = frame.byteLength - (frame.byteLength % 2)
-  const view = new DataView(frame)
-  const out = new Float32Array(usable / 2)
-  for (let i = 0; i < out.length; i++) {
-    // ⚠️ 除以 32768（不是 32767）：16bit 有符号的范围是 -32768..32767，
-    //    这样 −32768 映射到 −1.0、32767 映射到 0.99997，不会越界 ✓
-    out[i] = view.getInt16(i * 2, true) / 32768
-  }
-  return out
-}
-
-/**
- * ⭐⭐ **这一帧里装的是采样，还是编码后的码流？** —— 用魔法字节判。
- *
- * ⚠️⚠️ 为什么必须运行期判、不能写死：`format` 与"帧里装什么"**不是一回事** ✗
- *    本项目实测：同一份代码
- *      · `format:'PCM'` 时真机给**裸 PCM** ✓
- *      · 开发者工具给 **WebM/Opus 压缩块** ✗
- *      · `format:'mp3'` 给什么 —— **至今没有真机结论** ✗
- *    ⇒ 写死任何一种假设都会在另一个环境下静默失效 ✓（这正是踩过的坑）
- *
- * ⚠️ `'raw-pcm'` 是 `sniffAudioContainer` 的**兜底值**（裸 PCM 没有任何 magic）——
- *    判不出来是正常的。所以这个分类**不是绝对可靠的**：
- *    一个魔法字节不认识的压缩块也会被归到 'pcm' ✗
- *    ⇒ 调用方还要靠"**画出来的波形动不动**"兜第二道（见朗读页的说明）✓
- */
-export function frameKindOf(frame: ArrayBuffer): 'pcm' | 'container' {
-  return sniffAudioContainer(new Uint8Array(frame)) === 'raw-pcm' ? 'pcm' : 'container'
 }

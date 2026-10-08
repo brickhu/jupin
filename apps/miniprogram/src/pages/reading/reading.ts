@@ -38,7 +38,7 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { decodeFrameToSamples, frameKindOf, pcmFrameToSamples } from '../../lib/audio/frame-decode'
+import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
 import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
@@ -509,15 +509,6 @@ Page({
     waveOn: false,
 
     /**
-     * ⚠️ **临时诊断**（拿到真机结论后就删）：把"这一帧里装的是什么"**画在屏幕上**。
-     *
-     * ⭐ 为什么画在屏幕上而不是只打 console：
-     *    这个功能**只能在真机上验**（模拟器必失败）✓ 而真机的 console
-     *    要么得开「真机调试」、要么得装 vConsole —— 都比**截一张图**麻烦 ✗
-     *    本项目历史上就是这么干的（「把帧是压缩块写在屏幕上」）✓
-     */
-    frameNote: '',
-    /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
      *   但**超时**进 s6 时会换成一句真话（分数可能还在云端算）—— 见 SCORING_TIMEOUT_MS。
@@ -632,11 +623,6 @@ Page({
   waveGain: { ...WAVE_GAIN_ZERO },
   /** ⭐ 录音超时的定时器（见 MAX_RECORD_MS） */
   recordTimeout: null as ReturnType<typeof setTimeout> | null,
-  /**
-   * ⭐ 这一轮录音的**帧分类**（'unknown' = 还没看第一帧）。
-   * ⚠️ 判一次的结论要在**整轮**里保持一致 —— 免得中途换读法让波形跳变 ✓
-   */
-  frameKind: 'unknown' as 'unknown' | 'pcm' | 'container',
   /** 上一帧的时刻 —— 用它量出**真实**的帧间隔（比写死 170ms 准） */
   lastFrameAt: 0,
 
@@ -1182,8 +1168,6 @@ Page({
      */
     this.vad = { ...VAD_STATE_ZERO }
     this.waveGain = { ...WAVE_GAIN_ZERO }
-    this.frameKind = 'unknown'
-    if (this.data.frameNote) this.setData({ frameNote: '' })
     this.lastFrameAt = 0
     this.waveCtx = null
     this.waveCanvas = null
@@ -1435,49 +1419,20 @@ Page({
     if (this.gone) return
 
     /**
-     * ⭐⭐ **先判这一帧里装的是什么，再决定怎么读** —— 因为"帧里装什么"与
-     *    `format` **不是一回事**，而且**两个平台给的不一样** ✗
+     * ⭐ **一条读法**（2026-10 定）—— 帧交给 `decodeAudioData` 解成采样。
      *
-     *      真机 mp3   ⇒ mp3 码流 ⇒ 走 **decodeAudioData**（能把分片直接解成采样 ✓）
-     *      真机 PCM   ⇒ 裸 PCM   ⇒ 直接按 Int16 读 ✓
-     *      开发者工具 ⇒ WebM/Opus ⇒ **解不出来** ✗（见文件头的实测）
+     * ⚠️⚠️ 这里曾经按"帧的实际内容"分过两条路（裸 PCM 直读 / 压缩块走解码）——
+     *    **拆掉了** ✗：那是**为环境差异准备的分支**（模拟器的帧是 WebM），
+     *    而分支解决不了环境差异（工具那边两条路都拿不到采样 ✓），
+     *    只让代码多了一倍路径、还多一层"这一轮到底走哪条"的状态 ✗
      *
-     * ⚠️⚠️ **开发者在模拟器里看到 `Unable to decode audio data` 是预期的** ✗
-     *    —— 那不是 bug（`frame-decode.ts` 的文件头早就写明了"只在真机上成立"，
-     *    并给了那篇实测：「在微信开发者工具上直接运行都不运行了，真机上试了一下，成了」）。
-     *    ⚠️ 我在这一步上栽过：把模拟器的失败当成了**平台**的失败 ✗
-     *     ⇒ 波形与静音自停**很可能在真机上是好的**，只是模拟器里验不了 ✓
-     *
-     * ⭐ 判一次就沿用（`frameKind` 存在实例上）—— 每帧都判没有必要 ✓
-     *    并且**打一条日志**：跑一次真机就能看到它到底是哪种 ✓
+     * ⭐ 平台差异如实写在这里，不用代码去绕：
+     *    · **真机**：解得开 ⇒ 波形 ✓ + 静音自停 ✓（用户实测确认 ✓）
+     *    · **开发者工具**：帧是 WebM/Opus（平台行为）⇒ 解不开 ⇒ 返回 null
+     *      ⇒ 波形不画、静音不判（**安全方向**：绝不会因为读不出数据就掐断录音 ✓）
+     *      ⚠️ 这个功能只能在真机上验 —— 这不是 bug，也不去绕它 ✓
      */
-    if (this.frameKind === 'unknown') {
-      this.frameKind = frameKindOf(frame)
-      /**
-       * ⚠️ 一行里报**两个**关键事实（它们各自都能让"自动结束"失效）：
-       *   ① 帧是什么类型 ⇒ 能不能拿到采样（拿不到就没有静音判据 ✗）
-       *   ② 标准音时长是多少 ⇒ 有没有"时长下限"（为 0 时 autoStopAfter **恒为 false** ✗，
-       *      见 vad.ts：拿不到参考时长就一律不自动结束 ✓）
-       */
-      const stdMs = this.data.stdDurationMs
-      const note =
-        '帧 ' + this.frameKind + '·' + frame.byteLength + 'B' +
-        (this.frameKind === 'pcm' ? '⇒直读' : '⇒解码') +
-        ' ｜ 标准音 ' + (stdMs > 0 ? stdMs + 'ms' : '【无】')
-      console.log('[reading] ' + note)
-      // ⚠️ 临时：画在屏幕上，方便真机截图（见 frameNote 的说明）
-      this.setData({ frameNote: note })
-    }
-
-    /**
-     * ⭐ 两条读法，按帧的实际内容选：
-     *   · 'pcm' ⇒ 裸 PCM 没有头，按 Int16 小端直读、除以 32768 ✓（同步、零开销）
-     *   · 其它   ⇒ 交给 decodeAudioData ✓（真机上 mp3 分片能解）
-     * ⚠️ 两条都可能失败（模拟器 / 不支持解码的环境）⇒ 都返回 null / 空 ✓
-     *    调用方按"拿不到采样"处理：**不画波形、不判静音** —— 绝不硬画 ✗
-     */
-    const samples =
-      this.frameKind === 'pcm' ? pcmFrameToSamples(frame) : await decodeFrameToSamples(frame)
+    const samples = await decodeFrameToSamples(frame)
     if (this.gone) return
 
     // ── ① 波形 ──────────────────────────────────────────────
