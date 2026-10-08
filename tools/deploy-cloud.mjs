@@ -572,6 +572,15 @@ if (missing.length) {
 }
 
 console.log('· 环境变量（值已隐去）：')
+/**
+ * ⭐⭐ **明确"不是秘密"的键** —— 只有这几个可以在日志里明文出现 ✓
+ *
+ * ⚠️ **其余一律当秘密** ✗ —— 黑名单天生会漏：`ADMIN_TOKEN` 就不含 PASSWORD/SECRET/KEY ✗
+ * ⚠️ 连 `MYSQL_ADDRESS` / `LLM_BASE_URL` 都不放进白名单 —— 它们是基础设施细节 ✓
+ * ⭐ 两处共用（下面这段日志 dump ✓ + 调用 CLI 前的 `::add-mask::` ✓）⇒ 不会各自漂移 ✓
+ */
+const PUBLIC_KEYS = new Set(['NODE_ENV', 'PORT', 'ENGINE', 'MOCK_SCORE', 'AUTO_MIGRATE', 'STORAGE', 'LLM_MODEL'])
+
 for (const k of Object.keys(params).sort()) {
   /**
    * ⚠️⚠️ **判据反过来：白名单之外一律掩码** ✗（2026-10 用户发现）
@@ -585,7 +594,6 @@ for (const k of Object.keys(params).sort()) {
    * ⚠️ 白名单里只放**明确不是秘密**的：跑在什么模式、什么引擎、哪个模型 ✓
    *    连 `MYSQL_ADDRESS` / `LLM_BASE_URL` 都不放 —— 它们是基础设施细节 ✓
    */
-  const PUBLIC_KEYS = new Set(['NODE_ENV', 'PORT', 'ENGINE', 'MOCK_SCORE', 'AUTO_MIGRATE', 'STORAGE', 'LLM_MODEL'])
   const hidden = !PUBLIC_KEYS.has(k)
   console.log(`    ${k} = ${hidden ? '***' : params[k]}`)
 }
@@ -695,6 +703,43 @@ if (firstDeploy) {
 }
 if (remark) argv.push('--remark', remark)
 if (detach) argv.push('--detach')
+
+/**
+ * ⚠️⚠️ **给 GitHub Actions 加掩码 —— 这才是 LLM_API_KEY 泄漏的真正修法** ✗
+ *
+ * ## 问题（2026-10-08 用户发现，我先前修错了地方）
+ *
+ * 我原来只改了**自己这段 dump** 的掩码 ✓ —— ⚠️ **但真正的泄漏在 `wxcloud` CLI 的输出里** ✗：
+ *
+ *     │ 服务参数 │ {"NODE_ENV":"production",...,"TOKEN_SECRET":"***","LLM_API_KEY":"sk-xxxx",...}
+ *                                                                       ↑ ⚠️ CLI 只掩它认得的 TOKEN_SECRET ✗
+ *
+ * 实测：`LLM_API_KEY` 的**真实值**在 run 37790010864 里出现 3 次、37796923494 里 1 次 ✗
+ * ⚠️ CLI 是外部程序，**我们改不了它** ✗
+ *
+ * ## 修法：让 GitHub 自己去掩码
+ *
+ * ⭐ `::add-mask::<值>` 是 GitHub Actions 的工作流命令 ✓ ——
+ *    执行之后，**该 run 之后所有日志输出里出现这个字符串都会被替换成 `***`** ✓✓
+ *    ⇒ 不管是谁打的（我们的脚本 ✓ CLI ✓ 平台的表格 ✓）都会被掩 ✓
+ *
+ * ⚠️ 本地跑时这只是一个普通输出行 ✓ 无害 ✓（`::` 开头的行在终端里看着像命令，仅此而已 ✓）
+ * ⚠️ 必须在**调用 CLI 之前**执行 —— 掩码只对**之后**的输出生效 ✓
+ */
+function addGithubMasks() {
+  if (!process.env.GITHUB_ACTIONS) return // ⚠️ 本地不必打这些行 ✓
+  for (const [k, v] of Object.entries(params)) {
+    // ⚠️ 判据与上面 dump 同源：**白名单之外一律当秘密** ✓（黑名单天生会漏 ✗）
+    if (PUBLIC_KEYS.has(k)) continue
+    if (typeof v !== 'string' || v.length < 6) continue
+    // ⚠️ 值里若有换行会破坏命令格式 ⇒ 跳过并告警（不该发生 ✓）
+    if (v.includes('\n')) { console.warn('⚠️ ' + k + ' 含换行，无法加掩码'); continue }
+    console.log(`::add-mask::${v}`)
+  }
+  console.log('· 已给 ' + Object.keys(params).filter((k) => !PUBLIC_KEYS.has(k)).length + ' 个非公开参数加了日志掩码 ✓')
+}
+
+addGithubMasks()
 
 console.log(`\n· 开始部署到 ${target}（envId=${envId}）…\n`)
 
