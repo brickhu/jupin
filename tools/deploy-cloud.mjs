@@ -344,7 +344,11 @@ function buildAndPushImage(tag) {
         '      ⚠️ 文档另一节写着「账号默认为 root」—— 两处自相矛盾 ✗ 以控制台显示的为准 ✓\n' +
         '      ⚠️ 建议先本机 docker login 验一次（见 AGENT.md 的部署一节）\n' +
         '      密码就是你刚重置的那个（8-64 位、至少三种字符类型）\n' +
-        '   CI 里把它们加成仓库 secrets；本机填 .env.dev / 临时 export 都行。',
+        '   ⭐ 它属于【账号级】：写进【根 .env】一次即可（dev/prod 共用 ✓）——\n' +
+        '      不是 .env.dev（那是环境级的：MYSQL_* / TOKEN_SECRET 那些 ✓）\n' +
+        '   · 本地部署：pnpm deploy:dev 直接读根 .env ⇒ 连 GitHub secrets 都不用 ✓\n' +
+        '   · CI 部署：node tools/gh-secrets.mjs dev --apply（prod 再跑一次 ——\n' +
+        '     ⚠️ Environment secrets 不互相继承，所以要铺两份【同样的值】✗）',
     )
   }
   const registry = tag.split('/')[0]
