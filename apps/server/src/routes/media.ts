@@ -14,6 +14,7 @@ const RE_SUBMISSION_ID = new RegExp('^[0-9a-f]{' + SUBMISSION_ID_LENGTH + '}$')
 import { env } from '../env'
 import { playableBytesOf } from '../services/recording'
 import { getStorage } from '../storage'
+import { ensureKwsModel } from '../services/kws-model'
 
 export const mediaRoutes = new OpenAPIHono({ defaultHook })
 import { defaultHook } from '../openapi'
@@ -66,6 +67,49 @@ mediaRoutes.openapi(mediaArticleAudioRoute, async (c) => {
   const m = /^([0-9a-f]+)\.mp3$/.exec(c.req.param('file'))
   if (!m) return c.json({ ok: false, error: '音频不存在' }, 404)
   return serveAudio(c, `content/audio/${m[1]}.mp3`)
+})
+
+/**
+ * ⭐⭐ **KWS 模型在哪**（端侧逐词标注用）—— 只回一个 fileID，**不回吐 4.4MB 字节** ✓
+ *
+ * ⚠️⚠️ 为什么这么分：算过账（微信云托管官方价）——
+ *    容器**公网流量 0.8 元/GB** ✗，对象存储 **CDN 流量 0.18 元/GB** ✓（还有免费额度 ✓），
+ *    而**只通过 callContainer 访问不产生流量用量** ✓
+ *  ⇒ 字节走**对象存储**（客户端自己去 CDN 下 ✓），服务端只回一个 hundred-byte 的 fileID ✓
+ *  ⇒ 这一条的流量**完全免费** ✓
+ *
+ * ⚠️ 放在 `/media` 下（不在 `/api` 下）是沿用本文件的既有理由：
+ *    客户端**按地址直接取**的资源不能要求鉴权 ✗ —— 引擎/下载器不会带 Authorization 头 ✓
+ *    模型本身是公开的第三方产物（Apache-2.0 ✓）⇒ 公开它没有风险 ✓
+ */
+const mediaKwsModelRoute = createRoute({
+  method: 'get',
+  path: '/kws-model',
+  tags: ['媒体'],
+  summary: 'KWS 模型的位置（只给 fileID，字节由客户端自己去 CDN 下）',
+  description:
+    '⚠️ 这条**返回 JSON**（不是字节）—— 因为字节要从**对象存储**取，' +
+    '服务端的公网流量贵 4 倍（0.8 vs 0.18 元/GB）✗。',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            ok: z.literal(true),
+            data: z.object({ fileId: z.string(), key: z.string(), bytes: z.number() }),
+          }),
+        },
+      },
+      description: '模型的地址与大小',
+    },
+    404: errorResponse('模型未就绪（构建时没抓到 content/kws/）'),
+  },
+})
+
+mediaRoutes.openapi(mediaKwsModelRoute, async (c) => {
+  const info = await ensureKwsModel()
+  if (!info) return c.json({ ok: false, error: '模型未就绪' }, 404)
+  return c.json({ ok: true, data: info }, 200)
 })
 
 /**

@@ -30,6 +30,15 @@ COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
 # 静态内容（contentJson 写成相对路径时从这里读）
 COPY content ./content
+
+# ⭐⭐ KWS 模型（端侧逐词标注用）—— **不进 git** ✗（4.4MB 的第三方预训练产物）
+#    构建时拉一次，落在 content/kws/ ⇒ 下面运行阶段的 `COPY --from=build /app/content`
+#    会自动把它带过去 ✓ 而服务端**不需要额外的路径解析** —— 现有的 readStaticFile
+#    就能读到它（那是本仓库明确写过的一条教训：不要两处各自解析路径 ✓）
+#    ⚠️ alpine 的 tar 解 .tar.bz2 需要 bzip2 包 ⇒ 一起装 ✓
+RUN apk add --no-cache curl bzip2 \
+ && node apps/server/scripts/fetch-kws-model.mjs
+
 RUN pnpm --filter @jushuo/server build
 
 # ---- 运行阶段 ----

@@ -96,3 +96,6 @@ apps/miniprogram/dist.old
 
 # ⚠️ KWS 探针用的模型（4.4MB，只在本机验端侧推理时存在 ✓ 不进仓库）
 apps/miniprogram/src/subpackages/kws/*.int8.bin
+
+# ⚠️ KWS 模型（4.4MB，第三方预训练产物）—— 构建时拉，不进仓库
+content/kws/

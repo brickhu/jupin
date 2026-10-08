@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx src/db/seed.ts",
-    "content:import": "tsx scripts/import-content-files.ts"
+    "content:import": "tsx scripts/import-content-files.ts",
+    "kws:fetch": "node scripts/fetch-kws-model.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

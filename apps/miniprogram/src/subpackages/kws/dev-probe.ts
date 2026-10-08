@@ -1,3 +1,5 @@
+import { BASE_URL } from '../../config'
+import { resolveCloudFileUrl } from '../../lib/cloud-file'
 /**
  * ⚠️ **临时探针页**（验完就删）—— 只回答一个问题：
  *
@@ -31,11 +33,9 @@
  * ⇒ 所以进包时用 `.bin` ✓ 读出来之后再**在 USER_DATA_PATH 里叫回 `.onnx`** ✓
  *    （那个目录不受打包器管 ✓ 而且调研里写着这个 API 认 USER_DATA_PATH ✓）
  */
-const MODEL_BIN = 'encoder-epoch-13-avg-2-chunk-8-left-64.int8.bin'
-/** ⚠️ 落到 USER_DATA_PATH 时改回 .onnx（API 可能按扩展名认模型 ✓ 那个目录不受过滤 ✓） */
 const MODEL_OUT = 'kws-encoder.onnx'
-/** ⚠️ 读代码包文件时，路径带不带前导斜杠的约定不明确 ⇒ 两种都试 ✓ */
-const PKG_PATHS = [`subpackages/kws/${MODEL_BIN}`, `/subpackages/kws/${MODEL_BIN}`]
+
+
 
 Page({
   data: {
@@ -64,57 +64,54 @@ Page({
       return
     }
 
-    // ── ⓪ 先做一次「扩展名 / 主包 vs 分包」的可读性扫描 ──────────────
+    // ── ① 向服务端问"模型在哪" → 自己去 CDN 下 ⭐ ─────────────────
     /**
-     * ⚠️ 真机实测：读 `subpackages/kws/*.onnx` 报 `readFileSync:fail file info not exist` ✗
-     *    而这时候有两种完全不同的可能 ✓ 一次全测出来：
-     *      ① **打包器按扩展名过滤** ⇒ `.onnx` 根本没进包 ✗
-     *      ② **分包里的文件 FS 读不到** ✗（主包能读）
-     *    ⇒ 主包与分包各放一组 1KB 的同内容文件，扩展名不同 ✓
-     *      屏幕上直接打出"哪几个能读到" ✓ 一轮就能定论 ✓
+     * ⚠️⚠️ 为什么这么绕（而不是让服务端回吐 4.4MB）—— 算过账：
+     *    容器**公网流量 0.8 元/GB** ✗，对象存储 **CDN 0.18 元/GB** ✓，
+     *    而**只通过 callContainer 访问不产生流量用量** ✓
+     *  ⇒ 服务端只回一个**一百字节的 fileID** ✓ 字节走对象存储 ✓ 这一条完全免费 ✓
      */
-    const fs0 = wx.getFileSystemManager()
-    this.log('— 扩展名可读性扫描 —')
-    for (const where of [
-      { name: '主包', dir: 'assets/ext-probe' },
-      { name: '分包', dir: 'subpackages/kws/ext-probe' },
-    ]) {
-      for (const ext of ['onnx', 'bin', 'mp3', 'dat', 'txt', 'wasm']) {
-        const p = `${where.dir}/t.${ext}`
-        try {
-          const b = fs0.readFileSync(p) as ArrayBuffer
-          this.log(`  ${where.name} .${ext} ✓ ${(b as ArrayBuffer).byteLength}B`)
-        } catch {
-          this.log(`  ${where.name} .${ext} ✗`)
-        }
-      }
+    let modelUrl = ''
+    try {
+      const r = await new Promise<{ data?: { ok?: boolean; data?: { fileId?: string }; error?: string } }>(
+        (res, rej) =>
+          wx.request({
+            url: BASE_URL + '/media/kws-model',
+            success: res as never,
+            fail: rej,
+          }) as unknown as void,
+      )
+      if (!r.data?.ok || !r.data.data?.fileId) throw new Error(r.data?.error || '服务端没给 fileId')
+      this.log('服务端给了 fileId ✓')
+      modelUrl = await resolveCloudFileUrl(r.data.data.fileId)
+      this.log('换到可下载地址 ✓')
+    } catch (e) {
+      this.log('取模型地址失败 ✗ ' + ((e as Error).message || String(e)).slice(0, 140))
+      this.setData({ running: false, verdict: 'fail' })
+      return
     }
 
-    // ── ① 把模型从代码包读出来 → 写到 USER_DATA_PATH ────────────────
-    /**
-     * ⚠️ 为什么要绕这一下：真机实测直接给代码包路径会报
-     *    `model path invalid : failed to find model on path ...` ✗
-     *    ⇒ 而调研里写着它认 `wx.env.USER_DATA_PATH` ✓
-     */
+    // ② 下载 → 落到 USER_DATA_PATH（createInferenceSession 认这个目录 ✓）
     const fs = wx.getFileSystemManager()
     const dest = `${wx.env.USER_DATA_PATH}/${MODEL_OUT}`
-    let ok = false
-    for (const p of PKG_PATHS) {
+    try {
+      this.log('下载模型（约 4.4MB）…')
+      const dl = await new Promise<WechatMiniprogram.DownloadFileSuccessCallbackResult>((res, rej) =>
+        wx.downloadFile({ url: modelUrl, success: res, fail: rej }),
+      )
+      if (dl.statusCode !== 200) throw new Error('HTTP ' + dl.statusCode)
       try {
-        const buf = fs.readFileSync(p) as ArrayBuffer
-        const bytes = (buf as ArrayBuffer).byteLength ?? 0
-        if (bytes < 1024 * 1024) throw new Error('读到的太小：' + bytes + ' 字节')
-        fs.writeFileSync(dest, buf)
-        this.log(`读代码包(${p.startsWith('/') ? '带斜杠' : '不带斜杠'}) ✓ ${(bytes / 1048576).toFixed(2)} MB`)
-        this.log('已写入 USER_DATA_PATH ✓')
-        ok = true
-        break
-      } catch (e) {
-        this.log(`读代码包(${p.startsWith('/') ? '带斜杠' : '不带斜杠'}) ✗ ` + ((e as Error).message || String(e)).slice(0, 90))
+        fs.unlinkSync(dest)
+      } catch {
+        /* 第一次没有，忽略 */
       }
-    }
-    if (!ok) {
-      this.log('⚠️ 两种路径都读不到 —— 代码包里的文件读法还要再查')
+      fs.copyFileSync(dl.tempFilePath, dest)
+      const st = fs.statSync(dest)
+      const size = Array.isArray(st) ? 0 : st.size
+      if (size < 1024 * 1024) throw new Error('下到的太小：' + size + ' 字节')
+      this.log('已存到 USER_DATA_PATH ✓ ' + (size / 1048576).toFixed(2) + ' MB')
+    } catch (e) {
+      this.log('下载失败 ✗ ' + ((e as Error).message || String(e)).slice(0, 140))
       this.setData({ running: false, verdict: 'fail' })
       return
     }
