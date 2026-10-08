@@ -197,6 +197,19 @@ const SCORING_TIMEOUT_MS = 120_000
  * ⚠️ 实测过：`fields({size:true})` 偶尔量到 0（尤其是卡片刚切到 s2、还没布局完）——
  *    不重试的话波形永远是空白，而看不出是"没准备好"还是"没声音" ✗
  */
+/**
+ * ⭐⭐ **录音的硬上限（超时兜底）** —— 到点自动结束，进 s3。
+ *
+ * ⚠️ 为什么必须有：静音自停里有一条"**解不出来就当成他在说话**"（见 vad.ts）——
+ *    那在环境噪音大、或解码不工作时意味着**永远不会自动结束** ✗
+ *    没有硬上限的话用户会一直录下去，直到自己想起来要点结束 ✓
+ *
+ * ⭐ 取 30 秒：沿用原来插件那条路的 `ASR_MAX_RECORD_MS`（那个数当初的理由是
+ *    "纯粹为了不让界面挂住" ✓ 这里同样成立）。句子本身 5~10 秒，
+ *    30 秒足够慢的人读完再想一会儿 ✓
+ */
+const MAX_RECORD_MS = 30_000
+
 const WAVE_PREPARE_TRIES = 3
 /** 波形柱子最多几根（太多会糊成一块，太少看不出起伏） */
 const WAVE_MAX_BARS = 64
@@ -297,24 +310,6 @@ const ROLL_FRAME_MS = 16
 
 /** 只在开发者工具里为真 */
 const IS_DEVTOOLS = PLATFORM === 'devtools'
-
-/**
- * ⭐⭐ **松手之后再多录一小会儿**（ms）—— 修的是「读完立刻松手，最后两个词标红」。
- *
- * ⚠️⚠️ 根因：插件的中间结果大约 **550ms 才回一次**（真机实测：6–8 秒的朗读收到 11 次）。
- *    用户在读完的**那一瞬间**松手 ⇒ 最后那一小段语音（正是最后一个词）**还没进转写**，
- *    于是定稿时被 `missingWordsOf` 判成"没读到" ⇒ 末尾 1–2 个词标红。
- *    这不是判据错，是**我们停得太早**。
- *
- * ⭐ 所以松手**不立刻 stop**，先等一小会儿：让插件把尾巴追上来。
- * ⚠️ 这不是"死等" —— 这段时间里中间结果照常进来，**用户会看到最后那几个词当场亮起来**，
- *    等待是有内容的，不是卡住。
- * ⚠️ 也不能等太久：松手到出结果本来是用户最没耐心的一段。
- *    600ms 略大于一个回调周期（550ms），够追上尾巴，又不至于明显发顿。
- * ⭐ 追上来就**提前结束**（见 applyProgress 里的完结判断），不等满这 600ms。
- */
-const RELEASE_HANGOVER_MS = 600
-
 
 /** 逐词视图 —— 词 + 它自己的音标（音标开关打开时挂在词下面） */
 interface WordView {
@@ -619,6 +614,8 @@ Page({
   waveTries: 0,
   /** ⭐ 静音自停的两个计数器（见 lib/audio/vad.ts） */
   vad: { ...VAD_STATE_ZERO } as VadState,
+  /** ⭐ 录音超时的定时器（见 MAX_RECORD_MS） */
+  recordTimeout: null as ReturnType<typeof setTimeout> | null,
   /** 上一帧的时刻 —— 用它量出**真实**的帧间隔（比写死 170ms 准） */
   lastFrameAt: 0,
 
@@ -1246,12 +1243,50 @@ Page({
     }, 100)
 
     this.session.start()
+
+    /**
+     * ⭐⭐ **超时兜底**：到点自动结束（见 MAX_RECORD_MS 的说明）。
+     * ⚠️ 从**真的起录之后**开始算，不是从点按钮那一刻 ——
+     *    麦克风授权可能要几百毫秒，算进去等于偷偷扣掉用户的朗读时间 ✗
+     * ⚠️ 与静音自停共用 `stopSent` 防重入（谁先到谁说了算）✓
+     */
+    if (this.recordTimeout !== null) clearTimeout(this.recordTimeout)
+    this.recordTimeout = setTimeout(() => {
+      this.recordTimeout = null
+      if (this.data.phase !== 's2' || this.stopSent) return
+      console.warn('[reading] 录音超时（' + MAX_RECORD_MS / 1000 + 's）—— 自动结束')
+      this.stopSent = true
+      this.onStopRecord()
+    }, MAX_RECORD_MS)
   },
 
   /**
    * ⭐ **按下**（`bindtouchstart`）—— 开始这一次朗读。
    * ⚠️ 与"点一下开始"不同：**按住的物理动作本身就是"我在录"**，
    *    这正好取代了原来那条实时波形的作用（见 prd 7.2）。
+   */
+  /**
+   * ⭐⭐ **点一下那颗按钮**（用户 2026-10 定：去掉按住说话）—— 同一个按钮两种含义：
+   *
+   *     s1（待录）⇒ 开始录音
+   *     s2（录音中）⇒ 结束录音
+   *
+   * ⚠️ 用 `bindtap` 而不是 touchstart/touchend：点击是**一次动作** ✓
+   * ⚠️ 另外两种"结束"不归它管：**静音自停**（读完了，见 lib/audio/vad.ts）
+   *    与 **30 秒超时兜底**（见 MAX_RECORD_MS）✓
+   */
+  onTapRecord() {
+    if (this.data.phase === 's1') {
+      this.onPressStart()
+      return
+    }
+    if (this.data.phase === 's2') this.onPressEnd()
+    // ⚠️ 其余状态（precheck / uploading / scoring / s5 / s6）什么都不做 ✓
+  },
+
+  /**
+   * ⭐ **开始录音**（用户点了「开始朗读」）。
+   * ⚠️ 名字里带 press 是历史原因（那时是按住说话）—— 留着是为了不惊动别处的引用 ✓
    */
   onPressStart() {
     /**
@@ -1293,17 +1328,19 @@ Page({
     if (this.data.phase !== 's2') return
 
     /**
-     * ⚠️⚠️ **不立刻停** —— 见 RELEASE_HANGOVER_MS 的说明：
-     *    读完的那一瞬间松手，最后 1–2 个词还没进转写，直接停就会把它们判成漏读。
-     * ⭐ 这段时间里中间结果继续进来、词继续亮 —— 用户看到的是"正在收尾"，不是卡住。
+     * ⚠️⚠️ **原来这里要白等 600ms**（那个缓冲已经删掉了）——
+     *    理由是"读完立刻松手，最后 1–2 个词还没进转写，直接停会判成漏读"。
+     *    ⭐ 那是**为流式识别存在的**缓冲：识别没了（见 lib/audio/speech-session），
+     *      这个等待就只是让用户多盯 600ms 的「识别中…」✗
+     *    ⇒ 直接停 ✓ 底层录音器的 onStop 本来就会等文件落完 ✓
+     *
+     * ⚠️ `releasePending` **仍然要置**：它表示"这一遍正在定稿"，
+     *    按钮据此显示「识别中…」并禁用 —— 那段时间是真的存在
+     *    （要等录音器回调），只是**不再人为拉长** ✓
      */
     this.releasePending = true
     this.setData({ releasePending: true })
-    if (this.releaseTimer !== null) clearTimeout(this.releaseTimer)
-    this.releaseTimer = setTimeout(() => {
-      this.releaseTimer = null
-      this.finishRecording()
-    }, RELEASE_HANGOVER_MS)
+    this.finishRecording()
   },
 
   /**
@@ -1464,6 +1501,11 @@ Page({
   },
 
   onStopRecord() {
+    // ⚠️ 停下来了就不该再有超时：不清的话它会在进了 s3 之后突然再来一次
+    if (this.recordTimeout !== null) {
+      clearTimeout(this.recordTimeout)
+      this.recordTimeout = null
+    }
     this.session?.stop()
 
     if (this.stopWatchdog !== null) clearTimeout(this.stopWatchdog)
