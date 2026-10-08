@@ -42,7 +42,7 @@
       "root": "subpackages/kws",
       "name": "kws",
       "pages": [
-        "index"
+        "dev-probe"
       ]
     }
   ]

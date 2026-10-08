@@ -1,3 +1,0 @@
-<!-- ⚠️ 占位页：WeChat 要求分包必须含页面 ✗ 而这里真正要放的是那个 4.4MB 的 .onnx 模型 ✓
-     探针页在主包 ✓ 它用 wx.loadSubpackage 把这个分包加载进来之后再去读模型 ✓ -->
-<view style="padding:40rpx;color:#999">kws 分包（模型占位，正常不会打开）</view>
