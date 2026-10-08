@@ -303,6 +303,11 @@
        卡片看 cardPhase（检测中停在 s3），弹窗看 phase（要区分 uploading / scoring / s5 / s6）。
        两者由 reading.ts 的 phasePatch() 一起写。
        ⚠️ 注释里**不能写反引号** —— 小程序的 wxss 编译器会直接报 unexpected（这条是被 lint 挡下来的）。 -->
+  <!-- ⭐⭐ 结果弹窗：**独立组件**（用户 2026-10 定）—— 只有出分/失败时才存在 -->
+  <result-dialog wx:if="{{phase === 's5' || phase === 's6'}}"
+                 scoreText="{{scoreText}}" resultLine="{{resultLine}}" resultWords="{{resultWords}}"
+                 bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
+
   <eval-dialog mode="{{confirmOpen ? 'precheck' : (phase === 's5' || phase === 's6' ? 'submitting' : '')}}"
                phase="{{phase}}" uploadPercent="{{uploadPercent}}"
                scoreText="{{scoreText}}" scoreSubtitle="{{scoreSubtitle}}"

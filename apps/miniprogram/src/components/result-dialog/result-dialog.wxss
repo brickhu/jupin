@@ -1,0 +1,182 @@
+/**
+ * 「检测结果」弹窗 —— ⭐ 所有尺寸都来自设计稿 alert1 的**精确值**（Figma 节点 482:951）。
+ *
+ * ⚠️⚠️ **本文件不用 UnoCSS 工具类**，与 eval-dialog 同一条规矩：
+ *    工具类在组件里静默失效时，表现就是"排版看着像坏了"（2026-10 真的发生了一次：
+ *    「得分详情」掉到第二行、整句挤成一行溢出被裁）。
+ *    ⇒ 布局（宽高/内外边距/折行/对齐）与颜色一律写死在这里。
+ * ⚠️ 设计稿的单位是 px、画布宽 377px = 本项目的 750rpx ⇒ **×2** 就是 rpx。
+ * ⚠️ 注释里不要写反引号（小程序的 wxss 编译器会报 unexpected）。
+ */
+
+.rd-layer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 300; /* ⚠️ 压过导航栏(100)与用户面板(200) */
+}
+
+/* ⚠️ 不能用 inset: 0 简写 —— 老 WebView 不认，整条声明会被丢掉 */
+.rd-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+
+.rd-mask-on {
+  opacity: 1;
+}
+
+/**
+ * 卡片：设计稿 377×356、圆角 12、内边距 24 ⇒ 754rpx 宽、r=24、pad=48rpx。
+ * ⚠️ 宽 754rpx 基本就是整屏（750）—— 设计稿这张卡片是**接近通栏**的，
+ *    别按 eval-dialog 那个 620rpx 收窄（那会让句子挤成更多行）。
+ */
+.rd-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 754rpx;
+  max-height: 82vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 48rpx;
+  background: #ffffff;
+  border-radius: 24rpx;
+  transform: translate(-50%, -46%) scale(0.96);
+  opacity: 0;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+.rd-card-on {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+/* ── ① 头：✅ + 分数 ｜ 得分详情 ───────────────────────────── */
+.rd-head {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/**
+ * 绿圆：设计稿 32×32、圆角 20（其实是全圆）、#00DD04。
+ * ⚠️ #00DD04 是设计稿里的原色（很亮的一档绿）—— 它**不等于**全站的 text-ok(#16a34a)。
+ *    这里按设计稿写死；要统一到全站色板的话改这一个值即可。
+ */
+.rd-check {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #00dd04;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 白勾：设计稿矢量 12×11 ⇒ 24rpx（ui-icon 是 1em 的方块，跟宿主字号走） */
+.rd-check-icon {
+  font-size: 32rpx;
+  color: #ffffff;
+}
+
+/* 分数：设计稿 Inter 20px、黑色、粗体 ⇒ 40rpx */
+.rd-score {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #000000;
+  margin-left: 16rpx;
+  line-height: 1;
+}
+
+/**
+ * 「得分详情」：设计稿 85×32 的胶囊（内边距 10、圆角 40、白底）。
+ * ⚠️ margin-left: auto 让它贴右 —— 这里手写而不是用 ml-auto：
+ *    本文件的规矩是"布局不依赖工具类"（正是那个坑）。
+ */
+.rd-detail {
+  margin-left: auto;
+  padding: 6rpx 28rpx;
+  border-radius: 9999rpx;
+  border: 2rpx solid #e5e5e5;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.rd-detail-hover {
+  opacity: 0.6;
+}
+
+.rd-detail-text {
+  font-size: 24rpx;
+  color: #000000;
+  line-height: 1.6;
+}
+
+/* ── ② 原文：逐词着色 ─────────────────────────────────────── */
+/**
+ * 设计稿：Inter 20px、行高 32px、左对齐、三色分段 ⇒ 40rpx / line-height 64rpx。
+ * ⚠️ 它是**一个 text**（里面的词是嵌套 text）—— 这样才是段落排版：
+ *    词与词之间只靠**空格**分隔，折行由文本流自己决定。
+ */
+.rd-sentence {
+  display: block; /* ⚠️ text 默认是 inline；不写这个，上下 margin 不生效、还会和头挤一行 */
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  line-height: 64rpx;
+  color: #000000;
+}
+
+/**
+ * ⚠️ 三档颜色**来自设计稿的分段着色**（Figma characterStyleOverrides）：
+ *      #00DD04 亮绿 = 读得好
+ *      #000000 黑   = 中性（不染色，继承父级）
+ *      #EC9B4A 橙   = 要练
+ *
+ * ⚠️ 类名是 lib/word-colors 拼出来的 text-ok / text-warn（那个函数与评测详情页共用），
+ *    而**颜色在这里被局部覆盖**成设计稿那套色值 —— 因为设计稿的绿(#00DD04)与橙(#EC9B4A)
+ *    跟全站 token（ok #16a34a / warn #f59e0b）并不是同一个色。
+ *    ⚠️ 作用域限制在 .rd-sentence 里：别让这两个覆盖漏到卡片的其它地方。
+ *
+ * ⚠️ 橙而不是红：红在全站是"判错"（错误条、结果页红块），
+ *    而一个词读得不够准是"**去练这个**"，不是"你错了"。
+ */
+.rd-sentence .text-ok { color: #00dd04; }
+.rd-sentence .text-warn { color: #ec9b4a; }
+
+/* ── ③ 底部状态胶囊 ───────────────────────────────────────── */
+/**
+ * 设计稿：323×52、圆角 40、内边距 10、底色 #F6DE8F、黑字 14px。
+ * ⚠️ 它是结果态**唯一的出口**，所以给足点击面积（高 104rpx）。
+ */
+.rd-pill {
+  margin-top: 36rpx;
+  width: 100%;
+  padding: 20rpx 0;
+  border-radius: 9999rpx;
+  background: #f6de8f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rd-pill-hover {
+  opacity: 0.85;
+}
+
+.rd-pill-text {
+  font-size: 28rpx;
+  color: #000000;
+  line-height: 32rpx;
+}

@@ -20,7 +20,7 @@
 
   ⚠️ 按钮上的每个动作都由**页面**实现（组件只发事件）：这里不发请求、不判状态、不碰能量。
 -->
-<view class="ed-layer" wx:if="{{mode === 'precheck' || (mode === 'submitting' && (phase === 'uploading' || phase === 'scoring' || phase === 's5' || phase === 's6'))}}">
+<view class="ed-layer" wx:if="{{mode === 'precheck' || (mode === 'submitting' && (phase === 'uploading' || phase === 'scoring' || phase === 's6'))}}">
   <!--
     ⚠️ 遮罩和卡片是**兄弟**（同 user-sheet）：遮罩负责挡滚动与点击，
        卡片自己 catchtap/catchtouchmove，否则点在卡片上会穿透到下面的页面。
@@ -113,33 +113,6 @@
          ⚠️⚠️ **弹窗里不出现**：五维分项、排名、AI 建议、能量小字、第N次朗读。
              它们要么属于「评测详情」那一页（pages/challenge），要么是用户
              在这一刻不需要做决定的东西。信息一多，第一眼就没有落点。
-         ⚠️ 这里**也没有「确认」按钮**：底部那颗胶囊就是出口（见 onMaskTap 的说明）——
-             它的文案本身就是结论，点它是"我看到了"。 -->
-    <view class="ed-body" wx:elif="{{phase === 's5'}}">
-      <view class="flex items-center w-full">
-        <!-- ⚠️ 对勾是绿色圆底白勾（设计稿口径）：它表达"这次检测成功"，
-             与分数高低无关 —— 所以 34.8 分也是这颗勾，别按分数换颜色。 -->
-        <ui-icon class="text-44rpx text-ok shrink-0" name="mdi:check-circle" />
-        <!-- ⚠️ 分数是**黑色**、不是绿色（2026-10 按设计稿改）：
-             绿色留给那颗勾和可以点的东西，分数本身是个中性数字。
-             ⚠️ 它仍是数字滚动的落点（见 reading.ts 的 rollNumbers），这里只负责画。 -->
-        <text class="text-64rpx font-bold text-ink ml-2">{{scoreText}}</text>
-        <!-- ⭐「得分详情」是这一层唯一的次级入口 —— 五维/排名/建议都在那一页。
-             ⚠️ 它**不关弹窗**：看完详情回来，这条结果还在（缓存没清，见 onMaskTap）。 -->
-        <!-- ⚠️ 它是**白底 + 浅灰描边**（设计稿口径），不是灰底 ——
-             灰底看起来像"已经按下的次级按钮"，而这里它是一个**入口**。 -->
-        <view class="ml-auto px-4 py-[10rpx] rounded-full bg-white border-2 border-solid border-line shrink-0"
-              bindtap="onOpenDetail" hover-class="active__opacity-60">
-          <text class="text-24rpx text-body">得分详情</text>
-        </view>
-      </view>
-
-      <!-- ⭐ 原文逐词着色（与评测详情页共用 lib/word-colors 的上色判据）
-           ⚠️ 拿不到逐词时整块不渲染 —— 不画一句没有颜色的原文假装它判过了 -->
-      <view class="flex flex-wrap mt-4 w-full" wx:if="{{resultWords.length > 0}}">
-        <text class="text-32rpx leading-[1.6] mr-1 {{item.cls}}" wx:for="{{resultWords}}" wx:key="i">{{item.text}}</text>
-      </view>
-    </view>
 
     <!-- ── 检测失败（s6）────────────────────────────────────
          ⚠️ 标题用「检测失败」而不是对勾（设计稿那张红底对勾会被读成成功）。 -->
@@ -155,24 +128,9 @@
     <!-- ⚠️ 本次消耗的能量那行小字（已经扣了 / 失败没扣）由页面拼好传进来 -->
     <text class="text-22rpx text-faint mt-4" wx:if="{{energyNote}}">{{energyNote}}</text>
 
-    <!-- ══════════ 底部：状态胶囊（结果态的唯一出口）══════════════
-         ⭐⭐ 用户 2026-10 定：这颗胶囊**同时是结论和出口**。
-             文案有四种（攻克本句 +N 🍪 / 差X分，攻克本句 / 差X分刷新记录 / 再次攻克 +N 🍪），
-             判据在 @jushuo/shared 的 resultFormOf —— 组件只负责画。
-         ⚠️⚠️ **它是结果态唯一的出口**：遮罩点不动、右上角那颗 × 也删了
-             （见 onMaskTap 的说明）。不点它，下次回到这一页**还会再弹**（缓存没清）。
-         ⚠️ 失败态（s6）保留一颗「确认」：那次没有结论可给，只需要关掉它。 -->
-    <view class="ed-actions" wx:if="{{phase === 's5'}}">
-      <!-- ⚠️⚠️ 这里**刻意不用 ui-button**（2026-10 按设计稿标定）：
-           ui-button 的 warning 是 **#f59e0b 实心 + 白字**，而设计稿那颗是
-           **浅黄底 + 黑字**（琥珀色调、很轻）—— 两者不是同一个东西 ✗
-           ⇒ 用朴素 view + 手写底色（与 energy 页 .energy-sandbox 同一个做法）。
-           ⚠️ 手写颜色要自己补 hover 反馈（ui-button 自带，view 没有）。 -->
-      <view class="ed-pill" bindtap="onConfirm" hover-class="ed-pill-hover">
-        <text class="text-32rpx text-ink">{{resultLine ? resultLine.text : '知道了'}}</text>
-      </view>
-    </view>
-    <view class="ed-actions" wx:elif="{{phase === 's6'}}">
+    <!-- ⚠️ 这里是 wx:if 不是 wx:elif：上面隔着那行 energyNote（它自己是个 wx:if），
+         wx:elif 必须**紧跟**同级的 if/elif，隔着兄弟节点就不成立（会被静默忽略）。 -->
+    <view class="ed-actions" wx:if="{{phase === 's6'}}">
       <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onConfirm">
         <text class="text-32rpx">确认</text>
       </ui-button>
