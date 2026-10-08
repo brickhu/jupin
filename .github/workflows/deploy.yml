@@ -150,17 +150,22 @@ jobs:
           CCR_USERNAME: ${{ secrets.CCR_USERNAME }}
           CCR_PASSWORD: ${{ secrets.CCR_PASSWORD }}
         run: |
-          # ⭐⭐ 优先走**镜像方式**：自己 build + push，平台只负责拉镜像。
-          #    ⚠️ 为什么：平台侧的"源构建"会间歇性卡死在 create_build_image ——
-          #       卡住时连版本都不产生，还会把该服务后续的构建一起堵死（2026-09-29 为此花了几小时）。
-          #    ⚠️ 没配 CCR 凭据时**明确警告并退回源构建**：不静默退回，也不让流水线直接变红。
-          if [ -n "$CCR_USERNAME" ] && [ -n "$CCR_PASSWORD" ]; then
-            echo "· 用镜像方式部署（docker build + push，tag = 提交 SHA）"
-            node tools/deploy-cloud.mjs dev --image --remark "CI dev ${{ github.sha }}"
-          else
-            echo "::warning::没配 CCR_USERNAME/CCR_PASSWORD —— 退回平台源构建；它可能卡住（见 tools/deploy-cloud.mjs）"
-            node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
-          fi
+          # ⭐⭐ **直接走云托管自带的源构建**（2026-10-08 用户点破）
+          #
+          # ⚠️ 为什么不再自己打镜像（`--image`）：
+          #    `dcf6464` 当初加它是为了绕开"平台侧卡死在 create_build_image" ✓
+          #    ⚠️ 但那次真实的 400 是**另一回事** —— 是**我们**把代码包撑大了 ✗：
+          #       `--targetDir '.'` 把整个工作区打包，而 CI 里 `pnpm install` 过
+          #       ⇒ 混进 **484MB 的 node_modules** ⇒ 6 分钟上传 + `400` ✗✗
+          #    ⭐ 那个已经修了（脚本改成 `git archive` 出干净目录 ⇒ **8.7MB** ✓）
+          #
+          # ⭐ 而源构建这条路**本来就更好**：
+          #    · **在国内构建**（腾讯云）✓ 没有跨洋传输 ✗
+          #    · **不需要镜像仓库**（省掉 CCR 凭据那一整套 ✓）
+          #    · 上传 8.7MB ⇒ 秒传 ✓
+          #
+          # ⚠️ `--image` 仍然保留，卡住时可手动用（见 tools/deploy-cloud.mjs 的说明）
+          node tools/deploy-cloud.mjs dev --remark "CI dev ${{ github.sha }}"
 
   # ----------------------------------------------------------------
   # main 分支 → prod 环境
@@ -260,14 +265,19 @@ jobs:
           CCR_USERNAME: ${{ secrets.CCR_USERNAME }}
           CCR_PASSWORD: ${{ secrets.CCR_PASSWORD }}
         run: |
-          # ⭐⭐ 优先走**镜像方式**：自己 build + push，平台只负责拉镜像。
-          #    ⚠️ 为什么：平台侧的"源构建"会间歇性卡死在 create_build_image ——
-          #       卡住时连版本都不产生，还会把该服务后续的构建一起堵死（2026-09-29 为此花了几小时）。
-          #    ⚠️ 没配 CCR 凭据时**明确警告并退回源构建**：不静默退回，也不让流水线直接变红。
-          if [ -n "$CCR_USERNAME" ] && [ -n "$CCR_PASSWORD" ]; then
-            echo "· 用镜像方式部署（docker build + push，tag = 提交 SHA）"
-            node tools/deploy-cloud.mjs prod --image --remark "CI prod ${{ github.sha }}"
-          else
-            echo "::warning::没配 CCR_USERNAME/CCR_PASSWORD —— 退回平台源构建；它可能卡住（见 tools/deploy-cloud.mjs）"
-            node tools/deploy-cloud.mjs prod --remark "CI prod ${{ github.sha }}"
-          fi
+          # ⭐⭐ **直接走云托管自带的源构建**（2026-10-08 用户点破）
+          #
+          # ⚠️ 为什么不再自己打镜像（`--image`）：
+          #    `dcf6464` 当初加它是为了绕开"平台侧卡死在 create_build_image" ✓
+          #    ⚠️ 但那次真实的 400 是**另一回事** —— 是**我们**把代码包撑大了 ✗：
+          #       `--targetDir '.'` 把整个工作区打包，而 CI 里 `pnpm install` 过
+          #       ⇒ 混进 **484MB 的 node_modules** ⇒ 6 分钟上传 + `400` ✗✗
+          #    ⭐ 那个已经修了（脚本改成 `git archive` 出干净目录 ⇒ **8.7MB** ✓）
+          #
+          # ⭐ 而源构建这条路**本来就更好**：
+          #    · **在国内构建**（腾讯云）✓ 没有跨洋传输 ✗
+          #    · **不需要镜像仓库**（省掉 CCR 凭据那一整套 ✓）
+          #    · 上传 8.7MB ⇒ 秒传 ✓
+          #
+          # ⚠️ `--image` 仍然保留，卡住时可手动用（见 tools/deploy-cloud.mjs 的说明）
+          node tools/deploy-cloud.mjs prod --remark "CI prod ${{ github.sha }}"

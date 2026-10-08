@@ -22,7 +22,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import fs from 'node:fs'
+import fs, { mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
@@ -627,12 +627,56 @@ if (useImage) {
   buildAndPushImage(imageTag)
 }
 
+/**
+ * ⭐⭐ **源构建：只上传"git 里那些文件"** —— 2026-10-08 用户点破的关键
+ *
+ * ## ⚠️ 问题是什么
+ *
+ * 原来这里是 `--targetDir '.'` ✗ ⇒ CLI 把**整个工作目录**打包上传 ✓
+ * ⚠️ 而 CI 里为了跑测试做过 `pnpm install` ⇒ **那里面躺着 484MB 的 node_modules** ✗
+ *   ⇒ 一次部署要**传 484MB** ⇒ 6 分钟 + `Request failed with status code 400` ✗✗
+ *
+ * ## ⭐ 为什么以前绕去了镜像方式（`--image`）
+ *
+ * `dcf6464` 的动机是"平台侧源构建会间歇性卡死在 `create_build_image`" ✓
+ * ⚠️ 但**那次 400 是两回事** ✗ —— 它是**我们**把代码包撑大了 ✓（平台卡死是它自己的毛病 ✓）
+ * ⇒ ⭐ 把上传体积修好之后，源构建这条路本身是**最优**的 ✓✓：
+ *     · **在国内构建**（腾讯云）✓ 根本没有跨洋传输 ✗
+ *     · **不需要镜像仓库**（省掉 CCR 凭据那整套 ✓）
+ *     · 实测上传 **几 MB** ⇒ 秒传 ✓
+ *
+ * ## 做法
+ *
+ * `git archive HEAD` ⇒ **git 知道的源码** ✓ 天然排除 node_modules / .tmp* / content/ ✗
+ * ⚠️ **只含【已提交】的内容** ✗ —— CI 里恰好是对的（部署的就该是那个 commit ✓）
+ *    本地跑时若有未提交改动，会**明确警告** ✓（不静默少发东西 ✗）
+ */
+function makeCleanBuildDir() {
+  const dir = resolve(ROOT, '.deploy-stage')
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  // ⚠️ 未提交改动会**被排除** —— 必须让用户看见，不能静默 ✓
+  const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).trim()
+  if (dirty) {
+    console.warn('⚠️ 工作区有未提交改动 —— `git archive HEAD` **不会**带上它们 ✗：')
+    for (const line of dirty.split('\n').slice(0, 8)) console.warn('   ' + line)
+  }
+  // ⭐ git archive 打包 → 解到 .deploy-stage（只有 git 跟踪的文件 ✓）
+  const tar = execFileSync('git', ['archive', 'HEAD'], { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 })
+  execFileSync('tar', ['-x', '-C', dir], { input: tar, maxBuffer: 256 * 1024 * 1024 })
+  const bytes = execFileSync('du', ['-sk', dir], { encoding: 'utf8' }).trim().split('\t')[0]
+  console.log(`· 干净构建目录就绪：.deploy-stage（约 ${Math.round(Number(bytes) / 1024)} MB）`)
+  console.log('   ⚠️ 里面只有 git 跟踪的文件 ⇒ 不含 node_modules（那 484MB 就是 400 的根因 ✗）')
+  return '.deploy-stage'
+}
+
 const argv = [
   'run:deploy',
   '--envId', envId,
   '--serviceName', SERVICE,
-  // ⭐ 构建上下文 = 仓库根：pnpm workspace 必须能看到 pnpm-workspace.yaml 与 packages/shared
-  '--targetDir', '.',
+  // ⭐ 构建上下文 = **干净的源码目录**（见上面 makeCleanBuildDir 的说明 ✓）
+  //    ⚠️ 镜像方式下平台不构建，这个目录只是给 CLI 交代 dockerfile 位置，不必清理 ✓
+  '--targetDir', useImage ? '.' : makeCleanBuildDir(),
   '--dockerfile', 'apps/server/Dockerfile',
   '--containerPort', '3000',
   '--envParamsJson', JSON.stringify(params),

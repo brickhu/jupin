@@ -106,3 +106,6 @@ apps/server/assets/kws/
 #    "服务端读音频只认 standard_audio 这一列，不再依赖仓库里的 content/audio/"）✓
 #    ⇒ 它进 git 的唯一效果是**每次部署都把代码包撑大** ✗（实测上传要 6 分钟）
 content/
+
+# ⚠️ 部署脚本生成的"干净构建目录"（`git archive HEAD` 解出来的 ✓ 每次重建 ✓）
+.deploy-stage/
