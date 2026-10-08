@@ -48,7 +48,7 @@ ffprobe      codec_name=opus  sample_rate=48000  channels=1  format_name=matrosk
 同一份代码，真机直出裸 PCM，开发者工具直出 WebM，将来还可能出 mp3/aac。
 在唯一装得起解码器的地方统一，整条链路对「设备给了什么」就彻底免疫了。
 
-⚠️ 镜像必须装 ffmpeg（`apps/server/Dockerfile` 与 `Dockerfile.development` 都已加）。
+⚠️ 镜像必须装 ffmpeg（`Dockerfile`（仓库根 ✓） 与 `Dockerfile.development` 都已加）。
 缺了会报一句**指名道姓**的错误，而不是含糊的「读取音频失败」。
 
 ## 已知残余问题

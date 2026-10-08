@@ -367,8 +367,8 @@ function buildAndPushImage(tag) {
     input: pass,
     stdio: ['pipe', 'inherit', 'inherit'],
   })
-  console.log(`· docker build -f apps/server/Dockerfile -t ${tag} .`)
-  run('docker', ['build', '-f', 'apps/server/Dockerfile', '-t', tag, '.'])
+  console.log(`· docker build -f Dockerfile -t ${tag} .`)
+  run('docker', ['build', '-f', 'Dockerfile', '-t', tag, '.'])
   console.log(`· docker push ${tag}`)
   run('docker', ['push', tag])
 }
@@ -685,7 +685,7 @@ const argv = [
   // ⭐ 构建上下文 = **干净的源码目录**（见上面 makeCleanBuildDir 的说明 ✓）
   //    ⚠️ 镜像方式下平台不构建，这个目录只是给 CLI 交代 dockerfile 位置，不必清理 ✓
   '--targetDir', useImage ? '.' : makeCleanBuildDir(),
-  '--dockerfile', 'apps/server/Dockerfile',
+  '--dockerfile', 'Dockerfile',
   '--containerPort', '3000',
   '--envParamsJson', JSON.stringify(params),
   '--noConfirm',

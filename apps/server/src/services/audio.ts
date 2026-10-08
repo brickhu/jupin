@@ -66,7 +66,7 @@ export async function normalizeAudio(bytes: Uint8Array): Promise<NormalizedAudio
  * 用 ffmpeg 解码 + 重采样成 16kHz/16bit/单声道。
  *
  * ⚠️ 走 stdin/stdout 管道，不落临时文件 —— 音频最大也就几 MB，没必要碰磁盘。
- * ⚠️ 镜像里必须有 ffmpeg（见 apps/server/Dockerfile）；缺了会给出**指名道姓**的报错，
+ * ⚠️ 镜像里必须有 ffmpeg（见仓库根的 Dockerfile）；缺了会给出**指名道姓**的报错，
  *    而不是让人去猜「读取音频失败」是哪儿的问题。
  */
 export function decodeToPcm16k(input: Uint8Array): Promise<Uint8Array> {
