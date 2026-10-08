@@ -38,7 +38,8 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
+import { decodeFrameToSamples, decodeToSamples } from '../../lib/audio/frame-decode'
+import { createStdAlign, feedUserAudio, resampleTo16k, type StdAlignState } from '../../lib/audio/std-align'
 import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
 import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
@@ -335,6 +336,18 @@ interface WordView {
    */
   missed: boolean
   misread: boolean
+  /**
+   * ⭐ **录音过程中"已经读到这个词了"**（⭐ 中性下划线 ✓ 不下判断 ✓）
+   *
+   * ⚠️ 与 `missed` / `misread` 是**两套东西**，别混：
+   *    · `read`     = 录音**进行中**的位置跟踪（⭐ 本地对齐算法算的 ✓）
+   *    · `missed` / `misread` = **定稿那一刻**的预检结果（⭐ 现有逻辑不动 ✓）
+   * ⚠️ 优先级：⭐ 定稿结果压过 read（⚠️ 定稿后 read 就没意义了 ✓）
+   *
+   * ⚠️ 视觉只用**下划线**（⭐ 与定稿那套一致的视觉语言 ✓）：
+   *    不用填充色块 —— 填充色块是**提交后正式评分**的语言 ✗
+   */
+  read: boolean
 }
 
 Page({
@@ -615,6 +628,15 @@ Page({
   waveTries: 0,
   /** ⭐ 静音自停的两个计数器（见 lib/audio/vad.ts） */
   vad: { ...VAD_STATE_ZERO } as VadState,
+  /**
+   * ⭐ **录音中的逐词对齐状态**（粗糙版）—— `null` = 标准音特征还没备好 ✓
+   *
+   * ⚠️ 它**不能放 `data`** ✗：里面有 `Float64Array`，`setData` 序列化不了 ✓
+   * ⚠️ 也没有"准备失败"这个终态：⚠️ 失败就是没反馈 ✓（⭐ 不阻断录音 ✓ 不报错 ✓）
+   */
+  stdAlign: null as StdAlignState | null,
+  /** ⚠️ 防重入：标准音特征只准备一次 ✓ */
+  stdAlignPreparing: false,
   /**
    * ⭐ 波形的**自动增益**（"这一轮见过的最强音" = 满格）。
    * ⚠️⚠️ 它**只作用于画图** —— 静音判据吃的仍是原始采样 ✓
@@ -927,6 +949,7 @@ Page({
         // ⭐ 一进来默认"读到了" —— 没有预检结果时不该有任何标记
         missed: false,
         misread: false,
+        read: false,
       }))
       const stdMs = readStdDurationMs(content.audio)
       this.setData({
@@ -1294,6 +1317,8 @@ Page({
    *    点击是一次动作，`s2` 才是"正在录"，中途没有"手指还压着吗"要判 ✓
    */
   startRecording() {
+    // ⭐ 录音开始前把标准音特征备好（⭐ 不 await：⚠️ 绝不拖慢"点下就开始录" ✓）
+    void this.prepareStdAlign()
     /**
      * ⚠️ `phase === 's2'` 这一条**同时挡掉了「识别中…」那一态** ——
      *    那时手已松、正在定稿，但 phase 还是 s2（要到 handleSpoken 才变 s3）。
@@ -1415,6 +1440,45 @@ Page({
    * ⚠️ `classifyChunk` 给的是**三态**：拿不到采样时走 'undecodable'（当成他在说话）✓
    *    那是安全方向 —— 绝不因为"读不出数据"就把用户的录音掐断 ✗
    */
+  /**
+   * ⭐ **把标准音的特征备好**（⭐ 每句只算一次 ✓）—— 录音前调用 ✓
+   *
+   * ⚠️ 整条链都可能失败（⭐ 下载 ✗ 解码 ✗ 环境不支持 ✗），而**失败就是没反馈** ✓：
+   *    不报错、不阻断录音、不进任何错误态 ✓ —— 逐词下划线是锦上添花 ✓
+   */
+  async prepareStdAlign(): Promise<void> {
+    if (this.stdAlign || this.stdAlignPreparing || !this.data.fullAudio) return
+    this.stdAlignPreparing = true
+    try {
+      const local = await ensureLocalAudio(this.data.fullAudio, this.data.audioKind)
+      if (!local) return
+      const fs = wx.getFileSystemManager()
+      const buf = fs.readFileSync(local) as ArrayBuffer
+      const dec = await decodeToSamples(buf)
+      if (!dec) return
+      this.stdAlign = createStdAlign(resampleTo16k(dec.samples, dec.sampleRate))
+      console.log('[reading] 逐词对齐就绪：标准音 ' + this.stdAlign.stdMs + 'ms / ' + this.stdAlign.stdT + ' 帧')
+    } catch (err) {
+      console.warn('[reading] 逐词对齐准备失败（不影响录音）：' + JSON.stringify(err ?? null).slice(0, 120))
+    } finally {
+      this.stdAlignPreparing = false
+    }
+  },
+  /**
+   * ⭐ 把"读到第 n 个词"落到 `words` 上（⭐ 只改变化的那一段 ✓ 别每次全量 setData ✗）
+   */
+  markReadWords(next: number): void {
+    const words = this.data.words
+    if (words.length === 0) return
+    let changed = false
+    for (let i = 0; i <= next && i < words.length; i++) {
+      if (!(words[i]?.read ?? false)) { changed = true; break }
+    }
+    if (!changed) return
+    this.setData({
+      words: words.map((w, i) => (i <= next && !w.read ? { ...w, read: true } : w)),
+    })
+  },
   async onRecordFrame(frame: ArrayBuffer) {
     if (this.gone) return
 
@@ -1432,7 +1496,18 @@ Page({
      *      ⇒ 波形不画、静音不判（**安全方向**：绝不会因为读不出数据就掐断录音 ✓）
      *      ⚠️ 这个功能只能在真机上验 —— 这不是 bug，也不去绕它 ✓
      */
-    const samples = await decodeFrameToSamples(frame)
+    /**
+     * ⭐ **整段解码带着采样率**（`decodeFrameToSamples` 只回采样 ✗）——
+     *    逐词对齐要把用户音频重采样到 16k，必须有源采样率 ✓
+     * ⚠️ 解码失败时退回原来那条（⭐ VAD 还需要采样 ✓），只是对齐这一段跳过 ✓
+     */
+    const decoded = await decodeToSamples(frame)
+    const samples = decoded ? decoded.samples : await decodeFrameToSamples(frame)
+    if (decoded && this.stdAlign) {
+      const s16 = resampleTo16k(decoded.samples, decoded.sampleRate)
+      const next = feedUserAudio(this.stdAlign, s16, this.data.words.length, Date.now())
+      if (next !== null) this.markReadWords(next)
+    }
     if (this.gone) return
 
     // ── ① 波形 ──────────────────────────────────────────────
@@ -2605,7 +2680,14 @@ Page({
   clearWordMarks() {
     const words = this.data.words
     if (!words.some((w) => w.missed || w.misread)) return
-    this.setData({ words: words.map((w) => ({ ...w, missed: false, misread: false })) })
+    /**
+     * ⚠️ `read` 也要一起清 ✗ —— 它是**这一遍**录到哪儿的痕迹 ✓
+     *    漏了它的话，重录时上一遍的下划线会留在屏幕上 ✗
+     * ⚠️ 对齐状态同样要重置：⭐ `lastEnd` / `readCount` 是"这一遍"的单调进度 ✓
+     *    不重置的话新的一遍会从上一次的位置接着走 ✗（⭐ 用户会看到下划线一上来就在中间 ✓）
+     */
+    this.stdAlign = null
+    this.setData({ words: words.map((w) => ({ ...w, missed: false, misread: false, read: false })) })
   },
 
   /**
