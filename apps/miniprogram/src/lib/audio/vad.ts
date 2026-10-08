@@ -38,12 +38,17 @@ export const SILENCE_RMS = 0.02
 export const AUTO_STOP_SILENCE_MS = 1200
 
 /**
- * ⭐ 录到的时长至少要达到标准音时长的多少倍，才允许自动结束。
+ * ⭐ **净说话时长**至少要达到标准音时长的多少倍，才允许自动结束。
  *
- * ⚠️ 1.2 是"比参考语速慢两成" —— 正常朗读落在 0.9~1.2 之间 ✓
- *    比这还慢的人会被这个下限保住（不会因为说得慢就被判成停）✓
+ * ⚠️ 这个下限的作用只有一个：**别在读一两个词的时候就因为一个停顿判"读完"** ✓
+ *    （⭐ 短句里"嗯…"一下太常见 ✓）
+ *
+ * ⚠️⚠️ **必须 < 1** ✗ —— 标准音的时长**含词间停顿**，而 `voicedMs` 只算净语音 ✓
+ *    （⭐ 用户把标准音从头念一遍，`voicedMs` 必然**短于** `expectedMs` ✓）
+ * ⚠️ 也不能太小：0.3 的话读前三个词停一下就被判读完了 ✗
+ * ⭐ 0.5 = "至少说够半句话"，既保得住慢读的人 ✓，也不会读两个词就收工 ✓
  */
-export const AUTO_STOP_MIN_RATIO = 1.2
+export const AUTO_STOP_MIN_RATIO = 0.5
 
 /**
  * ⭐⭐ 一帧属于哪一种 —— **刻意做成三态而不是布尔**。
@@ -77,13 +82,24 @@ export function classifyChunk(samples: Float32Array | null, rmsThreshold = SILEN
 
 /** 逐帧累计的两个计数器（自动结束看的就是它们） */
 export interface VadState {
-  /** 已经录了多久 */
+  /** 已经录了多久（⭐ 墙钟：连静音一起算 ✓ 只用于超时兜底 ✓） */
   recordedMs: number
   /** 当前**连续**静音了多久（有声音时清零） */
   silentMs: number
+  /**
+   * ⭐⭐ **累计【确认为语音】的时长** —— "读完了"该看的就是它 ✓
+   *
+   * ⚠️⚠️ 2026-10-09 之前用的是 `recordedMs` ✗，而它把**开头静音**和
+   *    **用户读的时候自己的停顿**全算进去了 ✗
+   *    ⇒ ⚠️ 于是判据实际变成"**录够了这么久的墙钟时间**"✗
+   *    ⇒ ⭐ 用户看到的行为就是"按秒数停，不是按读完停"✗✓（用户就是这么报的 ✓）
+   * ⚠️ 口径：只有 `'silence'` 之外的**明确语音**才累加 ✓
+   *    （`'undecodable'` 是"不知道"✗ ⇒ 不累加也不清零 ✓ 见 advanceVad 的说明 ✓）
+   */
+  voicedMs: number
 }
 
-export const VAD_STATE_ZERO: VadState = { recordedMs: 0, silentMs: 0 }
+export const VAD_STATE_ZERO: VadState = { recordedMs: 0, silentMs: 0, voicedMs: 0 }
 
 /**
  * ⭐ 吃进一帧，吐出新的计数器 —— 纯函数，好测，也好让调用方一眼看出规则。
@@ -102,6 +118,8 @@ export function advanceVad(state: VadState, kind: ChunkKind, frameMs: number): V
     recordedMs: state.recordedMs + frameMs,
     // ⚠️ 只有**确认为静音**才累加；'voice' 与 'undecodable' 都清零
     silentMs: kind === 'silence' ? state.silentMs + frameMs : 0,
+    // ⭐ 只有**明确是语音**才累加 ✓（'undecodable' 不累加 ✓ 见类型的说明 ✓）
+    voicedMs: kind === 'voice' ? state.voicedMs + frameMs : state.voicedMs,
   }
 }
 
@@ -117,11 +135,13 @@ export function advanceVad(state: VadState, kind: ChunkKind, frameMs: number): V
  *    硬用一个默认值会在长句上提前掐断 ✗
  */
 export function autoStopAfter(input: {
-  recordedMs: number
+  /** ⭐ 累计净说话时长（⭐ 判据看它 ✓） */
+  voicedMs: number
   silentMs: number
   expectedMs: number | null
 }): boolean {
   if (input.expectedMs === null || input.expectedMs <= 0) return false
-  if (input.recordedMs < input.expectedMs * AUTO_STOP_MIN_RATIO) return false
+  // ⭐ 看【净说话时长】而不是墙钟（⚠️ 后者会把开头静音和用户停顿都算进去 ✗）
+  if (input.voicedMs < input.expectedMs * AUTO_STOP_MIN_RATIO) return false
   return input.silentMs >= AUTO_STOP_SILENCE_MS
 }

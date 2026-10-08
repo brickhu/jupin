@@ -48,49 +48,65 @@ describe('classifyChunk —— 一帧属于哪一种（三态）', () => {
 
 describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
   const expected = 5000
-
   it('⭐ 两个条件都满足才结束', () => {
     expect(
-      autoStopAfter({ recordedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
+      autoStopAfter({ voicedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
     ).toBe(true)
   })
-
-  it('⚠️⚠️ 时长不够时，静音再久也不结束（读到一半的停顿不能掐断录音）', () => {
-    expect(autoStopAfter({ recordedMs: 1000, silentMs: 5000, expectedMs: expected })).toBe(false)
+  it('⚠️⚠️ 净说话时长不够时，静音再久也不结束（读到一半的停顿不能掐断录音）', () => {
+    expect(autoStopAfter({ voicedMs: 1000, silentMs: 5000, expectedMs: expected })).toBe(false)
   })
-
-  it('⚠️ 时长够了但静音不够也不结束（两成余量之内、刚说完一个词）', () => {
-    expect(autoStopAfter({ recordedMs: 9000, silentMs: 300, expectedMs: expected })).toBe(false)
+  it('⚠️ 说够了但静音不够也不结束（刚说完一个词）', () => {
+    expect(autoStopAfter({ voicedMs: 4000, silentMs: 300, expectedMs: expected })).toBe(false)
   })
-
   it('⚠️ 这一句没有标准音时**一律不自动结束**（宁可让用户自己点）', () => {
-    expect(autoStopAfter({ recordedMs: 999_999, silentMs: 999_999, expectedMs: null })).toBe(false)
-    expect(autoStopAfter({ recordedMs: 999_999, silentMs: 999_999, expectedMs: 0 })).toBe(false)
+    expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, expectedMs: null })).toBe(false)
+    expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, expectedMs: 0 })).toBe(false)
   })
-
   it('⚠️ 边界：正好等于下限时算满足（>= 而不是 >）', () => {
     expect(
-      autoStopAfter({ recordedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
+      autoStopAfter({ voicedMs: expected * AUTO_STOP_MIN_RATIO, silentMs: AUTO_STOP_SILENCE_MS, expectedMs: expected }),
     ).toBe(true)
   })
-})
 
+  /**
+   * ⭐⭐ **回归测试：用户 2026-10-09 报的那个 bug** ✓
+   *
+   * ⚠️ 起因：判据原来用的是 `recordedMs`（⭐ 录音墙钟总时长 ✗）——
+   *    它把**开头静音**和**用户读的时候自己的停顿**全算进去了 ✗
+   *    ⇒ ⚠️ 于是"净说话时长"必须超过 `expectedMs × 1.2` 才可能成立 ✗
+   *    ⇒ ⭐ 而人把一句话念完，净语音**一定短于**标准音时长（含词间停顿 ✓）
+   *    ⇒ ⭐⭐ **结果就是自动结束永远不触发** ✗✓ —— 用户看到的行为是"按秒数停，不是按读完停" ✓
+   *
+   * ⭐ 现在看 `voicedMs`，门槛 0.5：⭐ 说了半句话以上 + 静音够久 ⇒ 判读完 ✓
+   */
+  it('⭐⭐ 读得快的人（净语音不到标准音时长）也该能自动结束', () => {
+    // ⭐ 标准音 5s，用户净说了 2.75s 就停了 —— 旧判据（recordedMs ≥ 6000）永远到不了 ✗
+    expect(autoStopAfter({ voicedMs: 2750, silentMs: 1300, expectedMs: expected })).toBe(true)
+  })
+  it('⚠️ 但只念了两个词就停 ⇒ 仍不结束（下限要继续守住）', () => {
+    expect(autoStopAfter({ voicedMs: expected * 0.2, silentMs: 5000, expectedMs: expected })).toBe(false)
+  })
+  it('⭐ 门槛必须 < 1（⚠️ 标准音含停顿，净语音必然更短 ✓）', () => {
+    expect(AUTO_STOP_MIN_RATIO).toBeLessThan(1)
+  })
+})
 describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
   const F = 170 // mp3 下 1KB ≈ 170ms 一帧（见 RECORD_SPEC 的说明）
 
   it('有声音 ⇒ 时长涨、连续静音清零', () => {
-    const s = advanceVad({ recordedMs: 1000, silentMs: 500 }, 'voice', F)
-    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0 })
+    const s = advanceVad({ recordedMs: 1000, silentMs: 500, voicedMs: 0 }, 'voice', F)
+    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0, voicedMs: F })
   })
 
   it('静音 ⇒ 两个都涨', () => {
-    const s = advanceVad({ recordedMs: 1000, silentMs: 500 }, 'silence', F)
-    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 500 + F })
+    const s = advanceVad({ recordedMs: 1000, silentMs: 500, voicedMs: 200 }, 'silence', F)
+    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 500 + F, voicedMs: 200 })
   })
 
   it('⚠️⚠️ 解不出来 ⇒ 时长照涨，但**连续静音清零**（当成"他在说话"，绝不掐断）', () => {
-    const s = advanceVad({ recordedMs: 1000, silentMs: 9999 }, 'undecodable', F)
-    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0 })
+    const s = advanceVad({ recordedMs: 1000, silentMs: 9999, voicedMs: 300 }, 'undecodable', F)
+    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0, voicedMs: 300 })
   })
 
   it('⭐ 连成一条链：它真的不会在不支持解码的环境里自动结束', () => {
