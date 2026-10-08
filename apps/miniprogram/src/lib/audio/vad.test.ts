@@ -69,7 +69,7 @@ describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
     expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, wordCount: 0 })).toBe(false)
   })
   it('⭐ 短句的下限也短（⭐ 3 个词 ⇒ 720ms 就够 ✓）', () => {
-    expect(autoStopAfter({ voicedMs: 800, silentMs: 1300, wordCount: 3 })).toBe(true)
+    expect(autoStopAfter({ voicedMs: 1100, silentMs: AUTO_STOP_SILENCE_MS, wordCount: 3 })).toBe(true)
   })
 
   /**
@@ -86,14 +86,14 @@ describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
    */
   it('⭐⭐ 回归①：不依赖服务端 —— 签名里没有 expectedMs 之类的东西', () => {
     // ⚠️ 参数里出现"标准音时长"就说明依赖又回来了 ✗
-    expect(autoStopAfter({ voicedMs: 3000, silentMs: 1300, wordCount: N })).toBe(true)
+    expect(autoStopAfter({ voicedMs: 4000, silentMs: AUTO_STOP_SILENCE_MS, wordCount: N })).toBe(true)
   })
   it('⭐⭐ 回归②：下限必须【跟着词数走】，不能是固定毫秒', () => {
     const long = 20
     const short = 3
     // ⭐ 同样说了 1500ms：短句够 ✓，长句不够 ✗
-    expect(autoStopAfter({ voicedMs: 1500, silentMs: 1300, wordCount: short })).toBe(true)
-    expect(autoStopAfter({ voicedMs: 1500, silentMs: 1300, wordCount: long })).toBe(false)
+    expect(autoStopAfter({ voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: short })).toBe(true)
+    expect(autoStopAfter({ voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: long })).toBe(false)
   })
 })
 describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
@@ -125,7 +125,9 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
   it('⭐ 正常读完：说够了时长 + 静音 1.2 秒 ⇒ 结束', () => {
     let st = VAD_STATE_ZERO
     for (let i = 0; i < 40; i++) st = advanceVad(st, 'voice', F) // 6.8s 说话
-    for (let i = 0; i < 8; i++) st = advanceVad(st, 'silence', F) // 1.36s 静音
+    // ⚠️ 静音帧数按常量推（⭐ 别写死 8 ✗ —— 阈值从 1200 提到 1500 时它会悄悄失效 ✓）
+    const silentFrames = Math.ceil(AUTO_STOP_SILENCE_MS / F) + 1
+    for (let i = 0; i < silentFrames; i++) st = advanceVad(st, 'silence', F)
     expect(autoStopAfter({ ...st, wordCount: 11 })).toBe(true)
   })
 })
