@@ -335,8 +335,13 @@ function buildAndPushImage(tag) {
   const pass = (process.env.CCR_PASSWORD ?? '').trim()
   if (!user || !pass) {
     throw new Error(
-      '镜像方式部署需要 CCR_USERNAME / CCR_PASSWORD（腾讯云「容器镜像服务 → 访问凭证」）。\n' +
-        '   CI 里把它们加成仓库 secrets；本机可以临时 export。',
+      '镜像方式部署需要 CCR_USERNAME / CCR_PASSWORD —— 它们是【微信云托管给这个服务分配的\n' +
+        '   那个镜像仓库】的凭据，不是腾讯云账号的！\n' +
+        '   ⭐ 去哪拿：微信云托管控制台 → 该服务 →「服务设置」TAB →【镜像仓库】链接\n' +
+        '            → 【重置密码】（⚠️ 首次必须先重置一次，默认没有密码）\n' +
+        '   ⭐ 用户名固定是 root（官方文档：「镜像仓库账号默认为 root，不可更改」）\n' +
+        '      密码就是你刚重置的那个（8-64 位、至少三种字符类型）\n' +
+        '   CI 里把它们加成仓库 secrets；本机填 .env.dev / 临时 export 都行。',
     )
   }
   const registry = tag.split('/')[0]
