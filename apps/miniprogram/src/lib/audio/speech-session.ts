@@ -1,112 +1,85 @@
 /**
- * ⭐⭐ **一次朗读的录音会话** —— 把「用插件录」和「用我们自己的录音器录」统一成一个接口。
+ * ⭐⭐ **一次朗读的录音会话** —— 薄薄一层适配，把 `Recorder` 包成页面要的形状。
  *
- * ⚠️⚠️ 为什么必须有两套后端（用户 2026-10 定：「模拟器需要做个兜底策略，
- *      可以不支持标色，但是要支持按住录音」）：
+ * ## ⚠️⚠️ 它原来有两套后端，2026-10 砍成一套
  *
  *   | 环境 | 用谁录 | 流式标色 |
  *   |---|---|---|
- *   | **真机** | 微信插件 | ✅ 有 |
- *   | **开发者工具** | **我们自己的录音器** | ❌ 没有 |
- *   | **真机上插件失败** | 同上（降级） | ❌ 没有 |
+ *   | 真机 | 微信插件 | ✅ 有 |
+ *   | 开发者工具 | 我们自己的录音器 | ❌ 没有 |
  *
- *   两条理由：
- *   ① **开发者工具里插件能起录、但拿不到音频数据** —— ✅ **已实测定论**（2026-10 用户实测的事件流）：
- *      `start-requested → plugin-start {"msg":"Ok"} → plugin-error {"retcode":-30003,"msg":"internal voice data failed"}`
- *      ⇒ 能起录，但**一帧音频都没拿到**，随即报错。
- *      ⚠️ 不是笼统的"插件在 devtools 里不能用"，也**不是**"VAD 静音自停"（没有任何干净的 `plugin-stop`）。
- *      ⭐ 机制：devtools 的录音格式与真机不同（控制台原话「工具上的录音文件与移动端格式不同」；
- *        `services/audio.ts` 早就写了「真机直出裸 PCM，开发者工具直出 WebM」）——
- *        插件要把音频流给微信服务端，devtools 给的格式它用不了。
- *      ⇒ 不做兜底的**后果**是明确的（每改一个字都要扫码上真机），所以这个后端**必须能切**；
- *   ② 它顺手解掉了另一个风险：插件一旦拥有录音器，它的故障就等于**录不了音**。
- *      有了这条降级路径，录音这个核心动作**不再依赖插件**。
+ * 砍掉插件的理由（用户 2026-10 定：「不想走插件」）：
  *
- * ⚠️ **判据是"环境"，不是"试一次再说"**：开发者工具里**已知拿不到音频**（`-30003`），
- *    所以直接跳过插件 —— 不浪费一次失败尝试，也不让用户白等那 2 秒。
- *    真机上才走插件；真机上插件报错时才降级。
+ *   ① ⚠️⚠️ **波形和"判读完"都要 PCM 帧，而插件自己拥有录音器** ✗
+ *      （官方原文，见 git 历史里的 asr.ts）——两条音频路同时开才能都要，
+ *      那不划算也不可靠 ⇒ 只能二选一；
+ *   ② ⭐ 用户要的是「**看波形** + 读完自动结束」（点一下开始录音），
+ *      那就必须自己录 ⇒ 插件出局；
+ *   ③ 插件还带来别的成本：**音频出设备**、有配额（250 条/分钟）、
+ *      而且在开发者工具里**能起录但拿不到音频数据**（-30003）⇒
+ *      每次改动都得扫码上真机 ✗
  *
- * ⚠️ **两套后端给的音频格式不同**（插件给它的格式，我们给 mp3），
- *    但**提交链路对格式免疫** —— 服务端 `normalizeAudio` + ffmpeg 能把
- *    「上传上来的任何东西」归一化成讯飞要的 16k PCM（见 services/audio.ts 的文件头）。
- *    所以这里**不需要统一格式**，各自把自己那条路径给出来就行。
+ * ⭐ 砍掉之后的好处（最后一条最实在）：
+ *   · PCM 帧有了 ⇒ 波形 ✓ + 静音检测 ✓
+ *   · **开发者工具里跑的就是真机那条路** ⇒ 开发回路从"每改一个字扫码"变成直接看 ✓
+ *   · 录音这个核心动作**不再依赖插件**（它一旦故障就等于录不了音）✓
+ *
+ * ⚠️ 代价：**没有逐词标色了**（那需要流式识别）——
+ *    那条路本来就只在真机插件下才有，而它的判据（ASR 听错占了很大一块）
+ *    也一直不够可信 ✓
+ *
+ * ## ⚠️ 两套后端给的音频格式不同（留着这条备忘）
+ *
+ * 插件给它的格式、我们给 mp3 —— 但**提交链路对格式免疫**：
+ * 服务端 `normalizeAudio` + ffmpeg 能把"上传上来的任何东西"归一化成讯飞要的 16k PCM
+ * （见 services/audio.ts）。现在只剩 mp3 一条路，这条备忘仍然有用 ✓
  */
 
-import { PLATFORM } from '../../config'
 import { Recorder } from './recorder'
-import { ASR_MAX_RECORD_MS, isAsrAvailable, resetRecognize, startRecognize, stopRecognize } from './asr'
 
-/** 这一轮用的是哪套后端 —— 界面据此决定要不要显示逐词标色 */
-export type SpeechBackend = 'plugin' | 'local'
+/** ⚠️ 只剩一套后端了，保留这个类型是为了不惊动上层（历史上有过 'plugin'） */
+export type SpeechBackend = 'local'
 
 export interface SpeechResult {
-  /** ⭐ 录音落地的本地文件路径 —— 提交时上传的就是它（两套后端都给） */
+  /** ⭐ 录音落地的本地文件路径 —— 提交时上传的就是它 */
   audioPath: string
   durationMs: number
   /**
-   * ⭐ 识别文本 —— **只有插件后端有**。
-   * `null` = 这一轮没有识别（开发者工具 / 插件降级）⇒ **不做逐词标色**，但录音照常能用。
+   * ⭐ 识别文本 —— **永远是 null**（流式识别随插件一起砍掉了）。
+   * ⚠️ 保留这个字段是为了不惊动上层：它按 `text === null` 判"这一轮没有识别"，
+   *    而现在**每一轮都是这样** ⇒ 逐词标色那条路自然不再出现 ✓
    */
   text: string | null
 }
 
 export interface SpeechCallbacks {
   /**
-   * ⭐ **流式中间结果** —— 只有插件后端会给（「边读文字边变色」靠它）。
-   * ⚠️ 文本是**整段当前结果**（可能是修正而不是追加），上层按整段处理，别自己拼接。
+   * ⭐⭐ **录音过程中的原始帧**（mp3 压缩码流）—— 波形与静音检测**都靠它**。
+   *
+   * ⚠️ 帧是**压缩码流**，不是 PCM：想拿采样得先过 `decodeFrameToSamples`
+   *    （见 recorder.ts 的文件头，那里写着为什么不能按 16bit 硬解）。
+   * ⚠️ 回调是**异步**的（每 ~170ms 一帧）—— 上层要注意别在回调里做重活。
    */
-  onPartial?: (text: string) => void
+  onFrame?: (frame: ArrayBuffer) => void
   onDone: (r: SpeechResult) => void
   onError: (e: Error) => void
 }
 
 export interface SpeechSession {
-  /** 这一轮用的哪套后端 —— 上层据此决定要不要渲染标色 */
+  /** 这一轮用的哪套后端 —— 现在恒为 'local' */
   readonly backend: SpeechBackend
-  /** 按下时调 */
+  /** 开始时调（用户点一下「开始朗读」） */
   start(): void
-  /** 抬起（或 touchcancel）时调 */
+  /** 结束时调（用户手动点，或静音自停判定为"读完了"） */
   stop(): void
   /** 页面销毁时调：把还没结束的这一轮丢掉，别让它回来往已销毁的页面上写 */
   dispose(): void
 }
 
-/**
- * 这一轮该用哪套后端。
- * ⚠️ 开发者工具**直接排除插件**（已实测必失败），不去试。
- */
-export function pickBackend(): SpeechBackend {
-  if (PLATFORM === 'devtools') return 'local'
-  return isAsrAvailable() ? 'plugin' : 'local'
-}
-
-/** 插件后端：录音 + 流式识别，两样一起给 */
-function pluginSession(cb: SpeechCallbacks): SpeechSession {
-  return {
-    backend: 'plugin',
-    start() {
-      startRecognize({ durationMs: ASR_MAX_RECORD_MS, onPartial: cb.onPartial })
-        .then((r) => {
-          cb.onDone({ audioPath: r.tempFilePath, durationMs: r.recordMs, text: r.text })
-        })
-        .catch((e: Error) => cb.onError(e))
-    },
-    stop() {
-      stopRecognize()
-    },
-    dispose() {
-      // ⚠️ 页面销毁时把 pending 清掉：否则 onStop 回来会往已经没了的页面上 setData
-      resetRecognize()
-    },
-  }
-}
-
-/**
- * 本地后端：只有录音，没有识别。
- * ⚠️ 它给的是**我们自己的** `tempFilePath`（mp3），提交链路照用 —— 这与插件那条完全等价。
- */
-function localSession(cb: SpeechCallbacks): SpeechSession {
+/** 开一次朗读会话。⚠️ 现在**没有自动停** —— 自动结束的判据在 lib/audio/vad.ts，由上层接 */
+export function createSpeechSession(cb: SpeechCallbacks): SpeechSession {
   const recorder = new Recorder({
+    onFrame: cb.onFrame,
     onStop: (r) => cb.onDone({ audioPath: r.tempFilePath, durationMs: r.durationMs, text: null }),
     onError: (e) => cb.onError(e),
   })
@@ -122,9 +95,4 @@ function localSession(cb: SpeechCallbacks): SpeechSession {
       recorder.dispose()
     },
   }
-}
-
-/** 开一次朗读会话。**必须在按下时 start、抬起时 stop** —— 没有自动停 */
-export function createSpeechSession(cb: SpeechCallbacks): SpeechSession {
-  return pickBackend() === 'plugin' ? pluginSession(cb) : localSession(cb)
 }

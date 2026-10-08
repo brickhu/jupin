@@ -1,134 +1,74 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * ⚠️ `PLATFORM` 是 config 模块的**常量**（import 时就定死了），所以只能把整个模块 mock 掉。
- *    用 `vi.hoisted` 是因为 `vi.mock` 会被提升到文件顶部 —— 普通 `let` 在那一刻还不存在。
+ * ⭐ 录音会话 —— 2026-10 砍掉插件之后，它只是一层薄适配（真机与模拟器**同一条路**）。
+ *
+ * ⚠️ 这里**不再有 `pickBackend`**：以前要按环境在两套后端里挑一套，
+ *    现在只有"我们自己的录音器"一套 ⇒ 那个函数连同它的环境判据一起删了 ✓
+ *    （它当初存在的唯一理由是"插件在开发者工具里必失败"，而插件已经没了。）
  */
-const h = vi.hoisted(() => ({ platform: 'devtools' }))
-vi.mock('../../config', () => ({
-  get PLATFORM() {
-    return h.platform
-  },
-}))
 
-/** 插件可用性也要能按需开关 */
-const asrState = vi.hoisted(() => ({ available: true, started: 0, stopped: 0 }))
-vi.mock('./asr', () => ({
-  ASR_MAX_RECORD_MS: 30_000,
-  isAsrAvailable: () => asrState.available,
-  startRecognize: () => {
-    asrState.started++
-    return Promise.resolve({ text: 'hello world', tempFilePath: '/tmp/p.mp3', recordMs: 1234 })
-  },
-  stopRecognize: () => {
-    asrState.stopped++
-  },
-}))
+/** 记下每次 new Recorder 收到的 options —— 断言"回调有没有透传"靠它 */
+const created: { onFrame?: unknown; onStop?: unknown; onError?: unknown; start: () => void; stop: () => void }[] = []
 
-/** 本地录音器：记下 start/stop 被调了几次，以及回调怎么走 */
-const rec = vi.hoisted(() => ({
-  started: 0,
-  stopped: 0,
-  cbs: null as null | { onStop?: (r: unknown) => void; onFrame?: (f: ArrayBuffer) => void; onError?: (e: Error) => void },
-}))
 vi.mock('./recorder', () => ({
   Recorder: class {
-    constructor(cb: Record<string, unknown>) {
-      rec.cbs = cb as typeof rec.cbs
+    constructor(opts: { onFrame?: unknown; onStop?: unknown; onError?: unknown }) {
+      created.push({ ...opts, start: vi.fn(), stop: vi.fn() })
     }
-    start() {
-      rec.started++
-    }
-    stop() {
-      rec.stopped++
-    }
+    start() {}
+    stop() {}
+    dispose() {}
   },
 }))
 
-const { createSpeechSession, pickBackend } = await import('./speech-session')
+const { createSpeechSession } = await import('./speech-session')
 
-beforeEach(() => {
-  h.platform = 'devtools'
-  asrState.available = true
-  asrState.started = 0
-  asrState.stopped = 0
-  rec.started = 0
-  rec.stopped = 0
-  rec.cbs = null
-})
-
-afterEach(() => {
-  vi.clearAllMocks()
-})
-
-describe('pickBackend —— 环境判据（不是"试一次再说"）', () => {
-  it('⭐⭐ 开发者工具 ⇒ 本地后端（插件在那里已知必失败，不去试）', () => {
-    h.platform = 'devtools'
-    asrState.available = true // 就算插件"看起来可用"，也不走它
-    expect(pickBackend()).toBe('local')
+describe('createSpeechSession —— 只剩一套后端', () => {
+  beforeEach(() => {
+    created.length = 0
   })
 
-  it('真机 + 插件可用 ⇒ 插件后端', () => {
-    h.platform = 'ios'
-    asrState.available = true
-    expect(pickBackend()).toBe('plugin')
-  })
-
-  it('真机 + 插件不可用 ⇒ 本地后端', () => {
-    h.platform = 'android'
-    asrState.available = false
-    expect(pickBackend()).toBe('local')
-  })
-})
-
-describe('本地后端（开发者工具 / 插件降级）', () => {
-  it('⭐ 能按住录音：start/stop 都转给录音器', () => {
-    h.platform = 'devtools'
-    const s = createSpeechSession({ onDone: () => {}, onError: () => {} })
+  it('⭐ 后端恒为 local（真机与开发者工具走同一条路）', () => {
+    const s = createSpeechSession({ onDone: vi.fn(), onError: vi.fn() })
     expect(s.backend).toBe('local')
-    s.start()
-    s.stop()
-    expect(rec.started).toBe(1)
-    expect(rec.stopped).toBe(1)
   })
 
-  it('⭐ 没有识别文本（text = null）—— 界面据此决定不标色，但录音照常可用', async () => {
-    h.platform = 'devtools'
-    const done = vi.fn()
-    const s = createSpeechSession({ onDone: done, onError: () => {} })
-    s.start()
-    rec.cbs?.onStop?.({ tempFilePath: '/tmp/local.mp3', durationMs: 4321 })
-    expect(done).toHaveBeenCalledWith({ audioPath: '/tmp/local.mp3', durationMs: 4321, text: null })
-  })
-
-  it('录音器报错 ⇒ 走 onError', () => {
-    h.platform = 'devtools'
+  it('⭐ 三个回调都要透传给 Recorder（少一个就是静默失效）', () => {
+    const onFrame = vi.fn()
+    const onDone = vi.fn()
     const onError = vi.fn()
-    createSpeechSession({ onDone: () => {}, onError })
-    const e = new Error('boom')
-    rec.cbs?.onError?.(e)
-    expect(onError).toHaveBeenCalledWith(e)
-  })
-})
+    createSpeechSession({ onFrame, onDone, onError })
 
-describe('插件后端（真机）', () => {
-  it('⭐ 拿到识别文本 + 音频路径（两样都要）', async () => {
-    h.platform = 'ios'
-    asrState.available = true
-    const done = vi.fn()
-    const s = createSpeechSession({ onDone: done, onError: () => {} })
-    expect(s.backend).toBe('plugin')
-    s.start()
-    await vi.waitFor(() => expect(done).toHaveBeenCalled())
-    expect(done).toHaveBeenCalledWith({ audioPath: '/tmp/p.mp3', durationMs: 1234, text: 'hello world' })
+    const opts = created[0]
+    // ⚠️ onFrame 是**直接透传**（同一引用）；onStop / onError 在适配层包了一层
+    //    （它们要把 Recorder 的形状转成 SpeechResult）⇒ 只能按**行为**断言，不能比引用
+    expect(opts?.onFrame).toBe(onFrame)
+    expect(typeof opts?.onStop).toBe('function')
+
+    const err = new Error('boom')
+    ;(opts?.onError as (e: Error) => void)(err)
+    expect(onError).toHaveBeenCalledWith(err)
   })
 
-  it('stop 转给插件的 stopRecognize', () => {
-    h.platform = 'ios'
-    asrState.available = true
-    const s = createSpeechSession({ onDone: () => {}, onError: () => {} })
-    s.start()
-    s.stop()
-    expect(asrState.stopped).toBe(1)
+  it('⚠️⚠️ onStop 给上层的 text 恒为 null —— 这是"没有逐词标色"的**唯一**开关', () => {
+    const onDone = vi.fn()
+    createSpeechSession({ onDone, onError: vi.fn() })
+
+    // 模拟录音器回调
+    const onStop = created[0]?.onStop as (r: { tempFilePath: string; durationMs: number }) => void
+    onStop({ tempFilePath: '/tmp/a.mp3', durationMs: 3000 })
+
+    expect(onDone).toHaveBeenCalledWith({ audioPath: '/tmp/a.mp3', durationMs: 3000, text: null })
+  })
+
+  it('start / stop / dispose 都转给录音器（不自己记状态）', () => {
+    const s = createSpeechSession({ onDone: vi.fn(), onError: vi.fn() })
+    // 不抛就行 —— 真正的行为在 recorder 自己的测试里
+    expect(() => {
+      s.start()
+      s.stop()
+      s.dispose()
+    }).not.toThrow()
   })
 })

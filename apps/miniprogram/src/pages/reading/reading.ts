@@ -1079,8 +1079,15 @@ Page({
      *    真机走插件时**永远不会有帧**（实测 0 帧），照旧等帧就会误报。
      */
     this.session = createSpeechSession({
-      // ⭐ 流式中间结果 → 逐词上色（只有插件后端会调）
-      onPartial: (t) => this.onInterimText(t),
+      /**
+       * ⚠️⚠️ **`onPartial` 已经没有了**（2026-10：插件被砍，见 lib/audio/speech-session 的文件头）。
+       *    逐词上色那条路随之休眠：`r.text` 恒为 null ⇒ 标色不渲染、漏读门禁也不拦 ✓
+       *    （它们的数据源就是识别文本，没有识别就没有判据 ✓）
+       */
+      /**
+       * ⚠️ **帧回调**（波形 + 静音自停的原料）**下一步才接** ——
+       *    现在接上会留一个空方法，而它要和波形一起写才有意义（见 vad.ts 的文件头）。
+       */
       onDone: (r) => this.handleSpoken(r),
       onError: (e) => {
         this.stopTimer()
@@ -1253,30 +1260,6 @@ Page({
     if (this.stopSent) return
     this.stopSent = true
     this.onStopRecord()
-  },
-
-  /**
-   * ⭐ **中间结果只用来判断"该收工了没"，不再上色。**
-   *
-   * ⚠️⚠️ 早期版本在这里逐词变色（「边读文字边变色」），用户 2026-10 决定**整套去掉**：
-   *    插件的中间结果约 **550ms 才回一次**，字是一跳一跳地亮，延迟体验不理想 ——
-   *    与其做一个迟钝的实时反馈，不如不做。**定稿那一刻的标色保留**（那是即时的、准的）。
-   *
-   * ⭐ 但现在这个回调还有**一个必须留的用途**：松手之后判断尾巴追上了没有。
-   *    「读完立刻松手 ⇒ 最后两个词被判漏读」那个故障的解法是松手缓冲 600ms，
-   *    而**追上就立刻结束**靠的正是这里 —— 没有它，每次松手都要白等满 600ms。
-   *
-   * ⚠️ 传进来的文本是**整段当前结果**（可能是修正而不是追加），所以每次都整体重算。
-   */
-  onInterimText(spokenText: string) {
-    // ⚠️ stopSent 之后不用再判"追上没" —— 停已经发出去了，剩下的交给 onStop
-    if (this.gone || !this.releasePending || this.stopSent) return
-    const spoken = spokenText.split(/\s+/).filter(Boolean)
-    /**
-     * ⚠️ 判据是 `pending` 为空（没有"还没读到"的词了）—— 说明转写已经追上了用户实际读到的位置。
-     *    这是"读完立刻松手"最常见的情形：尾巴追上来就立刻出结果，用户感觉不到那 600ms。
-     */
-    if (wordProgressOf(this.refText, spoken).pending.length === 0) this.finishRecording()
   },
 
   onStopRecord() {
