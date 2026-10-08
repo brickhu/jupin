@@ -2405,7 +2405,18 @@ Page({
      * ⚠️ UI 上这颗钮同时是 disabled 的（见 wxml 的 detecting），但**两处都要有**：
      *    光靠 disabled 挡不住别的入口调这个方法（将来可能还有）。
      */
-    if (this.data.phase !== 's3') return
+    /**
+     * ⚠️⚠️ **判据是 `detecting`，不是 `phase !== 's3'`**（2026-10 修，用户报的"点胶囊关不掉弹窗"）。
+     *
+     * 这一行的**本意**只有一句：**检测中不许重录** ✗
+     * 而结果态（s5）的 `dismissResult()` **也走这个方法**来关窗 + 复位界面的 ——
+     * 写成"非 s3 一律拦"就把结果态一起挡了 ✗
+     * 症状：点那颗黄色胶囊**什么都不发生**（弹窗还在、页面也没刷新）✓
+     *
+     * ⭐ `detecting` 只在 uploading / scoring 时为真（由 phasePatch 与 phase 一起写）——
+     *    那正是"这一把在跑、绝不能重录"的唯一时段 ✓
+     */
+    if (this.data.detecting) return
     // ⚠️ 先停数字滚动：不停的话它会继续往 s1 的界面上写 scoreText（见 rollNumbers）
     this.stopRoll()
     if (this.recordingKey) clearLastRecording(this.recordingKey)
