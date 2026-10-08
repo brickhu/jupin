@@ -1,5 +1,4 @@
 import {
-  COOKIE_PASS_LINE,
   ENERGY_PER_CHALLENGE,
   PREFLIGHT,
   formatScore,
@@ -2055,7 +2054,7 @@ Page({
       // ⚠️ 用服务端那个权威判断，不从饼干推（饼干那段在有些回包里是 null）
       conquered: result.isConquered,
       earned: cookie?.earned ?? 0,
-      passLine: cookie?.passLine ?? COOKIE_PASS_LINE,
+      // ⚠️ 不传 passLine：那个值是 max(85, 前高)，拿它判"过没过线"会错（见 resultFormOf 的说明）
       previousBest: result.previousBest ?? null,
     })
     this.setData({

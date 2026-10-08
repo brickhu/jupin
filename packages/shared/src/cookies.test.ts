@@ -138,67 +138,76 @@ describe('pointsToConquer —— 「还差多少分」（屏幕上永不出现 0
  *    最容易写错的是 c 与 d —— 它们都只在"已经攻克过"的前提下才成立，
  *    而写错了屏幕上看不出来（照样显示一句话），只有用户会觉得莫名其妙。
  */
-describe('resultFormOf —— 四种结果形态（alert1–4）', () => {
-  const passLine = 85
+describe('resultFormOf —— 六条口径（用户 2026-10 定）', () => {
+  const PASS = 85
 
-  it('a：第一次攻克 ⇒「攻克本句，+N 🍪」', () => {
-    const r = resultFormOf({ score: 99.2, conquered: true, earned: 8, passLine, previousBest: null })
-    expect(r.form).toBe('a')
+  it('① 首次 · 攻克 ⇒「攻克本句，+N 🍪」', () => {
+    const r = resultFormOf({ score: 99.2, conquered: true, earned: 8, previousBest: null })
+    expect(r.form).toBe('first-pass')
     expect(r.text).toBe('攻克本句，+8 🍪')
   })
 
-  it('d：之前攻克过、这次又攻下 ⇒「再次攻克，+N 🍪」', () => {
-    const r = resultFormOf({ score: 94.7, conquered: true, earned: 9, passLine, previousBest: 90 })
-    expect(r.form).toBe('d')
-    expect(r.text).toBe('再次攻克，+9 🍪')
+  it('② 首次 · 没攻克 ⇒「还差N分攻克本句」', () => {
+    // 85.1 - 34.8 = 50.3 ⇒ 51
+    const r = resultFormOf({ score: 34.8, conquered: false, earned: 0, previousBest: null })
+    expect(r.form).toBe('first-short')
+    expect(r.text).toBe('还差51分攻克本句')
   })
 
-  it('b：还没攻克过 ⇒「差X分，攻克本句」，基准是**攻克线**', () => {
-    const r = resultFormOf({ score: 34.8, conquered: false, earned: 0, passLine, previousBest: null })
-    expect(r.form).toBe('b')
-    // 85.1 - 34.8 = 50.3 ⇒ 向上取整 **51**（34.8 + 51 = 85.8 > 85 ⇒ 确实攻得下 ✓）
-    // ⚠️ 不是设计稿那张图上的 20 —— 图里 alert2 的数字是占位的
-    expect(r.text).toBe('差51分，攻克本句')
+  it('③ 非首次 · 超前高且过线 ⇒「超越前高，+N 🍪」', () => {
+    const r = resultFormOf({ score: 94.7, conquered: true, earned: 9, previousBest: 90 })
+    expect(r.form).toBe('beat-record')
+    expect(r.text).toBe('超越前高，+9 🍪')
   })
 
-  it('c：**有记录但没攻克** ⇒ 目标换成刷新记录（设计稿 alert3 就是这个）', () => {
-    // ⚠️⚠️ 这条是照着设计稿 alert3 标定的：78.3 分、记录 83.3（**低于 85 线**）⇒「差5分刷新记录」
-    //    我第一版把判据写成"之前攻克过（best≥85）"，那样这条会掉进 b ⇒ 与设计稿不符 ✗
-    // ⚠️ 记录取 83.2 而不是 83.3：跨过记录要 `best + 0.1`，83.2 + 0.1 - 78.3 = 5.0 ⇒ 差 5 分
-    //    （设计稿那份 mock 写的是 83.3，配上"+0.1"会得 5.1 ⇒ 6 —— 说明它自己的数差了一格；
-    //     这里按**语义**写：要刷新就得比记录高 0.1，而分是一位小数。）
-    const r = resultFormOf({ score: 78.3, conquered: false, earned: 0, passLine: 85, previousBest: 83.2 })
-    expect(r.form).toBe('c')
-    expect(r.text).toBe('差5分刷新记录')
+  it('④ 非首次 · 超前高但没过线 ⇒ 两件事一起说', () => {
+    // design 的 alert2 就是这个位置：前高 78，这次 80（超前高、仍 <85）
+    // 85.1 - 80 = 5.1 ⇒ 6
+    const r = resultFormOf({ score: 80, conquered: false, earned: 0, previousBest: 78 })
+    expect(r.form).toBe('beat-record-short')
+    expect(r.text).toBe('超越前高，还差6分攻克本句')
   })
 
-  it('⚠️ 有记录的人没攻克时**绝不**该看到「攻克本句」（那说明规则说穿了）', () => {
-    const r = resultFormOf({ score: 88, conquered: false, earned: 0, passLine: 95, previousBest: 95 })
-    expect(r.text).not.toContain('攻克本句')
-    expect(r.text).toContain('刷新记录')
+  it('⑥ 非首次 · 过线但没超前高 ⇒「还差N分突破前高」', () => {
+    // 前高 92，这次 91（过线 85 ✓，没超前高）—— 92.1 - 91 = 1.1 ⇒ 2
+    const r = resultFormOf({ score: 91, conquered: false, earned: 0, previousBest: 92 })
+    expect(r.form).toBe('short-of-record-pass')
+    expect(r.text).toBe('还差2分突破前高')
   })
 
-  it('⚠️ 第一次读这句（previousBest 为 null）走 b —— 目标只能是攻克', () => {
-    const r = resultFormOf({ score: 40, conquered: false, earned: 0, passLine, previousBest: null })
-    expect(r.form).toBe('b')
-    // 85.1 - 40 = 45.1 ⇒ 46
-    expect(r.text).toBe('差46分，攻克本句')
+  it('⑦ 非首次 · 没超前高也没过线 ⇒ 加一句鼓励', () => {
+    // 前高 70，这次 60：70.1 - 60 = 10.1 ⇒ 11
+    const r = resultFormOf({ score: 60, conquered: false, earned: 0, previousBest: 70 })
+    expect(r.form).toBe('short-of-record-short')
+    expect(r.text).toBe('差11分突破前高，继续加油')
   })
 
-  it('⚠️ 屏幕上永远不出现「0 🍪」—— 四个形态的文案都不含它', () => {
+  it('⚠️ 文案里不出现「0 🍪」（屏幕上永远不出现它）', () => {
     const cases = [
-      { score: 99, conquered: true, earned: 8, passLine, previousBest: null },
-      { score: 99, conquered: true, earned: 8, passLine: 90, previousBest: 90 },
-      { score: 40, conquered: false, earned: 0, passLine, previousBest: 30 },
-      { score: 88, conquered: false, earned: 0, passLine: 92, previousBest: 92 },
+      { score: 99, conquered: true, earned: 8, previousBest: null },
+      { score: 40, conquered: false, earned: 0, previousBest: null },
+      { score: 95, conquered: true, earned: 5, previousBest: 94 },
+      { score: 80, conquered: false, earned: 0, previousBest: 78 },
+      { score: 91, conquered: false, earned: 0, previousBest: 92 },
+      { score: 60, conquered: false, earned: 0, previousBest: 70 },
     ]
-    for (const c of cases) {
-      expect(resultFormOf(c).text).not.toContain('0 🍪')
+    for (const c of cases) expect(resultFormOf(c).text).not.toContain('0 🍪')
+  })
+
+  it('⚠️ 非首次绝不出现「攻克本句」四个字单独打头（那是首次的说法）', () => {
+    // ③④ 说的是"超越前高"，⑥⑦ 说的是"突破前高" —— 都不会退回"攻克本句，+N"
+    for (const c of [
+      { score: 95, conquered: true, earned: 5, previousBest: 90 },
+      { score: 80, conquered: false, earned: 0, previousBest: 78 },
+      { score: 91, conquered: false, earned: 0, previousBest: 92 },
+      { score: 60, conquered: false, earned: 0, previousBest: 70 },
+    ]) {
+      expect(resultFormOf(c).text.startsWith('攻克本句')).toBe(false)
     }
   })
 
-  it('⚠️「差X分」永远是正数（哪怕边界上算出来是 0）', () => {
-    // 已经攻克过、这次正好等于最好成绩 ⇒ 要再高 1 分才算刷新
-    expect(resultFormOf({ score: 92, conquered: false, earned: 0, passLine: 92, previousBest: 92 }).text).toBe('差1分刷新记录')
+  it('⚠️「差N分」永远是正数（边界上也不能变成 0 分）', () => {
+    // 正好追平前高 ⇒ 还要再高 0.1 才算突破
+    expect(resultFormOf({ score: 92, conquered: false, earned: 0, previousBest: 92 }).text).toBe('还差1分突破前高')
   })
 })

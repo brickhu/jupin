@@ -185,34 +185,42 @@ export function pointsToConquer(score: number, passLine: number): number {
 }
 
 /**
- * ⭐⭐ **这一把的结果属于哪一种形态**（2026-10 定的四个结果弹窗：alert1–alert4）。
+ * ⭐⭐ **这一把的结果属于哪一种形态** —— 底部那颗状态胶囊的文案（用户 2026-10 定的六条）。
  *
- * ## 两把尺子，四种组合
+ * ## 六条口径（原话）
  *
- * 攻克线是 `max(85, 个人最好)`（见 computeCookies）—— 于是"这一把怎么样"其实由
- * **两个布尔**决定，而不是分数本身：
+ * | # | 条件 | 文案 |
+ * |---|---|---|
+ * | 1 | 首次 · 攻克 | 攻克本句，+N 🍪 |
+ * | 2 | 首次 · 没攻克 | 还差N分攻克本句 |
+ * | 3 | 非首次 · 超越前高且过线 | 超越前高，+N 🍪 |
+ * | 4 | 非首次 · 超越前高但没过线 | 超越前高，还差N分攻克本句 |
+ * | 6 | 非首次 · 没超前高但过线 | 还差N分突破前高 |
+ * | 7 | 非首次 · 没超前高也没过线 | 差N分突破前高，继续加油 |
  *
- *   · `conquered` = 这一把攻下了（服务端那个权威判断）
- *   · `hasRecord` = **这一句之前读过**（个人最好不是 null）
+ * （原话里就没有第 5 条 —— 不是漏抄，是那格不可能存在。）
  *
- * | conquered | hasRecord | 形态 | 口径 |
- * |---|---|---|---|
- * | ✅ | ❌ | **a** | 第一次就攻下 ⇒「攻克本句，+N 🍪」 |
- * | ✅ | ✅ | **d** | 又攻下一次 ⇒「再次攻克，+N 🍪」 |
- * | ❌ | ❌ | **b** | 第一次读、没攻下 ⇒「差X分，攻克本句」 |
- * | ❌ | ✅ | **c** | 读过、这次没攻下 ⇒ 目标换成**刷新记录** ⇒「差X分刷新记录」 |
+ * ## ⚠️ 判据为什么要用服务端那个 `conquered`
  *
- * ⚠️⚠️ **那个开关是"有没有记录"，不是"之前攻克过没有"** —— 这是按设计稿
- *    （alert3）标定出来的：`78.3 分 ⇒「差5分刷新记录」`，而记录只有 83.x，
- *    **低于 85 那条线** ✗ ⇒ 记录在攻克林之下时，目标照样是"刷新记录"。
+ * 攻克线是 `max(85, 个人最好)` ⇒ **"攻没攻克"本身就已经同时回答了"过没过线"和"超没超前高"**：
  *
- * ⭐ 两种尺子：**攻克看 85 那条线，刷新记录看自己的历史** ——
- *    读过这句之后，唯一还值得追的就是自己的记录。
+ *   · 非首次 · `conquered` ⇒ `score > 85` **且** `score > best` ⇒ 就是第 3 条 ✓
+ *   · 非首次 · 没攻克 ⇒ 再用 `score > passLine` 一分：
+ *       过线 ⇒ 那一定是**没超前高**（否则就攻克了）⇒ 第 6 条 ✓
+ *       没过线 ⇒ 第 7 条（此时超没超前高都可能，文案都是"突破前高" ✓）
  *
- * ⚠️ 为什么是纯函数而不是写在 wxml 里：这四种形态的判据（尤其 c 那条
- *    "换成追记录"）是有前提条件的，写在模板里就变成没人测得到的散装逻辑。
+ * ⇒ 不要自己再算一遍 `> max(best, 85)`：那是**第二份真相**，
+ *    和发饼干那条规则（computeCookies）迟早会不一致。
+ *
+ * ⚠️ 首次那两条只看 `conquered`（没有前高可比）✓
  */
-export type ResultForm = 'a' | 'b' | 'c' | 'd'
+export type ResultForm =
+  | 'first-pass'
+  | 'first-short'
+  | 'beat-record'
+  | 'beat-record-short'
+  | 'short-of-record-pass'
+  | 'short-of-record-short'
 
 export interface ResultLine {
   form: ResultForm
@@ -224,56 +232,61 @@ export function resultFormOf(input: {
   score: number
   /**
    * ⭐ **这一把攻没攻克** —— 用服务端那个权威判断（`result.isConquered`）。
-   *
-   * ⚠️ 刻意**不**从 `earned > 0` 推：饼干那一段（`CookieAwardView`）在有些回包里是 null
-   *    （没配奖励规则 / 老成绩），推的话会把"攻克了"显示成"没攻克" ——
-   *    而那是**两个不同的字段**，各说各的，不该从一个推另一个。
+   * ⚠️ 刻意不从饼干那段（`earned > 0`）推：它在有些回包里是 null ✗
    */
   conquered: boolean
   /** 这一把拿到的饼干（没攻克时是 0；拿不到奖励数据时也传 0） */
   earned: number
-  /** 攻克线（服务端给的 passLine，= max(85, 个人最好)） */
-  passLine: number
   /**
-   * **这一把之前**的个人最好；null = 这条句子没读过（或查不到）。
-   * ⚠️ 是"之前"不是"含这一把"—— 传进来之前服务端已经把它取成历史最好。
+   * **这一把之前**的个人最好；null = 这条句子**第一次读**。
+   * ⚠️ 是"之前"不是"含这一把"—— 服务端传进来的就是历史最好。
    */
   previousBest: number | null
 }): ResultLine {
-  const conquered = input.conquered
-  /**
-   * ⚠️⚠️ 判据是「**这条句子有没有记录**」，**不是**"之前攻克过没有"（2026-10 按设计稿修正）。
-   *
-   * 我第一版写成 `previousBest >= COOKIE_PASS_LINE`（之前攻克过）—— 那是**错的**，
-   * 设计稿 alert3 一句话就把它否掉了：
-   *
-   *     78.3 分 ⇒「差5分刷新记录」 ⇒ 78.3 + 5 = **83.3 < 85**
-   *
-   * 记录**低于攻克线**时也要说"刷新记录" ✗ —— 所以"有没有记录"才是那个开关：
-   * 读过这句 ⇒ 目标是**自己的记录**；第一次读 ⇒ 目标是**攻克**（85 那条线）。
-   */
-  const hasRecord = input.previousBest !== null
+  const best = input.previousBest
+  const first = best === null
 
-  if (conquered) {
-    return {
-      form: hasRecord ? 'd' : 'a',
-      text: (hasRecord ? '再次攻克' : '攻克本句') + '，+' + input.earned + ' 🍪',
+  /**
+   * ⚠️⚠️ "过没过线"的基准是**固定的 85**（COOKIE_PASS_LINE），**不是**服务端那个 passLine ✗
+   *
+   * 服务端的 `passLine = max(85, 个人最好)` —— 它是**发饼干**用的门槛。拿它判"过线"必错：
+   *     前高 92、这次 91 ⇒ passLine 也是 92 ⇒ "91 > 92" 假
+   *     ⇒ 会被误判成"没超前高也没过线"（第 7 条），而用户口径里它明明是第 6 条（高于 85）✗
+   * ⇒ 这个函数**不收 passLine 参数**，就是为了让那个错写不出来。
+   */
+  const LINE = COOKIE_PASS_LINE
+
+  if (first) {
+    if (input.conquered) {
+      return { form: 'first-pass', text: '攻克本句，+' + input.earned + ' 🍪' }
     }
+    return { form: 'first-short', text: '还差' + pointsToConquer(input.score, LINE) + '分攻克本句' }
+  }
+
+  const record = best as number
+  if (input.conquered) {
+    return { form: 'beat-record', text: '超越前高，+' + input.earned + ' 🍪' }
   }
 
   /**
-   * ⚠️ 两条"还差多少"用的是**不同的基准**：
-   *    · 还没攻克过 ⇒ 基准是**攻克线**（差多少能攻下）
-   *    · 已经攻克过 ⇒ 基准是**自己的记录**（差多少能刷新）
-   *   混用会出现"差 3 分攻克本句"而用户早就在 90 分上 —— 一句话就把整套规则说穿了。
+   * ⚠️ 没攻克时，"超越前高"与"过线"是**两个独立**的判断，要说清是哪一种：
+   *    · 超前高但没过线 ⇒ 两件事一起说（第 4 条）
+   *    · 过线但没超前高 ⇒ 目标只剩突破前高（第 6 条）
+   *    · 都没 ⇒ 同样只能说"突破前高"（第 7 条，加一句鼓励）
    */
-  if (hasRecord) {
-    // previousBest 在这一支里一定不是 null（hasRecord 已经保证了）
-    const best = input.previousBest as number
-    // ⚠️ 与 pointsToConquer 同一条规矩：**+0.1、向上取整**——
-    //    刷新记录要的是"比记录高一点点"，而分是一位小数
-    //    （设计稿 alert3：83.3 + 0.1 - 78.3 = 5.0 ⇒ 差 5 分 ✓）
-    return { form: 'c', text: '差' + Math.max(1, Math.ceil(best + SCORE_STEP - input.score)) + '分刷新记录' }
+  const beatRecord = input.score > record
+  /** ⚠️ 与上面 LINE 同一个基准：**固定的 85** */
+  const passedLine = input.score > LINE
+  /** 距**攻克线（85）**还差多少（跨过去要 0.1，分是一位小数） */
+  const toLine = pointsToConquer(input.score, LINE)
+  /** 距**自己的前高**还差多少（同一条规矩） */
+  const toRecord = Math.max(1, Math.ceil(record + SCORE_STEP - input.score))
+
+  if (beatRecord) {
+    return { form: 'beat-record-short', text: '超越前高，还差' + toLine + '分攻克本句' }
   }
-  return { form: 'b', text: '差' + pointsToConquer(input.score, input.passLine) + '分，攻克本句' }
+  if (passedLine) {
+    return { form: 'short-of-record-pass', text: '还差' + toRecord + '分突破前高' }
+  }
+  return { form: 'short-of-record-short', text: '差' + toRecord + '分突破前高，继续加油' }
 }
