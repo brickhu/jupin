@@ -13,7 +13,32 @@
 # ---- 构建阶段 ----
 FROM node:20-alpine AS build
 WORKDIR /app
-RUN npm i -g pnpm@9
+#
+# ⭐⭐ **全部换成国内镜像源** —— 2026-10-09 用户问「增量部署 3 分钟+ 合理吗」
+#
+# ⚠️ 从平台构建日志量出来的真实耗时（⭐ 而且**平台完全没有层缓存** ✗，
+# 所以这些步骤【每次构建都重跑】✗）：
+# apk add ffmpeg      39.4s  ← 从 dl-cdn.alpinelinux.org 拉 134MB ✗
+# pnpm install        27.7s  ← 从 registry.npmjs.org 拉 596 个包 ✗
+# npm i -g pnpm@9      3.1s  ← 同上 ✗
+# pnpm build          14.3s  ← ⭐ 这一步是必要成本 ✓（改不掉 ✓）
+# ⇒ ⭐ 三处慢的共同原因都是【从国外拉】✗ ⇒ 换国内源 ✓
+#
+# ⚠️ alpine 源要**按实际版本**写（⭐ 写死 v3.20 之类的会在基础镜像升级后 404 ✗）
+# ⇒ ⭐ 从 /etc/alpine-release 现取 ✓
+# ⚠️ 保留原源当兜底（⭐ 阿里云偶尔抖 ✓）—— 用 `--repository` 叠加而不是替换 ✓
+#
+RUN set -eux; \
+    ver="$(cut -d. -f1,2 /etc/alpine-release)"; \
+    printf '%s\n' \
+      "https://mirrors.aliyun.com/alpine/v${ver}/main" \
+      "https://mirrors.aliyun.com/alpine/v${ver}/community" \
+      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" \
+      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" \
+      > /etc/apk/repositories; \
+    npm config set registry https://registry.npmmirror.com; \
+    echo "registry=https://registry.npmmirror.com" > /root/.npmrc; \
+    npm i -g pnpm@9
 
 # ⚠️ 必须把**所有** workspace 成员的 package.json 都拷进来：
 #    pnpm 按 pnpm-workspace.yaml 的 glob 找项目，少一个就会和 pnpm-lock.yaml 对不上，
@@ -49,6 +74,15 @@ RUN pnpm --filter @jushuo/server build
 # ---- 运行阶段 ----
 FROM node:20-alpine
 WORKDIR /app
+# ⚠️ 运行阶段也要换源 ✗ —— `apk add ffmpeg`（⭐ 39.4s / 134MB）在这个阶段 ✓
+RUN set -eux; \
+    ver="$(cut -d. -f1,2 /etc/alpine-release)"; \
+    printf '%s\n' \
+      "https://mirrors.aliyun.com/alpine/v${ver}/main" \
+      "https://mirrors.aliyun.com/alpine/v${ver}/community" \
+      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" \
+      "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" \
+      > /etc/apk/repositories
 
 # ⭐ ffmpeg —— 音频归一化用（services/audio.ts）。
 # ⚠️ 为什么服务端必须能解码：客户端传上来的**不一定是裸 PCM** ——
