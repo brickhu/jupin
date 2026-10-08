@@ -1,0 +1,82 @@
+# ============================================================
+#  CI：类型检查 + 测试
+#
+#  ⚠️⚠️ **这个工作流【不部署】** —— 2026-10-08 改（用户三次点破后才想明白）
+#
+#  ## 为什么把部署整个摘掉
+#
+#  ⭐ **微信云托管自带「流水线」**：控制台 → 服务设置 → 流水线 →
+#     绑定 GitHub 仓库 + 勾「推送触发」⇒ push 就自动构建部署 ✓
+#     （见 https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloudrun/src/guide/service/pipeline.html）
+#
+#  ⚠️ 而当初走 CI 部署，是因为平台源构建"会卡死在 create_build_image" ✗ ——
+#     为了绕开它，又把"构建"搬到了 GitHub runner（`--image`）✗
+#     ⇒ ⚠️ 结果变成"美国 runner 推 256MB 镜像到广州" ⇒ **28 分钟都推不完** ✗✗
+#        **比原来那条路还糟** ✓
+#
+#  ## ⚠️ 那条路真正的问题在哪（记下来免得再走）
+#
+#  `wxcloud run:deploy --targetDir <dir>` 走的是控制台的
+#  **「手动上传代码包」** —— 而官方文档写明它 **大小不能超过 2 MiB** ✗：
+#      · 原来传整个工作区（含 484MB node_modules）⇒ 400 ✗
+#      · 我后来改成 `git archive` 出 8.7MB 的干净目录 ⇒ **还是超 2MiB ⇒ 还是 400** ✗
+#  ⇒ ⭐ 这条路（CLI 上传）**天生就装不下这个仓库** ✓ 不是调参能解决的 ✓
+#
+#  ## 所以现在的分工
+#
+#      GitHub Actions  ⭐ 只跑检查（类型 + 782 个测试）✓ 不碰云托管 ✗
+#      云托管流水线     ⭐ 拉 GitHub 代码 → 国内构建 → 部署 ✓✓
+#
+#  ## ⚠️ 顺带的好处：CI 里不再需要任何 secret
+#
+#  ⚠️⚠️ 之前 CI 的 env 块里有 MYSQL_PASSWORD / ADMIN_TOKEN / LLM_API_KEY …
+#     ⇒ 而 `wxcloud` CLI 会把**整个 envParamsJson 打进日志** ✗
+#     ⇒ ⭐ `LLM_API_KEY` 就这么泄漏了 4 次 ✓（GitHub 自动掩码只覆盖 `secrets.*` 注入的 ✓
+#        而 LLM_* 当时不在 secrets 里 ✗）
+#  ⇒ ⭐ **摘掉部署 = 摘掉整个泄漏面** ✓✓
+#     ⚠️ `tools/deploy-cloud.mjs` 保留（本机手动部署用 ✓ 它读本地 .env ✓
+#        并带 `::add-mask::` 兜底 ✓）
+#
+#  ## ⚠️ 部署脚本 / 凭据仍在，没有删
+#
+#      node tools/deploy-cloud.mjs dev            # 手动源构建（⚠️ 2MiB 装不下 ⇒ 会 400 ✗）
+#      node tools/deploy-cloud.mjs dev --image     # 手动推镜像（⚠️ 本机在国内时可用 ✓）
+#    凭据 `CCR_USERNAME` / `CCR_PASSWORD` 仍在 GitHub secrets 里 ✓ 留着备用 ✓
+# ============================================================
+name: CI
+on:
+  push:
+    branches: [dev, main]
+  # ⚠️ 刻意**不加** paths-ignore：以前为"纯文档改动不触发后端部署"而设 ✗
+  #    现在这个工作流只跑测试 ✓ 而**测试本来就该覆盖所有改动** ✓
+  #    （小程序、文档里的代码块都可能影响检查 ✓）
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # ⚠️ 必须有超时：没有它，一次外部依赖卡住会白等到 GitHub 的 6 小时上限 ✗
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ⭐ 与仓库的验证规范一致：typecheck → test（见 AGENT.md 的"每次改动都要做"）
+      - name: 类型检查与测试
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      # ⭐ 文档里的链接与路径也是会烂的 ✓ 一起查 ✓
+      - name: 文档检查
+        run: pnpm check:docs
