@@ -104,7 +104,22 @@ userRoutes.openapi(challengesRoute, async (c) => {
         // ⚠️ DECIMAL 读回来是字符串，出去一律变数字（见 schema 里的说明）
         score: r.score === null ? null : Number(r.score),
         // ⚠️ 同 submission-view：按 status 判，不读老的 is_conquered 列
-        isConquered: r.status === 'scored',
+        /**
+     * ⚠️⚠️ **这个字段的名字是错的，别拿它判"攻克"**（2026-10 为此出过一次线上可见的错）。
+     *
+     * 它的真实含义是「**这条提交打完分了**」（`status === 'scored'`）——
+     * 一个**遗留名字**（历史上有过真的 is_conquered 列，后来删了，名字留下了）。
+     *
+     * 症状：朗读页的结果弹窗拿它当"攻克了没有" ⇒ **只要出分就恒为 true** ✗
+     *   ⇒ 68.1 分（前高 82.6、攻克林 85）也显示「超越前高，+0 🍪」✗✗
+     *
+     * ⭐ 要判"攻没攻克"，用**实际发了多少饼干**：`cookies.earned > 0`
+     *    —— 它是 computeCookies 算出来的，与 `score > max(85, 个人最好)` 严格等价 ✓
+     *
+     * ⚠️ 改名字是正解，但那会牵动 shared 的类型与 openapi（本项目暂时不做）；
+     *    现阶段靠这段注释 + 那条"68.1 不许说超越前高"的测试盯着。
+     */
+    isConquered: r.status === 'scored',
         status: r.status,
         aiComment: r.aiComment,
         text,

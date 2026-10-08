@@ -2079,8 +2079,24 @@ Page({
      */
     const line = resultFormOf({
       score: result.score,
-      // ⚠️ 用服务端那个权威判断，不从饼干推（饼干那段在有些回包里是 null）
-      conquered: result.isConquered,
+      /**
+       * ⚠️⚠️ **"攻没攻克"只能用实际发了多少来判断** —— 即 `cookie.earned > 0`。
+       *
+       * ## 为什么不能用 `result.isConquered`（我现在踩了这个坑）
+       *
+       * 那个字段的名字**撒谎**：服务端给的是
+       *     `isConquered: row.status === 'scored'`
+       * —— 它的真实含义是「**这条提交打完分了**」（一个遗留名字，
+       * 旁边注释还写着"不读老的 is_conquered 列"）。
+       * ⇒ 拿它当"攻克"用，**只要出分就恒为 true** ✗
+       * ⇒ 界面上就是：68.1 分（前高 82.6、攻克林 85）也显示「超越前高，+0 🍪」✗✗
+       *
+       * ⭐ `cookie.earned` 是 `computeCookies` 算出来的（那条规则唯一的实现），
+       *    `earned > 0` 与 `score > max(85, 个人最好)` **严格等价** ✓
+       * ⚠️ 拿不到奖励数据（cookie 为 null）时按"没攻克"处理 —— 宁可少说一次"攻克了"，
+       *    也不能把没攻克的说成攻克了（那是把规则说穿了 ✗）
+       */
+      conquered: (cookie?.earned ?? 0) > 0,
       earned: cookie?.earned ?? 0,
       // ⚠️ 不传 passLine：那个值是 max(85, 前高)，拿它判"过没过线"会错（见 resultFormOf 的说明）
       previousBest: result.previousBest ?? null,

@@ -182,6 +182,29 @@ describe('resultFormOf —— 六条口径（用户 2026-10 定）', () => {
     expect(r.text).toBe('差11分突破前高，继续加油')
   })
 
+  it('⚠️⚠️ 截图那个 bug：68.1 分、前高 82.6 ⇒【绝不能】说"超越前高"', () => {
+    // 68.1 < 82.6 且 < 85 ⇒ 没攻克、也没超前高 ⇒ 第⑦条
+    // ⚠️ 它当时显示成「超越前高，+0 🍪」是因为调用方把 isConquered 当成了"攻克"
+    //    （那个字段其实是"打完分了"✗）；测试从这一层盯住"没攻克就绝不会走 b/c 之外的分支"
+    const r = resultFormOf({ score: 68.1, conquered: false, earned: 0, previousBest: 82.6 })
+    expect(r.form).toBe('short-of-record-short')
+    expect(r.text).not.toContain('超越前高')
+    // 82.6 + 0.1 - 68.1 = 14.6 ⇒ 15
+    expect(r.text).toBe('差15分突破前高，继续加油')
+  })
+
+  it('⚠️ 攻克了才可能出现「+N 🍪」，且 N 一定 > 0（不存在「+0 🍪」）', () => {
+    for (const c of [
+      { score: 68.1, conquered: false, earned: 0, previousBest: 82.6 },
+      { score: 40, conquered: false, earned: 0, previousBest: null },
+      { score: 91, conquered: false, earned: 0, previousBest: 92 },
+    ]) {
+      const r = resultFormOf(c)
+      expect(r.text).not.toContain('+0')
+      expect(r.text).not.toContain('🍪')
+    }
+  })
+
   it('⚠️ 文案里不出现「0 🍪」（屏幕上永远不出现它）', () => {
     const cases = [
       { score: 99, conquered: true, earned: 8, previousBest: null },
