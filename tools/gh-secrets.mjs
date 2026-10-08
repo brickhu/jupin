@@ -80,6 +80,23 @@ const ENV_LEVEL = [
    *    而"本机明明能连"会让人完全找不到方向（与 SEED_ON_START 同一个坑）。
    */
   'ADMIN_TOKEN',
+  /**
+   * ⭐⭐ **AI 教练的大模型**（2026-10-08 提上来的 ✓）
+   *
+   * ⚠️⚠️ 在此之前它们是**唯一一类"没人管"的变量** ✗：
+   *    只在 .env.dev 里 ✓ 不是 GitHub secret ✗
+   *    ⇒ CI 里值来自"读回平台" ✓ ⇒ ⚠️ **GitHub 无从知道要掩它** ✗
+   *    ⇒ ⭐ 于是 `LLM_API_KEY` 被 wxcloud CLI 明文打进了 CI 日志 ✗（实测漏了 4 次 ✓）
+   *
+   * ⭐ 提成 Environment secret 之后：
+   *    · 与其余环境级变量**同一条路** ✓（不再"一会从这取一会从哪取"✗）
+   *    · ⭐ **GitHub 自动掩码** ✓ ⇒ 泄漏从根上没了 ✓
+   *    · ⚠️ 仍然要保留部署脚本里的 `::add-mask::` 兜底 ✓
+   *      （值也可能从"读回平台"那条路进来 ✓）
+   */
+  'LLM_API_KEY',
+  'LLM_BASE_URL',
+  'LLM_MODEL',
 ]
 
 const base = parseEnvFile(resolve(ROOT, '.env'))

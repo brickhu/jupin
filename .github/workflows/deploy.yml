@@ -146,6 +146,12 @@ jobs:
           XPAY_PRODUCT_ENERGY_300: ${{ secrets.XPAY_PRODUCT_ENERGY_300 }}
           XPAY_PRODUCT_ENERGY_3000: ${{ secrets.XPAY_PRODUCT_ENERGY_3000 }}
           ENGINE: xfyun
+          # ⭐⭐ AI 教练的大模型（2026-10-08 从"没人管"提成 Environment secret ✓）
+          #    ⚠️ 在此之前它们只在 .env.<env> 里 ⇒ CI 里靠"读回平台" ⇒ GitHub 不掩码 ✗
+          #    ⇒ ⭐ 实测 LLM_API_KEY 被 wxcloud CLI 明文打进日志 4 次 ✗ 现在是 secret ✓ 自动掩码 ✓
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           # ⭐⭐ 镜像仓库凭据（`--image` 用；见 tools/deploy-cloud.mjs 的 --image 说明）
           CCR_USERNAME: ${{ secrets.CCR_USERNAME }}
           CCR_PASSWORD: ${{ secrets.CCR_PASSWORD }}
@@ -257,6 +263,11 @@ jobs:
           XPAY_PRODUCT_ENERGY_10: ${{ secrets.XPAY_PRODUCT_ENERGY_10 }}
           XPAY_PRODUCT_ENERGY_300: ${{ secrets.XPAY_PRODUCT_ENERGY_300 }}
           XPAY_PRODUCT_ENERGY_3000: ${{ secrets.XPAY_PRODUCT_ENERGY_3000 }}
+          # ⭐⭐ AI 教练的大模型（2026-10-08 从"没人管"提成 Environment secret ✓）
+          #    ⚠️ 在此之前只在 .env.<env> 里 ⇒ CI 里靠"读回平台" ⇒ GitHub 不掩码 ✗
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           # ⚠️ prod 默认**不灌种子**（deploy 脚本里 target 为 prod 时是 false）。
           #    首次部署 prod 时把仓库变量 SEED_ON_START 设为 true 跑一次，
           #    否则 prod 句库是空的 —— 朗读页读不到正文。
