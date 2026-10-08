@@ -210,28 +210,36 @@ export function stopAudio(): void {
  *    而自动结束的门槛是"词数 × 400 × 0.85"（⭐ 11 个词 = 3740ms ✓）
  *    ⇒ ⭐ 影响可以忽略 ✓（⚠️ 真机上若发现它被当成语音，再说 ✓）
  */
-let cue: WechatMiniprogram.InnerAudioContext | null = null
-let cueSrc = ''
 /**
- * ⭐ 播放一个提示音（⭐ 两个导出都走它 ⇒ 只有一份 try/catch 与一个播放器 ✓）
- * ⚠️ 换音源时才重设 `src`（⭐ 同一个播放器连续放同一个文件不必重设 ✓）
+ * ⚠️⚠️ **每个音效各有一个自己的播放器** ✗（⭐ 这是踩过的坑 ✓）
+ *
+ *    最早是一共用一个播放器、播放前改它的 `src` ✗ ——
+ *    ⇒ ⚠️ **换完 `src` 立刻 `play()` 往往什么都不发生** ✗✓
+ *      （⭐ 那个 context 还在加载新的文件 ✓ 而 play 已经过去了 ✓）
+ *    ⇒ ⭐ 症状就是：⭐ **第一个音（嘟）响 ✓，后面的（嗖）永远没声音** ✗✓
+ *    ⭐ 改成"一个音一个播放器"：`src` 只设一次 ✓ 之后永远只 `play()` ✓
+ *    ⚠️ 代价是多两个 `InnerAudioContext`（⭐ 小程序上限远大于 3 ✓ 可接受 ✓）
+ */
+const cues = new Map<string, WechatMiniprogram.InnerAudioContext>()
+/**
+ * ⭐ 播放一个提示音
+ * ⚠️ 换音源时才重设 `src` ✓ —— 见上面那段（⭐ 这条是修"没声音"的关键 ✓）
  */
 function playCue(src: string): void {
   try {
-    if (!cue) {
-      cue = wx.createInnerAudioContext()
-      cue.volume = 0.9
-      cue.onError((err) => {
-        console.warn('[play] 提示音播放失败：' + JSON.stringify(err ?? null).slice(0, 120))
+    let a = cues.get(src)
+    if (!a) {
+      a = wx.createInnerAudioContext()
+      a.volume = 0.9
+      a.src = src
+      a.onError((err) => {
+        console.warn('[play] 提示音播放失败（' + src + '）：' + JSON.stringify(err ?? null).slice(0, 120))
       })
-    }
-    if (cueSrc !== src) {
-      cueSrc = src
-      cue.src = src
+      cues.set(src, a)
     }
     // ⚠️ 连续触发时（⭐ 比如"叮"刚响完用户又点了开始 ✓）要重头播，不要叠加
-    cue.stop()
-    cue.play()
+    a.stop()
+    a.play()
   } catch (err) {
     console.warn('[play] 提示音起不来：' + JSON.stringify(err ?? null).slice(0, 120))
   }
@@ -249,7 +257,6 @@ export function playDing(): void {
  *
  * ⚠️ 素材是 **1900Hz → 380Hz 的下滑扫频 + 一点噪声**（⭐ 0.26s / 11.5KB ✓）：
  *    下滑听感是"**清掉、重来**"✓ —— ⚠️ 比一声"嘟"更贴合"重置"这个动作 ✓
- * ⚠️ 它和「嘟」「叮」共用同一个播放器 ✓（⭐ 见 playCue 的说明 ✓）
  */
 export function playWhoosh(): void {
   playCue('/assets/whoosh.wav')
