@@ -195,3 +195,41 @@
   color: #000000;
   line-height: 32rpx;
 }
+
+/* ── 检测不合法（失败态）────────────────────────────────────── */
+/**
+ * ⚠️ 红圆 + 白叉 = 出分那颗绿圆 + 白勾的**同构版本**（同一个位置、同一种画法）。
+ *    图标字体里既没有 check-circle 也没有 close-circle，所以圆都自己画、叉用 mdi:close。
+ * ⚠️ 红是"判错"的颜色，在这里**用对了**：引擎真的说这段音频不行 ✓
+ *    （而逐词那个橙不是判错，是"去练这个" —— 两者的区别见 word-colors 的说明。）
+ */
+.rd-check-bad {
+  background: #dc2626;
+}
+
+/* 「检测失败」 —— 与分数同一行、同一个量级（它替代了那个分数） */
+.rd-fail-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #000000;
+  margin-left: 16rpx;
+  line-height: 1;
+}
+
+/* 为什么失败：一句人话，左对齐、可折行 */
+.rd-fail-detail {
+  display: block;
+  margin-top: 32rpx;
+  font-size: 28rpx;
+  line-height: 48rpx;
+  color: #666666;
+}
+
+/* 能量那行小字（已经扣了 / 失败没扣）—— 比正文再淡一档 */
+.rd-energy {
+  display: block;
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: #999999;
+  line-height: 1.6;
+}

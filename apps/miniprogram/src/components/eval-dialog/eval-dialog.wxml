@@ -20,7 +20,7 @@
 
   ⚠️ 按钮上的每个动作都由**页面**实现（组件只发事件）：这里不发请求、不判状态、不碰能量。
 -->
-<view class="ed-layer" wx:if="{{mode === 'precheck' || (mode === 'submitting' && (phase === 'uploading' || phase === 'scoring' || phase === 's6'))}}">
+<view class="ed-layer" wx:if="{{mode === 'precheck' || (mode === 'submitting' && (phase === 'uploading' || phase === 'scoring'))}}">
   <!--
     ⚠️ 遮罩和卡片是**兄弟**（同 user-sheet）：遮罩负责挡滚动与点击，
        卡片自己 catchtap/catchtouchmove，否则点在卡片上会穿透到下面的页面。
@@ -116,25 +116,14 @@
 
     <!-- ── 检测失败（s6）────────────────────────────────────
          ⚠️ 标题用「检测失败」而不是对勾（设计稿那张红底对勾会被读成成功）。 -->
-    <view class="ed-body" wx:elif="{{phase === 's6'}}">
-      <text class="text-72rpx font-bold text-bad">检测失败</text>
-      <text class="text-26rpx text-muted mt-2 text-center leading-[1.6]">{{failDetail}}</text>
-
-      <!-- ⚠️ 失败态**整块不出现**（prd §7.6）。
-           原来这里有三张恒为 +0 的灰卡 —— 那是**三次**「你什么都没得到」的宣告。 -->
-
-    </view>
+    
 
     <!-- ⚠️ 本次消耗的能量那行小字（已经扣了 / 失败没扣）由页面拼好传进来 -->
-    <text class="text-22rpx text-faint mt-4" wx:if="{{energyNote}}">{{energyNote}}</text>
+    
 
     <!-- ⚠️ 这里是 wx:if 不是 wx:elif：上面隔着那行 energyNote（它自己是个 wx:if），
          wx:elif 必须**紧跟**同级的 if/elif，隔着兄弟节点就不成立（会被静默忽略）。 -->
-    <view class="ed-actions" wx:if="{{phase === 's6'}}">
-      <ui-button variant="fill" color="warning" size="xl" width="full" bind:press="onConfirm">
-        <text class="text-32rpx">确认</text>
-      </ui-button>
-    </view>
+    
 
     <!-- ⚠️⚠️ **右上角那颗 × 已删**（用户 2026-10 定）。
          原来结果态画一颗 ×，与「确认」同一个动作 —— 那也是"顺手就能关掉结果"的第二个口子。

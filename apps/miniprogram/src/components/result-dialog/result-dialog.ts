@@ -23,6 +23,22 @@ Component({
   options: { styleIsolation: 'apply-shared' },
 
   properties: {
+    /**
+     * ⭐ **这一把是不是"检测不合法"**（引擎拒收 / 超时）—— 与"出分"互斥。
+     *
+     * ⚠️ 失败态**没有分数、没有逐词、也没有饼干**（prd §7.6：失败那一块整块不出现，
+     *    绝不出现「+0」这种"你什么都没得到"的宣告）。
+     *    它只有：一句人话说明为什么 + 一个出口。
+     */
+    failed: { type: Boolean, value: false },
+    /** 失败原因（一句人话，页面拼好；空串时组件兜设计稿那句） */
+    failDetail: { type: String, value: '' },
+    /**
+     * ⚠️ 本次消耗的能量那行小字（"已经扣了" / "失败没扣"）——
+     *    失败时**必须说清能量到底扣没扣**，否则用户会以为白花了一次。
+     */
+    energyNote: { type: String, value: '' },
+
     /** 这一把的分数（页面已经 formatScore 好，只负责画） */
     scoreText: { type: String, value: '' },
     /**

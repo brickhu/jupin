@@ -58,8 +58,6 @@ Component({
     phase: { type: String, value: '' },
     /** 上传进度 0–100（只有 uploading 时有意义） */
     uploadPercent: { type: Number, value: 0 },
-    /** s5 大号分数（页面在滚动时逐帧写进来） */
-    scoreText: { type: String, value: '' },
     /** s5 副标题（首次 / 破纪录 / 未破纪录三档，页面算好） */
     scoreSubtitle: { type: String, value: '' },
     /** s5 左上角那行「第 N 次朗读」 */
@@ -69,24 +67,7 @@ Component({
      * ⚠️ 默认 **null** ⇒ 整块不渲染 —— 这是"拿不到"与"失败态"共同的表达方式
      *    （`type: null` 是 wxml 组件里声明"可空对象"的写法，用 Object 构造器装不下 null）。
      */
-    cookieLine: { type: null, value: null as CookieLine | null },
-    /** s6 的副标题（默认「录音不符合规范」；超时那次会换一句真话） */
-    /**
-     * ⭐⭐ 结果态底部那颗**状态胶囊**的文案（用户 2026-10 定的四种形态 alert1–4）。
-     * ⚠️ 它是组件在结果态**唯一的出口**，所以不能是空的 —— 页面给不出来时
-     *    组件兜一句「知道了」（见 wxml），绝不画一颗没有字的按钮。
-     * ⚠️ 文案由页面的 `resultFormOf` 判（@jushuo/shared），组件**不自己算**。
-     */
-    resultLine: { type: null, value: null as { form: string; text: string } | null },
-    /**
-     * ⭐ 结果态那句**逐词着色**的原文（lib/word-colors 算好，组件只画）。
-     * ⚠️ 空数组 = 拿不到逐词 ⇒ 那一块整块不渲染（不画一句没颜色的原文假装判过了）。
-     */
-    resultWords: { type: Array, value: [] as { i: number; text: string; cls: string }[] },
 
-    failDetail: { type: String, value: '' },
-    /** 底部那行能量小字（成品文本，页面拼） */
-    energyNote: { type: String, value: '' },
     /** precheck 用：这一把要消耗几点（来自 shared 的 ENERGY_PER_CHALLENGE） */
     costEnergy: { type: Number, value: 0 },
     /** precheck 用：服务端给的权威余额（'asking' 与 'denied' 时可能是本机缓存值，别展示） */

@@ -305,15 +305,13 @@
        ⚠️ 注释里**不能写反引号** —— 小程序的 wxss 编译器会直接报 unexpected（这条是被 lint 挡下来的）。 -->
   <!-- ⭐⭐ 结果弹窗：**独立组件**（用户 2026-10 定）—— 只有出分/失败时才存在 -->
   <result-dialog wx:if="{{phase === 's5' || phase === 's6'}}"
+                 failed="{{phase === 's6'}}"
                  scoreText="{{scoreText}}" resultLine="{{resultLine}}" resultWords="{{resultWords}}"
+                 failDetail="{{failDetail}}" energyNote="{{energyNote}}"
                  bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
 
-  <eval-dialog mode="{{confirmOpen ? 'precheck' : (phase === 's5' || phase === 's6' ? 'submitting' : '')}}"
+  <eval-dialog mode="{{confirmOpen ? 'precheck' : (phase === 'uploading' || phase === 'scoring' ? 'submitting' : '')}}"
                phase="{{phase}}" uploadPercent="{{uploadPercent}}"
-               scoreText="{{scoreText}}" scoreSubtitle="{{scoreSubtitle}}"
-               attemptTitle="{{attemptTitle}}" cookieLine="{{cookieLine}}"
-               failDetail="{{failDetail}}" energyNote="{{energyNote}}"
-               resultLine="{{resultLine}}" resultWords="{{resultWords}}"
                costEnergy="{{costEnergy}}" balanceEnergy="{{confirmEnergy}}"
                bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail"
                bind:start="onConfirmStart" bind:cancel="onConfirmCancel"
