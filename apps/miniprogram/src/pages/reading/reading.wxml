@@ -235,6 +235,19 @@
          ⭐ **松手后还有一段"识别中…"** —— 那是松手缓冲期（见 reading.ts 的 RELEASE_HANGOVER_MS）：
             读完立刻松手时，最后 1–2 个词还没进转写，等一小会儿把它们追回来。
             ⚠️ 按钮必须**立刻**变字：还写着"松开结束"的话，用户会以为自己没松开。 -->
+
+    <!-- ⭐⭐ **实时波形**（用户 2026-10 定：点一下开始录音，说话时要看得到波形）
+         ⚠️ 它原来被删过 —— 理由是"按住的物理动作已经说清'我在录'，再摆波形是同一个说法" ✓
+            而交互改回**点击**之后，那个理由不成立了：点一下之后没有任何物理反馈说明
+            "话筒真的在收你的声音" ⇒ 波形重新变成**必需的** ✓
+
+         ⚠️ 画不画由 waveOn 决定，而它**只在真的解出采样之后**才置真 ——
+            拿不到帧的环境（或解码不了的）不画，而不是留一条空白横条 ✗
+            （空白横条看起来像"麦克风没工作"，比不画更让人不安。）
+         ⚠️ 用 canvas 而不是一排 view：一帧上千个采样点，节点方案既扛不住也会糊成一块。
+         ⚠️ 尺寸由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开 ✓ -->
+    <canvas type="2d" id="wave" class="w-full h-[64rpx] mt-3" wx:if="{{waveOn && cardPhase === 's2'}}"></canvas>
+
     <view class="mt-5" wx:if="{{cardPhase === 's1' || cardPhase === 's2'}}">
       <view bindtouchstart="onPressStart" bindtouchend="onPressEnd" bindtouchcancel="onPressEnd">
         <!-- ⚠️ **「识别中…」那一态必须 disabled**（用户 2026-10 定）：

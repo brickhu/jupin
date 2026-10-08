@@ -38,6 +38,10 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
+import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
+import { peakBars } from '../../lib/audio/wave'
+import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
+import type { VadState } from '../../lib/audio/vad'
 import type { ColoredWord } from '../../lib/word-colors'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
 
@@ -187,6 +191,37 @@ type Phase =
  *       而不是把锅扣在「录音不符合规范」上（那句是引擎判失败的文案）。
  */
 const SCORING_TIMEOUT_MS = 120_000
+
+/**
+ * ⭐ 波形画布**准备失败时重试几次**。
+ * ⚠️ 实测过：`fields({size:true})` 偶尔量到 0（尤其是卡片刚切到 s2、还没布局完）——
+ *    不重试的话波形永远是空白，而看不出是"没准备好"还是"没声音" ✗
+ */
+const WAVE_PREPARE_TRIES = 3
+/** 波形柱子最多几根（太多会糊成一块，太少看不出起伏） */
+const WAVE_MAX_BARS = 64
+/** 波形颜色 = 品牌色（与按钮、进度条同一套） */
+const WAVE_COLOR = '#4f46e5'
+/**
+ * ⚠️ 帧间隔的**兜底值**：mp3 下 1KB ≈ 170ms（见 RECORD_SPEC 的说明）。
+ *    正常情况下用手表量出来的真实间隔（见 onRecordFrame），这个只在第一次用得上。
+ */
+const FRAME_MS_FALLBACK = 170
+
+/**
+ * ⭐ 波形用到的 2d 画布接口 —— **只列我们真的调的那几个**。
+ *
+ * ⚠️ 不用 `CanvasRenderingContext2D`：小程序的类型里没有这个全局名 ✗
+ *    （那是 DOM 的；小程序的 2d canvas 在 `WechatMiniprogram` 里另有类型，
+ *      而它把 `getContext('2d')` 标成 any —— 用一个结构类型反而更清楚：
+ *      **这里到底依赖了画布的哪几个能力**，加一个方法就要在这里加一行 ✓）
+ */
+interface WaveCtx {
+  scale(x: number, y: number): void
+  clearRect(x: number, y: number, w: number, h: number): void
+  fillRect(x: number, y: number, w: number, h: number): void
+  fillStyle: string
+}
 
 /**
  * ⚠️ 超时进 s6 时**要换一句副标题**（见 SCORING_TIMEOUT_MS 的说明）。
@@ -467,6 +502,16 @@ Page({
      *    因为界面上「0 🍪」**永远不出现**（那是把"你什么都没得到"说出来）✓
      */
     sentenceCookies: null as number | null,
+
+    /**
+     * ⭐ **波形条画不画** —— 只在**这一轮真的收到了能解码的帧**之后才画（用户 2026-10 定）。
+     *
+     * ⚠️ 不写成"录音中就画"：拿不到帧的环境（或解码不出来的环境）会留一条**空白的横条** ✗，
+     *    那看起来像"麦克风没工作"，比不画更让人不安 ✓
+     * ⚠️ 代价是录音开始后约 170ms 它才出现（一帧的间隔）—— 那是**对的**：
+     *    它出现 = "话筒确实在收你的声音" ✓ 这是个**正反馈**，不是布局抖动 ✓
+     */
+    waveOn: false,
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -564,6 +609,18 @@ Page({
    *    两种情况都放行，见 onSubmit 的门禁。
    */
   missedIdx: [] as number[],
+
+  /** ⭐ 波形画布（2d canvas）—— 拿到 node 之前一直是 null */
+  waveCanvas: null as WechatMiniprogram.Canvas | null,
+  waveCtx: null as WaveCtx | null,
+  waveW: 0,
+  waveH: 0,
+  /** ⚠️ 画布准备的重试次数：尺寸偶尔量到 0（见 prepareWave 的说明） */
+  waveTries: 0,
+  /** ⭐ 静音自停的两个计数器（见 lib/audio/vad.ts） */
+  vad: { ...VAD_STATE_ZERO } as VadState,
+  /** 上一帧的时刻 —— 用它量出**真实**的帧间隔（比写死 170ms 准） */
+  lastFrameAt: 0,
 
   /**
    * ⭐ **没读准**的那些：对到的参考词下标 + **识别到的那个词**。
@@ -1085,9 +1142,10 @@ Page({
        *    （它们的数据源就是识别文本，没有识别就没有判据 ✓）
        */
       /**
-       * ⚠️ **帧回调**（波形 + 静音自停的原料）**下一步才接** ——
-       *    现在接上会留一个空方法，而它要和波形一起写才有意义（见 vad.ts 的文件头）。
+       * ⭐⭐ **录音帧**（mp3 码流，~170ms 一帧）—— 波形与"读完自动结束"**都靠它**。
+       * ⚠️ 帧是压缩码流，要采样得先 decodeFrameToSamples（见 frame-decode 的文件头）。
        */
+      onFrame: (f) => this.onRecordFrame(f),
       onDone: (r) => this.handleSpoken(r),
       onError: (e) => {
         this.stopTimer()
@@ -1099,6 +1157,21 @@ Page({
         this.setData({ ...phasePatch('s1'), releasePending: false, error: e.message })
       },
     })
+
+    /**
+     * ⭐ 每一轮录音都要复位的三样（波形与静音自停的状态机）：
+     *   · waveOn —— 上一轮的波形条不能留到这一轮（这一轮还没收到帧呢）
+     *   · vad —— 静音/时长计数器从零开始（上一轮的数字会让这一轮被**立刻**判成读完 ✗）
+     *   · lastFrameAt —— 帧间隔要重新量（跨轮的间隔是几分钟，不能用）
+     */
+    this.vad = { ...VAD_STATE_ZERO }
+    this.lastFrameAt = 0
+    this.waveCtx = null
+    this.waveCanvas = null
+    this.waveW = 0
+    this.waveH = 0
+    this.waveTries = 0
+    if (this.data.waveOn) this.setData({ waveOn: false })
 
     // ⚠️ 每一轮录音重置这几个私有计数（放在 setData 外面：它们不进渲染数据）
     // ⚠️ 上一轮的漏读结论也要清：录音若中途报错，旧的判据会把这一次也拦住
@@ -1260,6 +1333,134 @@ Page({
     if (this.stopSent) return
     this.stopSent = true
     this.onStopRecord()
+  },
+
+  /**
+   * ⭐ 准备波形画布（2d canvas）—— 幂等，可以反复调。
+   *
+   * ⚠️ 尺寸**偶尔量到 0**（卡片刚切到 s2、布局还没完）⇒ 重试几次（老版本踩过这个坑）。
+   * ⚠️ backing store 要按 **dpr** 开、再 `scale(dpr)`，否则在高分屏上糊成一块。
+   */
+  prepareWave() {
+    if (this.waveCtx || this.gone) return
+    this.createSelectorQuery()
+      .select('#wave')
+      .fields({ node: true, size: true })
+      .exec((res) => {
+        if (this.gone) return
+        const info = res?.[0] as
+          | { node?: WechatMiniprogram.Canvas; width?: number; height?: number }
+          | undefined
+        const node = info?.node
+        const w = Math.round(info?.width ?? 0)
+        const h = Math.round(info?.height ?? 0)
+        if (!node || w <= 0 || h <= 0) {
+          if (this.waveTries++ < WAVE_PREPARE_TRIES) setTimeout(() => this.prepareWave(), 60)
+          return
+        }
+        const dpr = wx.getWindowInfo?.().pixelRatio || 2
+        node.width = w * dpr
+        node.height = h * dpr
+        // ⚠️ 运行期给的就是 2d 上下文；类型上小程序标的是 DOM 那个类型 ⇒
+        //    显式转到 WaveCtx（只声明我们真调的那几个方法，见它的定义）
+        const ctx = node.getContext('2d') as unknown as WaveCtx
+        ctx.scale(dpr, dpr)
+        this.waveCanvas = node
+        this.waveCtx = ctx
+        this.waveW = w
+        this.waveH = h
+      })
+  },
+
+  /**
+   * ⭐⭐ **每来一帧就做两件事**：画波形、累计静音（判"读完"）。
+   *
+   * 一次解码两处用 —— 见 lib/audio/wave.ts 与 lib/audio/vad.ts。
+   *
+   * ⚠️⚠️ **解码失败（samples 为 null）必须分开处理**，绝不能当成"静音"：
+   *    在不支持 decodeAudioData 的环境里会**连着一路攒静音** ⇒ 一秒多之后把录音掐断 ✗✗
+   *    （而那个环境正是开发者工具 —— 正在调这个功能的地方。）
+   *    ⇒ `classifyChunk` 给的是**三态**，这里按 'undecodable' 走"当成他在说话"那条 ✓
+   */
+  async onRecordFrame(frame: ArrayBuffer) {
+    if (this.gone) return
+
+    const samples = await decodeFrameToSamples(frame)
+    if (this.gone) return
+
+    // ── ① 波形 ──────────────────────────────────────────────
+    /**
+     * ⚠️ 画不画由 `waveOn` 决定，而它**只在真的解出采样之后**才置真 ✓
+     *    —— 不这么做的话，拿不到帧的环境会留一条**空白横条** ✗
+     *    （看起来像"麦克风没工作"，比不画更让人不安。）
+     */
+    if (samples) {
+      if (!this.data.waveOn) {
+        this.setData({ waveOn: true })
+        // ⚠️ 等这一帧渲染出 canvas 节点之后再去找它（同一帧里 query 不到）
+        setTimeout(() => this.prepareWave(), 0)
+      }
+      this.drawWave(samples)
+    }
+
+    // ── ② 静音自停（"读完了"）────────────────────────────────
+    /**
+     * ⚠️ 帧间隔**用手表量**，不用写死的 170ms：
+     *    设备忙的时候帧会变稀，写死会让"静音 1.2 秒"实际只过了 0.8 秒 ✗
+     */
+    const now = Date.now()
+    const frameMs = this.lastFrameAt > 0 ? Math.min(1000, now - this.lastFrameAt) : FRAME_MS_FALLBACK
+    this.lastFrameAt = now
+
+    this.vad = advanceVad(this.vad, classifyChunk(samples), frameMs)
+
+    /**
+     * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束
+     * ⚠️ 拿不到标准音时长时 autoStopAfter 一律返回 false（宁可让用户自己点）✓
+     */
+    if (autoStopAfter({ ...this.vad, expectedMs: this.expectedReadMs() })) {
+      /**
+       * ⚠️⚠️ **必须防重入**：满足条件之后**每一帧**都会再判一次 ✓ ⇒
+       *    不拦的话会连着调好几次 `session.stop()` ✗（并反复重置那个 3 秒看门狗，
+       *    真有异常时反而永远触发不了）。
+       * ⭐ 复用 `stopSent`：它本来就是"停已经发出去了"这个意思 ✓
+       *    （用户先松手/先点结束时它已经被置真 ⇒ 这里自然不会再发一次 ✓）
+       */
+      if (this.stopSent) return
+      this.stopSent = true
+      console.log('[reading] 静音自停：已录 ' + this.vad.recordedMs + 'ms，静音 ' + this.vad.silentMs + 'ms')
+      this.onStopRecord()
+    }
+  },
+
+  /** ⭐ 这一句的**标准音时长**（自动结束的时长下限靠它）；拿不到时 null */
+  expectedReadMs(): number | null {
+    const ms = this.data.stdDurationMs
+    return typeof ms === 'number' && ms > 0 ? ms : null
+  },
+
+  /** ⭐ 把这一帧的采样画成柱子（直接画在 canvas 上，**不走 setData**） */
+  drawWave(samples: Float32Array) {
+    const ctx = this.waveCtx
+    const w = this.waveW
+    const h = this.waveH
+    if (!ctx || w <= 0 || h <= 0) return
+
+    const barCount = Math.max(8, Math.min(WAVE_MAX_BARS, Math.floor(w / 8)))
+    const heights = peakBars(samples, barCount)
+    if (heights.length === 0) return
+
+    const mid = h / 2
+    const step = w / heights.length
+    const barW = Math.max(1, step * 0.6)
+
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = WAVE_COLOR
+    for (let i = 0; i < heights.length; i++) {
+      // ⚠️ 留 1px 上下边距：柱子贴边会被裁掉半个像素，看起来像在抖
+      const peak = Math.max(1, Math.min(mid - 1, (heights[i] ?? 0) * mid))
+      ctx.fillRect(i * step, mid - peak, barW, peak * 2)
+    }
   },
 
   onStopRecord() {
