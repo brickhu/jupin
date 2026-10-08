@@ -507,6 +507,16 @@ Page({
      *    它出现 = "话筒确实在收你的声音" ✓ 这是个**正反馈**，不是布局抖动 ✓
      */
     waveOn: false,
+
+    /**
+     * ⚠️ **临时诊断**（拿到真机结论后就删）：把"这一帧里装的是什么"**画在屏幕上**。
+     *
+     * ⭐ 为什么画在屏幕上而不是只打 console：
+     *    这个功能**只能在真机上验**（模拟器必失败）✓ 而真机的 console
+     *    要么得开「真机调试」、要么得装 vConsole —— 都比**截一张图**麻烦 ✗
+     *    本项目历史上就是这么干的（「把帧是压缩块写在屏幕上」）✓
+     */
+    frameNote: '',
     /**
      * ⭐ s6 的副标题。
      *   默认是设计稿那句「录音不符合规范，无法检测发音」；
@@ -1166,6 +1176,7 @@ Page({
      */
     this.vad = { ...VAD_STATE_ZERO }
     this.frameKind = 'unknown'
+    if (this.data.frameNote) this.setData({ frameNote: '' })
     this.lastFrameAt = 0
     this.waveCtx = null
     this.waveCanvas = null
@@ -1435,12 +1446,20 @@ Page({
      */
     if (this.frameKind === 'unknown') {
       this.frameKind = frameKindOf(frame)
-      console.log(
-        '[reading] 帧分类 = ' + this.frameKind + '（首帧 ' + frame.byteLength + ' 字节）' +
-          (this.frameKind === 'pcm'
-            ? ' ⇒ 裸 PCM，直接按 Int16 读 ✓'
-            : ' ⇒ 走 decodeAudioData（真机上 mp3 分片可解；模拟器的 WebM 解不开）'),
-      )
+      /**
+       * ⚠️ 一行里报**两个**关键事实（它们各自都能让"自动结束"失效）：
+       *   ① 帧是什么类型 ⇒ 能不能拿到采样（拿不到就没有静音判据 ✗）
+       *   ② 标准音时长是多少 ⇒ 有没有"时长下限"（为 0 时 autoStopAfter **恒为 false** ✗，
+       *      见 vad.ts：拿不到参考时长就一律不自动结束 ✓）
+       */
+      const stdMs = this.data.stdDurationMs
+      const note =
+        '帧 ' + this.frameKind + '·' + frame.byteLength + 'B' +
+        (this.frameKind === 'pcm' ? '⇒直读' : '⇒解码') +
+        ' ｜ 标准音 ' + (stdMs > 0 ? stdMs + 'ms' : '【无】')
+      console.log('[reading] ' + note)
+      // ⚠️ 临时：画在屏幕上，方便真机截图（见 frameNote 的说明）
+      this.setData({ frameNote: note })
     }
 
     /**
