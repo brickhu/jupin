@@ -93,3 +93,6 @@ npm-debug.log*
 
 apps/miniprogram/dist.tmp
 apps/miniprogram/dist.old
+
+# ⚠️ KWS 探针用的模型（4.4MB，只在本机验端侧推理时存在 ✓ 不进仓库）
+apps/miniprogram/src/subpackages/kws/*.onnx
