@@ -99,8 +99,13 @@
         <text class="rd-pill-text">重新挑战</text>
       </view>
       <text class="rd-conclusion" wx:if="{{phase === 's5' && resultLine}}">{{resultLine.text}}</text>
-      <!-- ⚠️ 能量那行小字：失败时**必须说清扣没扣**，不说用户默认自己白花了一次 ✗ -->
-      <text class="rd-energy" wx:if="{{energyNote}}">{{energyNote}}</text>
+      <!-- ⚠️⚠️ **出分态不显示能量那行小字**（用户 2026-10 定）：
+           "本次评测消耗 2 点，剩余 9959 点" 是**账目**，不是这一把的结论 ——
+           它挤在结论和按钮下面，把"我读得怎么样"这条主线搅浑了 ✗
+           余额随时可以在能量页看 ✓
+           ⚠️ 但**失败态仍然要显示**（见上面的 rd-energy 分支）：那一次用户必须知道
+              "能量到底扣没扣"，否则他会默认自己白花了一次 ✗ -->
+      <text class="rd-energy" wx:if="{{phase === 's6' && energyNote}}">{{energyNote}}</text>
 
     </block>
 
