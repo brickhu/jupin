@@ -59,6 +59,10 @@ jobs:
   # ----------------------------------------------------------------
   deploy-dev:
     if: github.ref == 'refs/heads/dev'
+    # ⚠️ **必须有超时** ✗ —— 没有它，一次真卡住会白等 GitHub 的默认上限（6 小时 ✗）
+    #    ⭐ 25 分钟的依据：实测一次完整部署（build + 跨洋 push + 平台拉起）约 10-15 分钟 ✓
+    #       ⚠️ 首次推全部层会更久 ✓ 所以给到 25 而不是 15 ✓
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -163,6 +167,10 @@ jobs:
   # ----------------------------------------------------------------
   deploy-prod:
     if: github.ref == 'refs/heads/main'
+    # ⚠️ **必须有超时** ✗ —— 没有它，一次真卡住会白等 GitHub 的默认上限（6 小时 ✗）
+    #    ⭐ 25 分钟的依据：实测一次完整部署（build + 跨洋 push + 平台拉起）约 10-15 分钟 ✓
+    #       ⚠️ 首次推全部层会更久 ✓ 所以给到 25 而不是 15 ✓
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     environment: prod
     steps:
