@@ -51,6 +51,32 @@ Page({
       return
     }
 
+    // ── ⓪ 先做一次「扩展名 / 主包 vs 分包」的可读性扫描 ──────────────
+    /**
+     * ⚠️ 真机实测：读 `subpackages/kws/*.onnx` 报 `readFileSync:fail file info not exist` ✗
+     *    而这时候有两种完全不同的可能 ✓ 一次全测出来：
+     *      ① **打包器按扩展名过滤** ⇒ `.onnx` 根本没进包 ✗
+     *      ② **分包里的文件 FS 读不到** ✗（主包能读）
+     *    ⇒ 主包与分包各放一组 1KB 的同内容文件，扩展名不同 ✓
+     *      屏幕上直接打出"哪几个能读到" ✓ 一轮就能定论 ✓
+     */
+    const fs0 = wx.getFileSystemManager()
+    this.log('— 扩展名可读性扫描 —')
+    for (const where of [
+      { name: '主包', dir: 'assets/ext-probe' },
+      { name: '分包', dir: 'subpackages/kws/ext-probe' },
+    ]) {
+      for (const ext of ['onnx', 'bin', 'mp3', 'dat', 'txt', 'wasm']) {
+        const p = `${where.dir}/t.${ext}`
+        try {
+          const b = fs0.readFileSync(p) as ArrayBuffer
+          this.log(`  ${where.name} .${ext} ✓ ${(b as ArrayBuffer).byteLength}B`)
+        } catch {
+          this.log(`  ${where.name} .${ext} ✗`)
+        }
+      }
+    }
+
     // ── ① 把模型从代码包读出来 → 写到 USER_DATA_PATH ────────────────
     /**
      * ⚠️ 为什么要绕这一下：真机实测直接给代码包路径会报
