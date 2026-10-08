@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -29,7 +30,18 @@ import { resolveStaticRoot } from './content'
  */
 const dir = join(resolveStaticRoot() ?? '', 'content/articles')
 
-describe('content/articles/*.json', () => {
+/**
+ * ⚠️⚠️ **`content/` 不在 git 里**（用户明确要求 ✓ 它是内容产物、不是源码 ✓）
+ *    ⇒ **CI 的干净 checkout 里没有它** ✗ ⇒ 这组检查在 CI 里**必须跳过** ✓
+ *
+ * ⭐ 但这不等于"可以不查"：它是**内容的防线**（难度档位、判据、反模板、词表对齐 ✓）
+ *    ⇒ 必须在**有 content/ 的地方**跑 —— 本机 ✓ 或内容流水线 ✓
+ *    ⚠️ 所以这里用 `skipIf` 而**不是** `if (没有) return` ✗ ——
+ *      后者会让测试**显示为通过**，而它其实一行都没跑 ✓ 那是最坏的一种绿 ✗
+ */
+const hasContent = existsSync(dir)
+
+describe.skipIf(!hasContent)('content/articles/*.json', () => {
   it('难度档位必须在场，且是四档之一（0 初级 / 1 中级 / 2 高级 / 3 专家）', async () => {
     for (const [file, raw] of await loadAll()) {
       expect(normalizeLevel(raw.difficulty), file + ' 的 difficulty').not.toBeNull()

@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -14,7 +14,16 @@ import { standardAudioOf, standardAudioMs } from './standard-audio-meta'
  *
  *    所以这里直接从**仓库里真实的标准音**读一次：路径错了它必然是 null。
  */
-describe('标准音时长', () => {
+/**
+ * ⚠️⚠️ `content/` **不在 git 里**（用户明确要求 ✓ 内容产物不是源码 ✓）
+ *    ⇒ **CI 的干净 checkout 里没有 `content/audio/`** ✗ ⇒ 这两组在 CI 里跳过 ✓
+ * ⭐ 用 `skipIf` 而**不是**"提前 return"：后者会**显示为通过** ✗ 那是最坏的一种绿 ✓
+ *    要在有内容的地方跑：本机 ✓ 或内容流水线 ✓
+ */
+const AUDIO_DIR = fileURLToPath(new URL('../../../../content/audio', import.meta.url))
+const hasAudio = existsSync(AUDIO_DIR)
+
+describe.skipIf(!hasAudio)('标准音时长', () => {
   it('能算出仓库里那几条标准音的时长（路径与解析一起守住）', async () => {
     // ⚠️ 标准音文件名现在是**内容 hash**，不能再写死 '1' —— 取仓库里第一个
     const dir = fileURLToPath(new URL('../../../../content/audio', import.meta.url))
@@ -38,7 +47,7 @@ describe('标准音时长', () => {
  *    之前详情接口只给 `{ full, kind }`（AudioRef），于是那个时长永远空着
  *    （界面上是"少了 00:23"，不报错、也不明显）。两个接口必须同一个形状。
  */
-describe('standardAudioOf —— 可播引用 + 时长（阅读页顶行那个 00:23）', () => {
+describe.skipIf(!hasAudio)('standardAudioOf —— 可播引用 + 时长（阅读页顶行那个 00:23）', () => {
   it('有标准音时带上 durationMs（形状与列表接口一致）', async () => {
     const dir = fileURLToPath(new URL('../../../../content/audio', import.meta.url))
     const file = readdirSync(dir).find((f) => f.endsWith('.mp3')) as string

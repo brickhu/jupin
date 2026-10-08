@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +26,15 @@ async function someRealArticleId(): Promise<string> {
  *    一个永远红的自检比没有自检更糟：人会学会无视它。下面第一条就是防它回归。
  */
 
-describe('probeContentFiles —— 正文自检的盘上那一层', () => {
+/**
+ * ⚠️⚠️ 下面这组要**从真实内容里取一个 id** 当样本（见 someRealArticleId ✓）
+ *    而 `content/` **不在 git 里**（用户明确要求 ✓）⇒ **CI 的干净 checkout 里没有它** ✗
+ * ⇒ 在 CI 里跳过 ✓（⚠️ 用 `skipIf` 而不是"提前 return"：后者会**显示为通过** ✗）
+ * ⭐ 要在有内容的地方跑：本机 ✓ 或内容流水线 ✓
+ */
+const hasRealContent = existsSync(join(resolveStaticRoot() ?? '', 'content/articles'))
+
+describe.skipIf(!hasRealContent)('probeContentFiles —— 正文自检的盘上那一层', () => {
   it('仓库里的正文全部可读：有文件、没有坏文件、采样是读得通的那一份', async () => {
     const root = resolveStaticRoot()
     expect(root, '解析不到静态资源根目录').toBeTruthy()
