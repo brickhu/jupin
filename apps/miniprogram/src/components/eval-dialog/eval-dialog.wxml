@@ -1,34 +1,19 @@
-<!--
-  ⭐⭐ 评测弹窗 —— 朗读页上**两块浮层**，同一个遮罩 + 居中卡片：
+<!-- ⚠️⚠️ **这个弹窗现在只做一件事：提交前确认能量**（用户 2026-10 定）。
+     检测期间它**整个不出现** —— 等待状态由朗读页卡片表达（✓ 转圈、↺ 变灰）；
+     结果（含检测失败）由另**一个**组件 components/result-dialog 承担。
 
-    ① 提交前的**确认能量**（mode='precheck'，用户 2026-09 追加）
-    ② 提交之后的**评测过程与结果**（mode='submitting'，原来的 s4 / s5 / s6）
+     ⚠️ 历史教训（别退回去）：它原来同时管四件事（确认能量 / 等待 / 出分 / 失败），
+        而层与卡片的 wx:if 条件不一致 ⇒ 检测期间**只剩一层黑遮罩、没有卡片** ✗
+        （页面被压黑又点不动，什么都看不到）。
+        现在层与卡片同一条判据，不可能再出现那种错位 ✓ -->
 
-  ⚠️ 为什么把它做成浮层，而不是继续让页面中间那张卡换内容：
-     · 等待期本来就该**禁止点击**（SPEC 口径）—— 一层盖住整页的遮罩天然做到了；
-     · 结果（大号分数 + 成长值三卡 + 按钮）不再和上面的句子、下面的历史挤在同一屏；
-     · 确认关掉之后页面干净地回 s1，不会出现"已经交掉的录音界面"这种半截状态。
-
-  ⚠️ 两块**同一时刻只会出现一块**（页面给的 mode 决定），所以它们各自带一整套
-     body + actions，而不是把两种形态硬塞进一个 body 里。
-
-  ⚠️⚠️ 关不关得掉由 phase 自己判（见 ts 的 onMaskTap）：
-     · precheck 的 'confirm' / 'no-energy' —— 点遮罩等于取消（录音还在，什么都没发生）；
-     · precheck 的 'asking'（正在问权威余额）—— 点遮罩无效；
-     · submitting 的 uploading / scoring —— 点遮罩无效（能量已经锁了、云端已经在算）；
-     · submitting 的 s5 / s6 —— 点遮罩等于「确认」。
-
-  ⚠️ 按钮上的每个动作都由**页面**实现（组件只发事件）：这里不发请求、不判状态、不碰能量。
--->
-<view class="ed-layer" wx:if="{{mode === 'precheck' || (mode === 'submitting' && (phase === 'uploading' || phase === 'scoring'))}}">
-  <!--
-    ⚠️ 遮罩和卡片是**兄弟**（同 user-sheet）：遮罩负责挡滚动与点击，
-       卡片自己 catchtap/catchtouchmove，否则点在卡片上会穿透到下面的页面。
-  -->
+<view class="ed-layer">
+  <!-- ⚠️ 遮罩与卡片是**兄弟**：遮罩挡滚动与点击，卡片自己吞掉点击，
+       否则点在卡片上会穿透到下面的页面。 -->
   <view class="ed-mask {{entered ? 'ed-mask-on' : ''}}" bindtap="onMaskTap" catchtouchmove="noop"></view>
 
-  <!-- ══════════ ① 提交前：确认能量 ══════════ -->
-  <view class="ed-card {{entered ? 'ed-card-on' : ''}}" wx:if="{{mode === 'precheck'}}" catchtap="noop" catchtouchmove="noop">
+  <view class="ed-card {{entered ? 'ed-card-on' : ''}}" catchtap="noop" catchtouchmove="noop">
+
     <!-- 正在问服务端要权威余额 —— 这几百毫秒必须看得见（否则用户以为点了没反应） -->
     <view class="ed-body" wx:if="{{phase === 'precheck'}}">
       <ui-icon class="text-56rpx text-brand animate-spin" name="mdi:loading" />
@@ -39,20 +24,20 @@
     <view class="ed-body" wx:elif="{{balanceEnergy >= costEnergy}}">
       <text class="text-34rpx font-bold text-ink">开始 AI 评测</text>
       <!--
-        ⚠️⚠️ 这一行是**两个数**、一起说：花掉的 与 花完剩下的。
+        ⚠️⚠️ 这一行是**两个数、一起说**：花掉的 与 花完剩下的。
            只写「消耗 2 点」用户还得自己减一遍；只写「剩 1 点」他不知道自己花了多少。
-           ⚠️ 两个数都由页面从**服务端权威值**算好传进来（costEnergy / balanceEnergy ——
-              后者是页面减好传的"确认后剩"），组件不做减法：端侧算余额就是第二份真相。
+           ⚠️ 两个数都由页面从**服务端权威值**算好传进来，组件不做减法 ——
+              端侧自己算余额就是第二份真相。
       -->
-      <!-- ⚠️⚠️ 内容必须**紧贴 <text> 标签**：小程序的 <text> 会保留换行与空格，
+      <!-- ⚠️⚠️ 内容必须**紧贴 text 标签**：小程序的 text 会保留换行与空格，
            写成「标签独占一行、内容另起一行」会渲染出「空行 + 缩进的文案 + 空行」，
-           整块**白白高一截**（用户 2026-10 就是照着这个症状报上来的）。 -->
+           整块白白高一截（用户 2026-10 就是照这个症状报上来的）。 -->
       <text class="text-26rpx text-muted mt-3 leading-[1.7] text-center">本次消耗 {{costEnergy}} 点能量，确认后剩 {{balanceEnergy - costEnergy}} 点</text>
       <text class="text-22rpx text-faint mt-2">每天补到 3 点 · 评测失败不扣能量</text>
     </view>
 
     <!-- ⭐ 余额不够：**不是错误，是业务规则** —— 说清差多少 + 一个能走的出口。
-         ⚠️ 不准写成"失败 / 出错"：那会让用户以为小程序坏了，然后反复重试
+         ⚠️ 不准写成"失败 / 出错"：那会让用户以为小程序坏了、然后反复重试
             （而那正是要拦的行为，同 reading.ts 里 ENERGY_EXHAUSTED 那段口径）。 -->
     <view class="ed-body" wx:else>
       <text class="text-34rpx font-bold text-ink">能量不够了</text>
@@ -62,7 +47,7 @@
     </view>
 
     <view class="ed-actions" wx:if="{{phase !== 'precheck'}}">
-      <!-- ⚠️ 够 → 「确认提交」；不够 → 「去补能量」。两个都是 fill/brand，
+      <!-- ⚠️ 够 → 「确认提交」；不够 → 「去补能量」。两个都是 fill/brand ——
            不把"不够"画成危险色：这不是故障。 -->
       <ui-button wx:if="{{balanceEnergy >= costEnergy}}" variant="fill" color="brand" size="xl" width="full"
                  bind:press="onStart">
@@ -76,58 +61,10 @@
           <text class="text-28rpx">取消</text>
         </ui-button>
       </view>
-      <!-- ⚠️ ⚠️ 这里**没有**"检查失败"的分支，是**故意**的：
-           权威检查没做完（连不上 / 身份过期）时，页面会**关掉这一层**、
-           回 s3 把那一句人话挂在页面上 —— 用户此刻要做的是"检查网络、再点一次"，
+      <!-- ⚠️ 这里**没有**"检查失败"的分支，是**故意**的：
+           权威检查没做完（连不上 / 身份过期）时，页面会关掉这一层、
+           回 s3 把一句人话挂在页面上 —— 用户此刻要做的是"检查网络、再点一次"，
            而不是盯着一个没有出口的弹窗。⇒ 这一层只在**真拿到了余额**时才出现。 -->
     </view>
-  </view>
-
-  <!-- ══════════ ② 提交后：评测过程与结果 ══════════ -->
-  <view class="ed-card {{entered ? 'ed-card-on' : ''}}" wx:else catchtap="noop" catchtouchmove="noop">
-
-    <!-- ── 上传中 / 评测中：卡片中部一个转圈 + 一句人话 ──────────
-         ⚠️ 右上角在这一态**不画 ×**（关不掉），见文件头。 -->
-    <view class="ed-body" wx:if="{{phase === 'uploading' || phase === 'scoring'}}">
-      <!-- ⚠️ 转圈用 animate-spin（UnoCSS 默认动画）+ 字体里的 loading 弧 ——
-           和页面上原来那张 s4 卡用的是同一套（不另造一个 CSS ring）。 -->
-      <ui-icon class="text-56rpx {{phase === 'uploading' ? 'text-brand' : 'text-ok'}} animate-spin" name="mdi:loading" />
-      <!-- ⚠️ 同上：内容紧贴标签，别另起一行 -->
-      <text class="text-34rpx font-bold mt-3 {{phase === 'uploading' ? 'text-brand' : 'text-ok'}}">{{phase === 'uploading' ? '正在上传录音' : 'AI评测中'}}</text>
-      <!-- ⚠️ 上传百分比来自真实的 onProgress（见 uploadAudio）——
-           等待期最怕的是"看不出在动"，所以先把能报的进度报出来。
-           ⚠️ 100% 之后到出分之间还有十几秒（打分本身），那时换下面那句。 -->
-      <text class="text-26rpx text-muted mt-2" wx:if="{{phase === 'uploading' && uploadPercent > 0}}">已上传 {{uploadPercent}}%</text>
-      <text class="text-26rpx text-muted mt-2" wx:else>马上就好</text>
-      <!-- ⚠️ 等超过 SLOW_HINT_MS 才说这句（见 ts）：一进来就说"比平时久"是假的，
-           而真的久的时候不说，用户只会以为卡死了。 -->
-      <text class="text-22rpx text-faint mt-3" wx:if="{{slow}}">比平时久一点，分数还在云端算 —— 别退出，出分就弹给你</text>
-    </view>
-
-    <!-- ══════════ 出分（s5）—— 2026-10 按设计稿重做 ══════════
-         结构只有三块（刻意很少）：
-           ① ✅ + 分数 +「得分详情」  —— 这一把多少分
-           ② 原文逐词着色            —— 哪里不好（**指到词**，不用五维解释）
-           ③ 底部那颗状态胶囊        —— 结论 + **唯一出口**
-
-         ⚠️⚠️ **弹窗里不出现**：五维分项、排名、AI 建议、能量小字、第N次朗读。
-             它们要么属于「评测详情」那一页（pages/challenge），要么是用户
-             在这一刻不需要做决定的东西。信息一多，第一眼就没有落点。
-
-    <!-- ── 检测失败（s6）────────────────────────────────────
-         ⚠️ 标题用「检测失败」而不是对勾（设计稿那张红底对勾会被读成成功）。 -->
-    
-
-    <!-- ⚠️ 本次消耗的能量那行小字（已经扣了 / 失败没扣）由页面拼好传进来 -->
-    
-
-    <!-- ⚠️ 这里是 wx:if 不是 wx:elif：上面隔着那行 energyNote（它自己是个 wx:if），
-         wx:elif 必须**紧跟**同级的 if/elif，隔着兄弟节点就不成立（会被静默忽略）。 -->
-    
-
-    <!-- ⚠️⚠️ **右上角那颗 × 已删**（用户 2026-10 定）。
-         原来结果态画一颗 ×，与「确认」同一个动作 —— 那也是"顺手就能关掉结果"的第二个口子。
-         ⇒ 结果态的**唯一出口**是底部那颗状态胶囊（见 onMaskTap 的说明）。
-         ⚠️ 别把它加回来：多一个出口就多一次"结果被划掉、缓存被清、用户没看到分"。 -->
   </view>
 </view>

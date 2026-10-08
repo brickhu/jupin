@@ -310,10 +310,16 @@
                  failDetail="{{failDetail}}" energyNote="{{energyNote}}"
                  bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail" />
 
-  <eval-dialog mode="{{confirmOpen ? 'precheck' : (phase === 'uploading' || phase === 'scoring' ? 'submitting' : '')}}"
-               phase="{{phase}}" uploadPercent="{{uploadPercent}}"
+  <!-- ⭐ 确认能量那一层：**只在 confirmOpen 时存在**（用户 2026-10 定）。
+       ⚠️⚠️ 确认之后它整个消失 —— 检测期间页面**没有遮罩**，
+          等待由卡片上那三颗钮表达（✓ 转圈、↺ 变灰）。
+       ⚠️ 这里**不再传 mode**：它只做确认能量一件事，存在与否就够了
+          （以前用 mode 在同一组件里切四种形态，结果层与卡片的判据不一致，
+           检测期间只剩一层黑遮罩、没有卡片 ✗）。
+       ⚠️ 结果（含检测失败）由下面那个独立的 result-dialog 负责。 -->
+  <eval-dialog wx:if="{{confirmOpen}}"
+               phase="{{phase}}"
                costEnergy="{{costEnergy}}" balanceEnergy="{{confirmEnergy}}"
-               bind:confirm="onConfirmResult" bind:openDetail="onOpenDetail"
                bind:start="onConfirmStart" bind:cancel="onConfirmCancel"
                bind:goEnergy="onConfirmGoEnergy" />
 
