@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, stopAudio } from '../../lib/audio/play'
+import { playAudioUrl, playDing, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -1515,6 +1515,17 @@ Page({
   },
 
   onStopRecord() {
+    /**
+     * ⭐ **「叮」** —— 录音结束的听觉确认（⭐ 用户 2026-10-09 要的 ✓）
+     *
+     * ⚠️ 放在这里是因为它**正好是两条结束路径的共同出口** ✓：
+     *    · 静音自停（⭐ 读完了 ✓）· 用户点结束 ✓
+     * ⚠️ 而**不是**放在"进入 s3"那几处 ✗ ——
+     *    s3 是**识别回来之后**才到的（⭐ 慢一拍 ✗），
+     *    而"叮"要的是**结束那一刻**的即时确认 ✓✓
+     * ⚠️ 全链路 try/catch 在 playDing 内部 ✓：「叮」失败绝不影响录音流程 ✓
+     */
+    playDing()
     // ⚠️ 停下来了就不该再有超时：不清的话它会在进了 s3 之后突然再来一次
     if (this.recordTimeout !== null) {
       clearTimeout(this.recordTimeout)

@@ -189,3 +189,38 @@ export function stopAudio(): void {
     /* 没在播时 stop 也可能抛，忽略 */
   }
 }
+
+/**
+ * ⭐ **「叮」—— 录音结束的听觉确认**（⭐ 用户 2026-10-09 要的 ✓）
+ *
+ * ⚠️⚠️ **刻意不复用上面那个 `audio`** ✗：
+ *    那个是**标准音**的播放器（⭐ 点词听发音、播放整句都走它 ✓）——
+ *    ⚠️ 而"叮"会**抢先 `stop()` 它** ⇒ ⭐ 用户正在试听时会被打断 ✗
+ *    ⚠️ 也不能改它的 `src` ✗ —— 两条用途会互相踩 ✓
+ * ⚠️ 多一个 `InnerAudioContext` 的代价可接受（⭐ 小程序的上限远大于 2 ✓）
+ *
+ * ⚠️ 音源是**包内资源**（`src/assets/ding.wav` ✓ 9.7KB ✓ 由纯脚本生成 ✓）：
+ *    ⭐ 不走网络 ⇒ ⭐ 零延迟、零失败面 ✓（⭐ 这个音效就是要"立刻"✓）
+ *
+ * ⚠️ 全链路 try/catch：⭐ **音效失败绝不能影响录音流程** ✓
+ *    （⭐ 它只是锦上添花 ✓ 而录音是这个页面的命 ✓）
+ */
+let ding: WechatMiniprogram.InnerAudioContext | null = null
+export function playDing(): void {
+  try {
+    if (!ding) {
+      ding = wx.createInnerAudioContext()
+      ding.src = '/assets/ding.wav'
+      ding.volume = 0.9
+      // ⚠️ 失败只记一句（⭐ 真机上排查用 ✓ 不弹任何东西 ✓）
+      ding.onError((err) => {
+        console.warn('[play] 叮的音效播放失败：' + JSON.stringify(err ?? null).slice(0, 120))
+      })
+    }
+    // ⚠️ 连续两次结束时（⭐ 比如先静音自停、用户又点了一下 ✓）要重头播，不要叠加
+    ding.stop()
+    ding.play()
+  } catch (err) {
+    console.warn('[play] 叮的音效起不来：' + JSON.stringify(err ?? null).slice(0, 120))
+  }
+}
