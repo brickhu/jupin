@@ -560,8 +560,21 @@ if (missing.length) {
 
 console.log('· 环境变量（值已隐去）：')
 for (const k of Object.keys(params).sort()) {
-  const secretish = /PASSWORD|SECRET|KEY/i.test(k)
-  console.log(`    ${k} = ${secretish ? '***' : params[k]}`)
+  /**
+   * ⚠️⚠️ **判据反过来：白名单之外一律掩码** ✗（2026-10 用户发现）
+   *
+   * 原来是黑名单：名字里含 PASSWORD / SECRET / KEY 才掩 ✓
+   * ⚠️ 而 **`ADMIN_TOKEN` 三个词一个都不含** ✗ ⇒ **明文打印进了 CI 日志** ✗✗
+   *    （同类的还有 MYSQL_USERNAME / MYSQL_ADDRESS / COS_BUCKET / WX_APPID … ✓）
+   *
+   * ⭐ 黑名单的根本问题：**新增一个 env 时，没人会记得回来改这里** ✗
+   * ⇒ 反过来：**不认识的键一律当秘密** ✓ 新增 env 不需要动这段 ✓
+   * ⚠️ 白名单里只放**明确不是秘密**的：跑在什么模式、什么引擎、哪个模型 ✓
+   *    连 `MYSQL_ADDRESS` / `LLM_BASE_URL` 都不放 —— 它们是基础设施细节 ✓
+   */
+  const PUBLIC_KEYS = new Set(['NODE_ENV', 'PORT', 'ENGINE', 'MOCK_SCORE', 'AUTO_MIGRATE', 'STORAGE', 'LLM_MODEL'])
+  const hidden = !PUBLIC_KEYS.has(k)
+  console.log(`    ${k} = ${hidden ? '***' : params[k]}`)
 }
 
 // ---- 3. 部署 ----
