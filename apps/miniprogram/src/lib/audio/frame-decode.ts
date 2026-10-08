@@ -1,3 +1,5 @@
+import { sniffAudioContainer } from '@jushuo/shared'
+
 import { samplesFromByteTimeDomain } from '@jushuo/shared'
 
 /**
@@ -160,4 +162,23 @@ export function pcmFrameToSamples(frame: ArrayBuffer): Float32Array {
     out[i] = view.getInt16(i * 2, true) / 32768
   }
   return out
+}
+
+/**
+ * ⭐⭐ **这一帧里装的是采样，还是编码后的码流？** —— 用魔法字节判。
+ *
+ * ⚠️⚠️ 为什么必须运行期判、不能写死：`format` 与"帧里装什么"**不是一回事** ✗
+ *    本项目实测：同一份代码
+ *      · `format:'PCM'` 时真机给**裸 PCM** ✓
+ *      · 开发者工具给 **WebM/Opus 压缩块** ✗
+ *      · `format:'mp3'` 给什么 —— **至今没有真机结论** ✗
+ *    ⇒ 写死任何一种假设都会在另一个环境下静默失效 ✓（这正是踩过的坑）
+ *
+ * ⚠️ `'raw-pcm'` 是 `sniffAudioContainer` 的**兜底值**（裸 PCM 没有任何 magic）——
+ *    判不出来是正常的。所以这个分类**不是绝对可靠的**：
+ *    一个魔法字节不认识的压缩块也会被归到 'pcm' ✗
+ *    ⇒ 调用方还要靠"**画出来的波形动不动**"兜第二道（见朗读页的说明）✓
+ */
+export function frameKindOf(frame: ArrayBuffer): 'pcm' | 'container' {
+  return sniffAudioContainer(new Uint8Array(frame)) === 'raw-pcm' ? 'pcm' : 'container'
 }

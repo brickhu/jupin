@@ -38,7 +38,7 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { pcmFrameToSamples } from '../../lib/audio/frame-decode'
+import { decodeFrameToSamples, frameKindOf, pcmFrameToSamples } from '../../lib/audio/frame-decode'
 import { peakBars } from '../../lib/audio/wave'
 import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
@@ -616,6 +616,11 @@ Page({
   vad: { ...VAD_STATE_ZERO } as VadState,
   /** ⭐ 录音超时的定时器（见 MAX_RECORD_MS） */
   recordTimeout: null as ReturnType<typeof setTimeout> | null,
+  /**
+   * ⭐ 这一轮录音的**帧分类**（'unknown' = 还没看第一帧）。
+   * ⚠️ 判一次的结论要在**整轮**里保持一致 —— 免得中途换读法让波形跳变 ✓
+   */
+  frameKind: 'unknown' as 'unknown' | 'pcm' | 'container',
   /** 上一帧的时刻 —— 用它量出**真实**的帧间隔（比写死 170ms 准） */
   lastFrameAt: 0,
 
@@ -1160,6 +1165,7 @@ Page({
      *   · lastFrameAt —— 帧间隔要重新量（跨轮的间隔是几分钟，不能用）
      */
     this.vad = { ...VAD_STATE_ZERO }
+    this.frameKind = 'unknown'
     this.lastFrameAt = 0
     this.waveCtx = null
     this.waveCanvas = null
@@ -1407,24 +1413,46 @@ Page({
    * ⚠️ `classifyChunk` 给的是**三态**：拿不到采样时走 'undecodable'（当成他在说话）✓
    *    那是安全方向 —— 绝不因为"读不出数据"就把用户的录音掐断 ✗
    */
-  onRecordFrame(frame: ArrayBuffer) {
+  async onRecordFrame(frame: ArrayBuffer) {
     if (this.gone) return
 
     /**
-     * ⭐⭐ **裸 PCM 直接按 Int16 读** —— 不走 decodeAudioData ✓
+     * ⭐⭐ **先判这一帧里装的是什么，再决定怎么读** —— 因为"帧里装什么"与
+     *    `format` **不是一回事**，而且**两个平台给的不一样** ✗
      *
-     * ⚠️⚠️ 这正是 2026-10 那个 bug 的修法：格式是 mp3 时帧是**压缩块**，
-     *    交给 decodeAudioData（它解的是**完整音频文件**）必然报
-     *    `Unable to decode audio data` ✗ ⇒ 波形画不出、静音检测拿不到采样 ✗
-     *    ⇒ 「读完自动结束」根本不触发（只剩 30 秒超时）✗
-     * ⭐ 换成 PCM 之后帧本身就是采样 ⇒ 一行字节转换就够，**同步、无开销** ✓
-     *    （连 decodeAudioData 那个 1.5 秒超时兜底都不需要了 ✓）
+     *      真机 mp3   ⇒ mp3 码流 ⇒ 走 **decodeAudioData**（能把分片直接解成采样 ✓）
+     *      真机 PCM   ⇒ 裸 PCM   ⇒ 直接按 Int16 读 ✓
+     *      开发者工具 ⇒ WebM/Opus ⇒ **解不出来** ✗（见文件头的实测）
      *
-     * ⚠️ 模拟器仍然是例外：它的帧是 WebM/Opus（平台行为）⇒ 按 PCM 读出来是噪声 ✗
-     *    `classifyChunk` 会把噪声判成 'voice' ⇒ **永不自动结束**（安全方向）✓
-     *    ⇒ 这个功能**只能在真机上验** ✗ 开发时要记住 ✓
+     * ⚠️⚠️ **开发者在模拟器里看到 `Unable to decode audio data` 是预期的** ✗
+     *    —— 那不是 bug（`frame-decode.ts` 的文件头早就写明了"只在真机上成立"，
+     *    并给了那篇实测：「在微信开发者工具上直接运行都不运行了，真机上试了一下，成了」）。
+     *    ⚠️ 我在这一步上栽过：把模拟器的失败当成了**平台**的失败 ✗
+     *     ⇒ 波形与静音自停**很可能在真机上是好的**，只是模拟器里验不了 ✓
+     *
+     * ⭐ 判一次就沿用（`frameKind` 存在实例上）—— 每帧都判没有必要 ✓
+     *    并且**打一条日志**：跑一次真机就能看到它到底是哪种 ✓
      */
-    const samples = pcmFrameToSamples(frame)
+    if (this.frameKind === 'unknown') {
+      this.frameKind = frameKindOf(frame)
+      console.log(
+        '[reading] 帧分类 = ' + this.frameKind + '（首帧 ' + frame.byteLength + ' 字节）' +
+          (this.frameKind === 'pcm'
+            ? ' ⇒ 裸 PCM，直接按 Int16 读 ✓'
+            : ' ⇒ 走 decodeAudioData（真机上 mp3 分片可解；模拟器的 WebM 解不开）'),
+      )
+    }
+
+    /**
+     * ⭐ 两条读法，按帧的实际内容选：
+     *   · 'pcm' ⇒ 裸 PCM 没有头，按 Int16 小端直读、除以 32768 ✓（同步、零开销）
+     *   · 其它   ⇒ 交给 decodeAudioData ✓（真机上 mp3 分片能解）
+     * ⚠️ 两条都可能失败（模拟器 / 不支持解码的环境）⇒ 都返回 null / 空 ✓
+     *    调用方按"拿不到采样"处理：**不画波形、不判静音** —— 绝不硬画 ✗
+     */
+    const samples =
+      this.frameKind === 'pcm' ? pcmFrameToSamples(frame) : await decodeFrameToSamples(frame)
+    if (this.gone) return
 
     // ── ① 波形 ──────────────────────────────────────────────
     /**
