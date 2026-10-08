@@ -28,20 +28,17 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
-# ⚠️⚠️ **不再 COPY content** ✗ —— 它已经从 git 里移除（用户明确要求 ✓）
-#    而且云端本来就**不需要**它：句子在库 ✓ 标准音在对象存储 ✓
-#    （本机联调才用它，见 routes/media.ts 那条"云端根本不走"的路由 ✓）
-#    ⚠️ 留一个空目录：services/content.ts 的 resolveStaticRoot() 靠"有没有 content/"
-#       来判根在哪 ✓ 没有它只是"静态资源读不到"（返回 null ✓ 不报错 ✓）
-RUN mkdir -p content
-
+# ⚠️⚠️ **不再 COPY content，也不 mkdir** ✗ —— 它已经从 git 里移除
+#    （用户明确要求 ✓ 内容是**产物**不是源码 ✓）
+#    ⚠️ mkdir 一个空目录**没有意义**：`resolveStaticRoot()` 认的是"content 里有没有东西"，
+#       而空目录里当然没有标准音 ⇒ 时长照样算不出来 ✓（见运行阶段那段"已知代价"✓）
 # ⭐⭐ KWS 模型（端侧逐词标注用）—— **不进 git** ✗（4.4MB 的第三方预训练产物）
-#    构建时拉一次，落在 content/kws/ ⇒ 下面运行阶段的 `COPY --from=build /app/content`
-#    会自动把它带过去 ✓ 而服务端**不需要额外的路径解析** —— 现有的 readStaticFile
-#    就能读到它（那是本仓库明确写过的一条教训：不要两处各自解析路径 ✓）
+#    落点是 **apps/server/assets/kws/**（服务端资产 ✓）而**不是 content/** ✗ ——
+#    见 scripts/fetch-kws-model.mjs 里的说明 ✓
 #    ⚠️ alpine 的 tar 解 .tar.bz2 需要 bzip2 包 ⇒ 一起装 ✓
-#    ⚠️ 落点是 **apps/server/assets/kws/**（服务端资产 ✓）而**不是 content/** ✗ ——
-#       见 scripts/fetch-kws-model.mjs 里的说明 ✓
+#    ⚠️⚠️ **先建目录**：抓取允许失败（下面 `|| echo` ✓）而失败时 assets/ 不存在 ✗
+#       —— 那会让运行阶段那条 COPY **匹配不到路径 ⇒ 整个构建失败** ✗✗
+#       等于把这里的"允许失败"完全废掉 ✓ 必须先 mkdir ✓
 # ⚠️⚠️ **这一步失败不许把整个部署弄挂** ✗
 #    模型只是个**可选资源**：没有它，只有「逐词标注」这一个功能降级 ✓
 #    （路由会回 404「模型未就绪」✓ 端侧探针会明确报出来 ✓）
@@ -50,6 +47,7 @@ RUN mkdir -p content
 #    ⚠️ 反过来（让它 fatal）的代价是：一次网络抖动 = **整个 dev 部署失败** ✗
 #       而部署一挂，**所有别的改动也一起上不去** ✗ —— 那个代价大得多 ✓
 RUN apk add --no-cache curl bzip2 \
+ && mkdir -p apps/server/assets/kws \
  && (node apps/server/scripts/fetch-kws-model.mjs \
      || echo '⚠️ [kws] 模型没抓到 —— 构建继续，逐词标注功能降级（其余功能不受影响）')
 
@@ -71,11 +69,18 @@ ENV MIGRATIONS_DIR=drizzle
 
 # 迁移 SQL —— 容器启动时 AUTO_MIGRATE=true 会用到
 COPY --from=build /app/apps/server/drizzle ./drizzle
-# 静态内容 —— services/content.ts 的 CONTENT_DIR 候选之一就是 /app/content
-COPY --from=build /app/content ./content
-# ⭐ KWS 模型（服务端资产）—— 显式 COPY，不搭 content 的车 ✓
-#    模型不在时这里会 COPY 失败 ✗ ⇒ 用通配兜一层（构建阶段那条 RUN 允许失败 ✓）
-COPY --from=build /app/apps/server/assets* ./assets
+# ⚠️⚠️ **不再 COPY content** ✗ —— 它已经从 git 里移除（用户明确要求 ✓ 内容产物不是源码 ✓）
+#    云端**用不到它**：句子在库 ✓ 标准音在对象存储 ✓（admin.ts 明说服务端读音频
+#    只认 `standard_audio` 那一列 ✓）
+#    ⚠️ 但有一条**已知的功能代价**（记在这里免得忘）：
+#      `standardAudioMs()` 是从 `content/audio/*.mp3` **现算**时长的 ✗
+#      ⇒ 没有它，**阅读页那个 `00:23` 会变成空** ✗ —— 见 services/standard-audio-meta.ts
+#      要修就得把时长**在 admin 上传时存进库** ✓（那是正解 ✓ 只是还没做）
+#
+# ⭐ KWS 模型（服务端资产）—— 显式 COPY ✓
+#    ⚠️ 路径**不带通配**：构建阶段已经 `mkdir -p apps/server/assets/kws` ✓
+#       ⇒ 目录一定存在 ✓ ⇒ 抓取失败也不会让这条 COPY 挂掉 ✓（见构建阶段那段注释 ✓）
+COPY --from=build /app/apps/server/assets ./assets
 COPY --from=build /app/apps/server/dist/index.mjs ./index.mjs
 COPY --from=build /app/apps/server/dist/index.mjs.map ./index.mjs.map
 
