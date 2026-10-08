@@ -27,28 +27,12 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
-# ⭐⭐ **只提前拷这一个脚本**（不是整个 apps/server）——
-#    ⚠️⚠️ 原来这条 RUN 放在 `COPY apps/server` **之后** ✗ ⇒ **源码一改这层就失效**
-#       ⇒ **每次构建都重新下载 31MB** ✗（实测要多花 20-60 秒 ✓）
-#    ⭐ 挪到前面之后：只有**这个脚本本身**变了才会重下 ✓
-COPY apps/server/scripts/fetch-kws-model.mjs ./apps/server/scripts/
-
-RUN apk add --no-cache curl bzip2 \
- && mkdir -p apps/server/assets/kws \
- && (node apps/server/scripts/fetch-kws-model.mjs \
-     || echo '⚠️ [kws] 模型没抓到 —— 构建继续，逐词标注功能降级（其余功能不受影响）')
-
-# ⚠️ 后面这条 COPY 会把 apps/server 的其余部分盖上来 ——
-#    COPY 是**合并**不是替换 ✓ ⇒ 上面那个 assets/kws 不会被删掉 ✓
 COPY apps/server ./apps/server
 # ⚠️⚠️ **不再 COPY content，也不 mkdir** ✗ —— 它已经从 git 里移除
 #    （用户明确要求 ✓ 内容是**产物**不是源码 ✓）
 #    ⚠️ mkdir 一个空目录**没有意义**：`resolveStaticRoot()` 认的是"content 里有没有东西"，
 #       而空目录里当然没有标准音 ⇒ 时长照样算不出来 ✓（见运行阶段那段"已知代价"✓）
 # ⭐⭐ KWS 模型（端侧逐词标注用）—— **不进 git** ✗（4.4MB 的第三方预训练产物）
-#    落点是 **apps/server/assets/kws/**（服务端资产 ✓）而**不是 content/** ✗ ——
-#    见 scripts/fetch-kws-model.mjs 里的说明 ✓
-#    ⚠️ alpine 的 tar 解 .tar.bz2 需要 bzip2 包 ⇒ 一起装 ✓
 #    ⚠️⚠️ **先建目录**：抓取允许失败（下面 `|| echo` ✓）而失败时 assets/ 不存在 ✗
 #       —— 那会让运行阶段那条 COPY **匹配不到路径 ⇒ 整个构建失败** ✗✗
 #       等于把这里的"允许失败"完全废掉 ✓ 必须先 mkdir ✓
@@ -88,10 +72,6 @@ COPY --from=build /app/apps/server/drizzle ./drizzle
 #       ⚠️ 老内容要先跑一次回填：`pnpm --filter @jushuo/server audio:backfill`
 #          —— 它**从对象存储读音频** ✓ 不需要 content/ ✓
 #
-# ⭐ KWS 模型（服务端资产）—— 显式 COPY ✓
-#    ⚠️ 路径**不带通配**：构建阶段已经 `mkdir -p apps/server/assets/kws` ✓
-#       ⇒ 目录一定存在 ✓ ⇒ 抓取失败也不会让这条 COPY 挂掉 ✓（见构建阶段那段注释 ✓）
-COPY --from=build /app/apps/server/assets ./assets
 COPY --from=build /app/apps/server/dist/index.mjs ./index.mjs
 COPY --from=build /app/apps/server/dist/index.mjs.map ./index.mjs.map
 

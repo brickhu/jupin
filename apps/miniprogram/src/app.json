@@ -15,8 +15,7 @@
     "pages/challenge/challenge",
     "pages/participation/participation",
     "pages/tags/tags",
-    "pages/browse/browse",
-    "pages/dev-probe/dev-probe"
+    "pages/browse/browse"
   ],
   "window": {
     "navigationStyle": "custom",
@@ -36,14 +35,5 @@
       "version": "0.3.5",
       "provider": "wx069ba97219f66d99"
     }
-  },
-  "subpackages": [
-    {
-      "root": "subpackages/kws",
-      "name": "kws",
-      "pages": [
-        "dev-probe"
-      ]
-    }
-  ]
+  }
 }
