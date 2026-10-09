@@ -537,7 +537,7 @@ Page({
      * ⚠️ 与历史行的口径不同：**含当前这一把**（见 lib/article-history.ts 的 historySummaryOf）。
      * ⚠️ 名次 / 参与人数 / 最低分只能来自服务端（`rank` / `participantCount` / `lowestScore`）。
      */
-    summary: { attemptsText: '0 次', bestScoreText: '—', rankText: '—', lowestScoreText: '—' },
+    summary: { attemptsText: '0 次', bestScoreText: '—', rankText: '—', conqueredText: '—' },
     /**
      * ⭐ 摘要卡的数据到手过没有。
      * ⚠️ 没拿到就**不画那张卡**（而不是画一张全是「—」的）——

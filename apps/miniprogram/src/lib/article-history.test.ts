@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ParticipationSubmissionsResponse } from '@jushuo/shared'
 
-import { historyRowsOf, historySummaryOf } from './article-history'
+import { conqueredTextOf, historyRowsOf, historySummaryOf } from './article-history'
 
 /**
  * ⭐ 朗读页「历史挑战」列表的行 —— 纯函数，所以能在这里直说口径。
@@ -130,8 +130,9 @@ describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位�
       attemptsText: '3 次',
       bestScoreText: '89.5',
       rankText: '2 / 18',
-      // ⚠️ **我的**最低分（41），不是全场的（55）
-      lowestScoreText: '41.0',
+      // ⭐ 最高 89.5 > 85 ⇒ 已攻克 ✓（⭐ 判据见 conqueredTextOf ✓）
+      // ⚠️ 注意它**不是**"我的最低分 41" —— 用户 2026-10-09 把那格换掉了 ✓
+      conqueredText: '已攻克',
     })
   })
 
@@ -148,7 +149,7 @@ describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位�
       attemptsText: '0 次',
       bestScoreText: '—',
       rankText: '—',
-      lowestScoreText: '—',
+      conqueredText: '—',
     })
   })
 
@@ -162,5 +163,23 @@ describe('historySummaryOf —— 我的参与摘要卡（挑战 / 最高 / 位�
       lowestScore: 60,
     }
     expect(historySummaryOf(res).rankText).toBe('—')
+  })
+})
+
+describe('conqueredTextOf —— 这一句攻没攻克（⭐ 用户 2026-10-09 换掉「最低」那格 ✓）', () => {
+  it('⭐ 最高分超过 85 ⇒ 已攻克', () => {
+    expect(conqueredTextOf(1, 85.1)).toBe('已攻克')
+    expect(conqueredTextOf(3, 89.5)).toBe('已攻克')
+  })
+  it('⚠️⚠️ **正好 85 不算攻克**（⭐ 与 cookies.ts 同一套"严格大于"口径 ✓）', () => {
+    expect(conqueredTextOf(1, 85)).toBe('未攻克')
+  })
+  it('⭐ 没到线 ⇒ 未攻克（⭐ 但那也是"有数据"✓ 与"没数据"要分开 ✓）', () => {
+    expect(conqueredTextOf(2, 41)).toBe('未攻克')
+  })
+  it('⚠️ 一次都没出过分 ⇒ 破折号（⭐ 不硬说"未攻克"✓ 另外三格也是这个口径 ✓）', () => {
+    expect(conqueredTextOf(0, null)).toBe('—')
+    expect(conqueredTextOf(0, 90)).toBe('—')
+    expect(conqueredTextOf(2, null)).toBe('—')
   })
 })

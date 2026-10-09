@@ -504,9 +504,17 @@
           <text class="text-22rpx text-faint block">位列</text>
           <text class="text-30rpx font-semibold text-ink">{{summary.rankText}}</text>
         </view>
+        <!-- ⭐ 第四格原来是「最低」（⭐ 用户 2026-10-09：去掉，换成已攻克/未攻克 ✓）
+             ⚠️ 一屏四格都在说"我在这句上的战绩"：⭐ 挑战了几次 · 最高多少 · 位列第几 ·
+                以及**最要紧的那件事 —— 攻下来了没有** ✓
+                ⚠️ 「最低分」对用户没有行动价值 ✗（⭐ 知道他最低 65 分能干什么 ✓）
+                而"攻没攻克"正是这一整句练习的目标 ✓
+             ⚠️ 颜色：⭐ 已攻克用 text-ok（绿 ✓ 与"达标"同一套语言 ✓），
+                未攻克用 text-muted（⭐ 不下判断、不催 ✓ —— ⚠️ 绝不用红 ✗ 那是判错 ✓）
+             ⚠️ 判据：⭐ 历史最高分 > 85（⭐ 严格大于 ✓ 见 article-history 的 conqueredTextOf ✓） -->
         <view class="flex-1">
-          <text class="text-22rpx text-faint block">最低</text>
-          <text class="text-30rpx font-semibold text-muted">{{summary.lowestScoreText}}</text>
+          <text class="text-22rpx text-faint block">攻克</text>
+          <text class="text-30rpx font-semibold {{summary.conqueredText === '已攻克' ? 'text-ok' : 'text-muted'}}">{{summary.conqueredText}}</text>
         </view>
       </view>
     </view>

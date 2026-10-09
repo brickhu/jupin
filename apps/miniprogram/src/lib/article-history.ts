@@ -1,4 +1,4 @@
-import { formatScore } from '@jushuo/shared'
+import { COOKIE_PASS_LINE, formatScore } from '@jushuo/shared'
 import type { ParticipationSubmissionsResponse } from '@jushuo/shared'
 
 import { agoText } from './time'
@@ -54,6 +54,22 @@ export interface HistoryRows {
   attempts: number
   /** 这些记录里的最高分（'89.5'）；一条都没有时是空串 */
   bestScoreText: string
+  /** ⭐ **我**在这句上的最低分；一条有分的都没有时是空串 */
+  /**
+   * ⭐ **这一句我攻没攻克**（⭐ 用户 2026-10-09 要的：⭐ 去掉「最低」，换成已攻克/未攻克 ✓）
+   *
+   * ⚠️⚠️ 判据**不能想当然** ✗ —— 本仓那条规则是（⭐ shared/cookies.ts ✓）：
+   *    `passLine = max(85, 我在这句的历史最好)` · `攻克 = score > passLine`（**严格大于** ✓）
+   *    ⇒ ⚠️ 那是**每一把**的口径（"这一把有没有拿到饼干"✓）
+   *
+   * ⭐ 推到"**这一句**攻没攻克过"就简化成：⭐ **历史最高分 > 85** ✓✓
+   *    ⚠️ 理由：任何一把只要 `score > 85`，它必然也 `> max(85, 该把之前的最好)` ✓
+   *      （⭐ 因为"之前的最好" ≤ 全程最高 < score ✓）
+   *    ⇒ ⭐ 所以只需要最高分和那根线 ✓ 不需要另算 passLine ✓
+   *
+   * ⚠️ 必须**严格大于**：`85` 本身不算攻克 ✓（⭐ 同 cookies.ts 的口径 ✓）
+   * ⚠️ 一次都没出过分时是空串（⭐ 卡片显示 '—' ✓ 与另外三格一致 ✓）
+   */
   /** ⭐ **我**在这句上的最低分；一条有分的都没有时是空串 */
   lowestScoreText: string
 }
@@ -130,9 +146,34 @@ export interface HistorySummary {
   /** '2 / 18'；没名次（没出过分 / 服务端没给）是 '—' */
   rankText: string
   /** 全场最低分；没人参与是 '—' */
-  lowestScoreText: string
+  /**
+   * ⭐ **这一句我攻没攻克**（⭐ 用户 2026-10-09 要的：去掉「最低」，换成已攻克/未攻克 ✓）
+   *
+   * ⚠️⚠️ 判据**不能想当然** ✗ —— 本仓那条规则是（⭐ shared/cookies.ts ✓）：
+   *    `passLine = max(85, 我在这句的历史最好)` · `攻克 = score > passLine`（**严格大于** ✓）
+   *    ⇒ ⚠️ 那是**每一把**的口径（"这一把有没有拿到饼干"✓）
+   *
+   * ⭐ 推到「**这一句**攻没攻克过」就简化成：⭐ **历史最高分 > 85** ✓✓
+   *    ⚠️ 理由：任何一把只要 `score > 85`，它必然也 `> max(85, 该把之前的最好)` ✓
+   *      （⭐ 因为"该把之前的最好" ≤ 全程最高 < score ✓）
+   *    ⇒ ⭐ 只需要最高分和那根线 ✓ 不必另算 passLine ✓
+   *
+   * ⚠️ 必须**严格大于**：`85` 本身不算攻克 ✓（⭐ 同 cookies.ts 的口径 ✓）
+   * ⚠️ 一次都没出过分时是空串（⭐ 卡片显示 '—' ✓ 与另外三格一致 ✓）
+   */
+  conqueredText: string
 }
 
+/**
+ * ⭐ **这一句攻没攻克** —— 判据只在这一个地方写（⭐ 见 HistorySummary.conqueredText ✓）
+ *
+ * ⚠️ `best` 可能是 null（⭐ 老数据 / 服务端没给 ✓）⇒ 当成"没出过分" ✓
+ * ⚠️ 必须**严格大于**：`85` 本身不算攻克 ✓（⭐ 同 cookies.ts 的口径 ✓）
+ */
+export function conqueredTextOf(attempts: number, best: number | null): string {
+  if (attempts <= 0 || best === null) return '—'
+  return best > COOKIE_PASS_LINE ? '已攻克' : '未攻克'
+}
 export function historySummaryOf(res: ParticipationSubmissionsResponse): HistorySummary {
   return {
     attemptsText: res.attempts + ' 次',
@@ -144,12 +185,12 @@ export function historySummaryOf(res: ParticipationSubmissionsResponse): History
         ? res.rank + ' / ' + res.participantCount
         : '—',
     /**
-     * ⚠️⚠️ **用「我的最低」，不是「全场最低」**（用户 2026-09 报的不一致）：
-     *    那张卡上「挑战 / 最高 / 位列」都是"我的"，只有这一个原来取的是
-     *    `res.lowestScore`（**全场**最低分）⇒ 只有我一个人参与时会显示成我自己最高分
-     *    （82.4），而列表里明明有一次 65.0 —— 同屏自相矛盾。
-     *    ⚠️ 全场的最高/最低分留在**竞技场页**那张「参与概要」里（标签本来就写了"全场"）。
+     * ⭐ 这一句攻没攻克（⭐ 判据见 HistorySummary.conqueredText 的说明 ✓）
+     * ⚠️ 用 `res.bestScore`（⭐ 含当前这一把 ✓ 与上面「最高」同一份数据 ✓），
+     *    ⚠️ 不要再去 `historyRowsOf` 里绕一圈 —— 那是**列表那批**的口径（⭐ 免掉当前这次 ✓）
+     * ⚠️ 一次都没出过分（attempts 为 0 / bestScore 为 0）给 '—' ✓
+     *    （⭐ 与另外三格一致：⭐ 没数据时不硬说"未攻克"✓）
      */
-    lowestScoreText: historyRowsOf(res, '').lowestScoreText || '—',
+    conqueredText: conqueredTextOf(res.attempts, res.bestScore),
   }
 }
