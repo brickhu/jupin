@@ -4,6 +4,8 @@ import { timingSafeEqual } from 'node:crypto'
 import { env } from '../env'
 import { defaultHook } from '../openapi'
 import { errorResponse } from '../openapi/schemas'
+import { sweepStaleOrders } from '../services/order'
+import { errText } from '../services/wx-access-token'
 import { sweepStaleSubmissions } from '../services/sweep'
 
 /**
@@ -100,5 +102,22 @@ cronRoutes.openapi(sweepRoute, async (c) => {
    *    而定时触发器**一天只来几次** —— 被节流掉就等于这一次白跑。
    */
   const r = await sweepStaleSubmissions(true)
-  return c.json({ ok: true as const, data: r }, 200)
+  /**
+   * ⭐⭐ **支付订单也顺手扫一遍**（⭐ 用户 2026-10-09 报的"支付成功但半天不到账"✓）
+   *
+   * ⚠️ 为什么必须在这一轮里做：⭐ 支付发货**原本一条服务端兜底都没有** ✗ ——
+   *    只靠「微信推送」和「端侧 3.6 秒的查单」✓
+   *    ⇒ ⚠️ 推送丢了 + 端侧那 3.6 秒没等到 ⇒ ⭐ **那一单永远停在 pending** ✗✗
+   *    ⇒ ⭐ 而这一轮**跟用户在不在页面上无关** ✓✓
+   *
+   * ⚠️ 它只扫"**pending 且创建超过 3 分钟**"的 ✓（⭐ 太新的交给端侧自己查 ✓）
+   * ⚠️ 失败的**不影响**这一轮的返回 ✗ —— ⭐ 单笔查不动下一轮还会再扫 ✓
+   */
+  let orders: { checked: number; delivered: number } | null = null
+  try {
+    orders = await sweepStaleOrders()
+  } catch (err) {
+    console.error('[cron] 兜底查单失败（不影响清扫）：' + errText(err))
+  }
+  return c.json({ ok: true as const, data: { ...r, orders } }, 200)
 })

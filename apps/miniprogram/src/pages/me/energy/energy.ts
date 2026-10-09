@@ -115,8 +115,18 @@ function toRow(item: EnergyLedgerItem): LedgerRow {
 const PAY_TIMEOUT_MS = 90_000
 
 async function waitArrival(prevEnergy: number, outTradeNo: string): Promise<boolean> {
-  for (let i = 0; i < 3; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 1200))
+  /**
+   * ⚠️⚠️ **轮五次、每次 2 秒**（⭐ 2026-10-09 从"三次 × 1.2 秒"改 ✓）
+   *
+   *    原来的 3.6 秒**太短** ✗：⭐ 微信侧还没落账 ⇒ ⚠️ 查单拿不到"已支付" ✓
+   *    ⇒ ⚠️ 然后这里就放弃了 ⇒ ⭐ 用户看到"半天不到账"✓（⭐ 用户就是这么报的 ✓）
+   *
+   *    ⭐ 现在 10 秒 ✓ —— ⚠️ 再长就不礼貌了 ✗（⭐ 用户盯着转圈等 ✓）
+   *    ⭐ 而**真正的兜底在服务端**：⭐ `cron /sweep` 会扫 3 分钟以上还 pending 的单 ✓
+   *      ⇒ ⭐ 这里等不到也没关系，⭐ **稍后会自动到账** ✓✓
+   */
+  for (let i = 0; i < 5; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
     /**
      * ⭐⭐ **每轮先让服务端去微信查一次单**（⭐ 用户 2026-10-09 报的 ✓）
      *
@@ -627,7 +637,7 @@ Page({
       void refreshMe()
       if (!arrived) {
         /** ⚠️ 支付成功但余额还没动：说清是「到账延迟」，而不是「失败」 */
-        wx.showToast({ title: '支付成功，到账可能要几秒 —— 下拉刷新看看', icon: 'none', duration: 2600 })
+        wx.showToast({ title: '支付成功，到账可能要一会儿 —— 稍后会自动到账', icon: 'none', duration: 2600 })
       } else {
         wx.showToast({ title: '已到账 +' + order.points + ' 点', icon: 'none' })
       }

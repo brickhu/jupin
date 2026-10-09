@@ -327,3 +327,58 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
   }
   return res
 }
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 支付订单的定时兜底 —— 端侧关了页面也要能到账                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⭐⭐ **扫"卡住的支付订单"，逐笔查单发货**（⭐ 定时触发器调 ✓）
+ *
+ * ## ⚠️ 为什么必须有它（⭐ 用户 2026-10-09 报的"支付成功但半天不到账"✓）
+ *
+ *    发货有两条路，**但两条都不够** ✗：
+ *      · ⭐ **推送** —— ⚠️ 会丢，而且推送地址只有一个环境收得到 ✓
+ *      · ⭐ **端侧查单**（`waitArrival` ✓）—— ⚠️ **只等 3.6 秒** ✗
+ *        ⇒ ⚠️ 微信侧还没落账 ⇒ ⚠️ 查不到"已支付" ⇒ ⭐ **之后再也没有人管这一单** ✗✗
+ *        ⇒ ⚠️ 用户关掉页面 / 等久一点，这一单就**永远停在 pending** ✓
+ *
+ *    ⇒ ⭐ 所以**服务端必须自己兜底** ✓ ——
+ *      ⚠️ 这一点**跟用户还在不在页面上无关** ✗ ✓
+ *
+ * ## ⚠️ 参数为什么是 3 分钟
+ *
+ *    ⭐ 比端侧那 3.6 秒宽得多 ✓（⭐ 微信落账通常几秒，但慢的时候能到几分钟 ✓）
+ *    ⚠️ 又不能太长 ✗ —— ⭐ 用户已经去干别的了，越早到账体验越好 ✓
+ *    ⚠️ 而查单本身**幂等**（⭐ 走 `deliverOrder` ✓），
+ *      重复扫到同一笔也只会发一次货 ✓
+ */
+export async function sweepStaleOrders(
+  minAgeMs = 3 * 60_000,
+  limit = 20,
+): Promise<{ checked: number; delivered: number }> {
+  const { and, eq, lt } = await import('drizzle-orm')
+  const rows = await db
+    .select({ outTradeNo: payments.outTradeNo })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.status, 'pending'),
+        lt(payments.createdAt, new Date(Date.now() - minAgeMs)),
+      ),
+    )
+    .orderBy(payments.createdAt)
+    .limit(limit)
+
+  let delivered = 0
+  for (const row of rows) {
+    try {
+      const res = await syncOrderFromWx(row.outTradeNo)
+      if (res.ok && res.delivered) delivered++
+    } catch (err) {
+      /** ⚠️ 单笔查不动不能让整轮挂掉 ✗ —— ⭐ 下一轮还会再扫到它 ✓ */
+      console.warn('[order] 兜底查单失败（' + row.outTradeNo + '）：' + errText(err))
+    }
+  }
+  return { checked: rows.length, delivered }
+}
