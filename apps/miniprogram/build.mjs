@@ -270,6 +270,48 @@ async function collectByExt(dir, exts) {
 const collectEntries = (dir) => collectByExt(dir, ['.ts'])
 
 /**
+ * ⭐⭐ **入口 = 页面 + 组件 + app + 必须独立产出的有状态模块** ✗（⭐ 2026-10-10 修 ✓）
+ *
+ * ## ⚠️⚠️ 原来是 `collectEntries(SRC)` —— 把 `src` 下【所有】`.ts` 都当入口 ✗
+ *
+ *    ⇒ ⚠️ **`lib/audio/vad.ts`、「lib/auth.ts」、「lib/route.ts」… 每个都单独吐一份** ✓
+ *    ⚠️ **而各 page 的 bundle 里【已经内联】了同样的代码** ✗
+ *    ⇒ ⭐ **那份独立产物没有任何文件 require 它** ✓✓
+ *    ⇒ ⭐⭐ **微信「代码依赖分析」把它们全列进「无依赖代码文件」**
+ *       （⭐ 32 个 / **166KB** / 全是重复内容 ✓）✓✓✓
+ *
+ * ## ⭐ 谁才需要独立产物
+ *
+ *    ⭐ **`SHARED_STATEFUL`**（⭐ `lib/store` / `lib/api/client` ✓）——
+ *       ⚠️ 它们**有状态**（⭐ 模块级变量 ✓）⇒ ⭐ 必须全局唯一 ✓
+ *       ⇒ ⭐ 靠 `externalStateful` 插件把引用改写成 `require('…/lib/store.js')` ✓
+ *       ⇒ ⚠️ **那就必须真有那个文件** ⇒ ⭐ **入口里要有它** ✓✓
+ *    ⭐ 其余 `lib/**` 都是**纯函数/常量** ⇒ ⭐ **内联进各 page 就行** ✓
+ *       （⭐ `@jushuo/shared` 本来就是这么处理的 ✓ 见 `SHARED_STATEFUL` 上面那段注释 ✓）
+ *
+ * ## ⚠️ 为什么这样安全
+ *
+ *    ⭐ 页面/组件**从来**都是独立入口 ✓ ⇒ ⚠️ 只减不增 ✓
+ *    ⭐ 而"被内联"本来就是它们原来的待遇 ✓
+ *    ⚠️ 少掉的只是**没人 require 的重复副本** ✓✓
+ */
+async function collectBuildEntries() {
+  const out = []
+  for (const sub of ['pages', 'components']) {
+    out.push(...(await collectByExt(join(SRC, sub), ['.ts'])))
+  }
+  // ⭐ app.ts（⭐ 小程序入口 ✓）
+  const appTs = join(SRC, 'app.ts')
+  if (existsSync(appTs)) out.push(appTs)
+  // ⭐ 有状态、必须全局唯一的那几个（⭐ 见 SHARED_STATEFUL ✓）
+  for (const p of SHARED_STATEFUL) {
+    const f = p + '.ts'
+    if (existsSync(f)) out.push(f)
+  }
+  return out
+}
+
+/**
  * 复核产物里没有残留 ES2020+ 语法。
  *
  * ⚠️ 为什么值得单独做一道检查：这类问题**只在真机上炸、模拟器完全正常**，
@@ -637,7 +679,7 @@ async function run() {
   const env = Object.fromEntries(Object.entries(INJECT).map(([t, k]) => [k, process.env[k] ?? '']))
   console.log('[build] 注入配置：' + JSON.stringify(env))
 
-  const entryPoints = await collectEntries(SRC)
+  const entryPoints = await collectBuildEntries()
   if (entryPoints.length === 0) throw new Error('未找到任何 .ts 入口')
   console.log(`[build] ${entryPoints.length} 个入口`)
 
