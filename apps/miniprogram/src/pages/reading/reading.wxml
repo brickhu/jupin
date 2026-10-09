@@ -92,9 +92,9 @@
              理由：⭐ 出分那一刻句子**不能跳** ✗ ——
                用户刚盯着同一句话读完，标色只是换个颜色，位置一动就觉得"换了一句话" ✓
              ⚠️⚠️ 所以这整块**要和上面 s1/s2/s3 那段同步改** ✗：
-               `flex flex-wrap` 外层 · `flex flex-col items-center mr-2 mb-1` 词容器 ·
-               `text-44rpx leading-[1.35] px-1` 词本身 · `text-20rpx leading-[1.4] text-faint` 音标行
-             ⚠️ 早先这里是一个 `<text>` 里嵌 `<text>` + 词后空格 ✗ ——
+               「flex flex-wrap」 外层 · 「flex flex-col items-center mr-2 mb-1」 词容器 ·
+               「text-44rpx leading-[1.35] px-1」 词本身 · 「text-20rpx leading-[1.4] text-faint」 音标行
+             ⚠️ 早先这里是一个 「<text>」 里嵌 「<text>」 + 词后空格 ✗ ——
                那个写法**排版规则完全不同**（行高、断行、间距都跟不上 ✓），
                ⚠️ 当初的理由是"并列 text 会被当块排"✗ ——
                ⭐ 那个问题由**外层 flex 容器**解决 ✓（⭐ 阅读时那段已经证明了 ✓） -->
