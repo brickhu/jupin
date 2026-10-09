@@ -129,6 +129,12 @@ export type ChunkKind = 'voice' | 'silence' | 'undecodable'
  *       那样会把正常说话也判成静音 ✓
  */
 export const SILENCE_PEAK_RATIO = 0.25
+/**
+ * ⚠️ **保留只为兼容引用**（⭐ 2026-10-10 ✓）——
+ *    ⭐ 它当初是当"绝对下限"用的（⭐ 防"安静环境里底噪成了峰值" ✓），
+ *    ⚠️ 但那个用法方向错了（⭐ 见 `silenceThresholdOf` 的说明 ✓）：
+ *    ⭐ 现在取【较小值】，⭐ 所以它不再参与计算 ✓
+ */
 export const SILENCE_RMS_FLOOR = 0.004
 
 /** ⭐ 更新"见过的最大 RMS"—— ⭐ 只涨不跌（⭐ 峰值是该设备的量程参考 ✓） */
@@ -138,8 +144,25 @@ export function advancePeakRms(peak: number, rms: number): number {
 
 /** ⭐ 按当前峰值算这一帧的静音阈值 */
 export function silenceThresholdOf(peakRms: number): number {
+  /**
+   * ⚠️⚠️ **取【较小】的那个** ✗（⭐ 2026-10-10 修 ✓）—— ⭐ **方向不能搞反** ✓
+   *
+   *    ⭐ 第一版写的是 `max(FLOOR, peak × RATIO)` ✗ ⇒ ⚠️ **阈值只可能变大** ✓
+   *    ⇒ ⚠️ 于是**原本固定 `0.02` 判成 voice 的帧，现在会被判成 silence** ✗
+   *    ⇒ ⭐ **`voicedMs` 不涨 ⇒ 更不能自动结束** ✓✓
+   *    ⚠️ 用户实测：⭐ **iOS 本来能停，改完不能了** ✗ —— ⭐ **这就是原因** ✓
+   *
+   *    ⭐ 而这个模块从头到尾的原则是 ⭐ **"宁可判成他还在说"** ✓：
+   *      ⚠️ 判成 voice 的代价 = 晚一点停（⭐ 用户还能手动点 ✓）
+   *      ⚠️ 判成 silence 的代价 = **提前掐断录音**（⭐ 最不能接受 ✓）
+   *    ⇒ ⭐ **两条判据只要有一条说"这是声音"，就按声音算** ✓✓
+   *
+   *    ⭐ 这样两种设备都覆盖：
+   *      ⭐ **正常增益**（⭐ iOS ✓）：⭐ 固定 `0.02` 那条就够 ⇒ ⭐ **行为和以前一致** ✓
+   *      ⭐ **低增益**（⭐ 某些安卓 ✓）：⭐ 峰值比例那条兜住 ⇒ ⭐ **不再全判 silence** ✓✓
+   */
   const byPeak = peakRms * SILENCE_PEAK_RATIO
-  return byPeak > SILENCE_RMS_FLOOR ? byPeak : SILENCE_RMS_FLOOR
+  return byPeak < SILENCE_RMS ? byPeak : SILENCE_RMS
 }
 
 /** ⭐ 一帧的 RMS（⭐ 抽出来，⭐ 调用方要拿它更新峰值 ✓） */

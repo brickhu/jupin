@@ -4,6 +4,7 @@ import {
   AUTO_STOP_MIN_RATIO,
   AUTO_STOP_WORD_MS,
   AUTO_STOP_SILENCE_MS,
+  SILENCE_RMS,
   SILENCE_RMS_FLOOR,
   VAD_STATE_ZERO,
   advancePeakRms,
@@ -213,11 +214,25 @@ describe('自适应静音阈值 —— 跟设备自己的峰值比，不跟绝�
     expect(classifyChunk(tone(0.02), threshold)).toBe('silence')
   })
 
-  it('⚠️ 绝对下限兜住「安静环境里一点底噪就成了峰值」', () => {
-    expect(silenceThresholdOf(0)).toBe(SILENCE_RMS_FLOOR)
-    expect(silenceThresholdOf(0.001)).toBe(SILENCE_RMS_FLOOR)
-    // ⭐ 全是底噪（幅度 0.003 ⇒ RMS 0.0021 < FLOOR）时算「安静」，不是「有人在说话」
-    expect(classifyChunk(tone(0.003), silenceThresholdOf(0))).toBe('silence')
+  it('⚠️⚠️ 阈值取【较小】的那个 —— 方向不能搞反', () => {
+    /**
+     * ⚠️⚠️ **这条测试第一版断言的是 `max`，方向是错的** ✗（⭐ 2026-10-10 修 ✓）
+     *    ⚠️ `max` 会让阈值只可能变大 ⇒ ⭐ **原本判 voice 的帧变成 silence** ✓
+     *    ⇒ ⭐ **`voicedMs` 不涨 ⇒ 更不能自动结束** ✓✓
+     *    ⚠️ 用户实测：⭐ **iOS 本来能停，改完不能了** ✗ —— ⭐ 就是它 ✓
+     *
+     *    ⭐ 现在的口径：⭐ **只要固定阈值说"这是声音"，就按声音算** ✓
+     *    ⇒ ⭐ **正常增益设备（⭐ iOS）的行为和改动前完全一致** ✓
+     */
+    // ⭐ 峰值低 ⇒ 走峰值那条（⭐ 比固定阈值小 ✓）
+    expect(silenceThresholdOf(0.01)).toBeCloseTo(0.01 * 0.25, 6)
+    // ⭐ 峰值高 ⇒ 被固定阈值封顶（⭐ 不会因为峰值大就判得更严 ✓）
+    expect(silenceThresholdOf(0.4)).toBe(SILENCE_RMS)
+    expect(silenceThresholdOf(0)).toBe(0)
+    // ⭐ 关键：⭐ 用默认（固定）阈值能判成 voice 的信号，自适应后【仍然】是 voice ✓
+    expect(classifyChunk(tone(0.1))).toBe('voice')
+    expect(classifyChunk(tone(0.1), silenceThresholdOf(0.4))).toBe('voice')
+    expect(classifyChunk(tone(0.1), silenceThresholdOf(0.01))).toBe('voice')
   })
 
   it('rmsOf：空 / null 给 0，正弦给约 a/√2', () => {
