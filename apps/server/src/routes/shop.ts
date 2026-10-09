@@ -81,7 +81,29 @@ const shopOrderRoute = createRoute({
   summary: '下单（返回虚拟支付签名数据）',
   // ⚠️ 与 /api/user/* 下其它接口统一：文档必须写明要带身份（409 那些分支都建立在"这是我"上）
   security: [{ userToken: [] }],
-  request: { body: { content: { 'application/json': { schema: z.object({ code: z.string() }) } } } },
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            code: z.string(),
+            /**
+             * ⭐ **支付平台**（⭐ `android` / `ios` / `windows` ✓）—— ⚠️ **端侧必传** ✗
+             *
+             * ⚠️⚠️ 官方 SDK 明写：⭐「platform 与应用 id 有关，
+             *    ⚠️ **默认值：android 安卓平台**」✓
+             *    ⇒ ⚠️ 而 iOS 走的是 **Apple 支付** ✗
+             *    ⇒ ⭐ 不传的话 iOS 的单建在安卓渠道下：**钱扣了、查不到、不到账** ✓✓
+             *      （⭐ 2026-10-09 实际踩到 ✓）
+             * ⚠️ 所以这里**不设默认值** ✗ —— ⭐ 缺了就报错，
+             *    总比默默按安卓建单、用户花了钱拿不到货强 ✓
+             */
+            platform: z.string().min(1),
+          }),
+        },
+      },
+    },
+  },
   responses: {
     200: {
       content: { 'application/json': { schema: ShopOrderResponseSchema } },
@@ -96,10 +118,23 @@ const shopOrderRoute = createRoute({
 shopRoutes.openapi(shopOrderRoute, async (c) => {
   const userId = c.get('userId')
   const body = await c
-    .req.json<{ goodsCode?: string; code?: string }>()
-    .catch(() => ({}) as { goodsCode?: string; code?: string })
+    .req.json<{ goodsCode?: string; code?: string; platform?: string }>()
+    .catch(() => ({}) as { goodsCode?: string; code?: string; platform?: string })
   const goodsCode = typeof body.goodsCode === 'string' ? body.goodsCode : ''
   if (!goodsCode) return c.json({ ok: false, error: '缺少 goodsCode' }, 400)
+  /**
+   * ⚠️⚠️ **platform 必传，且不能猜** ✗（⭐ 2026-10-09 实测踩到 ✓）
+   *
+   *    ⭐ 官方 SDK：⭐「platform 与应用 id 有关，⚠️ **默认值：android 安卓平台**」✓
+   *    ⚠️ 而 iOS 走的是 **Apple 支付** ✗ ⇒ ⚠️ 端侧不传就等于按安卓建单 ✓
+   *      ⇒ ⭐ **用户钱扣了、单却在另一个渠道 ⇒ 查不到、不到账** ✓✓
+   *    ⚠️ 所以缺了就**明确报错** ✗ —— ⭐ 宁可下单失败，
+   *      也不能让用户付了钱拿不到能量 ✓
+   */
+  const platform = typeof body.platform === 'string' ? body.platform.trim() : ''
+  if (!platform) {
+    return c.json({ ok: false, error: '缺少 platform（端侧要按真实设备传：android / ios / windows）' }, 400)
+  }
 
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
   if (!user) return c.json({ ok: false, error: '用户不存在' }, 401)
@@ -131,7 +166,12 @@ shopRoutes.openapi(shopOrderRoute, async (c) => {
   }
 
   try {
-    const order = await createOrder({ userId, goodsCode, sessionKey: sessionKey || 'mock' })
+    const order = await createOrder({
+      userId,
+      goodsCode,
+      sessionKey: sessionKey || 'mock',
+      platform,
+    })
     return c.json({
       ok: true,
       data: {

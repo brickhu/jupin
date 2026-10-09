@@ -59,6 +59,12 @@ export function calcSignature(signData: string, sessionKey: string): string {
 }
 
 export interface OrderSignInput {
+  /**
+   * ⭐ 支付平台 —— ⭐ **必须由端侧按真实设备传** ✓
+   * ⚠️ 取值：`android` / `ios` / `windows` 等（⭐ 官方："platform 与应用 id 有关"✓）
+   * ⚠️⚠️ **不能写死** ✗ —— ⚠️ 写错就是"钱扣了但查不到单" ✓
+   */
+  platform: string
   outTradeNo: string
   /** 微信侧「道具管理」里的道具 ID */
   productId: string
@@ -92,6 +98,18 @@ export function buildSignData(input: OrderSignInput): string {
     buyQuantity: input.buyQuantity ?? 1,
     env: payEnv,
     currencyType: 'CNY',
+    /**
+     * ⚠️⚠️ **平台必须传，而且必须是对的** ✗（⭐ 2026-10-09 实测踩到 ✓）
+     *
+     *    官方 SDK 的原文：⭐「platform 与应用 id 有关
+     *      ⚠️ **默认值：android 安卓平台**」✓
+     *    ⚠️ 而 iOS 走的是 **Apple 支付** ✗（⭐ 官方设备路由表：
+     *      Android/鸿蒙/Windows ⇒ 微信支付；⭐ iOS ⇒ Apple 支付 ✓）
+     *    ⇒ ⚠️ 不传的话 iOS 的单被建在**安卓渠道**下 ✗✓
+     *      ⇒ ⭐ **钱扣了、但按安卓渠道查永远"参数错误"** ✓
+     *      （⭐ 用户的 ¥1 就是这么扣掉又不到账的 ✓）
+     */
+    platform: input.platform,
     productId: input.productId,
     goodsPrice: input.goodsPriceFen,
     outTradeNo: input.outTradeNo,

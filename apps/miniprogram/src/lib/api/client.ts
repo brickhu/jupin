@@ -1041,9 +1041,30 @@ export function checkShopOrder(
 }
 export async function createShopOrder(goodsCode: string): Promise<ShopOrderResponse> {
   const code = await wxLoginCode().catch(() => '')
+  /**
+   * ⭐⭐ **必须告诉服务端"我是什么平台"** ✗（⭐ 2026-10-09 实测踩到 ✓）
+   *
+   *    ⚠️ 官方 SDK：⭐「platform 与应用 id 有关，
+   *      ⚠️ **默认值：android 安卓平台**」✓
+   *    ⚠️ 而设备路由完全不同 ✗：⭐ **Android/鸿蒙/Windows ⇒ 微信支付 ·
+   *      iOS ⇒ Apple 支付** ✓
+   *    ⇒ ⚠️ 不传的话 iOS 的单被建在安卓渠道下 ✗
+   *      ⇒ ⭐ **钱扣了、查不到、能量不到账** ✓✓（⭐ 用户那 ¥1 就是这么没的 ✓）
+   *
+   * ⚠️ 取值就是 `wx.getDeviceInfo().platform`：
+   *    `android` / `ios` / `windows` / `devtools` … ✓
+   * ⚠️ 取不到时**兜底成 android** ✗ —— ⚠️ 那是官方默认值 ✓
+   *    （⭐ 总比不传导致后端 400 好；⭐ 而真机一定能取到 ✓）
+   */
+  let platform = 'android'
+  try {
+    platform = wx.getDeviceInfo().platform || platform
+  } catch {
+    /* ⚠️ 老基础库没有 getDeviceInfo ⇒ 用默认值 ✓ */
+  }
   return request<ShopOrderResponse>('/api/user/shop/order', {
     method: 'POST',
-    data: { goodsCode, code },
+    data: { goodsCode, code, platform },
     budgetMs: LAUNCH_BUDGET_MS,
   })
 }

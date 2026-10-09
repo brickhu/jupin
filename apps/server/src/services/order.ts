@@ -74,6 +74,12 @@ const MOCK_PAY_DATA: PayData = {
  * ⚠️ 钱只认服务端算出来的金额 —— 端侧传什么价格都不看。
  */
 export async function createOrder(input: {
+  /**
+   * ⭐ 支付平台（⭐ `android` / `ios` / `windows` ✓）—— ⚠️ **必传** ✗
+   * ⚠️ 理由见 xpay.ts 的 buildSignData：⭐ 不传就等于按安卓建单，
+   *    而 iOS 走 Apple 支付 ⇒ ⭐ 钱扣了但查不到 ✓
+   */
+  platform: string
   userId: number
   goodsCode: string
   /** 用户态签名要用（来自 users.session_key） */
@@ -115,7 +121,8 @@ export async function createOrder(input: {
         /** ⚠️ attach 用来在发货时校验「这笔钱是不是这个用户付的」 */
         attach: 'u:' + input.userId,
         payEnv,
-      },
+      platform: input.platform,
+    },
       input.sessionKey,
     )
     return { outTradeNo, amountFen: goods.priceFen, goods, payData, mockPaid: false }

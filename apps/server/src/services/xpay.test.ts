@@ -51,6 +51,11 @@ describe('signData 构造', () => {
     productId: 'prod_energy_300',
     goodsPriceFen: 2000,
     attach: 'u:42',
+    /**
+     * ⚠️⚠️ **platform 是必填的** ✗（⭐ 2026-10-09 加的 ✓）
+     *    ⚠️ 不传就等于按安卓建单 ⇒ ⭐ iOS 走 Apple 支付的单查不到、不到账 ✓
+     */
+    platform: 'android',
   }
 
   it('能原样解回来，且关键字段都对', () => {
