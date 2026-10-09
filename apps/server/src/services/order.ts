@@ -410,6 +410,51 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
  *    ⚠️ 而查单本身**幂等**（⭐ 走 `deliverOrder` ✓），
  *      重复扫到同一笔也只会发一次货 ✓
  */
+/**
+ * ⭐⭐ **按商户单号精确查我们库里的状态**（⭐ 只读 ✓）
+ *
+ * ⚠️ 为什么需要它（⭐ 2026-10-09 ✓）：
+ *    ⚠️ 用户在微信后台看到了**已支付的商户单号** ✗，
+ *    而 sweep 只扫 `pending` + 只报最近 10 笔 ✓
+ *    ⇒ ⚠️ **那几笔到底在不在我们库里、是什么状态，看不出来** ✓
+ *    ⇒ ⭐ 那就**按单号直接问** ✓✓
+ */
+export async function inspectOrders(outTradeNos: string[]): Promise<
+  {
+    outTradeNo: string
+    found: boolean
+    status?: string
+    payEnv?: number
+    amount?: number
+    paidAt?: string | null
+    deliveredAt?: string | null
+    xpayOrderId?: string | null
+    hasRawNotify?: boolean
+  }[]
+> {
+  const { inArray } = await import('drizzle-orm')
+  const rows = await db
+    .select()
+    .from(payments)
+    .where(inArray(payments.outTradeNo, outTradeNos))
+  const byNo = new Map(rows.map((r) => [r.outTradeNo, r]))
+  return outTradeNos.map((no) => {
+    const r = byNo.get(no)
+    if (!r) return { outTradeNo: no, found: false }
+    return {
+      outTradeNo: no,
+      found: true,
+      status: r.status,
+      payEnv: r.payEnv,
+      amount: r.goodsAmount,
+      paidAt: r.paidAt ? r.paidAt.toISOString() : null,
+      deliveredAt: r.deliveredAt ? r.deliveredAt.toISOString() : null,
+      xpayOrderId: r.xpayOrderId ?? null,
+      hasRawNotify: !!r.rawNotify,
+    }
+  })
+}
+
 export async function sweepStaleOrders(
   minAgeMs = 3 * 60_000,
   /**

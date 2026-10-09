@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { env } from '../env'
 import { defaultHook } from '../openapi'
 import { errorResponse } from '../openapi/schemas'
-import { sweepStaleOrders } from '../services/order'
+import { inspectOrders, sweepStaleOrders } from '../services/order'
 import { errText } from '../services/wx-access-token'
 import { sweepStaleSubmissions } from '../services/sweep'
 
@@ -113,11 +113,26 @@ cronRoutes.openapi(sweepRoute, async (c) => {
    * ⚠️ 它只扫"**pending 且创建超过 3 分钟**"的 ✓（⭐ 太新的交给端侧自己查 ✓）
    * ⚠️ 失败的**不影响**这一轮的返回 ✗ —— ⭐ 单笔查不动下一轮还会再扫 ✓
    */
-  let orders: { checked: number; delivered: number } | null = null
+  let orders: unknown = null
   try {
     orders = await sweepStaleOrders()
   } catch (err) {
     console.error('[cron] 兜底查单失败（不影响清扫）：' + errText(err))
   }
-  return c.json({ ok: true as const, data: { ...r, orders } }, 200)
+  /**
+   * ⭐ **可选的按单号精确查询**（⭐ 只读 ✓）
+   * ⚠️ 用法：⭐ body `{"outTradeNos": ["JPMV0…"]}` ✓
+   * ⚠️ 它跟清扫无关 ✗ —— ⭐ 纯粹是为了"这几笔到底在不在我们库里" ✓
+   */
+  let inspect: unknown = null
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { outTradeNos?: unknown }
+    const nos = Array.isArray(body.outTradeNos)
+      ? body.outTradeNos.filter((x): x is string => typeof x === 'string')
+      : []
+    if (nos.length) inspect = await inspectOrders(nos.slice(0, 50))
+  } catch {
+    /* ⚠️ 没有 body / 不是 json ⇒ 就是普通的定时清扫 ✓ */
+  }
+  return c.json({ ok: true as const, data: { ...r, orders, inspect } }, 200)
 })
