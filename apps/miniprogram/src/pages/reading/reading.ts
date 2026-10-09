@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio } from '../../lib/audio/play'
+import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio, stopCues } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -1348,32 +1348,17 @@ Page({
   onTapRecord() {
     if (this.data.phase === 's1') {
       /**
-       * ⭐⭐ **先把正在响的声音全停掉，再"嘟"，最后开麦克风** ✗（⭐ 2026-10-10 修顺序 ✓）
+       * ⭐⭐ **一句话交给 `startRecording` 去做** ✗（⭐ 2026-10-10 修 ✓）
        *
-       *    ⚠️⚠️ **原来这两步是反的** ✗：`playBeep()` 在前、`startRecording()` 在后 ✓
-       *       ⭐ 而"停旧声音"在 `startRecording()` 的**最里面** ✓
-       *       ⇒ ⚠️ 实际顺序是：⭐ **"嘟"响了 → 才停旧声音 → 开麦** ✓
-       *       ⚠️ 而 `stopAllAudio()` **停不到音效（`cues`）** ✗
-       *       ⇒ ⭐ **"嘟"和正在试听的标准音【重叠着】一起进了麦克风** ✓✓
-       *       ⚠️ 上面那段注释当时写的是"先停旧声音 → 再嘟"✗ ——
-       *          ⭐ **那是它以为的顺序，不是代码的顺序** ✓
+       *    ⚠️ 原来这里自己调了 `stopAllAudio()` + `playBeep()` ✗，
+       *    而 `startRecording()` 里**又**有一次 `stopAllAudio()` ✓
+       *    ⇒ ⭐ **顺序变成"停 → 嘟 → 停"** ✗ ⇒ ⭐ **安卓的"嘟"整声被杀** ✓✓
        *
-       *    ⭐ 现在把停止提到这里 ✓：
-       *       ⭐ 停旧声音 ⇒ ⭐ "嘟" ⇒ ⭐ 开麦 ✓
-       *       ⇒ ⭐ **"嘟"是唯一会被录进去的声音**（⭐ 0.13s ✓ 对自动结束门槛可忽略 ✓）
-       *
-       *    ⚠️ **为什么不停在 `startRecording()` 里就够**：⭐ 那个函数**别处也会被调** ✗
-       *       （⭐ 自动接续下一句 ✓）⇒ ⚠️ 那里的停止挡不住"点击"这条路 ✓
-       *       ⭐ 所以两处都留（⭐ 幂等，重复调无害 ✓）
-       *
-       *    ⚠️ **"嘟"必须挂在"点击"这一层** ✓（⭐ 用户指出过 ✓）：
-       *       ⚠️ 放 `startRecording()` 里的话，自动接续时也会响 ✗
-       *       ⭐ 而它要表达的是"**你按了，麦克风开了**" ✓
+       *    ⭐ 现在把三件事收进 `startRecording` 一处 ✓：
+       *       ⭐ 停所有 ⇒ "嘟" ⇒ 开麦克风 ✓
+       *    ⚠️ 只有"点击"这条路要"嘟"✗ ⇒ ⭐ 用 `beep: true` 表达 ✓
        */
-      this.stopAllAudio()
-      playBeep()
-
-      this.startRecording()
+      this.startRecording({ beep: true })
       return
     }
     if (this.data.phase === 's2') this.stopRecordingByUser()
@@ -1385,7 +1370,7 @@ Page({
    * ⚠️ 从按下算起的三百毫秒里用户点了别的？不存在这个状态：
    *    点击是一次动作，`s2` 才是"正在录"，中途没有"手指还压着吗"要判 ✓
    */
-  startRecording() {
+  startRecording(opts: { beep?: boolean } = {}) {
     /**
      * ⚠️ `phase === 's2'` 这一条**同时挡掉了「识别中…」那一态** ——
      *    那时手已松、正在定稿，但 phase 还是 s2（要到 handleSpoken 才变 s3）。
@@ -1407,6 +1392,17 @@ Page({
      *    而声音必须**在手按下的那一刻**就停 —— 否则那几百毫秒还在往麦克风里灌。
      */
     this.stopAllAudio()
+
+    /**
+     * ⭐⭐ **停完之后才出声** ✗（⭐ 用户 2026-10-10 明确要求 ✓）
+     *
+     *    ⭐ 顺序：⭐ **停所有声音 ⇒ 播"嘟" ⇒ 开麦克风** ✓✓
+     *    ⚠️ "嘟"**只跟点击走** ✗ ⇒ ⭐ 由 `opts.beep` 控制 ✓：
+     *       ⭐ `onTapRecord`（⭐ 用户点了 ✓）⇒ `beep: true` ✓
+     *       ⚠️ 自动接续下一句 ⇒ ⚠️ 不带 ⇒ ⭐ **不响** ✓
+     *       （⭐ 它要表达的是"**你按了，麦克风开了**" ✓）
+     */
+    if (opts.beep) playBeep()
 
     void this.onStartRecord()
   },
@@ -1905,27 +1901,29 @@ Page({
    */
   stopAllAudio() {
     /**
-     * ⚠️⚠️ **只停标准音，【不能】停提示音** ✗（⭐ 2026-10-10 修 ✓）
+     * ⭐⭐ **两套播放器都停 —— 这就是"全停"** ✗（⭐ 用户 2026-10-10 明确要求 ✓）
      *
-     *    ⚠️ 我一度在这里加了 `stopCues()`，理由是"提示音走另一套播放器、
-     *       只调 `stopAudio()` 的话『全停』这句话不成立"✗
-     *    ⇒ ⭐ **那个理由是错的** ✓✓：
-     *      ⭐ `onTapRecord` 的顺序是 ⭐ `stopAllAudio()` → `playBeep()` → `startRecording()` ✓
+     *    ⭐ `stopAudio()` 只管**标准音/试听/逐词**那一个单例 ✓
+     *    ⭐ 提示音（嘟/叮/嗖）走的是另一套播放器（⭐ `cues` ✓）
+     *    ⇒ ⭐ **不调 `stopCues()` 的话，"全停"这句话是不成立的** ✓✓
+     *
+     * ## ⚠️⚠️ 但"停"和"嘟"的【顺序】必须对
+     *
+     *    ⚠️ 我上一版就是因为顺序错了，把安卓的"嘟"整声杀掉 ✗：
+     *      ⭐ 当时 `onTapRecord` 是 `stopAllAudio()` → `playBeep()` → `startRecording()` ✓
      *      ⚠️ **而 `startRecording()` 的第一句【又是】`stopAllAudio()`** ✗
-     *      ⇒ ⭐⭐ **第二次调用把刚响的"嘟"杀掉了** ✓
-     *      ⚠️ 用户实测：⭐ **安卓上点开始录音完全没有音效** ✗
-     *         （⭐ iOS 有：`playBeep` 是异步起播，iOS 起得快、那一下 stop 落在开始之后 ✓
-     *          ⚠️ 安卓起得慢、stop 落在"还没出声"那一瞬 ⇒ ⭐ 整声都没了 ✓）
+     *      ⇒ ⭐ **第二次 stop 杀掉了刚响的"嘟"** ✓
+     *      ⚠️ 安卓比 iOS 明显：⭐ `playBeep` 异步起播，安卓起得慢 ⇒
+     *         ⭐ stop 落在"还没出声"那一瞬 ⇒ ⭐ **整声都没了** ✓✓
      *
-     *    ⭐ 而**本来就不该停它** ✓：
-     *      · ⭐ 提示音只有 0.13–0.26 秒 ✗ ⇒ ⚠️ 不可能"录进去一大段别人说话" ✓
-     *      · ⭐ 而"嘟"是**有意的**听觉确认（⭐ 用户要的 ✓）
-     *      ⇒ ⭐ **要停的是标准音/试听（⭐ 长的那些 ✓）** ✓✓
-     *
-     *    ⚠️ `stopCues()` 仍然导出（⭐ 留给真正需要"全静音"的场合 ✓），
-     *       只是**不在这里**调 ✓
+     *    ⭐ **现在的顺序（唯一正确的那一种）**：⭐
+     *      ⭐ `startRecording()` 里 **先 `stopAllAudio()`** ✓
+     *      ⇒ ⭐ **再 `playBeep()`** ✓（⭐ 由 `opts.beep` 控制 ✓）
+     *      ⇒ ⭐ **最后开麦克风** ✓✓
+     *    ⭐ 同一个函数里顺序确定 ⇒ ⚠️ **不存在"停完又被别的调用停掉"的窗口** ✓
      */
     stopAudio()
+    stopCues()
     const d = this.data
     // ⚠️ 已经是干净的就别 setData（这条路会被"按下录音"这种高频动作调到）
     if (d.playingWord !== -1 || d.sentenceState !== 'unplay' || d.replayState !== 'unplay') {
