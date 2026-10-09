@@ -14,7 +14,7 @@ import {
 
 import { db, type Executor } from '../db'
 import { ENERGY_REASON, addEnergy } from './energy'
-import { articles, cookieLedger, submissions, users } from '../db/schema'
+import { articles, cookieLedger, participations, submissions, users } from '../db/schema'
 
 /**
  * ⭐ 饼干的**取数与记账** —— 算法在 `@jushuo/shared/cookies.ts`（纯函数），
@@ -620,16 +620,27 @@ export async function sentenceCookiesOf(
   articleId: string,
   tx: Executor = db,
 ): Promise<number> {
+  /**
+   * ⭐⭐ **读物化列，不现算**（⭐ 用户 2026-10-09 指出 ✓）
+   *
+   * ⚠️ 原来是 `SUM(cookie_ledger.delta) JOIN submissions` ✗ ——
+   *    一个**带 JOIN 的聚合查询** ✓，而它算出来的那个数
+   *    ⭐ **早就在 `participations.cookies` 里** ✓✓
+   *    （⭐ 迁移 0060 的头注释原话：「participations.cookies 这一句累计（派生，可整表重建）」✓）
+   *    ⇒ ⭐ 现在是一次按 (userId, articleId) 的点查 ✓ 无 JOIN 无聚合 ✓
+   *
+   * ⚠️⚠️ **为什么这样换是安全的**（⭐ 换成物化列最大的风险是"读到旧值" ✗）：
+   *    `services/scoring.ts` 在**出分之后立刻** `await syncParticipation(...)` ✓
+   *    ⇒ ⭐ 任何"已经出过分"的时刻，这一列都已经是新的 ✓✓
+   *    ⚠️ 而两个调用点都在出分之后（⭐ 提交状态 · 朗读页进来拉一次 ✓）
+   *
+   * ⚠️ 参与行不存在时给 0 ✓：⭐ 那是"这一句还没挑战过"✓ ——
+   *    ⚠️ 与"真的 0 个"同一种表现 ✓（⭐ 端侧 `> 0` 才画那行 ✓ prd §7.6 ✓）
+   */
   const [row] = await tx
-    .select({ total: sql<number | null>`SUM(${cookieLedger.delta})` })
-    .from(cookieLedger)
-    .innerJoin(submissions, eq(submissions.id, cookieLedger.refId))
-    .where(
-      and(
-        eq(cookieLedger.userId, userId),
-        eq(cookieLedger.reason, 'conquer'),
-        eq(submissions.articleId, articleId),
-      ),
-    )
-  return Number(row?.total ?? 0)
+    .select({ cookies: participations.cookies })
+    .from(participations)
+    .where(and(eq(participations.userId, userId), eq(participations.articleId, articleId)))
+    .limit(1)
+  return Number(row?.cookies ?? 0)
 }
