@@ -101,6 +101,19 @@ function toRow(item: EnergyLedgerItem): LedgerRow {
 }
 
 /** 支付成功后等余额「涨上来」—— 最多试 3 次。⚠️ 推送可能有几秒延迟，不是失败 */
+/**
+ * ⭐ **拉起支付后最多等多久**（⭐ 用户 2026-10-09 报的 ✓）
+ *
+ * ⚠️ `wx.requestVirtualPayment` 的 success / fail **两个都不来**是真会发生的 ✓
+ *    （⭐ 平台侧卡住、用户把支付窗挂着不管 ✓）
+ *    ⇒ ⚠️ 没有超时的话那个 Promise **永远挂着** ✗
+ *      ⇒ ⭐ 症状：「**支付窗关不掉、什么反应都没有**」+ 整页按钮都点不动 ✓
+ *
+ * ⚠️ 给 90 秒：⭐ 比真人付款的耐心长一点 ✓ 又不至于让人以为死机 ✓
+ * ⚠️ 超时**不等于没付成功** ✗ ⇒ ⭐ 文案必须说清、且靠服务端查单兜底 ✓
+ */
+const PAY_TIMEOUT_MS = 90_000
+
 async function waitArrival(prevEnergy: number, outTradeNo: string): Promise<boolean> {
   for (let i = 0; i < 3; i++) {
     await new Promise((resolve) => setTimeout(resolve, 1200))
@@ -530,6 +543,20 @@ Page({
 
       /** mock 通道（本地）：服务端已经替我们把货发了，不用拉起支付 */
       if (!order.mockPaid) {
+        /**
+         * ⚠️⚠️ **不支持时先说人话，别去调**（⭐ 官方注意事项 ✓）
+         *
+         *    「⭐ 目前只有 **>= v2.19.2** 的基础库支持该接口」
+         *    ⇒ ⚠️ 低版本调下去**可能一个回调都不给** ✗
+         *      ⇒ ⚠️ 症状就是「支付窗关不掉、什么反应都没有」✗✓
+         *    ⭐ 官方的判断法就是 `wx.canIUse('requestVirtualPayment')` ✓
+         *      （⭐ 用它比自己对版本号可靠 —— 平台还做过灰度 ✓）
+         */
+        if (typeof wx.requestVirtualPayment !== 'function' || !wx.canIUse('requestVirtualPayment')) {
+          throw new Error(
+            '当前微信版本不支持虚拟支付（需要基础库 2.19.2 及以上）—— 请升级微信后重试',
+          )
+        }
         await new Promise<void>((resolve, reject) => {
           /**
            * ⚠️⚠️ 必须**原样传服务端签好的 signData 字符串**，而且要绕过 typings：
@@ -543,12 +570,55 @@ Page({
            *       服务端签的就是这个字符串，必须逐字节一致。
            */
           const payOption = order.payData as unknown as WechatMiniprogram.RequestVirtualPaymentOption
-          wx.requestVirtualPayment({
-            ...payOption,
-            success: () => resolve(),
-            fail: (err) =>
-              reject(new Error(explainXpayError((err as { errCode?: number }).errCode, err.errMsg))),
-          })
+          /**
+           * ⚠️⚠️ **必须有超时**（⭐ 用户 2026-10-09 报的 ✓）
+           *
+           *    success / fail **两个回调都不来**是真会发生的 ✓：
+           *      · 基础库版本不够（⭐ 上面那道已经挡了 ✓）
+           *      · 平台侧卡住 / 用户把支付窗挂着不管 ✓
+           *    ⇒ ⚠️ 没有超时的话这个 Promise **永远挂着** ✗
+           *      ⇒ ⭐ 症状就是「**支付窗关不掉、什么反应都没有**」✓✓
+           *      ⇒ ⚠️ 而且 `paying` 一直是 true ⇒ ⭐ 整页按钮都点不动 ✓
+           *
+           * ⚠️ 给 90 秒：⭐ 比真人付款的耐心长一点 ✓ 又不至于让用户以为死机 ✓
+           * ⚠️ 超时**不代表没付成功** ✗ ⇒ ⭐ 措辞必须说清"可能已支付" ✓
+           *    （⭐ 我们的查单兜底会把它捞回来 ✓）
+           */
+          let settled = false
+          const done = (fn: () => void) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            fn()
+          }
+          const timer = setTimeout(() => {
+            done(() =>
+              reject(
+                new Error(
+                  '支付没有返回结果 —— 如果已经付款了，稍等片刻会到账；' +
+                    '没付款的话可以重试',
+                ),
+              ),
+            )
+          }, PAY_TIMEOUT_MS)
+
+          try {
+            wx.requestVirtualPayment({
+              ...payOption,
+              success: () => done(resolve),
+              fail: (err) =>
+                done(() =>
+                  reject(
+                    new Error(
+                      explainXpayError((err as { errCode?: number }).errCode, err.errMsg),
+                    ),
+                  ),
+                ),
+            })
+          } catch (err) {
+            // ⚠️ 同步抛（⭐ 参数不对 / 基础库抽风 ✓）也要收掉 —— 否则同样卡死 ✓
+            done(() => reject(err instanceof Error ? err : new Error(String(err))))
+          }
         })
       }
 
