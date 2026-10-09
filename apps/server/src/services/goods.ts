@@ -80,9 +80,7 @@ export function sellableIssue(item: ShopItem): string | null {
      *    ⇒ ⚠️ 照着那句去填 `XPAY_PRODUCT_ENERGY_10` 会发现**它早就有值了** ✓
      *      ⇒ ⭐ 然后继续困惑"为什么还是买不了" ✓✓
      */
-    return env.XPAY_ENV === 1
-      ? '沙箱环境缺少道具 ID —— 要在 .env 里填 XPAY_PRODUCT_ENERGY_*_SANDBOX（沙箱道具 ID 与现网是两个不同的值）'
-      : '商品还没配置微信侧道具 ID（等虚拟支付开通后填 XPAY_PRODUCT_*）'
+    return '商品还没配置微信侧道具 ID（等虚拟支付开通后填 XPAY_PRODUCT_*）'
   }
   return null
 }
@@ -117,20 +115,21 @@ function productIdFromEnv(code: string): string | undefined {
   if (!pair) return undefined
   const [prod, sandboxId] = pair
   /**
-   * ⚠️⚠️ **沙箱环境必须有【沙箱道具 ID】，不许回退** ✗（⭐ 2026-10-09 改 ✓）
+   * ⚠️ **沙箱那一份没填就回退到现网** —— ⭐ 这是**对的**，别改 ✓
    *
-   *    原来这里是 `sandbox ? (sandboxId || prod) : prod` ✗ ——
-   *    ⚠️ 注释的出发点是"两边 ID 相同时不用重复填" ✓
-   *    ⚠️ **但沙箱道具和现网道具本来就是微信发的两个不同 ID** ✗
-   *    ⇒ ⚠️ 静默回退 = **掩盖"沙箱没配"** ✓
-   *      ⇒ ⭐ 症状：⭐ **开发者以为在沙箱测试，其实每一笔都扣真钱** ✓✓
-   *      （⭐ 2026-10-09 实际踩到，用户被扣了三笔 ✓）
+   *    ⭐ 原因（⭐ 2026-10-09 用户实测确认 ✓）：
+   *       ⭐ **微信的同一个道具，现网版本和开发版本的 ID 是【同一个】** ✓
+   *       ⇒ ⚠️ 所以"两边 ID 不同、要各填一个"是错觉 ✓
+   *       ⇒ ⭐ 回退不是"掩盖配置缺失"✗，⭐ **它就是正确取值** ✓✓
    *
-   *    ⇒ ⭐ 现在：⭐ **`XPAY_ENV=1` 却没配沙箱道具 ⇒ 返回 undefined** ✓
-   *      ⇒ ⭐ 下单会**明确报错**（⭐ 而不是悄悄按现网扣钱 ✓）
-   *      ⚠️ 宁可下单失败，也不能让用户莫名花钱 ✓
+   *    ⚠️⚠️ **顺带纠正一个我犯过的错** ✗：
+   *       我一度以为"沙箱 + 现网道具 ID ⇒ 微信按现网扣真钱"✗，
+   *       ⭐ 但**真扣钱的原因跟道具 ID 无关** ✓ ——
+   *       ⭐ 是 **Apple 支付根本没有沙箱**（⭐ 官方：⭐「Apple 支付不支持使用
+   *         沙箱环境，仅支持使用现网环境」✓）
+   *       ⇒ ⚠️ 别再往这个方向排查 ✓
    */
-  const picked = sandbox ? sandboxId : prod
+  const picked = sandbox ? (sandboxId || prod) : prod
   return looksLikeProductId(picked) ? picked : undefined
 }
 
