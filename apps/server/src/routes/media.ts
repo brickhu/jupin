@@ -13,6 +13,7 @@ import { readStaticFile } from '../services/content'
 const RE_SUBMISSION_ID = new RegExp('^[0-9a-f]{' + SUBMISSION_ID_LENGTH + '}$')
 import { env } from '../env'
 import { playableBytesOf } from '../services/recording'
+import { errText } from '../services/wx-access-token'
 import { getStorage } from '../storage'
 
 export const mediaRoutes = new OpenAPIHono({ defaultHook })
@@ -165,7 +166,40 @@ mediaRoutes.openapi(mediaRecordingRoute, async (c) => {
  *    返 500 会让客户端把「功能没做」误判成「后端挂了」。
  */
 async function serveAudio(c: Context, relPath: string) {
-  const bytes = await readStaticFile(relPath)
+  let bytes = await readStaticFile(relPath)
+  /**
+   * ⭐⭐ **本机没有 ⇒ 回源到对象存储** ✗（⭐ 2026-10-09 补 ✓）
+   *
+   *    ⚠️⚠️ **云端容器里根本没有 `content/` 目录** ✗ ——
+   *       ⭐ `Dockerfile` 早就不 `COPY content` 了（⭐ 用户明确要求：
+   *          "内容产物不是源码" ✓）
+   *    ⇒ ⚠️ 所以这条路由在云上**永远 404** ✓✓
+   *
+   *    ⭐ 而**音频的唯一住址就是对象存储** ✓ ——
+   *       `<articleId>.mp3` 在桶里的 key 是 `content/audio/<id>.mp3` ✓，
+   *       ⭐ **和 `standard_audio` 那一列存的值完全一致** ✓
+   *       ⇒ ⭐ 直接拿 `relPath` 当 key 去读就行 ✓✓
+   *
+   *    ⚠️ **为什么必须补**：⭐ 管理台试听走的就是这条
+   *       （⭐ `tools/admin/server.ts` 先看本机、没有就转发到这里 ✓）
+   *       ⇒ ⚠️ 不补的话，⭐ **运营在 admin 里听不到任何云端音频** ✓
+   *         ⇒ ⭐ 而"生成音频"恰恰是整条流水线里唯一花钱的一步 ✓✓
+   */
+  if (!bytes) {
+    try {
+      const fromStore = await getStorage().get(relPath)
+      if (fromStore && fromStore.byteLength > 0) {
+        bytes = fromStore
+        console.log('[media] 本机没有，已从对象存储取回：' + relPath)
+      }
+    } catch (err) {
+      /**
+       * ⚠️ 读不到**不是错误** ✗ —— ⭐ 只能说明"这篇还没有标准音" ✓
+       *    ✅ 返回 404 而不是 500（⭐ 与下面的注释同一个理由 ✓）
+       */
+      console.warn('[media] 对象存储也没取到：' + relPath + ' ← ' + errText(err))
+    }
+  }
   if (!bytes) {
     console.warn('[media] 标准音缺失：' + relPath)
     return c.json({ ok: false, error: '这篇还没有标准音' }, 404)
