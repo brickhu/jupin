@@ -1071,14 +1071,20 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
 
   // ② 批量 TTS
   job.step = '② fish：整句标准音（' + prepared.length + ' 条）'
-  const ok: typeof prepared = []
+  /**
+   * ⚠️⚠️ **`ok` 要连 `prod` 一起带上** ✗（⭐ 2026-10-09 修 ✓）
+   *
+   *    ⚠️ 原来只 `ok.push(p)` ✗ ⇒ ⚠️ **`prod.audioPath` 被丢掉了** ✓
+   *    ⇒ ⭐ 而第③步之后正需要那个路径去上传对象存储 ✓
+   */
+  const ok: Array<{ p: (typeof prepared)[number]; prod: Awaited<ReturnType<typeof produceStandardAudio>> }> = []
   for (const p of prepared) {
     try {
       // ⚠️ 只合成整句：逐词音频与时间戳随「点词改走微信 TTS」一起删掉了
       const prod = await produceStandardAudio(p.it.id, p.it.text, { force: true })
       job.log.push('🔊 ' + p.it.id + '  ' + prod.alignment.audioDuration.toFixed(2) + 's / ' +
         prod.wordCount + ' 个词')
-      ok.push(p)
+      ok.push({ p, prod })
     } catch (err) {
       /**
        * ⚠️ 失败时删掉**这次新建**的正文：留着它，下次部署 loadSeedArticles 会扫到，
@@ -1096,8 +1102,8 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
   }
 
   // ③ 入库（草稿）
-  job.step = '③ 入库（草稿）'
-  for (const p of ok) {
+  job.step = '③ 入库（草稿）+ 上传对象存储'
+  for (const { p, prod } of ok) {
     try {
       await upsertArticle(mode, {
         id: p.it.id, text: p.it.text, translation: p.it.translation,
@@ -1106,6 +1112,34 @@ async function runIngest(job: Job, mode: Mode, incoming: SplitItem[]): Promise<v
         // ⚠️ 词表必须一起写：它原来靠"第①步写文件"带进去，文件没了就得显式传
         words: p.words, links: p.links,
       })
+      /**
+       * ⭐⭐ **把刚生成的音频【上传到对象存储】** ✗（⭐ 2026-10-09 补 ✓）
+       *
+       *    ⚠️⚠️ **这是整条流水线一直缺的一步** ✗：
+       *       ⭐ `produceStandardAudio` 只写到**本机** `content/audio/{id}.mp3` ✓
+       *       ⚠️ 而 `Dockerfile` 早就不 `COPY content` 了（⭐ 用户明确要求：
+       *          "内容产物不是源码" ✓）⇒ ⚠️ **那台机器上的文件【云端永远看不到】** ✓
+       *       ⇒ ⭐ 结果：⭐ **库里 `standard_audio` 是空、前端拉不到音频** ✓✓
+       *         （⭐ 用户实测："在 admin 中添加句子，音频写不到 prod 的对象存储" ✓）
+       *
+       *    ⚠️ **顺序不能换** ✗：⭐ 这个接口要求那一行**已经存在** ✓
+       *       （⭐ 服务端会 `404 句子不存在（先写入句子再传音频）` ✓）
+       *       ⇒ ⭐ 所以必须**在 `upsertArticle` 之后** ✓
+       *
+       *    ⚠️ 上传失败**不算这一条失败** ✗ —— ⚠️ 正文已经入库了 ✓
+       *       ⭐ 只记日志，⭐ 让人看得见、可以重传 ✓
+       */
+      try {
+        const bytes = await readFile(prod.audioPath)
+        const up = await adminApiUploadAudio(mode, p.it.id, bytes)
+        if (up.ok) {
+          job.log.push('☁️ 已上传对象存储：' + p.it.id)
+        } else {
+          job.log.push('⚠️ 音频上传失败（正文已入库，可重传）：' + p.it.id + '  ' + (up.error ?? ''))
+        }
+      } catch (err) {
+        job.log.push('⚠️ 音频上传异常（正文已入库，可重传）：' + p.it.id + '  ' + (err as Error).message)
+      }
       results.push({ ...base(p.it), status: 'done' })
       job.log.push('✓ 入库（草稿）：' + p.it.id)
     } catch (err) {
