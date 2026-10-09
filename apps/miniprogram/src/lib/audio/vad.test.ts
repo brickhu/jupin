@@ -113,9 +113,49 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
     expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 500 + F, voicedMs: 200 })
   })
 
-  it('⚠️⚠️ 解不出来 ⇒ 时长照涨，但**连续静音清零**（当成"他在说话"，绝不掐断）', () => {
+  it('⚠️⚠️ 解不出来 ⇒ 时长照涨，且**按"他在说话"算**，连续静音清零', () => {
+    /**
+     * ⚠️⚠️ **这条断言 2026-10-10 改过** ✗ —— ⭐ 原来写的是 `voicedMs` **不变** ✓
+     *
+     *    ⚠️ 而测试名一直是「⭐ **当成"他在说话"**，绝不掐断」✗ ——
+     *    ⚠️ **名字和断言是矛盾的** ✓
+     *
+     *    ⭐ 原来的口径（⭐ 不累加 `voicedMs`）有个致命后果 ✗：
+     *       ⚠️ 只要有一部分帧解不开 ⇒ ⭐ **`voicedMs` 饿死** ⇒
+     *       ⭐ **`voicedMs >= floor` 永远不成立 ⇒ 读完永不停** ✓✓
+     *       ⚠️ 用户实测：⭐ **iOS 和 Android 两端都不行** ✗
+     *    ⇒ ⭐ 现在按名字的意思实现：⭐ **解不开也当成他还在说** ✓✓
+     *
+     *    ⚠️ 为什么仍然安全（⭐ 见下面那条链式测试 ✓）：
+     *       ⭐ `'undecodable'` **同时清零 `silentMs`** ✓
+     *       ⇒ ⭐ 而 `autoStopAfter` 必须 `silentMs >= 1500` ✓
+     *       ⇒ ⭐ **全是解不开的帧时，`silentMs` 永远是 0 ⇒ 绝不自动结束** ✓✓
+     */
     const s = advanceVad({ recordedMs: 1000, silentMs: 9999, voicedMs: 300 }, 'undecodable', F)
-    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0, voicedMs: 300 })
+    expect(s).toEqual({ recordedMs: 1000 + F, silentMs: 0, voicedMs: 300 + F })
+  })
+
+  it('⭐⭐ 部分帧解不开（⭐ 真机的常态）⇒ voicedMs 照样涨 ⇒ 能自动结束', () => {
+    /**
+     * ⚠️⚠️ **这是用户报的那个 bug 的回归测试** ✗：
+     *    ⭐ 真机上**总有一部分帧解不开**（⭐ 帧边界、解码失败 ✓）——
+     *    ⚠️ 旧的"只有明确 voice 才累加"在那种情况下会让 `voicedMs` 饿死 ✓
+     *    ⇒ ⭐ 读完永不停 ✓✓
+     */
+    let st = { ...VAD_STATE_ZERO }
+    const N = 11
+    const floor = N * AUTO_STOP_WORD_MS * AUTO_STOP_MIN_RATIO
+    // ⭐ 每 3 帧里有 1 帧解不开，其余是"说话" —— 说话时长要够 floor
+    const FRAMES = 40
+    for (let i = 0; i < FRAMES; i++) {
+      st = advanceVad(st, i % 3 === 2 ? 'undecodable' : 'voice', F)
+    }
+    // ⭐ 40 帧 × F：新口径下【两种都累加】⇒ 一帧不落
+    expect(st.voicedMs).toBe(FRAMES * F)
+    expect(st.voicedMs).toBeGreaterThan(floor)
+    // ⭐ 安静下来 ⇒ 判读完
+    for (let i = 0; i < 12; i++) st = advanceVad(st, 'silence', F)
+    expect(autoStopAfter({ ...st, wordCount: N })).toBe(true)
   })
 
   it('⭐ 连成一条链：它真的不会在不支持解码的环境里自动结束', () => {

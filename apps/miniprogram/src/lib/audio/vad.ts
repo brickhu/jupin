@@ -202,8 +202,33 @@ export function advanceVad(state: VadState, kind: ChunkKind, frameMs: number): V
     recordedMs: state.recordedMs + frameMs,
     // ⚠️ 只有**确认为静音**才累加；'voice' 与 'undecodable' 都清零
     silentMs: kind === 'silence' ? state.silentMs + frameMs : 0,
-    // ⭐ 只有**明确是语音**才累加 ✓（'undecodable' 不累加 ✓ 见类型的说明 ✓）
-    voicedMs: kind === 'voice' ? state.voicedMs + frameMs : state.voicedMs,
+    /**
+     * ⭐⭐ **`'undecodable'` 也算"他在说话"** ✗（⭐ 2026-10-10 改 ✓）
+     *
+     * ## ⚠️⚠️ 为什么必须改
+     *
+     *    原来的口径是"只有**明确**判成 `'voice'` 才累加"✗（⭐ `'undecodable'` 不动 ✓）。
+     *    而 `'undecodable'` 的含义是"**不知道**他在不在说"✓ ——
+     *    ⚠️ 于是"安全方向"只体现在**不掐断**上 ✗，代价却是 ⭐ **`voicedMs` 会饿死** ✓✓：
+     *      ⚠️ 只要有一部分帧解不开（⭐ 解码失败、帧边界、机型差异 ✓）
+     *      ⇒ ⭐ **`voicedMs` 涨得比真实慢** ⇒ ⭐ **`voicedMs >= floor` 永远不成立** ✓
+     *      ⇒ ⭐⭐ **读完永不停** ✓✓
+     *      ⚠️ 用户实测：⭐ **iOS 和 Android 两端都不行** ✗ ——
+     *         ⚠️ 那说明不是"某台设备音量小"✗，⭐ **是这条判据本身会饿死** ✓
+     *
+     * ## ⭐ 为什么这样是安全的
+     *
+     *    ⭐ `'undecodable'` 累加 `voicedMs` ⇒ ⭐ 与 `recordedMs` 同步涨 ✓
+     *    ⚠️ **但它同时会把 `silentMs` 清零** ✗（⭐ 见上一行 ✓）
+     *    ⇒ ⭐ 而 `autoStopAfter` **必须** `silentMs >= AUTO_STOP_SILENCE_MS` ✓
+     *    ⇒ ⭐⭐ **"读一半停着不说话"仍然不会误判** ✗✓ ——
+     *       ⭐ 因为那段时间的帧如果解不开，`silentMs` 就攒不起来 ✓✓
+     *
+     *    ⭐ 一句话：⭐ **"解不开"往两个方向都按"他还在说"处理** ✓ ——
+     *    ⭐ 既不提前掐断（⭐ `silentMs` 不涨 ✓）⭐ 也不让 `voicedMs` 饿死 ✓✓
+     */
+    voicedMs:
+      kind === 'voice' || kind === 'undecodable' ? state.voicedMs + frameMs : state.voicedMs,
   }
 }
 
@@ -232,10 +257,23 @@ export function autoStopAfter(input: {
   if (input.wordCount <= 0) return false
   /**
    * ⭐ **下限跟着句子长度走** ✓（⭐ 见 AUTO_STOP_MIN_RATIO 的说明 ✓）
+   * ⚠️ 判据只此一条（⭐ 加上"先安静下来"✓）—— ⭐ 不要加墙钟兜底 ✗
+   *    理由见下面那段说明 ✓
    * ⚠️ 不能是固定毫秒数 ✗ —— 那会让"读半句就停"被当成读完 ✓
    */
   const floor = input.wordCount * AUTO_STOP_WORD_MS * AUTO_STOP_MIN_RATIO
-  // ⭐ 看【净说话时长】而不是墙钟（⚠️ 后者会把开头静音和用户停顿都算进去 ✗）
+
+  /**
+   * ⚠️⚠️ **这里曾经想加一条"用 `recordedMs`（墙钟）兜底"** ✗ —— ⭐ **撤回了** ✓
+   *
+   *    ⚠️ 动机是真的：⭐ `voicedMs` 在 `'undecodable'` 帧上不累加 ⇒ 会**饿死** ✓
+   *    ⚠️ 但拿墙钟兜底会**重新引入 `0e9b527` 修掉的那个 bug** ✗：
+   *       ⭐「读一半就停也被判读完」✓ ——
+   *       ⚠️ 用户读了半句然后不说话，`recordedMs` 照样涨 ⇒ ⭐ 过一会儿就误判 ✓
+   *    ⇒ ⭐ **正解在 `advanceVad` 里**（⭐ 见那里对 `'undecodable'` 的处理 ✓）：
+   *       ⭐ **让解不开的帧也算"他在说话"** ✓✓ ——
+   *       ⭐ 那既不饿死 `voicedMs`，又**不放松"必须先安静下来"** ✓
+   */
   if (input.voicedMs < floor) return false
   return input.silentMs >= AUTO_STOP_SILENCE_MS
 }
