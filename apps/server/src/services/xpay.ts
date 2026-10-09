@@ -201,6 +201,15 @@ export interface XpayOrder {
 
 export async function queryXpayOrder(
   outTradeNo: string,
+  /**
+   * ⚠️⚠️ **付款人的 openid —— 必须有** ✗（⭐ 2026-10-09 实测踩到 ✓）
+   *
+   *    第一版只传了 `{order_id, env}` ✗ ⇒ ⚠️ 微信一律回：
+   *      ⭐ `268490001 **openid错误**` ✓
+   *    ⇒ ⚠️ 而那个错误**看起来像"用户身份不对"** ✗
+   *      ⇒ ⭐ 实际是"**你压根没传 openid**"✓ —— ⚠️ 排查方向会被带偏 ✓
+   */
+  openid: string,
   payEnv: number = env.XPAY_ENV,
 ): Promise<XpayOrder | null> {
   const appKey = appKeyOf(payEnv)
@@ -211,7 +220,7 @@ export async function queryXpayOrder(
     )
   }
   // ⚠️ 只序列化一次 —— 签名的就是它，发出去的也必须逐字节是它 ✓
-  const body = JSON.stringify({ order_id: outTradeNo, env: payEnv })
+  const body = JSON.stringify({ openid, order_id: outTradeNo, env: payEnv })
   const paySig = calcPaySig(XPAY_URI.queryOrder, body, appKey)
 
   const data = await callWxApi<{ order?: XpayOrder } & WxError>(
@@ -234,6 +243,8 @@ export async function queryXpayOrder(
  */
 export async function notifyProvideGoods(
   outTradeNo: string,
+  /** ⚠️ 同样要 openid ✗ —— 理由见 queryXpayOrder ✓ */
+  openid: string,
   payEnv: number = env.XPAY_ENV,
 ): Promise<void> {
   const appKey = appKeyOf(payEnv)
@@ -243,7 +254,7 @@ export async function notifyProvideGoods(
         (payEnv === 1 ? '要 XPAY_SANDBOX_APP_KEY' : '要 XPAY_APP_KEY'),
     )
   }
-  const body = JSON.stringify({ order_id: outTradeNo, env: payEnv })
+  const body = JSON.stringify({ openid, order_id: outTradeNo, env: payEnv })
   const paySig = calcPaySig('/xpay/notify_provide_goods', body, appKey)
   await callWxApi<WxError>(WX_API_BASE + '/xpay/notify_provide_goods', body, { pay_sig: paySig })
 }

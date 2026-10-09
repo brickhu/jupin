@@ -301,7 +301,18 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
     return { ok: true as const, delivered: false, amount: pay.goodsAmount }
   }
 
-  const order = await queryXpayOrder(outTradeNo, pay.payEnv)
+  /**
+   * ⚠️⚠️ **必须带上付款人的 openid** ✗（⭐ 2026-10-09 实测踩到 ✓）
+   *    ⚠️ 不带的话微信一律回 `268490001 openid错误` ✓ ——
+   *    ⭐ 而那个措辞会让人以为是"用户身份不对"✗，⚠️ 实际是"你没传" ✓
+   */
+  const [owner] = await db
+    .select({ openid: users.openid })
+    .from(users)
+    .where(eq(users.id, pay.userId))
+  if (!owner?.openid) return { ok: false as const, reason: 'owner' as const }
+
+  const order = await queryXpayOrder(outTradeNo, owner.openid, pay.payEnv)
   /**
    * ⚠️ 没查到、或者还没付 ⇒ ⭐ 都返回"没发货"而不是报错 ✓
    *    （⭐ 用户刚拉起支付、微信那边还没落账，这是正常的中间态 ✓）
@@ -319,7 +330,7 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
 
   if (res.ok) {
     try {
-      await notifyProvideGoods(outTradeNo, pay.payEnv)
+      await notifyProvideGoods(outTradeNo, owner.openid, pay.payEnv)
     } catch (err) {
       // ⚠️ 货已经发了 ⇒ 回告失败只记日志，绝不能让调用方以为发货失败 ✓
       console.warn('[order] 通知微信已发货失败（货已发）：' + errText(err))
