@@ -15,6 +15,15 @@
 
 /** app.json 的 plugins 键名 —— 改这里要连 app.json 一起改 */
 export const PLUGIN_NAME = 'WechatSI'
+/**
+ * ⚠️⚠️ **`getPlugin` 里那句 `requirePlugin(...)` 必须写【字面量】** ✗
+ *    —— ⭐ 微信工具的静态分析只认字面量 ✓（⭐ 写变量它会误报"插件未使用" ✓）
+ *    ⇒ ⚠️ 于是这里多一个**编译期**约束：⭐ 两边不一致就报错 ✓✓
+ *    （⭐ 类型相同 ⇒ 通过；⭐ 值不同 ⇒ 下面那行报错 ✓）
+ */
+type _PluginNameGuard = typeof PLUGIN_NAME extends 'WechatSI' ? true : never
+const _pluginNameGuard: _PluginNameGuard = true
+void _pluginNameGuard
 
 /** 一次性配置没做时的统一话术 —— 它比"调用失败"有用得多 */
 export const PLUGIN_HINT =
@@ -30,7 +39,20 @@ export const PLUGIN_HINT =
  */
 export function getPlugin<T>(): T | null {
   try {
-    return requirePlugin(PLUGIN_NAME) as T
+    /**
+     * ⚠️⚠️ **这里必须写【字面量】** ✗（⭐ 2026-10-10 修 ✓）
+     *
+     *    ⚠️ 原来是 `requirePlugin(PLUGIN_NAME)` ✗ —— ⭐ `PLUGIN_NAME` 是个变量 ✓
+     *    ⇒ ⚠️ **微信开发者工具的静态分析看不出这用了哪个插件** ✗
+     *    ⇒ ⭐ **代码质量报告误报「There are unused plugins: wx069ba97219f66d99」** ✓✓
+     *       （⭐ 那个 id 就是 `WechatSI` 的 provider ✓）
+     *
+     *    ⭐ 写成字面量之后工具就能看出来 ✓
+     *    ⚠️ 字面量必须与 `PLUGIN_NAME` **一致** ✗ ——
+     *       ⭐ `PLUGIN_NAME` 上面那条 `_PluginNameGuard` 就是管这件事的 ✓
+     *       （⭐ 两边不一致时**编译期**就报错 ✓ 不靠人记得 ✓）
+     */
+    return requirePlugin('WechatSI') as T
   } catch {
     return null
   }
