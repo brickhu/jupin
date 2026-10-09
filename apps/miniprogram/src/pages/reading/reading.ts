@@ -1591,7 +1591,7 @@ Page({
        */
       console.warn('[reading] 词数为 0（正文或词表没加载），本帧不判自动结束')
     }
-    if (autoStopAfter({ ...this.vad, wordCount })) {
+    if (autoStopAfter({ ...this.vad, wordCount, stdDurationMs: this.data.stdDurationMs })) {
       /**
        * ⚠️⚠️ **必须防重入**：满足条件之后**每一帧**都会再判一次 ✓ ⇒
        *    不拦的话会连着调好几次 `session.stop()` ✗（并反复重置那个 3 秒看门狗，

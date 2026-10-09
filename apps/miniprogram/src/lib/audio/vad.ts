@@ -285,12 +285,21 @@ export function advanceVad(state: VadState, kind: ChunkKind, frameMs: number): V
  *        （⭐ 取不到就永不自动结束 ✗）
  *    ⭐ 而"读完了没"只需要听：**说过话 + 然后安静下来** ✓
  */
+export const AUTO_STOP_OVERDUE_RATIO = 1.6
+
 export function autoStopAfter(input: {
-  /** ⭐ 累计净说话时长（⭐ 判据看它 ✓） */
+  /** ⭐ 累计净说话时长（⭐ 主判据看它 ✓） */
   voicedMs: number
   silentMs: number
+  /** ⭐ 已经录了多久（⭐ 墙钟，⭐ **任何一帧都累加** ✓）—— ⭐ 超时兜底用 ✓ */
+  recordedMs: number
   /** ⭐ 这句话有几个词（⭐ 用来推"该说多久" ✓ 客户端本来就知道 ✓） */
   wordCount: number
+  /**
+   * ⭐ **这句话的标准音时长**（⭐ 毫秒 ✓）—— ⭐ 超时兜底用 ✓
+   * ⚠️ 取不到时传 `0` ⇒ ⭐ **兜底不启用** ✓（⭐ 宁可让用户自己点，也不乱停 ✓）
+   */
+  stdDurationMs?: number
 }): boolean {
   // ⚠️ 一个词都没有（⭐ 正文异常 / 还没加载 ✓）⇒ ⭐ 绝不自动结束 ✓
   if (input.wordCount <= 0) return false
@@ -313,6 +322,40 @@ export function autoStopAfter(input: {
    *       ⭐ **让解不开的帧也算"他在说话"** ✓✓ ——
    *       ⭐ 那既不饿死 `voicedMs`，又**不放松"必须先安静下来"** ✓
    */
-  if (input.voicedMs < floor) return false
+  /**
+   * ⭐⭐ **超时兜底**（⭐ 2026-10-10 加 ✓）—— ⭐ 用户指出"没有兜底" ✓
+   *
+   * ## ⚠️ 为什么必须有它
+   *
+   *    ⭐ `voicedMs` 常态只有朗读时长的 **~80%** ✗（⭐ 词间换气判成 silence ✓）
+   *    ⇒ ⚠️ **遇到生词多、停顿密的句子，占比可能不到 70%** ✗
+   *      ⇒ ⭐ **主判据永远不成立** ⇒ ⚠️ **只能干等 `MAX_RECORD_MS`（⭐ 30 秒 ✓）
+   *        被硬掐掉** ✓✓
+   *
+   * ## ⭐ 基准用【标准音时长】，不用固定秒数
+   *
+   *    ⭐ 客户端手上就有它（⭐ 屏幕上那个 `00:16` ✓ `data.stdDurationMs` ✓）
+   *    ⇒ ⭐ **按句子长短自适应** ✓✓ —— ⚠️ 固定秒数对短句就太长、对长句又太短 ✓
+   *
+   * ## ⚠️ 为什么是 1.6 倍
+   *
+   *    ⭐ 正常朗读 ≈ 音频时长的 **1.0 倍** ✓
+   *    ⇒ ⭐ **1.6 倍 = 已经多花了 60% 的时间** ✗ ⇒ ⭐ 那还没停，就是判据卡住了 ✓✓
+   *    ⚠️ 最坏情况：⭐ 读到一半（⭐ ~50% ✓）就停着不动 ✗
+   *      ⇒ ⚠️ 到 1.6 倍时会误停 ✗ —— ⭐ **但那时他已经停着 1.1 倍音频时长了** ✓
+   *      ⇒ ⭐ **那确实可以算"不想读了"** ✓✓
+   *
+   * ## ✅ 但"安静下来"这条**仍然必须满足** ✗
+   *
+   *    ⭐ 两个人说话声不停 ⇒ ⚠️ **兜底也不会停** ✓✓
+   */
+  const overdueMs =
+    input.stdDurationMs && input.stdDurationMs > 0
+      ? input.stdDurationMs * AUTO_STOP_OVERDUE_RATIO
+      : 0
+  const overdue = overdueMs > 0 && input.recordedMs >= overdueMs
+
+  // ⭐ 两条判据满足其一即可（⭐ 但【都必须】先安静下来 ✓）
+  if (!overdue && input.voicedMs < floor) return false
   return input.silentMs >= AUTO_STOP_SILENCE_MS
 }

@@ -58,23 +58,23 @@ describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
   const floor = N * AUTO_STOP_WORD_MS * AUTO_STOP_MIN_RATIO
 
   it('⭐ 说够了 + 静音够久 ⇒ 结束', () => {
-    expect(autoStopAfter({ voicedMs: floor, silentMs: AUTO_STOP_SILENCE_MS, wordCount: N })).toBe(true)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: floor, silentMs: AUTO_STOP_SILENCE_MS, wordCount: N })).toBe(true)
   })
   it('⚠️⚠️ **只读了一半就停 ⇒ 绝不能结束**（⭐ 用户 2026-10-09 报的 bug ✓）', () => {
     // ⚠️ 11 个词读到第 5 个 ≈ 说了 2000ms ✗ < 2640 ⇒ ⭐ 不该判读完 ✓
-    expect(autoStopAfter({ voicedMs: 2000, silentMs: 60_000, wordCount: N })).toBe(false)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 2000, silentMs: 60_000, wordCount: N })).toBe(false)
   })
   it('⚠️ 一个字都没说 ⇒ 永不结束（安静的房间不能自己停）', () => {
-    expect(autoStopAfter({ voicedMs: 0, silentMs: 999_999, wordCount: N })).toBe(false)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 0, silentMs: 999_999, wordCount: N })).toBe(false)
   })
   it('⚠️ 说够了但静音不够 ⇒ 不结束（刚说完一个词）', () => {
-    expect(autoStopAfter({ voicedMs: 9000, silentMs: 300, wordCount: N })).toBe(false)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 9000, silentMs: 300, wordCount: N })).toBe(false)
   })
   it('⚠️ 词数为 0（⭐ 正文异常 / 还没加载）⇒ 绝不结束', () => {
-    expect(autoStopAfter({ voicedMs: 999_999, silentMs: 999_999, wordCount: 0 })).toBe(false)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 999_999, silentMs: 999_999, wordCount: 0 })).toBe(false)
   })
   it('⭐ 短句的下限也短（⭐ 3 个词 ⇒ 720ms 就够 ✓）', () => {
-    expect(autoStopAfter({ voicedMs: 1100, silentMs: AUTO_STOP_SILENCE_MS, wordCount: 3 })).toBe(true)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 1100, silentMs: AUTO_STOP_SILENCE_MS, wordCount: 3 })).toBe(true)
   })
 
   /**
@@ -91,14 +91,14 @@ describe('autoStopAfter —— 该不该自动结束（"读完了"）', () => {
    */
   it('⭐⭐ 回归①：不依赖服务端 —— 签名里没有 expectedMs 之类的东西', () => {
     // ⚠️ 参数里出现"标准音时长"就说明依赖又回来了 ✗
-    expect(autoStopAfter({ voicedMs: 4000, silentMs: AUTO_STOP_SILENCE_MS, wordCount: N })).toBe(true)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 4000, silentMs: AUTO_STOP_SILENCE_MS, wordCount: N })).toBe(true)
   })
   it('⭐⭐ 回归②：下限必须【跟着词数走】，不能是固定毫秒', () => {
     const long = 20
     const short = 3
     // ⭐ 同样说了 1500ms：短句够 ✓，长句不够 ✗
-    expect(autoStopAfter({ voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: short })).toBe(true)
-    expect(autoStopAfter({ voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: long })).toBe(false)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: short })).toBe(true)
+    expect(autoStopAfter({ recordedMs: 0, voicedMs: 1500, silentMs: AUTO_STOP_SILENCE_MS, wordCount: long })).toBe(false)
   })
 })
 describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
@@ -164,7 +164,7 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
     for (let i = 0; i < 100; i++) st = advanceVad(st, 'undecodable', F)
     expect(st.recordedMs).toBe(100 * F)
     expect(st.silentMs).toBe(0)
-    expect(autoStopAfter({ ...st, wordCount: 11 })).toBe(false)
+    expect(autoStopAfter({ ...st, wordCount: 11, recordedMs: st.recordedMs })).toBe(false)
   })
 
   it('⭐ 正常读完：说够了时长 + 静音 1.2 秒 ⇒ 结束', () => {
@@ -173,7 +173,7 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
     // ⚠️ 静音帧数按常量推（⭐ 别写死 8 ✗ —— 阈值从 1200 提到 1500 时它会悄悄失效 ✓）
     const silentFrames = Math.ceil(AUTO_STOP_SILENCE_MS / F) + 1
     for (let i = 0; i < silentFrames; i++) st = advanceVad(st, 'silence', F)
-    expect(autoStopAfter({ ...st, wordCount: 11 })).toBe(true)
+    expect(autoStopAfter({ ...st, wordCount: 11, recordedMs: st.recordedMs })).toBe(true)
   })
 })
 
@@ -258,7 +258,7 @@ describe('自适应静音阈值 —— 跟设备自己的峰值比，不跟绝�
       vad = advanceVad(vad, classifyChunk(tone(0.0005), silenceThresholdOf(peak)), 170)
     }
     expect(vad.silentMs).toBeGreaterThanOrEqual(AUTO_STOP_SILENCE_MS)
-    expect(autoStopAfter({ ...vad, wordCount: 6 })).toBe(true)
+    expect(autoStopAfter({ ...vad, wordCount: 6, recordedMs: vad.recordedMs })).toBe(true)
   })
 
   it('⚠️ 反面对照：仍用旧的固定阈值时，低增益设备永远判不出「语音」', () => {
@@ -268,6 +268,61 @@ describe('自适应静音阈值 —— 跟设备自己的峰值比，不跟绝�
       vad = advanceVad(vad, classifyChunk(tone(0.01)), 170)
     }
     expect(vad.voicedMs).toBe(0)
-    expect(autoStopAfter({ ...vad, wordCount: 6 })).toBe(false)
+    expect(autoStopAfter({ ...vad, wordCount: 6, recordedMs: vad.recordedMs })).toBe(false)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 超时兜底（2026-10-10 加）                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⚠️⚠️ **用户指出的洞**：⭐ 原来只有 `MAX_RECORD_MS`（⭐ 30 秒硬掐 ✓），
+ *    没有"按句子长短兜底"这一层 ✗
+ *    ⇒ ⚠️ `voicedMs` 占比低于门槛的句子 ⇒ ⭐ **只能干等 30 秒被硬掐** ✓
+ */
+describe('autoStopAfter 的超时兜底 —— 按标准音时长自适应', () => {
+  const N = 11
+
+  it('⭐ 录够了 1.6 倍音频时长 + 安静下来 ⇒ 判读完（哪怕 voicedMs 不够）', () => {
+    expect(
+      autoStopAfter({
+        voicedMs: 1000, // ⚠️ 远低于 floor（3080）
+        silentMs: AUTO_STOP_SILENCE_MS,
+        recordedMs: 4400 * 1.6,
+        wordCount: N,
+        stdDurationMs: 4400,
+      }),
+    ).toBe(true)
+  })
+
+  it('⚠️ 还没到 1.6 倍 ⇒ 不启用兜底（仍然看 voicedMs）', () => {
+    expect(
+      autoStopAfter({
+        voicedMs: 1000,
+        silentMs: AUTO_STOP_SILENCE_MS,
+        recordedMs: 4400 * 1.5,
+        wordCount: N,
+        stdDurationMs: 4400,
+      }),
+    ).toBe(false)
+  })
+
+  it('⚠️⚠️ 兜底也**必须安静下来** —— 一直在说话就绝不自动结束', () => {
+    expect(
+      autoStopAfter({
+        voicedMs: 1000,
+        silentMs: 300, // ⚠️ 刚说完一个词
+        recordedMs: 4400 * 3,
+        wordCount: N,
+        stdDurationMs: 4400,
+      }),
+    ).toBe(false)
+  })
+
+  it('⚠️ 拿不到标准音时长（0 / 不传）⇒ 兜底不启用，绝不放行', () => {
+    const base = { voicedMs: 1000, silentMs: AUTO_STOP_SILENCE_MS, recordedMs: 999_999, wordCount: N }
+    expect(autoStopAfter({ ...base, stdDurationMs: 0 })).toBe(false)
+    expect(autoStopAfter(base)).toBe(false)
   })
 })
