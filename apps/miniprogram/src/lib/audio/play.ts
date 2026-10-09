@@ -26,6 +26,32 @@ const PLAY_TIMEOUT_MS = 4_000
 let audio: WechatMiniprogram.InnerAudioContext | null = null
 
 /**
+ * ⭐⭐ **播放代次**（⭐ 2026-10-10 加 ✓）—— ⭐ 专门治"停完又被播起来" ✓
+ *
+ * ## ⚠️⚠️ 为什么 `stop()` 不够
+ *
+ *    `playAudioUrl` 是**异步**的 ✓：它设了 `src` 之后要**等 `onCanplay` 才 `play()`** ✗
+ *    （⭐ 某些机型 src 没就绪就 play 会被静默忽略 ✓ 见那个函数的说明 ✓）
+ *    ⇒ ⚠️ **"正在取音、还没出声"这个窗口里，`stop()` 是停了个寂寞** ✓✓：
+ *      ⭐ 播放器确实停了（⭐ 它还没开始 ✓）
+ *      ⚠️ 但 `onCanplay` 回调**还挂在那个单例上** ✗
+ *      ⇒ ⭐ **src 一就绪，它照样 `play()`** ✓
+ *      ⇒ ⭐⭐ **用户点"开始朗读"之后，声音才从喇叭里出来** ✓✓
+ *      ⇒ ⚠️ **而麦克风就在旁边 ⇒ 原样录进这一段** ✓（⭐ 用户报的正是这个 ✓）
+ *
+ * ## ⭐ 解法
+ *
+ *    ⭐ 每次 `stopAudio()` 把代次 +1 ✓
+ *    ⭐ 每次 `playAudioUrl` 记住自己那一代的号 ✓
+ *    ⇒ ⭐ **回调里对不上号就直接 return，不出声** ✓✓
+ *
+ *    ⚠️ 为什么不"把 `onCanplay` 摘掉"：⭐ 那是同一个单例上的共享回调 ✓
+ *       → ⚠️ 摘掉会连带影响下一次播放的挂载时序 ✗
+ *       → ⭐ 代次是纯加法，⭐ 不碰播放器的状态机 ✓
+ */
+let generation = 0
+
+/**
  * ⭐ 「播到第 N 毫秒就停」的定时器 —— **模块级**，理由见文件头。
  * ⚠️ 每次播放开始前都必须清掉它。
  */
@@ -74,6 +100,12 @@ export function playAudioUrl(
   const a = context()
   // ⚠️ 先清上一次的「到点停」（见文件头：不清会掐断**这次**播放）
   clearStopTimer()
+  /**
+   * ⭐⭐ **记下这次播放属于哪一代** ✗（⭐ 2026-10-10 加 ✓）
+   *    ⚠️ 只要中途有人调过 `stopAudio()`（⭐ 比如用户点了"开始朗读"✓）
+   *    ⇒ ⭐ **下面每个回调都会对不上号 ⇒ 直接不出声** ✓✓
+   */
+  const myGen = ++generation
 
   return new Promise<void>((resolve, reject) => {
     let settled = false
@@ -91,6 +123,12 @@ export function playAudioUrl(
     a.offEnded?.()
 
     a.onCanplay(() => {
+      /**
+       * ⚠️⚠️ **对不上号就别出声** ✗（⭐ 2026-10-10 加 ✓）
+       *    ⭐ 这正是"用户在取音期间点了录音"的那个窗口 ✓ ——
+       *    ⚠️ 不加这一句，`stop()` 之后它照样会播出来 ✓✓
+       */
+      if (myGen !== generation) return
       try {
         a.play()
       } catch {
@@ -175,6 +213,28 @@ function startSegment(
 }
 
 /**
+ * ⭐⭐ **停掉所有音效**（⭐ 2026-10-10 加 ✓）
+ *
+ *    ⚠️ `stopAudio()` 停的是**标准音**那个单例 ✗ ——
+ *    ⭐ 而提示音走的是另一套播放器（⭐ `cues`，每路一个 ✓ 见下面那条注释的来历 ✓）
+ *    ⇒ ⚠️ 于是"把正在响的全停掉"这句话**一直是不成立的** ✓✓：
+ *      ⭐ 用户点了"开始朗读"，⭐ **"嘟"照样在响**（⭐ 它是刚点出来的一声 ✓）
+ *      ⚠️ 而更实际的场景：⭐ **上一轮结束的"叮"还没播完就又开了下一轮** ✓
+ *
+ *    ⚠️ 提示音只有 0.13–0.26 秒 ✗ ⇒ ⚠️ 它**不是**"录进去一大段别人说话"那种事故 ✓
+ *    ⭐ 但既然叫 `stopAllAudio`，⭐ **就该真的全停** ✓
+ */
+export function stopCues(): void {
+  for (const a of cues.values()) {
+    try {
+      a.stop()
+    } catch {
+      /* 没在播时 stop 也可能抛，忽略 */
+    }
+  }
+}
+
+/**
  * 停下当前播放。
  *
  * ⚠️ 页面 onHide / onUnload 要调：不调的话用户翻到下一页，上一段还在响。
@@ -183,6 +243,12 @@ function startSegment(
  */
 export function stopAudio(): void {
   clearStopTimer()
+  /**
+   * ⭐⭐ **先把代次 +1** ✗（⭐ 2026-10-10 加 ✓）——
+   *    ⚠️ 顺序要紧：⭐ 必须**在 `stop()` 之前** ✓
+   *    ⇒ ⭐ 否则"刚 +1、那边已经 play 了"的窗口还在 ✓
+   */
+  generation++
   try {
     audio?.stop()
   } catch {

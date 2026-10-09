@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio } from '../../lib/audio/play'
+import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio, stopCues } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -1331,18 +1331,29 @@ Page({
   onTapRecord() {
     if (this.data.phase === 's1') {
       /**
-       * ⭐ **「嘟」** —— 录音开始的听觉确认（⭐ 用户 2026-10-09 要的 ✓）
+       * ⭐⭐ **先把正在响的声音全停掉，再"嘟"，最后开麦克风** ✗（⭐ 2026-10-10 修顺序 ✓）
        *
-       * ⚠️⚠️ **必须挂在"点击"这一层**（⭐ 用户指出 ✓）：
-       *    原来放在 `startRecording()` 里 ✗ —— 而那个函数**别处也会被调用** ✗
-       *    （⭐ 比如自动接续下一句 ✓）⇒ ⚠️ 于是"嘟"会响在**没有点击**的时候 ✗✓
-       *    ⭐ 而它要表达的是"**你按了，麦克风开了**" ✓ ⇒ ⭐ 就得跟点击绑定 ✓
+       *    ⚠️⚠️ **原来这两步是反的** ✗：`playBeep()` 在前、`startRecording()` 在后 ✓
+       *       ⭐ 而"停旧声音"在 `startRecording()` 的**最里面** ✓
+       *       ⇒ ⚠️ 实际顺序是：⭐ **"嘟"响了 → 才停旧声音 → 开麦** ✓
+       *       ⚠️ 而 `stopAllAudio()` **停不到音效（`cues`）** ✗
+       *       ⇒ ⭐ **"嘟"和正在试听的标准音【重叠着】一起进了麦克风** ✓✓
+       *       ⚠️ 上面那段注释当时写的是"先停旧声音 → 再嘟"✗ ——
+       *          ⭐ **那是它以为的顺序，不是代码的顺序** ✓
        *
-       * ⚠️ 位置：在 `startRecording()` **之前** ✓
-       *    ⚠️ 里面第一件事是 `stopAllAudio()`（⭐ 正在响的会被麦克风录进去 ✓），
-       *       所以这样排下来：先停掉旧声音 ✓ 再"嘟" ✓ 再开麦克风 ✓
-       *    ⇒ ⭐ "嘟"是唯一会被录进去的声音（⭐ 0.13s ✓ 对自动结束门槛可忽略 ✓）
+       *    ⭐ 现在把停止提到这里 ✓：
+       *       ⭐ 停旧声音 ⇒ ⭐ "嘟" ⇒ ⭐ 开麦 ✓
+       *       ⇒ ⭐ **"嘟"是唯一会被录进去的声音**（⭐ 0.13s ✓ 对自动结束门槛可忽略 ✓）
+       *
+       *    ⚠️ **为什么不停在 `startRecording()` 里就够**：⭐ 那个函数**别处也会被调** ✗
+       *       （⭐ 自动接续下一句 ✓）⇒ ⚠️ 那里的停止挡不住"点击"这条路 ✓
+       *       ⭐ 所以两处都留（⭐ 幂等，重复调无害 ✓）
+       *
+       *    ⚠️ **"嘟"必须挂在"点击"这一层** ✓（⭐ 用户指出过 ✓）：
+       *       ⚠️ 放 `startRecording()` 里的话，自动接续时也会响 ✗
+       *       ⭐ 而它要表达的是"**你按了，麦克风开了**" ✓
        */
+      this.stopAllAudio()
       playBeep()
 
       this.startRecording()
@@ -1858,7 +1869,14 @@ Page({
    *    ⇒ 所以**顺序要紧：先 stopAudio、再复位状态**，反过来会有"停完又被播起来"的窗口。
    */
   stopAllAudio() {
+    /**
+     * ⭐⭐ **两套播放器都要停** ✗（⭐ 2026-10-10 加 ✓）
+     *    ⚠️ `stopAudio()` 只管**标准音**那一个单例 ✗
+     *    ⭐ 提示音（嘟/叮/嗖）走的是另一套（⭐ `cues` ✓）
+     *    ⇒ ⚠️ 只调前者的话，"把正在响的全停掉"这句话是不成立的 ✓✓
+     */
     stopAudio()
+    stopCues()
     const d = this.data
     // ⚠️ 已经是干净的就别 setData（这条路会被"按下录音"这种高频动作调到）
     if (d.playingWord !== -1 || d.sentenceState !== 'unplay' || d.replayState !== 'unplay') {
