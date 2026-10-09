@@ -38,19 +38,11 @@
     "ignore": [
       {
         "type": "folder",
-        "value": "node_modules"
-      },
-      {
-        "type": "folder",
         "value": "src"
       },
       {
         "type": "file",
         "value": "project.config.json"
-      },
-      {
-        "type": "file",
-        "value": "package.json"
       },
       {
         "type": "file",
