@@ -701,6 +701,16 @@ Page({
    */
   peakRms: 0,
   /**
+   * ⚠️⚠️ **临时诊断读数**（⭐ 2026-10-10 加 ✓）—— ⭐ **定位「读完不停」用，定位完就删** ✓
+   *
+   *    为什么必须画在屏幕上 ✗：⭐ 真机上的 `console` 我拿不到 ✗，
+   *    云托管日志也读不到 ✗ ⇒ ⭐ **除了让你看见，没有第二条路** ✓
+   *    ⭐ 仓库里有先例：`4447bf9`「帧分类 + 标准音时长**画在屏幕上**（⭐ 一次截图定位）」✓
+   */
+  vadDebug: { frames: 0, und: 0 },
+  /** ⭐ 屏幕上的那一行字（⭐ 空 = 不显示 ✓） */
+  vadLine: '',
+  /**
    * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
    *    id 是协议层的，由受理那一步记下来更直接）。
@@ -1218,6 +1228,8 @@ Page({
     this.waveGain = { ...WAVE_GAIN_ZERO }
     this.lastFrameAt = 0
     this.peakRms = 0
+    this.vadDebug = { frames: 0, und: 0 }
+    this.setData({ vadLine: '' })
     this.waveCtx = null
     this.waveCanvas = null
     this.waveW = 0
@@ -1545,7 +1557,26 @@ Page({
      */
     const rms = rmsOf(samples)
     this.peakRms = advancePeakRms(this.peakRms, rms)
-    this.vad = advanceVad(this.vad, classifyChunk(samples, silenceThresholdOf(this.peakRms)), frameMs)
+    const kind = classifyChunk(samples, silenceThresholdOf(this.peakRms))
+    this.vad = advanceVad(this.vad, kind, frameMs)
+    /**
+     * ⚠️⚠️ **临时诊断**（⭐ 定位完就删 ✓）——
+     *    ⭐ 每帧把中间量打到页面上，⭐ 读一句截图就能定位 ✓
+     */
+    this.vadDebug.frames++
+    if (kind === 'undecodable') this.vadDebug.und++
+    {
+      const N = this.data.words.length || this.plainWords.length
+      const floor = Math.round(N * 400 * 0.85)
+      this.setData({
+        vadLine:
+          '帧' + this.vadDebug.frames + '(解不开' + this.vadDebug.und + ') · ' +
+          'rec' + Math.round(this.vad.recordedMs) + ' · voi' + Math.round(this.vad.voicedMs) +
+          ' · sil' + Math.round(this.vad.silentMs) + ' · floor' + floor +
+          ' · ' + kind + ' · rms' + rms.toFixed(4) + ' · pk' + this.peakRms.toFixed(4) +
+          ' · thr' + silenceThresholdOf(this.peakRms).toFixed(4),
+      })
+    }
 
     /**
      * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束
