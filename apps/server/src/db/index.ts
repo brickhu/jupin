@@ -453,29 +453,22 @@ export async function initDatabase(): Promise<void> {
   await refreshActiveArticles()
   dbState.error = ''
 
-  if (!env.AUTO_MIGRATE) {
-    console.log('[db] AUTO_MIGRATE 未开启，跳过迁移')
-    return
-  }
-
-  try {
-    await runMigrations()
-    dbState.migrated = true
-  } catch (err) {
-    dbState.migrateError = (err as Error).message
-    console.error('[db] 迁移失败：', dbState.migrateError)
-  }
-
   /**
-   * ⭐ 灌种子**独立于迁移**，不是「反正都在启动时干」就塞进同一个 try。
+   * ⭐⭐ **这两样必须独立于 AUTO_MIGRATE**（⭐ 2026-10-09 修的真 bug ✓）
    *
-   * ⚠️⚠️ 这两件事没有依赖关系，但曾经共用一次 try/catch ——
-   *    后果是**一条迁移写错，句库就跟着空**：
-   *    dev 环境连续几轮部署都卡在同一条语法错误的迁移上，
-   *    而灌种子排在它后面、被一起跳过，真机上打开就是空句库。
-   *    报错只落在 migrateError 里，而那句「已灌种子 N 篇」的日志压根没打印过。
-   *    ⇒ 失败要分开、要互相不连坐：迁移坏了句子还能用，句子坏了也不必回滚迁移。
+   * ⚠️⚠️ 它们原来排在下面那个 `if (!env.AUTO_MIGRATE) return` **之后** ✗ ——
+   *    而**本地开发容器的 AUTO_MIGRATE 是关的** ✓
+   *    ⇒ ⭐ **本地永远不播种** ✗ ⇒ ⚠️ 购买页一张卡片都没有 ✓（⭐ 静默的 ✓ 不报错 ✓）
+   *
+   * ⚠️ 完全相同的坑本文件里**已经踩过一次**（⭐ 见上面 refreshArticleCount 的注释 ✓）：
+   *    「⚠️ 必须独立于 AUTO_MIGRATE：…于是本地永远显示 articleCount: null ——
+   *      ⭐ **诊断信息自己不可靠，比没有还糟**」
+   *    ⇒ ⭐ 商品目录也一样：⭐ **空表的后果是静默的**，比报错还难查 ✓
+   *
+   * ⚠️ 表还没建时插数据会失败 ✓ —— ⚠️ 但两段都裹在 try/catch 里 ✓（⭐ 只记一行日志 ✓）
+   *    ⇒ ⭐ 放在这里对"没迁移"的环境也是安全的 ✓
    */
+
   /**
    * ⭐ 奖励规则：**每次启动都补一次**（幂等，只在缺的时候插）。
    *
@@ -503,6 +496,30 @@ export async function initDatabase(): Promise<void> {
   } catch (err) {
     console.error('[db] 商品目录初始化失败（不影响服务启动）：', (err as Error).message)
   }
+
+  if (!env.AUTO_MIGRATE) {
+    console.log('[db] AUTO_MIGRATE 未开启，跳过迁移')
+    return
+  }
+
+  try {
+    await runMigrations()
+    dbState.migrated = true
+  } catch (err) {
+    dbState.migrateError = (err as Error).message
+    console.error('[db] 迁移失败：', dbState.migrateError)
+  }
+
+  /**
+   * ⭐ 灌种子**独立于迁移**，不是「反正都在启动时干」就塞进同一个 try。
+   *
+   * ⚠️⚠️ 这两件事没有依赖关系，但曾经共用一次 try/catch ——
+   *    后果是**一条迁移写错，句库就跟着空**：
+   *    dev 环境连续几轮部署都卡在同一条语法错误的迁移上，
+   *    而灌种子排在它后面、被一起跳过，真机上打开就是空句库。
+   *    报错只落在 migrateError 里，而那句「已灌种子 N 篇」的日志压根没打印过。
+   *    ⇒ 失败要分开、要互相不连坐：迁移坏了句子还能用，句子坏了也不必回滚迁移。
+   */
 
   if (env.SEED_ON_START) {
     try {
