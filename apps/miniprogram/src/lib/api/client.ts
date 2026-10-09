@@ -34,6 +34,11 @@ import type {
 } from '@jushuo/shared'
 
 import { BASE_URL, CLOUD_ENV_ID, CLOUD_SERVICE, ENV_VERSION, PLATFORM, SDK_VERSION, TARGET, TRANSPORT } from '../../config'
+/**
+ * ⚠️ **单向依赖**：⭐ `store.ts` 只 import types 和 `@jushuo/shared` ✓
+ *    ⇒ ⭐ 这里 import 它**不会形成循环** ✓✓
+ */
+import { applyProfile } from '../store'
 
 /**
  * ⭐ 云能力（wx.cloud.init）的结果 —— 由 app.ts 在 onLaunch 里记录。
@@ -96,17 +101,14 @@ export function setToken(t: string): void {
 }
 
 /**
- * ⭐ 当前用户 id —— **上传音频的路径需要它**（audio/{句子id}/{uid}/{ts}.pcm）。
+ * ⭐ 当前用户 id —— **上传音频的路径需要它**（`audio/{句子id}/{uid}/{attemptId}.mp3`）。
  *
  * 服务端会校验路径里的 uid 必须等于发起请求的人，所以这个值必须来自服务端，
  * 不能由客户端随便编。
+ *
+ * ⚠️⚠️ **本文件不再持有它** ✗（⭐ 2026-10-10 收敛 ✓）——
+ *    ⭐ 它只有一份：全局 store 的 `userInfo.id`（⭐ 见 `getUserId` 的说明 ✓）
  */
-let userId = 0
-
-export function setUserId(id: number): void {
-  userId = id
-  wx.setStorageSync('uid', id)
-}
 
 export function getUserId(): number {
   /**
@@ -125,17 +127,17 @@ export function getUserId(): number {
    *       ⇒ ⭐ 这里单向读 `globalData` **不会形成循环** ✓✓
    *       （⭐ 而且读的是 `globalData`，⭐ 不 import store 模块本身 ✓）
    *
-   * ⚠️ **启动早期 store 还没 hydrate** ✗ ⇒ ⭐ 退回 storage 那份缓存 ✓
-   *    （⭐ 它是上一次成功时的快照 ✓ 有总比没有好 ✓）
+   * ⚠️ **启动早期 store 还没 hydrate** ✗ ⇒ ⭐ **就返回 0** ✓
+   *    ⚠️ **不再退回 storage** ✗ —— ⚠️ 那正是"第二份真相"本身 ✓
+   *    ⭐ 调用方本来就按"拿不到就早失败"处理 ✓（⭐ 见 `upload.ts` ✓）✓✓
    */
   try {
-    const fromStore = getApp()?.globalData?.userInfo?.id
-    if (typeof fromStore === 'number' && fromStore > 0) return fromStore
+    const id = getApp()?.globalData?.userInfo?.id
+    return typeof id === 'number' && id > 0 ? id : 0
   } catch {
-    /* ⚠️ getApp() 在极早期可能不可用 ⇒ 走下面的兜底 */
+    /* ⚠️ 极早期 getApp() 可能不可用 ⇒ 当成"还没有" */
+    return 0
   }
-  if (!userId) userId = Number(wx.getStorageSync('uid')) || 0
-  return userId
 }
 
 function restoreToken(): string {
@@ -761,7 +763,27 @@ async function doLogin(): Promise<void> {
   // ⚠️⚠️ `user` 可为 **null**：登录 ≠ 注册（2026-09 定）。
   //    还没加入句拼的人也能拿到 token（里面带的是凭据），但没有账号可回 ——
   //    这里**绝不能**再去 /me 或建号，那是回到"自动注册"。
-  if (data.user) setUserId(data.user.id)
+  /**
+   * ⭐ **有 user 就送进全局 store** ✗（⭐ 2026-10-10 改 ✓）
+   *    ⚠️ 原来这里是 `setUserId(data.user.id)` ✗ —— ⚠️ 那会造出**第二份真相** ✓
+   *    ⭐ 现在统一走 `applyProfile`（⭐ store 里写明的「唯一正式写入方」✓）✓✓
+   */
+  /**
+   * ⚠️⚠️ **这里【不】写全局 store** ✗（⭐ 2026-10-10 定 ✓），两个理由：
+   *
+   *    ⭐ ① **它不是完整的那一份** ✗：响应里的 `user` 只有 `{ id, nickname }`
+   *       （⭐ `TokenResponse` ✓），而 `store.userInfo` 的口径是
+   *       ⭐ **`GET /api/user/me` 的原始返回体** ✓（⭐ `store.ts:69` ✓）
+   *       ⇒ ⚠️ 拿半个去覆盖整份 = ⭐ **制造第二份真相** ✓
+   *    ⭐ ② **登录 ≠ 注册** ✗：⭐ 还没加入的人也能拿到 token ✓
+   *       ⇒ ⚠️ 写进去会让 `hasJoined()`（⭐ `userInfo !== null` ✓）**变成 true**
+   *       ⇒ ⚠️ 界面误判"我加入过" ✓✓
+   *
+   *    ⭐ 而 `uid` 不会因此缺失 ✓：⭐ 提交前那道
+   *       `ensureAuthed({ needProfile: true })` 会调 `/me` ⇒ ⭐ `fetchMe`
+   *       把完整的那份写进 store ⇒ ⭐ **上传时 uid 已经有了** ✓✓
+   */
+  void data
 }
 
 /**
@@ -1270,7 +1292,15 @@ export function fetchMe(): Promise<MeResponse> {
      *       ⇒ ⭐ **只是把服务端权威告诉我们的 id 记住** ✓✓
      *    ⭐ 一处修好所有路径：⭐ `ensureAuthed({ needProfile: true })` 最终也会走到这里 ✓
      */
-    if (me && typeof me.id === 'number' && me.id > 0) setUserId(me.id)
+    /**
+     * ⭐⭐ **`/me` 是「我是谁」的权威来源 ⇒ 拿到就写进全局 store** ✗（⭐ 2026-10-10 ✓）
+     *
+     *    ⚠️ 这一步【必须有】✗ —— ⚠️ 否则 store 的 `userInfo` 只在
+     *       "打开用户面板 / 改资料"（⭐ `user-sheet` / `profile-form` ✓）时才被填 ✓
+     *       ⇒ ⭐ 而 `getUserId()` 现在只认 store ⇒ ⚠️ **会一直是 0** ✓✓
+     *    ⭐ 放在这里，`ensureAuthed({ needProfile: true })` 那条路也会经过 ✓✓
+     */
+    if (me && typeof me.id === 'number' && me.id > 0) applyProfile(me)
     return me
   })
 }
@@ -1301,7 +1331,7 @@ export function saveProfile(input: ProfileUpdate): Promise<ProfileUpdateResponse
  *    authMiddleware 会因为"还没注册"直接 403，注册请求根本到不了）。
  *    所以 http 通道要自带 token：这里先确保登录过一次（容器通道不需要）。
  *
- * ⚠️ 返回**完整的「我是谁」**（与 /me 同一个形状）—— 端侧当场 setUserId + 落 store，
+ * ⚠️ 返回**完整的「我是谁」**（与 /me 同一个形状）—— 端侧当场 applyProfile 落 store，
  *    不必"存完再查一次"（那会把"加入成功"又赌一次网络）。
  */
 export async function register(input: ProfileUpdate): Promise<MeResponse> {
@@ -1312,7 +1342,7 @@ export async function register(input: ProfileUpdate): Promise<MeResponse> {
     budgetMs: LAUNCH_BUDGET_MS,
   })
   // ⭐ uid 是上传路径的必需段（audio/{句子}/{uid}/…）—— 注册成功这一刻才第一次有了它
-  setUserId(me.id)
+  applyProfile(me)
   return me
 }
 
