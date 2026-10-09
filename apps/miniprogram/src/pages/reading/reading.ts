@@ -1507,7 +1507,29 @@ Page({
      * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束
      * ⚠️ 拿不到标准音时长时 autoStopAfter 一律返回 false（宁可让用户自己点）✓
      */
-    if (autoStopAfter({ ...this.vad, wordCount: this.data.words.length })) {
+    /**
+     * ⚠️⚠️ **词数要兜底，不能只看 `data.words`** ✗（⭐ 2026-10-09 修 ✓）
+     *
+     *    ⭐ `autoStopAfter` 的第一条就是 ⭐ **`if (wordCount <= 0) return false`** ✓
+     *    ⇒ ⚠️ **词表一空，自动结束就【静默失效】** ✗ ——
+     *       不报错、不提示，⭐ 只是"读完了它不停" ✓✓
+     *    ⚠️ 而这不是假设：⭐ 2026-10-09 用户报的正是这个
+     *       （⭐ 那条文章的 `words` 是 `[]` ⇒ ⭐ `wordCount = 0` ⇒ 永不停 ✓）
+     *
+     *    ⭐ 兜底用 `this.plainWords` —— ⭐ 它就是 `plainWordsOf(content.text)` ✓
+     *       （⭐ 见 loadContent ✓）⇒ ⭐ **只要正文在，词数就一定拿得到** ✓✓
+     *    ⚠️ 两者本应一致（⭐ `data.words` 就是从它建的 ✓）——
+     *       兜底只在"词表因故为空"时生效 ✓
+     */
+    const wordCount = this.data.words.length || this.plainWords.length
+    if (wordCount <= 0) {
+      /**
+       * ⚠️ 连正文都拿不到 ⇒ ⭐ 这一帧不该判"读完" ✓，但**要留一句痕迹** ✗ ——
+       *    否则又变成"静默失效"，⭐ 下次还是靠猜 ✓
+       */
+      console.warn('[reading] 词数为 0（正文或词表没加载），本帧不判自动结束')
+    }
+    if (autoStopAfter({ ...this.vad, wordCount })) {
       /**
        * ⚠️⚠️ **必须防重入**：满足条件之后**每一帧**都会再判一次 ✓ ⇒
        *    不拦的话会连着调好几次 `session.stop()` ✗（并反复重置那个 3 秒看门狗，
