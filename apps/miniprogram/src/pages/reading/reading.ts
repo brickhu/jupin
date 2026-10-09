@@ -38,7 +38,7 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { decodeFrameToSamples, frameKindOf, pcmFrameToSamples } from '../../lib/audio/frame-decode'
+import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
 import {
   AUTO_STOP_SILENCE_MS,
@@ -701,17 +701,6 @@ Page({
    */
   peakRms: 0,
   /**
-   * ⭐⭐ **这一轮的帧是裸 PCM 还是带头的容器**（⭐ 2026-10-10 恢复 ✓）
-   *
-   *    ⚠️ 帧里装什么**不取决于我们的代码** ✗，取决于 `RecorderManager`：
-   *      ⭐ `format:'PCM'` ⇒ ⭐ 无头裸 PCM（⭐ 同步直读，零开销 ✓）
-   *      ⚠️ `format:'mp3'` ⇒ ⚠️ mp3 分片（⭐ 真机上 `decodeAudioData` 能解 ✓）
-   *    ⇒ ⭐ **判【一次】就整轮沿用** ✓（⭐ 免得中途换读法让波形跳变 ✓）
-   *    ⚠️ 两种都必须支持：⭐ 只留解码那条时，裸 PCM 帧会**硬解失败** ⇒
-   *       ⭐ 拿不到采样 ⇒ ⚠️ **VAD 完全不动 ⇒ 读完不停** ✓
-   */
-  frameKind: 'unknown' as 'unknown' | 'pcm' | 'container',
-  /**
    * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
    *    id 是协议层的，由受理那一步记下来更直接）。
@@ -1229,12 +1218,6 @@ Page({
     this.waveGain = { ...WAVE_GAIN_ZERO }
     this.lastFrameAt = 0
     this.peakRms = 0
-    /**
-     * ⭐ **帧格式每轮重判** ✓（⭐ 2026-10-10 ✓）
-     *    ⚠️ 理由同 `peakRms`：⭐ 状态机的东西不能跨轮带 ✓
-     *    ⚠️ 而且"判一次整轮沿用"里的"一轮"就是**这一次录音** ✓
-     */
-    this.frameKind = 'unknown'
     this.waveCtx = null
     this.waveCanvas = null
     this.waveW = 0
@@ -1521,23 +1504,27 @@ Page({
      *      ⚠️ 这个功能只能在真机上验 —— 这不是 bug，也不去绕它 ✓
      */
     /**
-     * ⭐⭐ **先判这一轮的帧是什么，再选读法** ✗（⭐ 2026-10-10 恢复 ✓）
+     * ⚠️⚠️ **只用解码这一条路** ✗（⭐ 2026-10-10 撤回嗅探 ✓）
      *
-     *    ⚠️ `1547759` 曾把这条路删掉 ✗，理由是"分支解决不了环境差异"✓ ——
-     *    ⚠️ 那个理由对**开发者工具**成立（⭐ 它的帧是 WebM/Opus，两条路都不行 ✓）
-     *    ⚠️ **但真机不是** ✗：⭐ `37e6a31` 的注释实测过「⭐ **真机上试了一下，成了**」✓
-     *    ⇒ ⭐ **把"模拟器解不开"当成"平台解不开"是错的** ✓
+     *    ⚠️ 我一度恢复了"运行时判帧格式"（⭐ `frameKindOf` + `pcmFrameToSamples` ✓）
+     *    并据此在 `'pcm'` 时**直读** ✗ ⇒ ⭐ **把安卓的自动结束彻底弄坏了** ✓✓
      *
-     *    ⚠️ 只留解码那条的代价（⭐ 就是现在的样子 ✓）：
-     *       ⭐ 帧是裸 PCM 时**硬解会失败** ⇒ ⭐ 拿不到采样 ⇒
-     *       ⚠️ **VAD 完全不动 ⇒ 读完不停** ✓✓
+     *    ⚠️ 病因：⭐ `sniffAudioContainer` 的**兜底值就是 `'raw-pcm'`** ✗
+     *       （⭐ `packages/shared/src/audio/sniff.ts` ✓）
+     *       ⭐ 而 **mp3 帧以 `0xFF 0xFB` 开头、没有任何容器头** ✗
+     *       ⇒ ⭐ **它被判成 `'pcm'`** ⇒ ⚠️ `pcmFrameToSamples` 把**压缩码流**
+     *          当成 16bit 采样读 ⇒ ⭐ **VAD 拿到的是垃圾** ⇒ ⭐ 读完不停 ✓✓
+     *       ⚠️ **我自己在恢复它的注释里就写了这条警告，然后还是这么用了** ✗
+     *
+     *    ⭐ 而 `RECORD_SPEC.format` **就是 `'mp3'`** ✓（⭐ `packages/shared` ✓）
+     *    ⇒ ⭐ **帧一定是 mp3 分片** ⇒ ⭐ **只有解码这一条路是对的** ✓✓
+     *       （⭐ `37e6a31` 的真机实测：⭐「⭐ **真机上试了一下，成了**」✓）
+     *
+     *    ⚠️ 帧是裸 PCM 那种情况**在当前配置下不会出现** ✗ ——
+     *       ⭐ 真要用 PCM，就得**同时**改 `RECORD_SPEC.format` ✓
+     *       （⭐ 但那是 8 倍上传体积 ✓ 见 `37e6a31` ✓）
      */
-    if (this.frameKind === 'unknown') {
-      this.frameKind = frameKindOf(frame)
-      console.log('[reading] 帧格式判定：' + this.frameKind)
-    }
-    const samples =
-      this.frameKind === 'pcm' ? pcmFrameToSamples(frame) : await decodeFrameToSamples(frame)
+    const samples = await decodeFrameToSamples(frame)
     if (this.gone) return
 
     // ── ① 波形 ──────────────────────────────────────────────
