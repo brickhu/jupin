@@ -126,7 +126,16 @@ export async function callWxApi<T extends WxError>(
     const data = (await res.json()) as T
     if (data.errcode === 0) return data
 
-    lastError = `${data.errcode ?? '?'} ${data.errmsg ?? ''}`
+    /**
+     * ⚠️⚠️ **把"实际发出去的 body"也带进错误里** ✗（⭐ 2026-10-09 加的 ✓）
+     *
+     *    不然只能看到微信一句"参数字段错误"✗ ——
+     *    ⚠️ **而它不会告诉你哪个字段错了** ✓ ⇒ ⭐ 只能靠猜 ✓
+     *    ⭐ 带上 body 之后：⭐ 一眼就能看到"我到底发了什么" ✓✓
+     *    ⚠️ body 里可能含 openid ✗ —— ⭐ 那是必要的诊断信息 ✓
+     *      （⭐ 它已经在我们自己的库里 ✓ 不构成新的泄露面 ✓）
+     */
+    lastError = `${data.errcode ?? '?'} ${data.errmsg ?? ''} | 我们发的 body=${payload}`
     if (!TOKEN_ERRORS.includes(data.errcode ?? 0)) break
   }
   throw new Error(`微信接口失败（${api}）：${lastError}`)
