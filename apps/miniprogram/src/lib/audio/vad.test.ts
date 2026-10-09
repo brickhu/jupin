@@ -4,10 +4,14 @@ import {
   AUTO_STOP_MIN_RATIO,
   AUTO_STOP_WORD_MS,
   AUTO_STOP_SILENCE_MS,
+  SILENCE_RMS_FLOOR,
   VAD_STATE_ZERO,
+  advancePeakRms,
   advanceVad,
   autoStopAfter,
   classifyChunk,
+  rmsOf,
+  silenceThresholdOf,
 } from './vad'
 
 /** 造一段采样：给定振幅的正弦（用来代表"有声音"） */
@@ -129,5 +133,86 @@ describe('advanceVad —— 逐帧累计（规则要一眼看得出）', () => {
     const silentFrames = Math.ceil(AUTO_STOP_SILENCE_MS / F) + 1
     for (let i = 0; i < silentFrames; i++) st = advanceVad(st, 'silence', F)
     expect(autoStopAfter({ ...st, wordCount: 11 })).toBe(true)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 自适应静音阈值（2026-10-10 加）                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⚠️⚠️ **这一组守的是一个真机上坏掉的功能** ✗：
+ *    固定阈值 `SILENCE_RMS = 0.02` 在**低增益设备**上会把每一帧都判成静音
+ *    ⇒ `voicedMs` 永不增长 ⇒ **读完永不停**（用户实测报的 bug）。
+ *    ⭐ 波形那条路早在 `b264419` 就因为同一个"幅度不够"加过增益，只有 VAD 漏了。
+ *
+ * ⚠️ 注意 `tone(a)` 造的是**正弦**，它的 RMS 是 `a / √2`（≈ 0.707a）——
+ *    下面的期望值都按这个换算，别拿幅度当 RMS ✓
+ */
+describe('自适应静音阈值 —— 跟设备自己的峰值比，不跟绝对数字比', () => {
+  it('峰值只涨不跌', () => {
+    expect(advancePeakRms(0, 0.05)).toBe(0.05)
+    expect(advancePeakRms(0.05, 0.02)).toBe(0.05)
+    expect(advancePeakRms(0.05, 0.08)).toBe(0.08)
+  })
+
+  it('⭐ 增益低的设备也能分出「说话」与「安静」', () => {
+    // ⚠️ 这台设备说话幅度只有 0.01（RMS ≈ 0.0071，远低于旧的固定阈值 0.02）
+    const peak = advancePeakRms(0, rmsOf(tone(0.01)))
+    const threshold = silenceThresholdOf(peak)
+    // ⭐ 它自己的说话声必须判成 voice —— 这正是旧实现会判错的地方
+    expect(classifyChunk(tone(0.01), threshold)).toBe('voice')
+    // ⭐ 安静下来（幅度 0.001，RMS ≈ 0.0007）要判成 silence
+    expect(classifyChunk(tone(0.001), threshold)).toBe('silence')
+  })
+
+  it('⭐ 峰值高的时候，正常说话不会被误判成静音', () => {
+    const peak = advancePeakRms(0, rmsOf(tone(0.4)))
+    const threshold = silenceThresholdOf(peak)
+    expect(classifyChunk(tone(0.2), threshold)).toBe('voice')
+    expect(classifyChunk(tone(0.02), threshold)).toBe('silence')
+  })
+
+  it('⚠️ 绝对下限兜住「安静环境里一点底噪就成了峰值」', () => {
+    expect(silenceThresholdOf(0)).toBe(SILENCE_RMS_FLOOR)
+    expect(silenceThresholdOf(0.001)).toBe(SILENCE_RMS_FLOOR)
+    // ⭐ 全是底噪（幅度 0.003 ⇒ RMS 0.0021 < FLOOR）时算「安静」，不是「有人在说话」
+    expect(classifyChunk(tone(0.003), silenceThresholdOf(0))).toBe('silence')
+  })
+
+  it('rmsOf：空 / null 给 0，正弦给约 a/√2', () => {
+    expect(rmsOf(null)).toBe(0)
+    expect(rmsOf(new Float32Array(0))).toBe(0)
+    // ⚠️ 精度给 2 位：tone 造的是**离散**正弦（sin(i/4)），装不满整周期，
+    //    实测 0.3551 而理论 0.3536 —— 差 0.4% 是离散化的正常误差，不是 bug
+    expect(rmsOf(tone(0.5))).toBeCloseTo(0.5 / Math.SQRT2, 2)
+  })
+
+  it('⭐ 串起来：低增益设备说够了时长 + 安静下来 ⇒ 判「读完了」', () => {
+    let peak = 0
+    let vad = { ...VAD_STATE_ZERO }
+    // ⭐ 30 帧 × 170ms = 5100ms 的「确认为语音」
+    for (let i = 0; i < 30; i++) {
+      peak = advancePeakRms(peak, rmsOf(tone(0.01)))
+      vad = advanceVad(vad, classifyChunk(tone(0.01), silenceThresholdOf(peak)), 170)
+    }
+    expect(vad.voicedMs).toBeGreaterThan(6 * AUTO_STOP_WORD_MS * AUTO_STOP_MIN_RATIO)
+    // ⭐ 再喂够静音
+    for (let i = 0; i < 12; i++) {
+      peak = advancePeakRms(peak, rmsOf(tone(0.0005)))
+      vad = advanceVad(vad, classifyChunk(tone(0.0005), silenceThresholdOf(peak)), 170)
+    }
+    expect(vad.silentMs).toBeGreaterThanOrEqual(AUTO_STOP_SILENCE_MS)
+    expect(autoStopAfter({ ...vad, wordCount: 6 })).toBe(true)
+  })
+
+  it('⚠️ 反面对照：仍用旧的固定阈值时，低增益设备永远判不出「语音」', () => {
+    // ⭐ 这条钉住"为什么必须改"—— 旧实现下 voicedMs 一直是 0
+    let vad = { ...VAD_STATE_ZERO }
+    for (let i = 0; i < 30; i++) {
+      vad = advanceVad(vad, classifyChunk(tone(0.01)), 170)
+    }
+    expect(vad.voicedMs).toBe(0)
+    expect(autoStopAfter({ ...vad, wordCount: 6 })).toBe(false)
   })
 })

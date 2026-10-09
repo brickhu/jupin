@@ -40,7 +40,16 @@ import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio
 import { renderWordColors } from '../../lib/word-colors'
 import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
 import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
-import { AUTO_STOP_SILENCE_MS, VAD_STATE_ZERO, advanceVad, autoStopAfter, classifyChunk } from '../../lib/audio/vad'
+import {
+  AUTO_STOP_SILENCE_MS,
+  VAD_STATE_ZERO,
+  advancePeakRms,
+  advanceVad,
+  autoStopAfter,
+  classifyChunk,
+  rmsOf,
+  silenceThresholdOf,
+} from '../../lib/audio/vad'
 import type { VadState } from '../../lib/audio/vad'
 import type { ColoredWord } from '../../lib/word-colors'
 import { ensureLocalAudio, prefetchAudio } from '../../lib/audio/standard'
@@ -683,6 +692,15 @@ Page({
   /** 原始词表（不带样式）—— 点词 TTS 用它 */
   plainWords: [] as string[],
   /**
+   * ⭐⭐ **见过的最大 RMS**（⭐ 2026-10-10 加 ✓）—— ⭐ 自适应静音阈值要用 ✓
+   *
+   *    ⚠️ 固定阈值 `SILENCE_RMS = 0.02` 在**低增益真机**上会把每一帧都判成静音 ✓
+   *    ⇒ ⭐ `voicedMs` 永不增长 ⇒ ⭐ **读完永不停** ✓（⭐ 用户报的 bug ✓）
+   *    ⭐ 用"这台设备自己的峰值"当基准 ⇒ ⭐ **跟增益无关** ✓✓
+   *    ⚠️ 每次开录要重置（⭐ 见 startRecording ✓）
+   */
+  peakRms: 0,
+  /**
    * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
    *    id 是协议层的，由受理那一步记下来更直接）。
@@ -1188,14 +1206,18 @@ Page({
     })
 
     /**
-     * ⭐ 每一轮录音都要复位的三样（波形与静音自停的状态机）：
+     * ⭐ 每一轮录音都要复位的四样（波形与静音自停的状态机）：
      *   · waveOn —— 上一轮的波形条不能留到这一轮（这一轮还没收到帧呢）
      *   · vad —— 静音/时长计数器从零开始（上一轮的数字会让这一轮被**立刻**判成读完 ✗）
      *   · lastFrameAt —— 帧间隔要重新量（跨轮的间隔是几分钟，不能用）
+     *   · ⭐ **peakRms** —— 自适应静音阈值要按**这一轮**量（⭐ 2026-10-10 加 ✓）
+     *      ⚠️ 不复位的话：⭐ 上一轮喊过一声 ⇒ 峰值偏高 ⇒ ⭐ **这一轮正常说话会被判成静音** ✗
+     *      ⇒ ⭐ 又变成"读完不停"✓
      */
     this.vad = { ...VAD_STATE_ZERO }
     this.waveGain = { ...WAVE_GAIN_ZERO }
     this.lastFrameAt = 0
+    this.peakRms = 0
     this.waveCtx = null
     this.waveCanvas = null
     this.waveW = 0
@@ -1501,7 +1523,18 @@ Page({
     const frameMs = this.lastFrameAt > 0 ? Math.min(1000, now - this.lastFrameAt) : FRAME_MS_FALLBACK
     this.lastFrameAt = now
 
-    this.vad = advanceVad(this.vad, classifyChunk(samples), frameMs)
+    /**
+     * ⭐⭐ **先更新"见过的最大 RMS"，再用它算阈值** ✗（⭐ 2026-10-10 修 ✓）
+     *
+     *    ⚠️ 原来直接 `classifyChunk(samples)` ⇒ ⚠️ **固定阈值 0.02** ✗
+     *    ⇒ ⚠️ **低增益真机上每一帧都判成 `'silence'`** ✓
+     *    ⇒ ⭐ **`voicedMs` 永不增长 ⇒ `voicedMs >= floor` 永不成立 ⇒ 读完不停** ✓✓
+     *    ⇒ ⭐（⭐ 波形那条路早在 `b264419` 就因为同一个"幅度不够"加过增益 ✓
+     *       ⚠️ **只有 VAD 漏了** ✓）
+     */
+    const rms = rmsOf(samples)
+    this.peakRms = advancePeakRms(this.peakRms, rms)
+    this.vad = advanceVad(this.vad, classifyChunk(samples, silenceThresholdOf(this.peakRms)), frameMs)
 
     /**
      * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束

@@ -103,6 +103,56 @@ export type ChunkKind = 'voice' | 'silence' | 'undecodable'
  *    呼吸、唇齿声都会有峰值 —— 用峰值判会让静音永远不成立 ✗
  * ⚠️ 空数组也算 'undecodable'（不是"静音"）：解出来什么都没有，说明这一帧没用上 ✓
  */
+/**
+ * ⭐⭐ **自适应阈值**（⭐ 2026-10-10 加 ✓）—— ⭐ **不写死一个 RMS 数字** ✗
+ *
+ * ## ⚠️⚠️ 为什么固定阈值一定会坏
+ *
+ *    `SILENCE_RMS = 0.02` 是**按常识取的、没有真机数据**（⭐ 原注释自己承认了 ✓）。
+ *    而**真机的录音增益差很多** ✗：
+ *      ⚠️ **低增益设备**（⭐ 用户实测的那台就是 ✓）⇒ ⭐ **RMS 一直很小** ✗
+ *      ⇒ ⚠️ **每一帧都 < 0.02** ⇒ ⭐ **全判成 `'silence'`** ✗
+ *      ⇒ ⭐ **`voicedMs` 永不增长** ⇒ ⭐ **`autoStopAfter` 的第一条永远不成立** ✓✓
+ *      ⇒ ⭐⚠️ **症状：⭐ 读完了它不停** ✓（⭐ 用户报的就是这个 ✓）
+ *
+ *    ⚠️ **而波形那条路早就遇到过同一个问题** ✗ ——
+ *       `b264419`：⭐「波形加**自动增益** —— ⭐ 真机反馈『其它都对，就是**幅度不够**』」✓
+ *       ⇒ ⭐ **它的解法就是"用见到的峰值归一化"** ✓
+ *       ⇒ ⭐ **VAD 照抄这个思路就行，不必再猜阈值** ✓
+ *
+ * ## ⭐ 判据：⭐ 跟自己比，而不是跟一个绝对数字比
+ *
+ *    ⭐ 记住**见过的最大 RMS**（`peak`）✓
+ *    ⭐ 静音 = `rms < max(FLOOR, peak × RATIO)` ✓
+ *    ⇒ ⭐ **增益低的设备峰值也低，比例判据照样成立** ✓✓
+ *    ⚠️ `FLOOR` 是**绝对下限**：⭐ 防止"安静环境里一点点底噪就成了峰值"✗，
+ *       那样会把正常说话也判成静音 ✓
+ */
+export const SILENCE_PEAK_RATIO = 0.25
+export const SILENCE_RMS_FLOOR = 0.004
+
+/** ⭐ 更新"见过的最大 RMS"—— ⭐ 只涨不跌（⭐ 峰值是该设备的量程参考 ✓） */
+export function advancePeakRms(peak: number, rms: number): number {
+  return rms > peak ? rms : peak
+}
+
+/** ⭐ 按当前峰值算这一帧的静音阈值 */
+export function silenceThresholdOf(peakRms: number): number {
+  const byPeak = peakRms * SILENCE_PEAK_RATIO
+  return byPeak > SILENCE_RMS_FLOOR ? byPeak : SILENCE_RMS_FLOOR
+}
+
+/** ⭐ 一帧的 RMS（⭐ 抽出来，⭐ 调用方要拿它更新峰值 ✓） */
+export function rmsOf(samples: Float32Array | null): number {
+  if (!samples || samples.length === 0) return 0
+  let sum = 0
+  for (let i = 0; i < samples.length; i++) {
+    const v = samples[i] ?? 0
+    sum += v * v
+  }
+  return Math.sqrt(sum / samples.length)
+}
+
 export function classifyChunk(samples: Float32Array | null, rmsThreshold = SILENCE_RMS): ChunkKind {
   if (!samples || samples.length === 0) return 'undecodable'
 
