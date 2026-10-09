@@ -2608,6 +2608,22 @@ Page({
   async dismissResult() {
     await this.claimCookiesIfAny()
     this.submissionId = ''
+    /**
+     * ⭐⭐ **清掉"排除本次"之后，必须重拉一次历史** ✗✗（⭐ 用户 2026-10-09 报的 ✓）
+     *
+     * ⚠️⚠️ 这里原来**漏了这一行** ✗ —— 而上面（轮询出分那处）的注释
+     *    **亲口写着「点完之后 dismissResult 会再拉一次历史，口径就对了」** ✓
+     *    ⇒ ⭐ 注释描述了一个不存在的行为 ✓
+     *    ⇒ ⚠️ 症状：⭐ `loadHistory` 拿 `this.submissionId` 去**排除刚出的那一把** ✓
+     *      （⭐ 设计意图：弹窗正盖着它，列表里再来一条是重复 ✓）
+     *      而关掉弹窗时**只清了那个 id、没重拉** ✗
+     *      ⇒ ⭐ **刚打完的那一把永远不出现在「历史挑战」里** ✗✓
+     *
+     * ⚠️ 位置：⭐ 在 `clearAttempt()` **之前** ✓ ——
+     *    那个方法在检测中有守卫（⭐ 会直接 return ✓），放后面可能被它挡掉 ✓
+     * ⚠️ 不 await：⭐ 它供的是下面那张历史卡 ✓ 不该拖住"关窗"这个动作 ✓
+     */
+    void this.loadHistory()
     this.clearAttempt()
   },
 
