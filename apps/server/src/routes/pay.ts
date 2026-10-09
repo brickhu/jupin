@@ -96,6 +96,45 @@ payRoutes.openapi(payNotifyRoute, async (c) => {
       ? c.text('<xml><ErrCode>0</ErrCode><ErrMsg><![CDATA[success]]></ErrMsg></xml>')
       : c.json({ ErrCode: 0, ErrMsg: 'success' })
 
+  /**
+   * ⭐⭐ **云托管消息推送的【路径检测请求】**（⭐ 官方规格 ✓）
+   *
+   *    ⚠️ 配推送时微信会先 POST 一个检测请求过来 ✓：
+   *      ⭐ JSON：`{ "action": "CheckContainerPath" }`
+   *      ⭐ XML ：`<xml><action>CheckContainerPath</action></xml>`
+   *    ⭐ 官方原话：⭐「开发者回复 **success** 或回复**空**即可完成测试」✓
+   *    ⚠️ 且「⭐ **路径返回的 Status 需要为 200**，非 200 会导致配置检查失败」✓
+   *
+   *    ⚠️ 不显式认它的话，它会掉进下面"没有 outTradeNo ⇒ 丢弃"那条 ✓
+   *    ⇒ ⭐ 虽然也回 200 ✗，⚠️ 但**回的是 `{"ErrCode":0,...}` 而不是 `success`** ✓
+   *      ⇒ ⚠️ 官方只承诺认 `success`/空 ⇒ ⭐ **别赌** ✓✓
+   */
+  if (/CheckContainerPath/i.test(raw)) {
+    console.log('[pay] 云托管推送路径检测 ✓')
+    return c.text('success')
+  }
+
+  /**
+   * ⚠️⚠️ **我们开了公网访问 ⇒ 业务推送必须验来源** ✗（⭐ 官方规格 ✓）
+   *
+   *    ⭐「若云托管**未开启公网访问**，则该信任所有消息推送」✓
+   *    ⭐「若开启了公网访问，⭐ 需要验证请求头带 **`x-wx-source`**
+   *      的才是微信侧发起的推送」✓
+   *
+   *    ⚠️ 我们的域名（`*.sh.run.tcloudbase.com`）**公网可达** ✗
+   *    ⇒ ⚠️ 不验的话，⭐ **任何人都能伪造一条发货推送** ✓
+   *
+   *    ⚠️⚠️ **为什么放在检测请求之后** ✗：
+   *       ⚠️ **我无法确认检测请求带不带 `x-wx-source`** ✓
+   *       ⇒ ⭐ 而检测请求**完全无害**（⭐ 只记一行日志 + 回 `success` ✓）
+   *       ⇒ ⭐ **为它放行，把校验留给真正会改数据的业务推送** ✓✓
+   *       （⭐ 若将来确认检测也带这个头，再挪前面也不迟 ✓）
+   */
+  if (!c.req.header('x-wx-source')) {
+    console.warn('[pay] 拒收：请求头没有 x-wx-source（不是微信侧发起的）')
+    return c.json({ ErrCode: -1, ErrMsg: 'forbidden' }, 403)
+  }
+
   let data: Record<string, unknown> = {}
   try {
     data = parseNotify(raw)
