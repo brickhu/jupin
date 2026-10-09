@@ -526,6 +526,22 @@ for (const k of ['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL']) {
 for (const k of WX_KEYS) {
   if (process.env[k]) params[k] = process.env[k]
 }
+/**
+ * ⭐⭐ **定时触发器的口令**（⭐ `routes/cron.ts` 用它鉴权 ✓）
+ *
+ * ⚠️⚠️ **不配的后果是"静默未启用"** ✗ ——
+ *    `cron.ts` 一看 `CRON_SECRET` 为空，整个模块**直接返回 503**：
+ *      「服务端没有配置 CRON_SECRET（定时接口未启用）」
+ *    ⇒ ⚠️ **控制台里就算配了触发器，也只会一直拿到 503** ✗✓
+ *    ⇒ ⚠️ 而它**不报错、不告警**，只是那一轮什么都没干 ✓
+ *    （⭐ 2026-10-09 实际踩到：支付兜底查单加好了却永远不跑 ✓）
+ *
+ * ⚠️ 同样**只在有值时写** ✗ —— 否则会把服务上已有的值抹掉 ✓
+ * ⚠️ 它不在 PUBLIC_KEYS 里 ⇒ ⭐ 日志里会被 `::add-mask::` 遮住 ✓
+ */
+for (const k of ['CRON_SECRET']) {
+  if (process.env[k]) params[k] = process.env[k]
+}
 
 if (params.ENGINE === 'xfyun' && !XFYUN_KEYS.every((k) => params[k])) {
   console.warn('⚠️ ENGINE=xfyun 但凭据不全，容器会启动失败或全部评测报错：')
