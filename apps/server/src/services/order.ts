@@ -356,7 +356,19 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
 export async function sweepStaleOrders(
   minAgeMs = 3 * 60_000,
   limit = 20,
-): Promise<{ checked: number; delivered: number }> {
+): Promise<{
+  checked: number
+  delivered: number
+  /**
+   * ⚠️⚠️ **每一笔的结果都带出来**（⭐ 2026-10-09 加的 ✓）
+   *
+   *    第一版只回 `{checked, delivered}` ✗ —— ⚠️ 而 `delivered: 0` 时
+   *    **完全看不出为什么** ✓（⭐ 错误被 catch 吞了 ✓）
+   *    ⇒ ⭐ 排查只能靠猜 ✗ ⇒ ⚠️ 那就等于没有诊断 ✓
+   *    ⭐ 所以这里把"每一笔查到什么"原样带出去 ✓✓
+   */
+  details: { outTradeNo: string; result: string }[]
+}> {
   const { and, eq, lt } = await import('drizzle-orm')
   const rows = await db
     .select({ outTradeNo: payments.outTradeNo })
@@ -371,14 +383,21 @@ export async function sweepStaleOrders(
     .limit(limit)
 
   let delivered = 0
+  const details: { outTradeNo: string; result: string }[] = []
   for (const row of rows) {
     try {
       const res = await syncOrderFromWx(row.outTradeNo)
       if (res.ok && res.delivered) delivered++
+      details.push({
+        outTradeNo: row.outTradeNo,
+        result: res.ok ? (res.delivered ? 'delivered' : 'ok-not-delivered') : 'rejected:' + res.reason,
+      })
     } catch (err) {
       /** ⚠️ 单笔查不动不能让整轮挂掉 ✗ —— ⭐ 下一轮还会再扫到它 ✓ */
-      console.warn('[order] 兜底查单失败（' + row.outTradeNo + '）：' + errText(err))
+      const msg = errText(err)
+      console.warn('[order] 兜底查单失败（' + row.outTradeNo + '）：' + msg)
+      details.push({ outTradeNo: row.outTradeNo, result: 'error:' + msg.slice(0, 200) })
     }
   }
-  return { checked: rows.length, delivered }
+  return { checked: rows.length, delivered, details }
 }
