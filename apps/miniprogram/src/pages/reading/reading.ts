@@ -2372,7 +2372,17 @@ Page({
       resultLine: line,
       // ⚠️ 逐词用 lib/word-colors（与评测详情页**同一个函数**）——
       //    各写一遍的话，同一个词会在弹窗和详情页显示成两种颜色 ✗
-      resultWords: renderWordColors(result.text ?? '', result.words ?? []),
+      /**
+       * ⭐ **结果里的逐词要和阅读时长得一模一样**（⭐ 用户 2026-10-09 明确要求 ✓）
+       *    ⚠️ 字体 / 字号 / 间距 / 音标行全部对齐 ⇒ ⭐ 出分那一刻字不会"跳" ✓
+       * ⚠️ 音标在这里合并：`renderWordColors` 只拿得到评分结果（⭐ 没有 ipa ✓），
+       *    而 `this.data.words[i].ipa` 与它的下标**一一对应** ✓
+       *    （⭐ 正文生成时就按同一套切词规则对齐了 ✓ 见 plainWords 的说明 ✓）
+       */
+      resultWords: renderWordColors(result.text ?? '', result.words ?? []).map((w, i) => ({
+        ...w,
+        ipa: this.data.words[i]?.ipa ?? '',
+      })),
       error: '',
       // ⚠️ 先落**最终值**：数字滚动只是"盖在上面"的临时显示，
       //    任何一帧被打断（定时器被清）都不能让界面停在半路。

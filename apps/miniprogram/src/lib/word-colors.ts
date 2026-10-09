@@ -17,6 +17,15 @@ export interface ColoredWord {
   text: string
   /** 'text-ok' / 'text-bad' / ''（空 = 继承 currentColor，不上色） */
   cls: string
+  /**
+   * ⭐ 这个词的音标（⭐ 可选 ✓ —— 由调用方补进来，见 reading.ts 的说明 ✓）
+   *
+   * ⚠️ 为什么放在这里而不是 `renderWordColors` 里算 ✗：
+   *    那个函数的入参只有**评分结果**（⭐ word/score/dp ✓），拿不到正文的音标 ✓
+   *    ⚠️ 而正文的 `words[i].ipa` 与这里的下标**一一对应** ✓（⭐ 同一个切词规则 ✓）
+   *    ⇒ ⭐ 所以由调用方合并最省事、也最不容易错 ✓
+   */
+  ipa?: string
 }
 
 export function renderWordColors(
