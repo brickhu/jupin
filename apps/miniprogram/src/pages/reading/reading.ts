@@ -701,6 +701,16 @@ Page({
    */
   peakRms: 0,
   /**
+   * ⚠️⚠️ **临时诊断**（⭐ 2026-10-10 ✓）—— ⭐ **定位完立刻删** ✓
+   *
+   *    现在只剩一个解释：⭐ **安卓上 mp3 帧解不开** ✗
+   *    ⚠️ 而 `37e6a31` 的注释自己写着「⭐ `format:'mp3'` 给什么 ——
+   *       **至今没有真机结论**」✓
+   *    ⇒ ⭐ **这个前提从没被验证过，而它是整条链的地基** ✓
+   */
+  dbg: { frames: 0, und: 0 },
+  dbgLine: '',
+  /**
    * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
    *    id 是协议层的，由受理那一步记下来更直接）。
@@ -1564,6 +1574,17 @@ Page({
     this.peakRms = advancePeakRms(this.peakRms, rms)
     const kind = classifyChunk(samples, silenceThresholdOf(this.peakRms))
     this.vad = advanceVad(this.vad, kind, frameMs)
+    {
+      /* ⚠️ 临时诊断（⭐ 定位完删 ✓）*/
+      const N = this.data.words.length || this.plainWords.length
+      this.setData({
+        dbgLine:
+          '帧' + this.dbg.frames + ' 解不开' + this.dbg.und +
+          ' · voi' + Math.round(this.vad.voicedMs) +
+          ' · sil' + Math.round(this.vad.silentMs) +
+          ' · 门槛' + Math.round(N * 400 * 0.85),
+      })
+    }
 
     /**
      * ⭐ 判据：说够了时长（标准音 × 1.2）**且**连续静音 1.2 秒 ⇒ 自动结束
