@@ -838,24 +838,6 @@ export function fetchToday(): Promise<TodayArticleResponse> {
 export function fetchParticipation(articleId: string): Promise<ParticipationRecord | null> {
   return request<ParticipationRecord | null>('/api/user/participation/' + articleId)
 }
-/**
- * ⭐ **这一句我总共攒了多少饼干**（`GET /api/user/sentence-cookies/{articleId}`）
- *
- * ⚠️⚠️ 为什么需要单独一个接口（⭐ 用户 2026-10-09 报的 ✓）：
- *    这个数原来**只在【提交状态】的响应里**有 ✗ —— 而那条路只有**提交过之后**才成立 ✓
- *    ⇒ ⭐ 刚进朗读页时它是 null ⇒ ⚠️ 那块饼干卡片整块不画 ✗✓
- *    ⇒⭐ 用户看到的就是"共攒了 X 个饼干**只在结果出来之后**才显示" ✓
- *
- * ⚠️ 为什么不并进 `fetchArticleContent`（⭐ 那条有会话级缓存 ✓）：
- *    饼干数是**每人不同**的 ✗ ⇒ ⚠️ 塞进按 id 缓存的句子里会污染（⭐ 换账号看到别人的数 ✓）
- *
- * ⚠️ 匿名时服务端给 0 ✓ 端侧 `> 0` 才画那行 ✓（prd §7.6「屏幕永不出现 0 🍪」✓）
- */
-export function fetchSentenceCookies(articleId: string): Promise<number> {
-  return request<{ sentenceCookies: number }>(
-    '/api/user/sentence-cookies/' + articleId,
-  ).then((r) => r?.sentenceCookies ?? 0)
-}
 
 /**
  * ⭐ **一条参与记录的详情**（公开）—— 从榜单点某一行进去看。
@@ -1042,7 +1024,6 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
     budgetMs: LAUNCH_BUDGET_MS,
   })
 }
-
 
 /** 用户目录的查询参数（对应 `GET /api/users` 的 querystring） */
 export interface UserDirectoryQuery {
@@ -1240,7 +1221,6 @@ export async function register(input: ProfileUpdate): Promise<MeResponse> {
   setUserId(me.id)
   return me
 }
-
 
 /**
  * 提交检测。

@@ -23,7 +23,6 @@ import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
 import { fetchArticleContent } from '../../lib/content'
-import { fetchSentenceCookies } from '../../lib/api/client'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -913,31 +912,6 @@ Page({
     this.setData({ ...phasePatch('loading'), error: '', sentenceCookies: null })
     try {
       const content = await fetchArticleContent(this.data.articleId)
-      /**
-       * ⭐ **这一句攒了多少饼干 —— 进来就拉，让那行常驻**（⭐ 用户 2026-10-09 要的 ✓）
-       *
-       * ⚠️ 为什么单独拉一次 ✗：饼干数只在【提交状态】的响应里有 ✓，
-       *    而那条路只有**提交过之后**才成立 ⇒ ⚠️ 刚进来时它是 null ⇒ ⭐ 那行不画 ✓
-       *
-       * ⚠️ **不 await**：⭐ 它只是页面上的一行数字 ✓ ——
-       *    ⚠️ 绝不能让它拖慢"句子什么时候显示出来" ✗（⭐ 那才是这一页的主体 ✓）
-       * ⚠️ 失败就保持原值（⭐ null ⇒ 不画 ✓）—— 一行饼干不值得让整页报错 ✓
-       */
-      void fetchSentenceCookies(this.data.articleId)
-        .then((n) => {
-          /**
-           * ⚠️ 期间可能已经换句子了（⭐ articleId 变了 ✓）⇒ 丢掉这一份 ✓
-           * ⚠️⚠️ **0 也要写** ✗ —— 别在这里判 `> 0` ✓：
-           *    ⚠️ 判了的话，换到一句没饼干的句子时新的 0 写不进去 ✗
-           *    ⇒ ⚠️ 上一句的数字就留在屏幕上了 ✗✓
-           *    ⭐ 显示与否由 WXML 的 `wx:if="{{sentenceCookies > 0}}"` 一处决定 ✓
-           *      （⭐ 用户 2026-10-09 明确的口径：⭐ >0 常驻显示，<=0 不显示 ✓）
-           */
-          if (!this.gone && this.data.articleId === content.id) {
-            this.setData({ sentenceCookies: n })
-          }
-        })
-        .catch((err) => console.warn('[reading] 取这一句的饼干数失败：' + (err as Error).message))
       // ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
       //    否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
       // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音标 / 第 i 个逐词分数」
@@ -1073,7 +1047,29 @@ Page({
        *    `GET /api/user/participation/{articleId}`）—— 首页/竞技场读的是同一份。
        * ⚠️ 不 await：它供的是别的页面的角标，不该拖住朗读页的出句。
        */
-      void ensureParticipation([this.data.articleId])
+      /**
+       * ⭐⭐ **饼干数就从这一份参与状态里读**（⭐ 用户 2026-10-09 指出的 ✓）
+       *
+       * ⚠️⚠️ 我原来为这件事**新造了一个接口** ✗（`/api/user/sentence-cookies/{id}` ✓）——
+       *    ⭐ 而 `GET /api/user/participation/{articleId}` 的响应里**早就有 `cookies`** ✓✓
+       *    （⭐ shared 的 ParticipationRecord.cookies ✓ 注释：「这一句累计赚到的饼干」✓）
+       *    ⇒ ⚠️ 接口、字段、客户端封装**全是现成的** ✗ ⇒ ⭐ 那个新接口已删掉 ✓
+       *
+       * ⚠️ 为什么挂在这里：⭐ 这一行本来就在拉参与状态 ✓（用户 2026-09 口径 ✓）
+       *    ⇒ ⭐ 顺手把结果读出来即可，⭐ 零新增请求 ✓
+       * ⚠️ `loaded` 这个标记很重要：⭐ 它区分「还没拉到」和「明确没参与」✓
+       *    （⭐ 后者 record 是 null ⇒ 给 0 ✓；前者什么都不做 ✓ 保持 null ⇒ 不画那行 ✓）
+       */
+      // ⚠️ 先记下是【哪一句】—— 请求回来时 this.data.articleId 可能已经变了 ✓
+      const cookiesFor = this.data.articleId
+      void ensureParticipation([cookiesFor]).then(() => {
+        // ⚠️ 期间换句子了（⭐ 用户点了下一句 ✓）⇒ 丢掉这一份 ✓
+        if (this.gone || this.data.articleId !== cookiesFor) return
+        const { loaded, record } = me.participationOf(cookiesFor)
+        // ⚠️ loaded=false = 还没拉到（⭐ 别写 0 ✗ 那会把"不知道"说成"没有"✓）
+        if (!loaded) return
+        this.setData({ sentenceCookies: record?.cookies ?? 0 })
+      })
       /**
        * ⭐ 历史也拉一遍 —— 与 onShow 那次是**同一份数据**（重复一次请求，很便宜）：
        *    这是"一定会拉"的那一条路，而 onShow 只保证"回到页面时"会拉。
