@@ -3,6 +3,7 @@ import type { AdEnergyResponse, EnergyLedgerItem, ShopGoodsItem } from '@jushuo/
 import { explainXpayError } from '@jushuo/shared'
 
 import {
+  checkShopOrder,
   claimAdEnergy,
   createShopOrder,
   exchangeCookies,
@@ -100,9 +101,20 @@ function toRow(item: EnergyLedgerItem): LedgerRow {
 }
 
 /** 支付成功后等余额「涨上来」—— 最多试 3 次。⚠️ 推送可能有几秒延迟，不是失败 */
-async function waitArrival(prevEnergy: number): Promise<boolean> {
+async function waitArrival(prevEnergy: number, outTradeNo: string): Promise<boolean> {
   for (let i = 0; i < 3; i++) {
     await new Promise((resolve) => setTimeout(resolve, 1200))
+    /**
+     * ⭐⭐ **每轮先让服务端去微信查一次单**（⭐ 用户 2026-10-09 报的 ✓）
+     *
+     * ⚠️ 没有这一步，本机 / 推送丢了的情况下这一笔**永远不会到账** ✗ ——
+     *    因为发货原来只等微信推送，而推送地址只有一个 ✓
+     * ⚠️ 失败**不影响**轮询 ✗：⭐ 查单只是"顺手推一把" ✓
+     *    真的到账了，下面那次 fetchEnergy 照样能看到 ✓
+     */
+    await checkShopOrder(outTradeNo).catch(() => {
+      /* ⚠️ 查不动就算了 —— 别让一次外部失败把"等货"这件事本身搞挂 ✗ */
+    })
     try {
       const res = await fetchEnergy()
       if (res.energy > prevEnergy) return true
@@ -540,7 +552,7 @@ Page({
         })
       }
 
-      const arrived = await waitArrival(before)
+      const arrived = await waitArrival(before, order.outTradeNo)
       await this.load()
       void refreshMe()
       if (!arrived) {

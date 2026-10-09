@@ -7,7 +7,14 @@ import { payments, users } from '../db/schema'
 import { env } from '../env'
 import { ENERGY_REASON, addEnergy } from './energy'
 import { findGoods, sellableIssue, type ShopItem } from './goods'
-import { buildPayData, type PayData } from './xpay'
+import {
+  XPAY_ORDER_STATUS,
+  buildPayData,
+  notifyProvideGoods,
+  type PayData,
+  queryXpayOrder,
+} from './xpay'
+import { errText } from './wx-access-token'
 
 /**
  * ⭐ 订单与发货。
@@ -234,4 +241,89 @@ export async function deliverOrder(input: DeliverInput): Promise<DeliverResult> 
 
     return { ok: true as const, delivered: true, amount: pay.goodsAmount }
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 主动查单 —— 推送丢了也能自己发货                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⭐⭐ **主动查单**：向微信问一趟"这单付了没"，付了就发货。
+ *
+ * ## 它解决什么
+ *
+ * ⚠️ 发货原本只有【推送】一条路 ✗ —— 而推送**会丢** ✓
+ *    （⭐ 官方原话：「由 success 回调触发，**可能会丢失**，比如微信异常退出」✓）
+ *    而且推送地址**只有一个** ✗ ⇒ ⭐ 本机 / dev / prod 只能有一个收得到 ✓
+ *    ⇒ ⭐ 官方 §2.1 的要求是：⭐「【发货推送分支】与【发货轮询分支】**
+ *      **至少实现一个**」✓✓
+ *
+ * ⭐ 有了它：⭐ **谁都能自己查单发货** ✓ ⇒ ⚠️ 推送地址指哪儿都不再要紧 ✓
+ *
+ * ## ⚠️ 两条路必须走同一个发货口
+ *
+ *    ⭐ `deliverOrder` 是**唯一**给订单发货的地方 ✓（⭐ 它自带行锁 + 幂等 + 对账 ✓）
+ *    ⇒ ⚠️ 别在这里另写一套加能量的逻辑 ✗ ——
+ *      推送和查单可能**同时**到达 ✓（⭐ 用户一边等一边刷新 ✓）
+ *      没有那个行锁就会发两次货 ✓
+ *
+ * ## ⚠️ 顺序有意
+ *
+ *    ① ⭐ **先看本地**：已经是 paid 就直接返回 ✓（⭐ 省一次外部调用 ✓）
+ *    ② ⭐ 查微信 ⇒ ⚠️ 只有 `status === 2`（已支付待发货）才发 ✓
+ *    ③ ⭐ 走 `deliverOrder` 发货 ✓
+ *    ④ ⭐ **回告微信**（`notify_provide_goods`）✓ ——
+ *       ⚠️ 走查单这条路发的货，微信侧**不知道** ✗
+ *       ⇒ ⭐ 不回告的话，用户在"交易订单"里会一直看到**待发货** ✓
+ *       ⚠️ 回告失败**不能让整件事失败** ✗（⭐ 货已经发了 ✓）⇒ 只记日志 ✓
+ */
+/**
+ * ⭐ **这一单是谁的** —— 查单接口必须先问这一句。
+ *
+ * ⚠️ 为什么不能省：⭐ 不校验的话，随便编一个单号就能查别人付没付款 ✓
+ *    （⭐ 虽然不会发货，但那也是信息泄露 ✓）
+ * ⚠️ 单号不存在时返回 `null` ✓ —— ⚠️ 调用方把它和"不是我的"**同等对待** ✓
+ *    （⭐ 分开处理等于告诉对方"这个单号存在"✓）
+ */
+export async function findOrderOwner(outTradeNo: string): Promise<number | null> {
+  const [row] = await db
+    .select({ userId: payments.userId })
+    .from(payments)
+    .where(eq(payments.outTradeNo, outTradeNo))
+  return row?.userId ?? null
+}
+
+export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult> {
+  const [pay] = await db.select().from(payments).where(eq(payments.outTradeNo, outTradeNo))
+  if (!pay) return { ok: false as const, reason: 'unknown' as const }
+  // ⭐ 已经发过了 ⇒ 什么都不用做（⭐ deliverOrder 也幂等，但这样省一次外部调用 ✓）
+  if (pay.status === 'paid') {
+    return { ok: true as const, delivered: false, amount: pay.goodsAmount }
+  }
+
+  const order = await queryXpayOrder(outTradeNo, pay.payEnv)
+  /**
+   * ⚠️ 没查到、或者还没付 ⇒ ⭐ 都返回"没发货"而不是报错 ✓
+   *    （⭐ 用户刚拉起支付、微信那边还没落账，这是正常的中间态 ✓）
+   */
+  if (!order || order.status !== XPAY_ORDER_STATUS.paidWaitingDeliver) {
+    return { ok: false as const, reason: 'unknown' as const }
+  }
+
+  const res = await deliverOrder({
+    outTradeNo,
+    xpayOrderId: typeof order.wx_order_id === 'string' ? order.wx_order_id : undefined,
+    // ⚠️ 原始报文留档 —— 对账出问题时它是唯一的救命稻草 ✓
+    raw: JSON.stringify(order),
+  })
+
+  if (res.ok) {
+    try {
+      await notifyProvideGoods(outTradeNo, pay.payEnv)
+    } catch (err) {
+      // ⚠️ 货已经发了 ⇒ 回告失败只记日志，绝不能让调用方以为发货失败 ✓
+      console.warn('[order] 通知微信已发货失败（货已发）：' + errText(err))
+    }
+  }
+  return res
 }

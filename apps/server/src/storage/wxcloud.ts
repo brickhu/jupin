@@ -1,4 +1,5 @@
 import { env } from '../env'
+import { type WxError, callWxApi, errText, getAccessToken } from '../services/wx-access-token'
 import type { ObjectStorage } from './types'
 import { normalizeKey } from './types'
 
@@ -28,40 +29,13 @@ import { normalizeKey } from './types'
  *    「报 40001/40003/42001 就刷新一次再重试」，不能假设手上的 token 一直有效。
  */
 
-const TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token'
 const UPLOAD_URL = 'https://api.weixin.qq.com/tcb/uploadfile'
 const DOWNLOAD_URL = 'https://api.weixin.qq.com/tcb/batchdownloadfile'
 const DELETE_URL = 'https://api.weixin.qq.com/tcb/batchdeletefile'
 
-/** 提前多久续期 —— 避免"签名时刚好过期" */
-const TOKEN_SKEW_MS = 5 * 60_000
 /** 临时下载链接有效期（秒）。只用来立刻把内容取回来，取完就丢，所以给短的 */
 const DOWNLOAD_MAX_AGE_SEC = 600
 
-/** 微信接口统一的错误字段 */
-interface WxError {
-  errcode?: number
-  errmsg?: string
-}
-
-/**
- * 把错误（连同 `cause`）说清楚。
- *
- * ⚠️⚠️ Node 的 fetch 失败时**只给一个 `TypeError: fetch failed`**，
- *    真正的病因（getaddrinfo ENOTFOUND / ECONNREFUSED / 证书错误 / 连接超时）
- *    全在 `err.cause` 里。不把它带出来，线上就只剩一句
- *    「fetch failed」—— 那等于没有信息，只能靠猜。
- *    （这个坑真踩过：换了服务之后 /tcb/* 全挂，而 /health 只说 fetch failed。）
- */
-function errText(err: unknown): string {
-  const e = err as Error & { cause?: unknown }
-  const cause = e?.cause
-  const detail = cause instanceof Error ? cause.message : cause ? String(cause) : ''
-  return (e?.message ?? String(err)) + (detail ? ` ← ${detail}` : '')
-}
-
-/** token 失效的三个错误码 —— 只在它们上面重试，别的错误重试没有意义 */
-const TOKEN_ERRORS = [40001, 40003, 42001]
 
 /**
  * 按扩展名给 MIME。
@@ -76,66 +50,22 @@ function contentTypeOf(key: string): string {
   return 'application/octet-stream'
 }
 
-let tokenCache: { token: string; expiresAt: number } | null = null
-
-/** 换 access_token（带内存缓存）。force = true 时无视缓存强制刷新 */
-async function accessToken(force = false): Promise<string> {
-  if (!force && tokenCache && tokenCache.expiresAt - Date.now() > TOKEN_SKEW_MS) {
-    return tokenCache.token
-  }
-
-  const appid = env.WX_APPID
-  const secret = env.WX_SECRET
-  if (!appid || !secret) {
-    throw new Error(
-      '缺少 WX_APPID / WX_SECRET —— /tcb/* 这套接口要用它们换 access_token。' +
-        '填法：**公用**根 .env 里加这两行（两个环境共用同一个小程序），再重新部署。' +
-        `（当前：appid=${appid ? '有' : '空'} secret=${secret ? '有' : '空'}）`,
-    )
-  }
-
-  const url = new URL(TOKEN_URL)
-  url.searchParams.set('grant_type', 'client_credential')
-  url.searchParams.set('appid', appid)
-  url.searchParams.set('secret', secret)
-
-  const res = await fetch(url)
-  const data = (await res.json()) as { access_token?: string; expires_in?: number } & WxError
-  if (!data.access_token) {
-    throw new Error(`换 access_token 失败：${data.errcode ?? '?'} ${data.errmsg ?? ''}`)
-  }
-  tokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in ?? 7200) * 1000,
-  }
-  return tokenCache.token
-}
-
 /**
  * 调一个 /tcb/* 接口。
  * ⚠️ token 失效时**强制刷新并重试一次**：access_token 是全局唯一的，
  *    别的实例刚换过就会让手上这个作废，这是常态而不是异常。
  */
 async function callTcb<T extends WxError>(api: string, body: Record<string, unknown>): Promise<T> {
-  let lastError = ''
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const token = await accessToken(attempt > 0)
-    const res = await fetch(`${api}?access_token=${encodeURIComponent(token)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ env: env.WX_CLOUD_ENV_ID, ...body }),
-    })
-    const data = (await res.json()) as T
-    if (data.errcode === 0) return data
-
-    lastError = `${data.errcode ?? '?'} ${data.errmsg ?? ''}`
-    if (attempt === 0 && TOKEN_ERRORS.includes(Number(data.errcode))) {
-      console.warn(`[storage] access_token 失效（${lastError}），刷新后重试`)
-      continue
-    }
-    break
+  try {
+    /**
+     * ⚠️ `env` 由**这里**注入 ✗ —— `/tcb/*` 要的是**云开发环境 ID** ✓
+     *    而 `/xpay/*` 要的是**支付环境（数字）**✗ ⇒ ⭐ 两者含义不同 ✓
+     *    ⇒ 所以公共模块不替调用方填 ✓（⭐ 见 wx-access-token 的说明 ✓）
+     */
+    return await callWxApi<T>(api, { env: env.WX_CLOUD_ENV_ID, ...body })
+  } catch (err) {
+    throw new Error(`调用 ${api.split('/').pop()} 失败：${errText(err)}`)
   }
-  throw new Error(`调用 ${api.split('/').pop()} 失败：${lastError}`)
 }
 
 /** /tcb/uploadfile 的返回 */
@@ -292,7 +222,7 @@ export async function probeWxStorage(): Promise<Record<string, unknown>> {
   }
 
   try {
-    await accessToken()
+    await getAccessToken()
     out.token = 'ok'
   } catch (err) {
     out.token = `failed: ${errText(err).slice(0, 300)}`

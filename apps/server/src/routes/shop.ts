@@ -6,7 +6,12 @@ import { users } from '../db/schema'
 import { env } from '../env'
 import type { Variables } from '../middleware/auth'
 import { listGoods, sellableIssue } from '../services/goods'
-import { OrderError, createOrder } from '../services/order'
+import {
+  OrderError,
+  createOrder,
+  findOrderOwner,
+  syncOrderFromWx,
+} from '../services/order'
 import { code2session } from '../services/wx-login'
 
 /**
@@ -142,5 +147,70 @@ shopRoutes.openapi(shopOrderRoute, async (c) => {
     const message = err instanceof OrderError ? err.message : (err as Error).message
     console.warn('[shop] 下单失败：' + message)
     return c.json({ ok: false, error: message }, 400)
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 主动查单 —— 推送丢了也能自己发货                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⭐⭐ **主动查单**（`POST /api/user/shop/orders/{outTradeNo}/check`）
+ *
+ * ⚠️ 为什么要有这条（⭐ 用户 2026-10-09 报的"支付了一笔，毫无反应"✓）：
+ *    发货原本只等【微信推送】✗ —— 而**本机根本收不到推送** ✓
+ *    （⭐ 推送地址填的是云托管域名 ✓ 只有一个 ✓），线上也会丢 ✓
+ *    ⇒ ⚠️ 订单永远停在 pending ⇒ ⭐ **能量不到账** ✓
+ *    ⇒ ⭐ 官方 §2.1 也要求：「【发货推送分支】与【发货轮询分支】**
+ *      **至少实现一个**」✓
+ *
+ * ⭐ 端侧在"等货到账"的那几秒里调它 ✓ ⇒ ⭐ 服务端替我们去微信问一趟 ✓
+ *    ⇒ ⭐ 付了就自己发货 ✓✓
+ *
+ * ⚠️ 幂等安全：⭐ 它内部走 `deliverOrder`（⭐ 行锁 + 幂等 ✓），
+ *    和推送那条路**并发到达也只会发一次货** ✓
+ * ⚠️ 不返回"没付"这种错误 ✗ —— ⚠️ 用户刚拉起支付、微信还没落账是正常的 ✓
+ *    ⇒ ⭐ 一律 200 + `delivered: false` ✓ 由端侧继续轮询 ✓
+ */
+const shopCheckOrderRoute = createRoute({
+  method: 'post',
+  path: '/orders/{outTradeNo}/check',
+  tags: ['我的'],
+  summary: '主动查单：向微信问这单付了没，付了就发货',
+  security: [{ userToken: [] }],
+  request: { params: z.object({ outTradeNo: z.string() }) },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            ok: z.boolean(),
+            data: z.object({ delivered: z.boolean(), amount: z.number().int() }),
+          }),
+        },
+      },
+      description: '成功（⭐ delivered=false 表示还没到账，继续等 ✓）',
+    },
+  },
+})
+shopRoutes.openapi(shopCheckOrderRoute, async (c) => {
+  const userId = c.get('userId')
+  const { outTradeNo } = c.req.valid('param')
+  /**
+   * ⚠️ 必须先确认这一单**属于这个人** ✗ ——
+   *    否则随便编一个单号就能查别人付没付款 ✓（⭐ 虽然不会发货，但那也是信息泄露 ✓）
+   * ⚠️ 单号不存在和"不是我的"**同一种返回** ✓（⭐ 分开处理等于告诉对方"这单存在"✓）
+   */
+  const own = await findOrderOwner(outTradeNo)
+  if (own !== userId) return c.json({ ok: true, data: { delivered: false, amount: 0 } }, 200)
+
+  try {
+    const res = await syncOrderFromWx(outTradeNo)
+    if (!res.ok) return c.json({ ok: true, data: { delivered: false, amount: 0 } }, 200)
+    return c.json({ ok: true, data: { delivered: res.delivered, amount: res.amount } }, 200)
+  } catch (err) {
+    /** ⚠️ 查不动（⭐ 网络 / 没配 AppKey ✓）不能让端侧以为失败了 ✗ ⇒ 照旧 200 ✓ */
+    console.warn('[shop] 查单失败：' + (err as Error).message)
+    return c.json({ ok: true, data: { delivered: false, amount: 0 } }, 200)
   }
 })

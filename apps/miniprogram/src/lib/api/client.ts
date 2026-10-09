@@ -1016,6 +1016,29 @@ export function fetchShopGoods(): Promise<ShopGoodsResponse> {
  * ⚠️ wx.login 失败也不直接放弃：库里可能已经有可用的 session_key，
  *    让服务端自己判（它回 409 NEED_SESSION 才是真的没有）。
  */
+/**
+ * ⭐⭐ **主动查单**（`POST /api/user/shop/orders/{outTradeNo}/check`）
+ *
+ * ⚠️ 为什么需要它（⭐ 用户 2026-10-09 报的"支付了一笔，毫无反应"✓）：
+ *    发货原本只等【微信推送】✗ —— 而推送**本机根本收不到** ✓
+ *    （⭐ 推送地址填的是云托管域名 ✓），线上也会丢 ✓
+ *    ⇒ ⚠️ 订单永远停在 pending ⇒ **能量不到账** ✓
+ *
+ * ⭐ 端侧在"等货"的那几秒里调它 ⇒ ⭐ 服务端替我们去微信问一趟 ✓
+ *    ⇒ ⭐ 付了就自己发货 ✓✓
+ *
+ * ⚠️ 它**不会报"没付款"** ✗ —— ⭐ 一律成功 ✓
+ *    （⭐ 用户刚拉起支付、微信还没落账是正常的中间态 ✓）
+ *    ⇒ ⭐ `delivered=false` 就继续轮询余额 ✓
+ */
+export function checkShopOrder(
+  outTradeNo: string,
+): Promise<{ delivered: boolean; amount: number }> {
+  return request<{ delivered: boolean; amount: number }>(
+    '/api/user/shop/orders/' + encodeURIComponent(outTradeNo) + '/check',
+    { method: 'POST', budgetMs: LAUNCH_BUDGET_MS },
+  )
+}
 export async function createShopOrder(goodsCode: string): Promise<ShopOrderResponse> {
   const code = await wxLoginCode().catch(() => '')
   return request<ShopOrderResponse>('/api/user/shop/order', {
