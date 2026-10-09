@@ -905,7 +905,12 @@ Page({
   async loadContent() {
     // ⚠️ 新的一次加载 ⇒ 「历史那一拉」的冷启动重试机会也要复位（见 historyRetried）
     this.historyRetried = false
-    this.setData({ ...phasePatch('loading'), error: '' })
+    /**
+     * ⚠️⚠️ **换句子必须先把饼干数清掉** ✗ —— 否则上一句的数字会留在屏幕上 ✓
+     *    ⚠️ 而下面那次拉取**只在拿到时才写** ✗ ⇒ ⚠️ 新句子若是 0，旧数字就永远赖着 ✗✓
+     *    ⭐ 所以这里先归 null（⭐ 与"还没拉回来"同一种表现 ✓ 卡片不画 ✓）
+     */
+    this.setData({ ...phasePatch('loading'), error: '', sentenceCookies: null })
     try {
       const content = await fetchArticleContent(this.data.articleId)
       /**
@@ -920,8 +925,15 @@ Page({
        */
       void fetchSentenceCookies(this.data.articleId)
         .then((n) => {
-          // ⚠️ 期间可能已经换句子了（⭐ articleId 变了 ✓）⇒ 丢掉这一份 ✓
-          if (!this.gone && this.data.articleId === content.id && n > 0) {
+          /**
+           * ⚠️ 期间可能已经换句子了（⭐ articleId 变了 ✓）⇒ 丢掉这一份 ✓
+           * ⚠️⚠️ **0 也要写** ✗ —— 别在这里判 `> 0` ✓：
+           *    ⚠️ 判了的话，换到一句没饼干的句子时新的 0 写不进去 ✗
+           *    ⇒ ⚠️ 上一句的数字就留在屏幕上了 ✗✓
+           *    ⭐ 显示与否由 WXML 的 `wx:if="{{sentenceCookies > 0}}"` 一处决定 ✓
+           *      （⭐ 用户 2026-10-09 明确的口径：⭐ >0 常驻显示，<=0 不显示 ✓）
+           */
+          if (!this.gone && this.data.articleId === content.id) {
             this.setData({ sentenceCookies: n })
           }
         })
