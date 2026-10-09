@@ -71,7 +71,19 @@ export async function findGoods(code: string, ex: Executor = db): Promise<ShopIt
  */
 export function sellableIssue(item: ShopItem): string | null {
   if (!item.enabled) return '商品已下架'
-  if (!item.xpayProductId) return '商品还没配置微信侧道具 ID（等虚拟支付开通后填 XPAY_PRODUCT_*）'
+  if (!item.xpayProductId) {
+    /**
+     * ⚠️⚠️ **说清楚是哪个环境缺** ✗（⭐ 2026-10-09 改 ✓）
+     *
+     *    ⚠️ 原来只有一句"填 XPAY_PRODUCT_*"✗ ——
+     *    而沙箱环境缺的是**另一组变量**（⭐ `_SANDBOX` ✓）✓
+     *    ⇒ ⚠️ 照着那句去填 `XPAY_PRODUCT_ENERGY_10` 会发现**它早就有值了** ✓
+     *      ⇒ ⭐ 然后继续困惑"为什么还是买不了" ✓✓
+     */
+    return env.XPAY_ENV === 1
+      ? '沙箱环境缺少道具 ID —— 要在 .env 里填 XPAY_PRODUCT_ENERGY_*_SANDBOX（沙箱道具 ID 与现网是两个不同的值）'
+      : '商品还没配置微信侧道具 ID（等虚拟支付开通后填 XPAY_PRODUCT_*）'
+  }
   return null
 }
 
@@ -104,8 +116,21 @@ function productIdFromEnv(code: string): string | undefined {
   const pair = table[code]
   if (!pair) return undefined
   const [prod, sandboxId] = pair
-  /** ⚠️ 沙箱那一份没填就回退到现网的（道具 ID 两边相同时不用重复填） */
-  const picked = sandbox ? (sandboxId || prod) : prod
+  /**
+   * ⚠️⚠️ **沙箱环境必须有【沙箱道具 ID】，不许回退** ✗（⭐ 2026-10-09 改 ✓）
+   *
+   *    原来这里是 `sandbox ? (sandboxId || prod) : prod` ✗ ——
+   *    ⚠️ 注释的出发点是"两边 ID 相同时不用重复填" ✓
+   *    ⚠️ **但沙箱道具和现网道具本来就是微信发的两个不同 ID** ✗
+   *    ⇒ ⚠️ 静默回退 = **掩盖"沙箱没配"** ✓
+   *      ⇒ ⭐ 症状：⭐ **开发者以为在沙箱测试，其实每一笔都扣真钱** ✓✓
+   *      （⭐ 2026-10-09 实际踩到，用户被扣了三笔 ✓）
+   *
+   *    ⇒ ⭐ 现在：⭐ **`XPAY_ENV=1` 却没配沙箱道具 ⇒ 返回 undefined** ✓
+   *      ⇒ ⭐ 下单会**明确报错**（⭐ 而不是悄悄按现网扣钱 ✓）
+   *      ⚠️ 宁可下单失败，也不能让用户莫名花钱 ✓
+   */
+  const picked = sandbox ? sandboxId : prod
   return looksLikeProductId(picked) ? picked : undefined
 }
 
