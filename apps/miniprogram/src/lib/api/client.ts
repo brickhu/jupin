@@ -109,6 +109,31 @@ export function setUserId(id: number): void {
 }
 
 export function getUserId(): number {
+  /**
+   * ⭐⭐ **以全局 store 的 `userInfo.id` 为准** ✗（⭐ 2026-10-10 修结构 ✓）
+   *
+   * ## ⚠️⚠️ 为什么不能各存一份
+   *
+   *    ⭐ `store.ts:69` 自己写着：⭐「⚠️ ⭐ **「我是谁」只有一份：`userInfo`**，
+   *       ⭐ 就是 `GET /api/user/me` 的**原始返回体**」✓
+   *    ⚠️ 而这个函数原来只看**自己那份** `storage['uid']` ✗
+   *      ⇒ ⭐ **两份真相 ⇒ 就会漂** ✓✓
+   *      ⇒ ⚠️ 症状：⭐ **账号明明在（⭐ `/me` 成功 ✓）而 `uid` 是 0** ✗
+   *        ⇒ ⭐ **上传报「还没拿到用户 id」** ✓（⭐ 用户 2026-10-10 报的 ✓）✓✓
+   *
+   *    ⚠️ 依赖方向：⭐ `store.ts` **不 import 本文件** ✓
+   *       ⇒ ⭐ 这里单向读 `globalData` **不会形成循环** ✓✓
+   *       （⭐ 而且读的是 `globalData`，⭐ 不 import store 模块本身 ✓）
+   *
+   * ⚠️ **启动早期 store 还没 hydrate** ✗ ⇒ ⭐ 退回 storage 那份缓存 ✓
+   *    （⭐ 它是上一次成功时的快照 ✓ 有总比没有好 ✓）
+   */
+  try {
+    const fromStore = getApp()?.globalData?.userInfo?.id
+    if (typeof fromStore === 'number' && fromStore > 0) return fromStore
+  } catch {
+    /* ⚠️ getApp() 在极早期可能不可用 ⇒ 走下面的兜底 */
+  }
   if (!userId) userId = Number(wx.getStorageSync('uid')) || 0
   return userId
 }
