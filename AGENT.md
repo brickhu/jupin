@@ -804,7 +804,12 @@ node tools/dev-unlock.mjs --user <id>   # 只解锁某一个
 > ⚠️ **两个只有「换服务」才暴露的坑**：① 旁加载是**服务级**的，且只对创建于开关打开之后的实例生效（旧服务实例里从来没有，重建服务后立刻好）；判据是容器内 `api.weixin.qq.com` 解析到 `169.254.x.x` / `10.x`（`/health?deep=1` 的 `storage.dns` 给答案）。
 > ② 旁加载用自签证书，Node 不认 → 必须设 `NODE_EXTRA_CA_CERTS=/app/cert/certificate.crt`，否则报 `fetch failed ← self-signed certificate`；该变量只能由服务环境变量给（Node 只在启动时读），`deploy-cloud.mjs` 已自动带上。
 
-**冷启动 30s > callContainer 超时 15s**：`minNum=0`（默认）时闲置 30 分钟缩容到 0，下次要等 30 秒，而 `callContainer` 的 `timeout` 上限只有 15 秒 → **真机预览第一个请求必然超时失败**。要么把实例副本数最小值设为 1（有费用），要么前端做「首次失败提示重试」。
+**冷启动 30s > callContainer 超时 15s**：`minNum=0`（默认）时闲置 30 分钟缩容到 0，下次要等 30 秒，而 `callContainer` 的 `timeout` 上限只有 15 秒 → **真机预览第一个请求会超时**。
+
+⚠️⚠️ **这一条已经在前端解决了，别再拿"把最小副本设成 1"来绕**（那是 ≈2.86 元/天，见 §4.9）：
+`apps/miniprogram/src/lib/api/client.ts` 的 `LAUNCH_BUDGET_MS = 50_000`（15s + 退避 + 15s + 退避 + 15s）覆盖 30 秒级冷启动，
+且**只给入口类请求**（首屏那几个 + 从首页进朗读页时的正文那一拉）；会话中的请求仍是 12 秒快速失败（等 50 秒没有意义）。
+⇒ **dev 与 prod 现在都是 `minNum=0`**（dev 是 2026-10-09 从常驻 1 改过来的）；"dev 常驻以便避开冷启动"这个旧口径作废。
 
 **数据库环境变量不会自动注入**：云托管只定义 `MYSQL_ADDRESS` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`，且只有走控制台「模板一键部署」才自动注入。
 手动开通的 MySQL 要自己填进「服务设置 → 环境变量」；**没有 `MYSQL_DATABASE`**，库名自己建；`MYSQL_ADDRESS` 是 `"host:port"` 一个字段。
@@ -953,6 +958,47 @@ GET http://api.weixin.qq.com/_/cos/getauth   // ① 取临时密钥（容器内�
 ### ⚠️ 三环境数据完全隔离
 
 dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在 prod 灌种子做验证**；正式榜单数据只能来自真实用户。
+
+## 4.9 ⚠️ 云托管怎么计费 —— **没有"免费版"**，只有「首个环境 + 3 个月」
+
+> 起因：2026-10-09 用户问「dev 每天在扣钱，不是个人版免费使用吗」。这一节就是那次查出来的事实，别再重新发现一遍。
+
+**计费模式**：云托管下所有环境**按量付费**，系统**每日结算、次日扣费**（入口：控制台 → 费用中心 → 充值与账单）。
+**免费额度**：只有**账号下第一个环境**有，**有效期 3 个月**且有上限，之后 / 超出即按刊例价扣（[产品定价](https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloudrun/src/Billing/price.html)）：
+- 额度：CPU 720 核·小时 · 内存 1440 GB·小时 · 构建 600 分钟 · 公网流量 5 GB · MySQL 算力 720 个·小时 · MySQL 存储 720 GB·小时 · 对象存储 5 GB / 下载 6000 万次 / 上传 3000 万次 / CDN 3 GB。
+- ⚠️ **静态资源存储没有任何免费额度**（开通即计费）—— 官方 [FAQ](https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloudrun/src/Billing/faq.html) 点名的三种「没到 3 个月也扣费」情形之一，另两种是「**多建了环境**」与「用量超额度」。
+
+**本项目实测**（`wxcloud env:list` + `service:config read`，2026-10-09）：
+
+| | prod | dev |
+|---|---|---|
+| 环境创建时间 | 2026-01-21 **10:45:01** ← 首个环境（免费额度在它头上） | 2026-01-21 **10:48:12** ← 多建的那个 ⇒ **从建好那天就在计费** |
+| 服务 `jupin` 规格 | 1 核 2 G · 最小副本 **0** · 最大 5 | 1 核 2 G · 最小副本 **0** · 最大 5 |
+
+⚠️ 两份额度都在 **2026-04-21** 到期 ⇒ 现在**没有"免费"这个档位可切**，能做的只有**别让实例常驻**。
+单价：1 核 2 G = 0.119 元/小时 ⇒ **常驻 ≈2.86 元/天 ≈ 86 元/月**；0.25 核 0.5 G = 0.0298 元/小时（≈0.71 元/天）。
+⇒ dev 之前"每天扣钱"就是它 `minNum=1` 常驻；**2026-10-09 已改成 `minNum=0`**（闲置 30 分钟缩容到 0，闲置期容器费用为 0）。
+
+**仍会每天产生、无法归零的**：MySQL 存储（dev 已用 0.043 GB ⇒ ≈0.005 元/天；算力已开 600 s 自动暂停）、对象存储容量（0.0043 元/GB·天）。
+⚠️ dev/prod 的 `DELETE_AUDIO_AFTER_SCORE` 都是 `false`（**音频永久保留**，`tools/deploy-cloud.mjs` 里写死）⇒ 桶会随使用量增长，这是刻意的产品决定。
+**另外两笔按量花的钱不在云托管**：`ENGINE=xfyun`（每试读一次真计费；本机开发用 `ENGINE=mock`）、`XPAY_ENV=0`（dev 也走**现网**虚拟支付 —— 测试充值花真钱，见 `XPAY_LIVE`）。
+
+**改规格 / 副本数**：
+```bash
+# ⚠️⚠️ 别裸跑：`service:config read/update` 会把**整套 envParams 明文**回显出来（2026-10-09 实际漏过一次）
+./node_modules/.bin/wxcloud service:config update -e dev-0go66cfz212d3d83 -s jupin \
+  -c 1 -m 2 -n 0 -x 5 --cpuThreshold 60 -l stdout --noConfirm
+```
+- 改配置会**自动发布一个新版本**（沿用最后一次版本的代码，不用手动重部）；发布中再改会得到 `ResourceInUse`。
+- 规格只能按官方搭配：0.25/0.5 · 0.5/1 · 1/2 · 2/4 · 4/8 · 8/16 · 16/32。
+- 部署本身也会先起 1 个实例、成功后再等半小时才可能缩容 ⇒ **每次部署都有约 30 分钟的容器消耗**。
+
+⚠️⚠️ **本机任何走 CLI 的动作都会把整套 `envParams`（含明文密钥）打进 stdout** —— `service:config read/update` **和** `pnpm deploy:dev`（CLI 的"服务参数"表）都一样，2026-10-09 两次实际发生。
+- CI 里由 `::add-mask::` 兜住（见 `tools/deploy-cloud.mjs` 的 `addGithubMasks()`），**本机没有这层** ⇒ 本机重定向出来的部署日志（`.tmp/*.log`）等于一份明文密钥副本，用完就删。
+- 只想看配置时**自己过滤**（只打印 cpu/mem/minNum/maxNum 与 env 的**键名或哈希**，绝不打值）。
+- ⚠️ 顺带一条实测：`service:config read` 显示的 `envParams` 可能是**滞后**的 —— 2026-10-09 改完密钥后它仍报旧值，而拿新 `ADMIN_TOKEN` 打 `/api/admin/articles` 已经 200（= 新值确实生效在**版本**上）。判据要**打接口**，不要只看这个回显。
+
+⚠️ **欠费红线**（[官方](https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloudrun/src/Billing/overdue.html)）：欠费 12 小时内继续扣费；12 小时 ~ 7 天**所有环境停服**但存储继续扣；**超过 7 天资源销毁 —— 账号下所有环境被删除，无法找回**。
 
 ---
 
