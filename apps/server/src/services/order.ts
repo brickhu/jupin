@@ -312,10 +312,49 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
     .where(eq(users.id, pay.userId))
   if (!owner?.openid) return { ok: false as const, reason: 'owner' as const }
 
-  const order = await queryXpayOrder(outTradeNo, owner.openid, pay.payEnv)
+  /**
+   * ⚠️⚠️ **下单时的 env 和"钱实际扣在哪个环境"可能对不上** ✗
+   *
+   *    实测（⭐ 2026-10-09）：⭐ 订单创建时 `pay_env=1`（沙箱）✓，
+   *    ⚠️ 但用户那笔**真的扣了钱**（⭐ 现网）✗
+   *    ⇒ ⚠️ 拿 `pay_env=1` 去沙箱查 ⇒ ⭐ 微信回 `268490002 数据不存在` ✗✓
+   *
+   *    ⇒ ⭐ 所以**两个环境都查一遍** ✓ ——
+   *      先按订单自己的 `pay_env`（⭐ 正常情况✓），
+   *      ⚠️ 查不到再试另一个环境 ✓
+   *    ⚠️ 这不会误发货 ✗：⭐ `deliverOrder` 还会核对**金额**和**归属** ✓
+   *      （⭐ 查单只是"问一句付没付"，⭐ 不是发货的依据本身 ✓）
+   */
+  /**
+   * ⚠️⚠️ **查单失败是【抛异常】，不是返回 null** ✗（⭐ `callWxApi` 的行为 ✓）
+   *    ⇒ ⚠️ "数据不存在"会被抛出来 ⇒ ⭐ 不 catch 的话第二个环境根本轮不到 ✓
+   */
+  let lastError = ''
+  const tryQuery = async (which: number) => {
+    try {
+      return await queryXpayOrder(outTradeNo, owner.openid, which)
+    } catch (err) {
+      lastError = `env=${which} ${errText(err).slice(0, 140)}`
+      console.warn('[order] 查单失败（' + outTradeNo + '）：' + lastError)
+      return null
+    }
+  }
+  let order = await tryQuery(pay.payEnv)
+  if (!order) {
+    const other = pay.payEnv === 1 ? 0 : 1
+    order = await tryQuery(other)
+  }
+  /**
+   * ⚠️ **两个环境都查不动 ⇒ 把原因抛出去** ✗
+   *    ⭐ 不是返回 `ok: false` —— ⚠️ 那样错误就消失在返回值里了 ✓
+   *    （⭐ 2026-10-09 的教训：⭐ 兜底逻辑必须能自证为什么没兜住 ✓）
+   */
+  if (!order && lastError) throw new Error('两个环境都查不到：' + lastError)
   /**
    * ⚠️ 没查到、或者还没付 ⇒ ⭐ 都返回"没发货"而不是报错 ✓
    *    （⭐ 用户刚拉起支付、微信那边还没落账，这是正常的中间态 ✓）
+   * ⚠️ 注意：**查单接口自己是会抛错的** ✗（⭐ 比如"数据不存在"✓）——
+   *    那个错由调用方（sweep / 路由）catch ✓，⭐ 这里只判"有没有拿到订单" ✓
    */
   if (!order || order.status !== XPAY_ORDER_STATUS.paidWaitingDeliver) {
     return { ok: false as const, reason: 'unknown' as const }
