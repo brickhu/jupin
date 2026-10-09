@@ -23,6 +23,7 @@ import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
 import { fetchArticleContent } from '../../lib/content'
+import { fetchSentenceCookies } from '../../lib/api/client'
 import { CHALLENGE_PAGE, openChallengePage } from '../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import * as me from '../../lib/store'
@@ -907,6 +908,24 @@ Page({
     this.setData({ ...phasePatch('loading'), error: '' })
     try {
       const content = await fetchArticleContent(this.data.articleId)
+      /**
+       * ⭐ **这一句攒了多少饼干 —— 进来就拉，让那行常驻**（⭐ 用户 2026-10-09 要的 ✓）
+       *
+       * ⚠️ 为什么单独拉一次 ✗：饼干数只在【提交状态】的响应里有 ✓，
+       *    而那条路只有**提交过之后**才成立 ⇒ ⚠️ 刚进来时它是 null ⇒ ⭐ 那行不画 ✓
+       *
+       * ⚠️ **不 await**：⭐ 它只是页面上的一行数字 ✓ ——
+       *    ⚠️ 绝不能让它拖慢"句子什么时候显示出来" ✗（⭐ 那才是这一页的主体 ✓）
+       * ⚠️ 失败就保持原值（⭐ null ⇒ 不画 ✓）—— 一行饼干不值得让整页报错 ✓
+       */
+      void fetchSentenceCookies(this.data.articleId)
+        .then((n) => {
+          // ⚠️ 期间可能已经换句子了（⭐ articleId 变了 ✓）⇒ 丢掉这一份 ✓
+          if (!this.gone && this.data.articleId === content.id && n > 0) {
+            this.setData({ sentenceCookies: n })
+          }
+        })
+        .catch((err) => console.warn('[reading] 取这一句的饼干数失败：' + (err as Error).message))
       // ⚠️⚠️ 这条切词规则必须与生成脚本、服务端拼 fileID 的那两处**完全一致** ——
       //    否则点第 3 个词会听到第 4 个词的音，而界面上完全看不出来。
       // ⚠️ 切词走唯一实现：这个下标同时决定「第 i 个词 ↔ 第 i 个音标 / 第 i 个逐词分数」

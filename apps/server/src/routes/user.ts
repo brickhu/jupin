@@ -9,7 +9,7 @@ import { buildMeView } from '../services/me-view'
 import { participationRecordOf, toParticipationRecord } from '../services/participations'
 import { readEnergy } from '../services/energy'
 import { grantAdEnergy } from '../services/ad-energy'
-import { exchangeCookiesForEnergy, readCookieLedger } from '../services/cookies'
+import { exchangeCookiesForEnergy, readCookieLedger, sentenceCookiesOf } from '../services/cookies'
 import { readStreakRecord } from '../services/streak-record'
 import { makeUpStreak } from '../services/makeup'
 import { readStreakView } from '../services/streak'
@@ -564,6 +564,50 @@ const cookiesRoute = createRoute({
       description: '成功',
     },
   },
+})
+
+/**
+ * ⭐ **这一句一共攒了多少饼干**（`GET /api/user/sentence-cookies/{articleId}`）
+ *
+ * ⚠️⚠️ 为什么需要它（⭐ 用户 2026-10-09 报的 ✓）：
+ *    这个数原来**只在【提交状态】的响应里**带回来 ✗ —— ⚠️ 而那个接口只有
+ *    **提交过之后**才存在 ✓ ⇒ ⭐ 刚进朗读页时它是 null ✗
+ *    ⇒ ⚠️ 于是那块饼干卡片整块不画（⭐ `wx:if="{{sentenceCookies > 0}}"` ✓）
+ *    ⇒⭐ 用户看到的现象就是"共攒了 X 个饼干**只在结果出来之后**才显示" ✓
+ *
+ * ⚠️ 为什么不塞进 `ArticleDetail`（句子详情）✗：
+ *    那个响应被客户端**按 id 会话级缓存**（见 lib/content 的说明 ✓）
+ *    ⚠️ 而饼干数是**每人不同**的 ✗ ⇒ ⚠️ 塞进去会让缓存污染（换账号看到上一个人的数 ✓）
+ *
+ * ⚠️ 匿名（没有 userToken）时给 0 ✓ —— ⭐ 端侧 `> 0` 才画那行 ✓（prd §7.6 ✓）
+ */
+const sentenceCookiesRoute = createRoute({
+  method: 'get',
+  path: '/sentence-cookies/{articleId}',
+  tags: ['我的'],
+  summary: '这一句我总共攒了多少饼干',
+  security: [{ userToken: [] }],
+  request: { params: z.object({ articleId: z.string() }) },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            ok: z.boolean(),
+            data: z.object({ sentenceCookies: z.number().int() }),
+          }),
+        },
+      },
+      description: '成功',
+    },
+  },
+})
+userRoutes.openapi(sentenceCookiesRoute, async (c) => {
+  const userId = c.get('userId')
+  const { articleId } = c.req.valid('param')
+  // ⚠️ 拿不到 userId（匿名）⇒ ⭐ 给 0：端侧不画那行 ✓ 与"还没攒到"同一种表现 ✓
+  const n = userId > 0 ? await sentenceCookiesOf(userId, articleId) : 0
+  return c.json({ ok: true, data: { sentenceCookies: n } }, 200)
 })
 
 userRoutes.openapi(cookiesRoute, async (c) => {
