@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { GOODS_KIND } from '@jushuo/shared'
 
 import { db } from '../db'
@@ -433,6 +433,15 @@ export async function sweepStaleOrders(
    *    ⭐ 所以这里把"每一笔查到什么"原样带出去 ✓✓
    */
   details: { outTradeNo: string; payEnv: number; result: string }[]
+  /** ⚠️ 最近 10 笔订单的**状态**（⭐ 含已发货的 ✓）—— 只看日志是看不到的 ✓ */
+  recent: {
+    outTradeNo: string
+    status: string
+    payEnv: number
+    amount: number
+    paidAt: string | null
+    deliveredAt: string | null
+  }[]
 }> {
   const { and, eq, lt } = await import('drizzle-orm')
   const rows = await db
@@ -447,6 +456,27 @@ export async function sweepStaleOrders(
     .orderBy(payments.createdAt)
     .limit(limit)
 
+  /**
+   * ⚠️⚠️ **先把"最近的所有订单（含已发货）"报出来** ✗（⭐ 2026-10-09 加的 ✓）
+   *
+   *    ⚠️ 只扫 `pending` 是**盲的** ✗：⭐ 如果推送其实到了、
+   *    订单已经被标成 `paid` ✓ ⇒ ⚠️ **它根本不会出现在结果里** ✓
+   *    ⇒ ⭐ 于是"扫了 29 笔一笔没发"看起来像"全都没付"✗，
+   *      ⚠️ **而真相可能是"付的那几笔早就发货了"** ✓
+   *    ⭐ 所以先不管状态，把最近的订单连**状态**一起报出来 ✓✓
+   */
+  const recent = await db
+    .select({
+      outTradeNo: payments.outTradeNo,
+      status: payments.status,
+      payEnv: payments.payEnv,
+      goodsAmount: payments.goodsAmount,
+      paidAt: payments.paidAt,
+      deliveredAt: payments.deliveredAt,
+    })
+    .from(payments)
+    .orderBy(desc(payments.createdAt))
+    .limit(10)
   let delivered = 0
   const details: { outTradeNo: string; payEnv: number; result: string }[] = []
   for (const row of rows) {
@@ -465,5 +495,17 @@ export async function sweepStaleOrders(
       details.push({ outTradeNo: row.outTradeNo, payEnv: row.payEnv, result: 'error:' + msg.slice(0, 400) })
     }
   }
-  return { checked: rows.length, delivered, details }
+  return {
+    checked: rows.length,
+    delivered,
+    details,
+    recent: recent.map((r) => ({
+      outTradeNo: r.outTradeNo,
+      status: r.status,
+      payEnv: r.payEnv,
+      amount: r.goodsAmount,
+      paidAt: r.paidAt ? r.paidAt.toISOString() : null,
+      deliveredAt: r.deliveredAt ? r.deliveredAt.toISOString() : null,
+    })),
+  }
 }
