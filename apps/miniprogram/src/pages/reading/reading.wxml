@@ -322,7 +322,7 @@
       <!-- ⚠️⚠️ **这是用户唯一看到的操作说明**，交互改了它必须跟着改 ✗
            ⭐ 顺带把"自动结束"说出来：不告诉他的话，用户会一直等着自己点结束，
               而其实读完静音一会儿就自动进 s3 了 ✓ -->
-      <text class="text-24rpx leading-[1.6] text-faint">{{releasePending ? '正在识别你的朗读，请稍等' : detecting ? 'AI正在检测，可能需要1-2分钟' : cardPhase === 's2' ? '读完会自动结束，也可以手动结束' : '点一下开始朗读，读完会自动结束'}}</text>
+      <text class="text-24rpx leading-[1.6] text-faint">{{releasePending ? '正在识别你的朗读，请稍等' : cardPhase === 's2' ? '读完会自动结束，也可以手动结束' : '点一下开始朗读，读完会自动结束'}}</text>
     </view>
 
     <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
@@ -391,7 +391,15 @@
       <view class="mt-3 px-2 text-center">
         <!-- ⭐ 三档颜色由 hintLevel 一档决定（与文案、与按钮可用性同源）：
                ok ⇒ 绿（可以提交）· warn ⇒ 黄（只是建议）· **block ⇒ 红（拦住了，只能重录）**。 -->
-        <text class="text-24rpx leading-[1.6] {{hintLevel === 'ok' ? 'text-ok' : hintLevel === 'block' ? 'text-bad' : 'text-warn'}}">{{hintText}}</text>
+        <!-- ⭐⭐ **检测中把这一行换成等待说明**（用户 2026-10-09 要的 ✓）
+             ⚠️ 为什么必须在这里：⭐ 这一行才是 **S3 底部的提示** ✓
+                （⚠️ 卡片中间那行提示的条件是 「cardPhase === 's1' || 's2'「 ✗
+                  ⇒ ⭐ 我第一版改错了地方，用户当场指出 ✓）
+             ⚠️ 检测中 「hintText「 说什么都不对：那是"提交前"的建议（⭐ 读得慢 / 读错了 ✓），
+                而这时已经提交了、只能等 ✓ —— ⭐ 用户要的是"还要等多久" ✓
+             ⚠️ 颜色也跟着换：检测中是**中性等待**，⭐ 不该用绿/黄/红里任何一档 ✗
+                （⭐ 那三档是"这一步过不过得去"的判断 ✓ 此刻还没有判断 ✓） -->
+        <text class="text-24rpx leading-[1.6] {{detecting ? 'text-faint' : hintLevel === 'ok' ? 'text-ok' : hintLevel === 'block' ? 'text-bad' : 'text-warn'}}">{{detecting ? 'AI正在检测，可能需要1-2分钟' : hintText}}</text>
       </view>
 
       <!-- ⚠️ 这一态**不再显示**「评测消耗能量2，剩余3」（用户 2026-09 定：删掉）。

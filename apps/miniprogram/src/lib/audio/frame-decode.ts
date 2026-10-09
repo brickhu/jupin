@@ -1,5 +1,6 @@
 
 import { samplesFromByteTimeDomain } from '@jushuo/shared'
+import { PLATFORM } from '../../config'
 
 /**
  * ⭐ 把一帧「录音分片」解成**采样** —— 实时波形在 mp3 格式下唯一的出路。
@@ -18,6 +19,23 @@ import { samplesFromByteTimeDomain } from '@jushuo/shared'
  *    由调用方决定退路（按裸 PCM 读 / 干脆不画），绝不硬画。
  */
 
+/**
+ * ⭐⭐ **开发者工具里直接不干**（⭐ 用户 2026-10-09 要求「把这个报错干掉」✓）
+ *
+ * ⚠️⚠️ 为什么必须挡在这里、而不是"失败了悄悄返回 null" ✗：
+ *    工具里的录音帧是 **WebM**，`decodeAudioData` **解不开** ✗ ——
+ *    而它**不是安静地失败** ✗，而是抛一个 `EncodingError: Unable to decode audio data` ✓
+ *    这个错误会**冒到控制台**（⭐ 而且是 WAServiceMainContext 的堆栈，很长 ✓）
+ *    ⇒ ⚠️ 每次录音都刷一屏 ✗ ⇒ ⭐ 把真正的日志全淹掉了 ✓
+ *
+ * ⭐ 而这件事**文件头已经写明**了：这条解码路**只在真机上成立** ✓
+ *    （⭐ 原文：「在微信开发者工具上直接运行都不运行了，真机上试了一下，成了」✓）
+ *    ⇒ ⭐ 那就在工具里**根本不发起这次调用** ✓✓
+ *
+ * ⚠️ 契约不变：⭐ 解不出来就返回 `null` ✓ ——
+ *    调用方本来就按"拿不到采样"处理（⭐ 不画波形 ✓ 不阻断录音 ✓）
+ */
+const IS_DEVTOOLS = PLATFORM === 'devtools'
 /** 只在真机上初始化得起来；初始化失败就不再重试 */
 let ctx: WechatMiniprogram.WebAudioContext | null = null
 let unavailable = false
@@ -25,6 +43,8 @@ let unavailable = false
 let analyser: WechatMiniprogram.AnalyserNode | null = null
 
 function contextOf(): WechatMiniprogram.WebAudioContext | null {
+  // ⭐ 开发者工具：⭐ 直接不给 context ⇒ 下面的 decodeAudioData 一次都不会被调用 ✓
+  if (IS_DEVTOOLS) return null
   if (unavailable) return null
   if (ctx) return ctx
   try {
