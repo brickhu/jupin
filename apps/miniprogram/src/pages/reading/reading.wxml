@@ -401,9 +401,6 @@
                 （⭐ 那三档是"这一步过不过得去"的判断 ✓ 此刻还没有判断 ✓） -->
         <text class="text-24rpx leading-[1.6] {{detecting ? 'text-faint' : hintLevel === 'ok' ? 'text-ok' : hintLevel === 'block' ? 'text-bad' : 'text-warn'}}">{{detecting ? 'AI正在检测，可能需要1-2分钟' : hintText}}</text>
       </view>
-      <view wx:if="{{dbgLine}}" class="mt-2 px-2">
-        <text class="text-22rpx leading-[1.5] text-faint break-all">{{dbgLine}}</text>
-      </view>
 
       <!-- ⚠️ 这一态**不再显示**「评测消耗能量2，剩余3」（用户 2026-09 定：删掉）。
            能量那件事挪到**提交那一步的确认弹窗**里说（显示「本次消耗 N 点，确认后剩 M 点」），
