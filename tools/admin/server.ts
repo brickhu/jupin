@@ -1338,9 +1338,41 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   //    所以这里也只剩 /<id>.mp3 一种形状。
   const audio = RE_AUDIO.exec(path)
   if (audio) {
-    const abs = resolve(ROOT, 'content/audio', audio[1]! + '.mp3')
-    if (!existsSync(abs)) return send(res, 404, 'not found')
-    return serveFile(req, res, abs)
+    const id = audio[1]!
+    const abs = resolve(ROOT, 'content/audio', id + '.mp3')
+    /**
+     * ⭐⭐ **本机优先；本机没有就回源到服务端** ✗（⭐ 2026-10-09 补 ✓）
+     *
+     *    ⚠️ 音频的唯一住址是**对象存储** ✗ ——
+     *       ⭐ `content/` 早从 git 移除了（⭐ "内容产物不是源码" ✓）
+     *    ⇒ ⚠️ 所以"本机有一份"只是**恰好在这台机器上生成过** ✓
+     *      ⇒ ⭐ 别处生成的（⭐ 或换台机器跑 admin ✓）本机就没有 ✓✓
+     *
+     *    ⭐ 而服务端的 `GET /media/articles/<id>.mp3` 会 ⭐ **回退到对象存储读** ✓
+     *      ⇒ ⭐ 转发给它，试听就不会"明明云端有音却听不到" ✓✓
+     */
+    if (existsSync(abs)) return serveFile(req, res, abs)
+
+    const base = serverUrlOf(S.env)
+    if (base) {
+      try {
+        const upstream = await fetch(base + '/media/articles/' + id + '.mp3')
+        if (upstream.ok) {
+          const buf = Buffer.from(await upstream.arrayBuffer())
+          res.writeHead(200, {
+            'Content-Type': upstream.headers.get('content-type') ?? 'audio/mpeg',
+            'Content-Length': String(buf.byteLength),
+            'Cache-Control': 'no-store',
+          })
+          res.end(buf)
+          return
+        }
+        console.warn('[admin] 服务端也没有这条音频：' + id + ' → HTTP ' + upstream.status)
+      } catch (err) {
+        console.warn('[admin] 回源服务端失败：' + id + ' ← ' + (err as Error).message)
+      }
+    }
+    return send(res, 404, 'not found')
   }
 
   // ---- 句库列表 ----
