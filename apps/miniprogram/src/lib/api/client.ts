@@ -1222,7 +1222,32 @@ export function fetchArticleStats(ids: string[]): Promise<ArticleStatsResponse> 
 export function fetchMe(): Promise<MeResponse> {
   // ⚠️ 它也承担启动时的「我是谁」（见 lib/join.ts 的 refreshMe），同样给足预算；
   //    用户面板里那次刷新失败只是拿旧数据，多等几秒也无害。
-  return request<MeResponse>('/api/user/me', { budgetMs: LAUNCH_BUDGET_MS })
+  return request<MeResponse>('/api/user/me', { budgetMs: LAUNCH_BUDGET_MS }).then((me) => {
+    /**
+     * ⭐⭐ **拿到 `/me` 就顺手把 uid 存下来** ✗（⭐ 2026-10-10 修 ✓）
+     *
+     * ## ⚠️⚠️ 为什么必须在这里补
+     *
+     *    ⭐ `uid` 是上传路径的必需段（⭐ `audio/{句子}/{uid}/{attemptId}.mp3` ✓）
+     *    ⚠️ 而它**只在这两处**被写过 ✗：
+     *      ⭐ ① `register()` —— ⭐ 加入页按「确认加入」那一刻 ✓
+     *      ⭐ ② `login()` —— ⚠️ **且只在响应里 `user` 不为 null 时** ✓
+     *         （⭐ `client.ts:739` 的注释：⭐「⚠️⚠️ `user` 可为 **null**：
+     *            ⭐ **登录 ≠ 注册**」✓）
+     *
+     *    ⇒ ⚠️ **一个"已加入"的老用户，如果那一次 `login()` 回的是 `user: null`** ✗
+     *      ⇒ ⭐ **`uid` 永远是 0** ✓
+     *      ⇒ ⚠️ 上传音频时 `getUserId()` 是 0 ⇒ ⭐ **报「还没拿到用户 id」** ✓✓
+     *      ⇒ ⭐ **而 `/me` 明明成功返回了 `id`，只是没人把它存下来** ✓✓✓
+     *
+     *    ⚠️ **这不是"自动建号"** ✗ —— ⚠️ `client.ts:720` 那条注释禁止的是
+     *       "拿不到 user 就去 `/me` 或建号"✗；⭐ 而这里 `/me` **已经成功了** ✓
+     *       ⇒ ⭐ **只是把服务端权威告诉我们的 id 记住** ✓✓
+     *    ⭐ 一处修好所有路径：⭐ `ensureAuthed({ needProfile: true })` 最终也会走到这里 ✓
+     */
+    if (me && typeof me.id === 'number' && me.id > 0) setUserId(me.id)
+    return me
+  })
 }
 
 /**
