@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/client'
 import { historyRowsOf, historySummaryOf, type HistoryRow } from '../../lib/article-history'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
-import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio, stopCues } from '../../lib/audio/play'
+import { playAudioUrl, playBeep, playDing, playWhoosh, stopAudio } from '../../lib/audio/play'
 import { speak } from '../../lib/audio/tts'
 import { createSpeechSession, type SpeechResult, type SpeechSession } from '../../lib/audio/speech-session'
 import { isSlowReading, submitHintOf, type SubmitHintLevel } from '../../lib/submit-hint'
@@ -38,7 +38,7 @@ import { ensureParticipation } from '../../lib/participation'
 import { openEnergyPage } from '../../lib/challenges'
 import { clearLastResult, loadLastResult, saveLastResult } from '../../lib/audio/last-result'
 import { renderWordColors } from '../../lib/word-colors'
-import { decodeFrameToSamples } from '../../lib/audio/frame-decode'
+import { decodeFrameToSamples, frameKindOf, pcmFrameToSamples } from '../../lib/audio/frame-decode'
 import { WAVE_GAIN_ZERO, advanceWaveGain, applyWaveGain, peakBars } from '../../lib/audio/wave'
 import {
   AUTO_STOP_SILENCE_MS,
@@ -701,6 +701,17 @@ Page({
    */
   peakRms: 0,
   /**
+   * ⭐⭐ **这一轮的帧是裸 PCM 还是带头的容器**（⭐ 2026-10-10 恢复 ✓）
+   *
+   *    ⚠️ 帧里装什么**不取决于我们的代码** ✗，取决于 `RecorderManager`：
+   *      ⭐ `format:'PCM'` ⇒ ⭐ 无头裸 PCM（⭐ 同步直读，零开销 ✓）
+   *      ⚠️ `format:'mp3'` ⇒ ⚠️ mp3 分片（⭐ 真机上 `decodeAudioData` 能解 ✓）
+   *    ⇒ ⭐ **判【一次】就整轮沿用** ✓（⭐ 免得中途换读法让波形跳变 ✓）
+   *    ⚠️ 两种都必须支持：⭐ 只留解码那条时，裸 PCM 帧会**硬解失败** ⇒
+   *       ⭐ 拿不到采样 ⇒ ⚠️ **VAD 完全不动 ⇒ 读完不停** ✓
+   */
+  frameKind: 'unknown' as 'unknown' | 'pcm' | 'container',
+  /**
    * 本次提交的 id —— s5 的「评测详情」要靠它去 pages/challenge。
    * ⚠️ 不能从结果里取：SubmitResponse 里没有它（那是给页面看的业务结果，
    *    id 是协议层的，由受理那一步记下来更直接）。
@@ -1218,6 +1229,12 @@ Page({
     this.waveGain = { ...WAVE_GAIN_ZERO }
     this.lastFrameAt = 0
     this.peakRms = 0
+    /**
+     * ⭐ **帧格式每轮重判** ✓（⭐ 2026-10-10 ✓）
+     *    ⚠️ 理由同 `peakRms`：⭐ 状态机的东西不能跨轮带 ✓
+     *    ⚠️ 而且"判一次整轮沿用"里的"一轮"就是**这一次录音** ✓
+     */
+    this.frameKind = 'unknown'
     this.waveCtx = null
     this.waveCanvas = null
     this.waveW = 0
@@ -1507,7 +1524,24 @@ Page({
      *      ⇒ 波形不画、静音不判（**安全方向**：绝不会因为读不出数据就掐断录音 ✓）
      *      ⚠️ 这个功能只能在真机上验 —— 这不是 bug，也不去绕它 ✓
      */
-    const samples = await decodeFrameToSamples(frame)
+    /**
+     * ⭐⭐ **先判这一轮的帧是什么，再选读法** ✗（⭐ 2026-10-10 恢复 ✓）
+     *
+     *    ⚠️ `1547759` 曾把这条路删掉 ✗，理由是"分支解决不了环境差异"✓ ——
+     *    ⚠️ 那个理由对**开发者工具**成立（⭐ 它的帧是 WebM/Opus，两条路都不行 ✓）
+     *    ⚠️ **但真机不是** ✗：⭐ `37e6a31` 的注释实测过「⭐ **真机上试了一下，成了**」✓
+     *    ⇒ ⭐ **把"模拟器解不开"当成"平台解不开"是错的** ✓
+     *
+     *    ⚠️ 只留解码那条的代价（⭐ 就是现在的样子 ✓）：
+     *       ⭐ 帧是裸 PCM 时**硬解会失败** ⇒ ⭐ 拿不到采样 ⇒
+     *       ⚠️ **VAD 完全不动 ⇒ 读完不停** ✓✓
+     */
+    if (this.frameKind === 'unknown') {
+      this.frameKind = frameKindOf(frame)
+      console.log('[reading] 帧格式判定：' + this.frameKind)
+    }
+    const samples =
+      this.frameKind === 'pcm' ? pcmFrameToSamples(frame) : await decodeFrameToSamples(frame)
     if (this.gone) return
 
     // ── ① 波形 ──────────────────────────────────────────────
@@ -1871,13 +1905,27 @@ Page({
    */
   stopAllAudio() {
     /**
-     * ⭐⭐ **两套播放器都要停** ✗（⭐ 2026-10-10 加 ✓）
-     *    ⚠️ `stopAudio()` 只管**标准音**那一个单例 ✗
-     *    ⭐ 提示音（嘟/叮/嗖）走的是另一套（⭐ `cues` ✓）
-     *    ⇒ ⚠️ 只调前者的话，"把正在响的全停掉"这句话是不成立的 ✓✓
+     * ⚠️⚠️ **只停标准音，【不能】停提示音** ✗（⭐ 2026-10-10 修 ✓）
+     *
+     *    ⚠️ 我一度在这里加了 `stopCues()`，理由是"提示音走另一套播放器、
+     *       只调 `stopAudio()` 的话『全停』这句话不成立"✗
+     *    ⇒ ⭐ **那个理由是错的** ✓✓：
+     *      ⭐ `onTapRecord` 的顺序是 ⭐ `stopAllAudio()` → `playBeep()` → `startRecording()` ✓
+     *      ⚠️ **而 `startRecording()` 的第一句【又是】`stopAllAudio()`** ✗
+     *      ⇒ ⭐⭐ **第二次调用把刚响的"嘟"杀掉了** ✓
+     *      ⚠️ 用户实测：⭐ **安卓上点开始录音完全没有音效** ✗
+     *         （⭐ iOS 有：`playBeep` 是异步起播，iOS 起得快、那一下 stop 落在开始之后 ✓
+     *          ⚠️ 安卓起得慢、stop 落在"还没出声"那一瞬 ⇒ ⭐ 整声都没了 ✓）
+     *
+     *    ⭐ 而**本来就不该停它** ✓：
+     *      · ⭐ 提示音只有 0.13–0.26 秒 ✗ ⇒ ⚠️ 不可能"录进去一大段别人说话" ✓
+     *      · ⭐ 而"嘟"是**有意的**听觉确认（⭐ 用户要的 ✓）
+     *      ⇒ ⭐ **要停的是标准音/试听（⭐ 长的那些 ✓）** ✓✓
+     *
+     *    ⚠️ `stopCues()` 仍然导出（⭐ 留给真正需要"全静音"的场合 ✓），
+     *       只是**不在这里**调 ✓
      */
     stopAudio()
-    stopCues()
     const d = this.data
     // ⚠️ 已经是干净的就别 setData（这条路会被"按下录音"这种高频动作调到）
     if (d.playingWord !== -1 || d.sentenceState !== 'unplay' || d.replayState !== 'unplay') {

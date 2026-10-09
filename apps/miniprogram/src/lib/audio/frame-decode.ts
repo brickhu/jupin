@@ -1,5 +1,5 @@
 
-import { samplesFromByteTimeDomain } from '@jushuo/shared'
+import { samplesFromByteTimeDomain, sniffAudioContainer } from '@jushuo/shared'
 import { PLATFORM } from '../../config'
 
 /**
@@ -151,4 +151,63 @@ export function decodeFrameToSamples(
       done(null)
     }
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* ⭐ 运行时判「这帧是什么」—— 裸 PCM 直读，压缩块才走解码（2026-10-10 恢复）  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ⚠️⚠️ **这两个函数被 `1547759` 删过，现在恢复** ✗（⭐ 恢复的理由见下 ✓）
+ *
+ * ## ⭐ 为什么必须两种都支持
+ *
+ *    ⭐ 帧里装什么**不取决于我们的代码** ✗，取决于 `RecorderManager`：
+ *      ⭐ `format:'PCM'`（⭐ `37e6a31` 的真机实测 ✓）⇒ ⭐ **无头裸 PCM** ✓
+ *      ⚠️ `format:'mp3'` ⇒ ⭐ **mp3 分片**（⭐ 真机上 `decodeAudioData` 能解 ✓）
+ *    ⇒ ⭐ **"判完一次、整轮沿用"** ✓ —— 两种都是真实存在的形态 ✓✓
+ *
+ * ## ⚠️ `1547759` 删它的理由是"分支解决不了环境差异" ✗ —— ⭐ 那个理由对【模拟器】成立
+ *
+ *    ⚠️ 开发者工具的帧是 WebM/Opus ✗ ⇒ ⚠️ **两条路都拿不到采样** ✓
+ *    ⚠️ **但真机上不是这样** ✗：⭐ `37e6a31` 的注释写得很清楚 ——
+ *      ⭐「⚠️⚠️ 它**只在真机上成立**：那篇实测『⭐ **在微信开发者工具上直接运行都不运行了，
+ *         ⭐ 真机上试了一下，成了**』」✓
+ *      ⇒ ⭐ **把"模拟器解不开"当成"平台解不开"是错的** ✗（⭐ 那是作者自己记下的教训 ✓）
+ *
+ * ## ⭐ 而恢复它能让真机【两条路都吃】
+ *
+ *    ⭐ 现在（⭐ 只留 `decodeFrameToSamples`）✗：
+ *       ⚠️ 帧是裸 PCM 时 ⇒ ⚠️ **硬解会失败** ⇒ ⭐ **拿不到采样 ⇒ VAD 不动** ✓
+ *    ⭐ 恢复后：⭐ 裸 PCM 走下面这条**同步、零开销**的路 ✓✓
+ */
+
+/**
+ * ⭐⭐ **把一帧「裸 PCM」读成采样**（-1..1）✓
+ *
+ * ⚠️ PCM 帧**根本没有头** ✗ —— ⭐ 它就是连续的 16bit 小端采样 ✓
+ * ⚠️ 所以这条路**不需要解码器** ✓：⭐ 同步、零开销 ✓
+ */
+export function pcmFrameToSamples(frame: ArrayBuffer): Float32Array {
+  const usable = frame.byteLength - (frame.byteLength % 2)
+  const view = new DataView(frame)
+  const out = new Float32Array(usable / 2)
+  for (let i = 0; i < out.length; i++) {
+    // ⚠️ 除以 32768（不是 32767）：16bit 有符号的范围是 -32768..32767，
+    //    这样 −32768 映射到 −1.0、32767 映射到 0.99997，不会越界 ✓
+    out[i] = view.getInt16(i * 2, true) / 32768
+  }
+  return out
+}
+
+/**
+ * ⭐ **这一帧是裸 PCM 还是带头的容器**（⭐ 按魔法字节判 ✓）
+ *
+ * ⚠️ `sniffAudioContainer` 的兜底值就是 `'raw-pcm'` ✗ ——
+ *    ⚠️ 一个魔法字节不认识的压缩块也会被归到 `'pcm'` ✓
+ *    ⇒ ⭐ 所以真遇到"既不是 PCM 也解不开"的帧，⭐ 那条路会返回空数组 ⇒
+ *      `classifyChunk` 给 `'undecodable'` ⇒ ⭐ **安全方向，不掐断** ✓✓
+ */
+export function frameKindOf(frame: ArrayBuffer): 'pcm' | 'container' {
+  return sniffAudioContainer(new Uint8Array(frame)) === 'raw-pcm' ? 'pcm' : 'container'
 }
