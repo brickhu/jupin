@@ -405,7 +405,15 @@ export async function syncOrderFromWx(outTradeNo: string): Promise<DeliverResult
  */
 export async function sweepStaleOrders(
   minAgeMs = 3 * 60_000,
-  limit = 20,
+  /**
+   * ⚠️⚠️ **别用 20 这种小数字** ✗（⭐ 2026-10-09 实测踩到 ✓）
+   *
+   *    第一版 `limit = 20` ✗ ⇒ ⚠️ 用户试了很多次下单（⭐ 每次落一行 pending ✓）
+   *    ⇒ ⚠️ **真正付了的那一笔被挤在 limit 之外** ✗ ⇒ ⭐ 怎么扫都扫不到它 ✓✓
+   *    ⚠️ 而表面现象是"扫了 20 笔、一笔没发"✗ —— ⭐ 看起来像"全都没付" ✓
+   *    ⇒ ⭐ 给一个够大的数 ✓（⭐ 它是按 createdAt 升序 ✓ 老的先扫 ✓）
+   */
+  limit = 200,
 ): Promise<{
   checked: number
   delivered: number
