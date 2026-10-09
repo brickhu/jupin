@@ -217,6 +217,33 @@ export interface XpayOrder {
   [k: string]: unknown
 }
 
+/**
+ * ⭐⭐ **按【微信内部单号】查单**（⭐ `wx_order_id` ✓）
+ *
+ * ⚠️ 为什么要有这条（⭐ 2026-10-09 ✓）：
+ *    ⚠️ 我们库里只存**自己的** `outTradeNo` ✗，
+ *    而用户在微信后台看到的是**微信侧的单号**（⭐ 如 `180003780220371` ✓）
+ *    ⇒ ⚠️ 拿我们的单号查会一直失败，⭐ **而用微信单号查就知道单到底存不存在** ✓✓
+ *    ⭐ 官方 SDK：⭐ `QueryOrderRequest{ CommonRequest; OrderID; WxOrderID }`
+ *      （⭐ 注释写着：⭐ **与 order_id 二选一** ✓）
+ */
+export async function queryXpayOrderByWxId(
+  wxOrderId: string,
+  openid: string,
+  payEnv: number = env.XPAY_ENV,
+): Promise<XpayOrder | null> {
+  const appKey = appKeyOf(payEnv)
+  if (!appKey) throw new Error(`查单缺少 AppKey（env=${payEnv}）`)
+  const body = JSON.stringify({ openid, wx_order_id: wxOrderId, env: payEnv })
+  const paySig = calcPaySig(XPAY_URI.queryOrder, body, appKey)
+  const data = await callWxApi<{ order?: XpayOrder } & WxError>(
+    WX_API_BASE + XPAY_URI.queryOrder,
+    body,
+    { pay_sig: paySig },
+  )
+  return data.order ?? null
+}
+
 export async function queryXpayOrder(
   outTradeNo: string,
   /**

@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { env } from '../env'
 import { defaultHook } from '../openapi'
 import { errorResponse } from '../openapi/schemas'
-import { inspectOrders, sweepStaleOrders } from '../services/order'
+import { inspectOrders, probeWxOrders, sweepStaleOrders } from '../services/order'
 import { errText } from '../services/wx-access-token'
 import { sweepStaleSubmissions } from '../services/sweep'
 
@@ -125,14 +125,30 @@ cronRoutes.openapi(sweepRoute, async (c) => {
    * ⚠️ 它跟清扫无关 ✗ —— ⭐ 纯粹是为了"这几笔到底在不在我们库里" ✓
    */
   let inspect: unknown = null
+  let probe: unknown = null
   try {
-    const body = (await c.req.json().catch(() => ({}))) as { outTradeNos?: unknown }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      outTradeNos?: unknown
+      wxOrderIds?: unknown
+      openid?: unknown
+      payEnv?: unknown
+    }
     const nos = Array.isArray(body.outTradeNos)
       ? body.outTradeNos.filter((x): x is string => typeof x === 'string')
       : []
     if (nos.length) inspect = await inspectOrders(nos.slice(0, 50))
+    /**
+     * ⭐ **可选：拿微信侧单号直接问微信**（⭐ 只读 ✓）
+     * ⚠️ body：⭐ `{"wxOrderIds": ["180003780220371"], "openid": "oXXX", "payEnv": 0}` ✓
+     */
+    const wxIds = Array.isArray(body.wxOrderIds)
+      ? body.wxOrderIds.filter((x): x is string => typeof x === 'string')
+      : []
+    const oid = typeof body.openid === 'string' ? body.openid : ''
+    const pe = typeof body.payEnv === 'number' ? body.payEnv : 0
+    if (wxIds.length && oid) probe = await probeWxOrders(wxIds.slice(0, 20), oid, pe)
   } catch {
     /* ⚠️ 没有 body / 不是 json ⇒ 就是普通的定时清扫 ✓ */
   }
-  return c.json({ ok: true as const, data: { ...r, orders, inspect } }, 200)
+  return c.json({ ok: true as const, data: { ...r, orders, inspect, probe } }, 200)
 })

@@ -13,6 +13,7 @@ import {
   notifyProvideGoods,
   type PayData,
   queryXpayOrder,
+  queryXpayOrderByWxId,
 } from './xpay'
 import { errText } from './wx-access-token'
 
@@ -438,6 +439,15 @@ export async function inspectOrders(outTradeNos: string[]): Promise<
     .from(payments)
     .where(inArray(payments.outTradeNo, outTradeNos))
   const byNo = new Map(rows.map((r) => [r.outTradeNo, r]))
+  /** ⭐ 这批订单的付款人 openid（⭐ probe 要用 ✓） */
+  const ownerIds = new Map<number, string>()
+  if (rows.length) {
+    const us = await db
+      .select({ id: users.id, openid: users.openid })
+      .from(users)
+      .where(inArray(users.id, [...new Set(rows.map((r) => r.userId))]))
+    for (const u of us) ownerIds.set(u.id, u.openid)
+  }
   return outTradeNos.map((no) => {
     const r = byNo.get(no)
     if (!r) return { outTradeNo: no, found: false }
@@ -451,9 +461,42 @@ export async function inspectOrders(outTradeNos: string[]): Promise<
       deliveredAt: r.deliveredAt ? r.deliveredAt.toISOString() : null,
       xpayOrderId: r.xpayOrderId ?? null,
       hasRawNotify: !!r.rawNotify,
+      /** ⭐ 拿它去 probeWxOrders（⭐ 微信侧单号查询必须带 openid ✓） */
+      openid: ownerIds.get(r.userId) ?? null,
     }
   })
 }
+
+/**
+ * ⭐⭐ **拿【微信侧单号】直接问微信**（⭐ 只读 ✓）
+ *
+ * ⚠️ 用途：⭐ 用户在后台看到已支付的单，而我们库里只有自己的 outTradeNo ✓
+ *    ⇒ ⭐ 用微信单号查一次就能分清：
+ *      ⭐ **单存在** ⇒ ⚠️ 问题在我们发的参数形态（order_id vs wx_order_id ✓）
+ *      ⚠️ **单不存在** ⇒ ⚠️ 微信侧压根没有这张单 ✓
+ */
+export async function probeWxOrders(
+  wxOrderIds: string[],
+  openid: string,
+  payEnv: number,
+): Promise<{ wxOrderId: string; result: string }[]> {
+  const out: { wxOrderId: string; result: string }[] = []
+  for (const id of wxOrderIds) {
+    try {
+      const o = await queryXpayOrderByWxId(id, openid, payEnv)
+      out.push({
+        wxOrderId: id,
+        result: o
+          ? 'ok status=' + String(o.status) + ' order_id=' + String(o.order_id ?? '?')
+          : 'null(微信返回里没有 order 字段)',
+      })
+    } catch (err) {
+      out.push({ wxOrderId: id, result: 'error: ' + errText(err).slice(0, 300) })
+    }
+  }
+  return out
+}
+
 
 export async function sweepStaleOrders(
   minAgeMs = 3 * 60_000,
