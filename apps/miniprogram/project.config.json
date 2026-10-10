@@ -10,7 +10,7 @@
     "es6": true,
     "enhance": true,
     "postcss": false,
-    "minified": false,
+    "minified": true,
     "packNpmManually": false,
     "ignoreDevUnusedFiles": false,
     "compileWorklet": false,

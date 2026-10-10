@@ -32,7 +32,6 @@
 //    不要 import 它们，也不要给它们赋值。
 // ----------------------------------------------------------------
 declare const __MP_LOCAL_API_URL__: string
-declare const __MP_LAN_API_URL__: string
 declare const __MP_DEV_ENV_ID__: string
 declare const __MP_PROD_ENV_ID__: string
 declare const __MP_CLOUD_SERVICE__: string
@@ -67,11 +66,6 @@ export interface EnvConfig {
  */
 export const CLOUD_SERVICE = __MP_CLOUD_SERVICE__
 
-/**
- * 真机走局域网的逃生通道（云环境全挂时手动切）。
- * ⚠️ 机器相关，默认为空表示不启用 —— 不要把它绑死在某个人的 IP 上。
- */
-export const LAN_FALLBACK_URL = __MP_LAN_API_URL__
 
 const ENVS: Record<EnvName, EnvConfig> = {
   // 本机 Docker。API 走 wx.request；文件仍走 dev 的对象存储。
@@ -190,12 +184,6 @@ export const ENV_OVERRIDE: EnvName | null = null
 
 export const ENV: EnvName = ENV_OVERRIDE ?? resolveEnv()
 
-/** 展示用：当前环境的中文说明 */
-export const ENV_LABEL: Record<EnvName, string> = {
-  local: 'local（本机 Docker）',
-  dev: 'dev（云托管开发环境）',
-  prod: 'prod（云托管正式环境）',
-}
 
 // ----------------------------------------------------------------
 // 派生值（其余模块只 import 这些）

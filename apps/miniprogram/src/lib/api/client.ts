@@ -21,7 +21,6 @@ import type {
   ClaimCookiesResponse,
   ExchangeResponse,
   AdEnergyResponse,
-  UserListResponse,
   FavoritesResponse,
   ParticipationSubmissionsResponse,
   ShopGoodsResponse,
@@ -1116,26 +1115,7 @@ export async function createShopOrder(goodsCode: string): Promise<ShopOrderRespo
   })
 }
 
-/** 用户目录的查询参数（对应 `GET /api/users` 的 querystring） */
-export interface UserDirectoryQuery {
-  /** `joined`（默认，加入时间倒序）| `energy`（能量倒序） */
-  sort?: 'joined' | 'energy'
-  /** 1..100，默认 50 */
-  limit?: number
-}
 
-/**
- * ⭐ **用户目录**（`GET /api/users`，公开）。
- *
- * ⚠️ 前缀是**复数** `/api/users`，与鉴权的 `/api/user/*`（单数）不是一回事。
- * ⚠️ 它**含 energy**（用户 2026-09 明确要求公开）—— 别当"能量可以随便给"的先例。
- */
-export function fetchUsers(q: UserDirectoryQuery = {}): Promise<UserListResponse> {
-  const params: string[] = []
-  if (q.sort) params.push('sort=' + q.sort)
-  if (q.limit !== undefined) params.push('limit=' + q.limit)
-  return request<UserListResponse>('/api/users' + (params.length ? '?' + params.join('&') : ''))
-}
 
 /**
  * ⭐ **这一句我收藏了吗** —— `GET /api/user/favorited?articleId=`（鉴权）。

@@ -34,7 +34,7 @@ import { missingHandlers } from './wxml-handlers.mjs'
 /**
  * ⭐ 环境变量统一从**仓库根**读（见 tools/env.mjs）。
  *   · .env       公用   —— MP_* 全在这里（三种模式的值要一起烘进包里，config.ts 运行时选）
- *   · .env.local 本地   —— MP_LAN_API_URL 是机器相关的逃生通道，只属于本机
+ *   · .env.local 本地   —— FISH_API_KEY / FISH_PROXY_URL 这类只属于本机的密钥
  * ⚠️ 必须在读 process.env 之前执行（下面的 define 直接取进程变量）。
  */
 loadEnv('local')
@@ -70,7 +70,6 @@ const UNO_OUT = resolve(DIST, 'uno.wxss')
  */
 const INJECT = {
   __MP_LOCAL_API_URL__: 'MP_LOCAL_API_URL',
-  __MP_LAN_API_URL__: 'MP_LAN_API_URL',
   __MP_DEV_ENV_ID__: 'MP_DEV_ENV_ID',
   __MP_PROD_ENV_ID__: 'MP_PROD_ENV_ID',
   __MP_CLOUD_SERVICE__: 'MP_CLOUD_SERVICE',
