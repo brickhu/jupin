@@ -229,59 +229,15 @@ export const AUDIO_SPEC = {
  */
 
 /* ------------------------------------------------------------------ */
-/* ⭐ 成长体系 —— 阈值与档位只在这里定义一处                              */
-/*    规格：docs/design/growth-and-energy.md（改了那边也要改这里）        */
+/* ⚠️⚠️ 这里原来有一整段「成长体系」常量（GROWTH_STEP_MAX /                 */
+/*    DILIGENCE_MILESTONES / DILIGENCE_YEAR / STANDOUT_EMPTY_BASELINE /   */
+/*    STANDOUT_WEIGHT_BANDS）—— 它们属于**三维成长值**（自我超越 /         */
+/*    坚持不懈 / 人中翘楚），而那套**已整体废除**：                        */
+/*    `users` 表那三列已删、`SubmitResponse` 不再下发、端侧也不渲染。       */
+/*    ⇒ 2026-10 把这五个常量删掉（源码里**零引用**，只剩这一段在误导人）。  */
+/*    ⚠️ 别再按 docs/design/growth-and-energy.md 恢复它们 —— 那份设计稿    */
+/*       记的就是已废除的口径。现行的累计值只有**饼干**（见 cookies.ts）。 */
 /* ------------------------------------------------------------------ */
-
-/**
- * ⭐ 三个成长指标共用的换算函数的上限：
- *
- *     f(x) = clamp(round(x), 0, 10)
- *
- * ⚠️ 只有一个例外：人中翘楚在 f 之后再乘样本量权重 w，所以它的值域到 12。
- */
-export const GROWTH_STEP_MAX = 10
-
-/**
- * ⭐ 坚持不懈的**固定档位** —— 跨过就给一次；中断后重新攒，档位从头开始。
- *
- * ⚠️ 必须按**阈值升序**判定，不是按奖励大小排（360 的长期档是循环，见 growth.ts）。
- * ⚠️ 判定用「跨过」（before <= 阈值 && after > 阈值），不能写成「现在 > 阈值 就给」——
- *    那样每次读都会给一次。
- */
-export const DILIGENCE_MILESTONES: readonly { days: number; points: number }[] = [
-  { days: 7, points: 1 },
-  { days: 30, points: 5 },
-  { days: 180, points: 40 },
-]
-
-/**
- * ⭐ 坚持不懈的**长期档**：第 k 个 360 天 → basePoints × factor^(k−1)。
- * 指数级上升是刻意的 —— 长期坚持才是这个体系里最重的一块。
- */
-export const DILIGENCE_YEAR = { days: 360, basePoints: 100, factor: 2 } as const
-
-/**
- * ⭐ 人中翘楚：**空样本**（场上还没有别人）时的参考基准。
- *
- * ⚠️ 这条兜底是真在用的，不是防御 NaN —— 空样本时权重是 0.5（不是 0），
- *    所以新竞技场的第一个参与者就是跟这条 75 的线比。
- */
-export const STANDOUT_EMPTY_BASELINE = 75
-
-/**
- * ⭐ 人中翘楚的样本量权重 —— **左闭右开** [min, max)。
- *
- * ⚠️ 0 和 1–9 是同一档（都是 0.5）：所以「做第一个」的好处**只体现在基准上**
- *    （第一个人的基准是固定的 75，从第二个人起基准就被前面的人抬着走了）。
- *    这是「软鼓励」，不是「重奖第一」。
- */
-export const STANDOUT_WEIGHT_BANDS: readonly { min: number; max: number; weight: number }[] = [
-  { min: 0, max: 10, weight: 0.5 },
-  { min: 10, max: 100, weight: 0.8 },
-  { min: 100, max: 1000, weight: 1 },
-  { min: 1000, max: Number.POSITIVE_INFINITY, weight: 1.2 },
-]
 
 /* ------------------------------------------------------------------ */
 /* ⭐ 能量值 —— 替代「每天 N 次挑战机会」                                 */

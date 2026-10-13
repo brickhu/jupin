@@ -111,7 +111,6 @@ describe('applySubmissionResult —— streak 那一半（战绩不再由端侧�
       challengedCount: 0,
       challengedRounds: 0,
       energy: 0,
-      growth: { self: 0, diligence: 0, standout: 0 },
       streak: STREAK,
     } as never)
     store.applySubmissionResult({ articleId: '3', score: 70 })

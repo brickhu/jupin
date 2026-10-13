@@ -117,7 +117,8 @@ export async function describe(
      * ⚠️ "检测中"的行不算（它还没定）；能走到这里说明本行已经有结论，必然数得到自己。
      */
     attempts: await attemptNoOf(row.userId, row.articleId, row.createdAt, row.id),
-    // ⭐ 这一把的成长值快照 —— s5 三张卡的 +N。字段名就照端侧读的 growth 给
+    // ⭐ 这一把的**饼干**快照（端侧读的字段叫 cookieLine，不是 growth）——
+    //    ⚠️ 它历史上叫「成长值快照 / s5 三张卡」，而**三维成长值已整体废除**，别再按那个写。
     //    ⚠️ 结算与「status 置为 scored」不是同一个事务，轮询可能卡在中间
     //    （cookies_earned 还是 null）⇒ 那时**不给**这个字段，端侧整块不渲染
     //    （不是摆一个 +0 🍪 —— 屏幕上永远不出现"0 🍪"，见 prd §7.6）。

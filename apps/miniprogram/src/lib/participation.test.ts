@@ -42,7 +42,6 @@ const profile = () =>
     conqueredCount: 0,
     challengedCount: 0,
     challengedRounds: 0,
-    growth: { self: 0, diligence: 0, standout: 0 },
     streak: {},
   }) as never
 

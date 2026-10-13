@@ -34,7 +34,8 @@ const listUsersRoute = createRoute({
     '· `limit`：1..100，默认 50\n\n' +
     '每一项除了身份（id / 昵称 / 头像 / 加入时间）与 energy，还带四个战绩：\n' +
     '`conqueredCount`（参与次数 = 参与场次，一句一场）、`challengedRounds`（挑战回合）、\n' +
-    '`streakDays`（连战天数）、`growth`（成长值三项，不合成总分）。\n\n' +
+    '`streakDays`（连战天数）、`cookies`（饼干：累计获得 + 可用）。\n\n' +
+    '⚠️ 三维成长值（自我超越 / 坚持不懈 / 人中翘楚）**已整体废弃**，不要在这个响应里找它。\n\n' +
     '⚠️ 只列正常账号（banned / deleted 不出现）。\n' +
     '⚠️ 「能量只给本人」那条边界没有变：`/api/profile/{id}` 仍不给别人的能量。',
   request: {

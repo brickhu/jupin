@@ -143,8 +143,8 @@ export interface CookieComputation extends CookieAward {
  *
  * ⚠️ 只在**打分成功**时才走到这里：读不出来的录音不该给饼干
  *    （「我明明没读成功，怎么算我攻克了」）。
- * ⚠️ 它与 `growth.ts` 的三维版本最大的不同：**连续天数不再参与**
- *    （「坚持不懈」与连战是同一个数，已删；连战的奖励走解冻/补签那条线）。
+ * ⚠️ 它与已被它取代的 `growth.ts`（三维版本，**已删除**）最大的不同：**连续天数不再参与**
+ *    （「坚持不懈」与连战是同一个数，已删；连战的奖励也不再走解冻卡）。
  */
 export function computeCookies(input: {
   score: number

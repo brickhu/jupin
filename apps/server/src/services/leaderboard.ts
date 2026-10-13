@@ -43,7 +43,8 @@ import { participations, submissions, users } from '../db/schema'
  *    ⇒ 现在 reached_at 由 participations 在写入时就算对（取"等于最高分"的那些行
  *      里最早的 created_at），榜单这边只管按它排。
  *
- * ⚠️ 第③键是**抄成长榜的做法**（services/growth-rank.ts 的 asc(users.id)）：
+ * ⚠️ 第③键（`asc(users.id)`）是**沿用成长榜那套排法的做法**
+ *    （⚠️ `services/growth-rank.ts` 与成长榜都已随三维成长值一起删除，这里只是保留了排法）：
  *    MySQL 对「前两个键都相等」的行**不保证顺序**，两次请求可能换位置，
  *    而且列表名次（按 index 数）会和 getRank 算出来的名次不一致。
  *

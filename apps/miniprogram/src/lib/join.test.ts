@@ -68,7 +68,6 @@ function meResponse(nickname: string | null) {
     challengedCount: 0,
     challengedRounds: 0,
     conqueredCount: 0,
-    growth: { self: 0, diligence: 0, standout: 0 },
     streak: {
       streakDays: 0,
       streakBest: 0,

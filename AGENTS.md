@@ -9,9 +9,16 @@
 
 三条核心：**AI 反馈的得分 · 排名 · Streak**；难度 / 分类 / 积分 / 关卡刻意不做。
 
-> ⚠️ 成长体系已不是「等级徽章」——徽章**整体废除**，现为 **三个成长值指标（自我超越 / 坚持不懈 / 人中翘楚）+ 能量 + 解冻卡**。
-> 口径见 [prd.md](prd.md) 与 [docs/design/growth-and-energy.md](docs/design/growth-and-energy.md)；字段与规则以代码注释为准
-> （[schema.ts](apps/server/src/db/schema.ts) · [types/api.ts](packages/shared/src/types/api.ts)）。
+> ⚠️⚠️ **成长体系已经换代两次，别再按旧口径写**：
+> ① 等级徽章 —— 整体废除；
+> ② **三维成长值（自我超越 / 坚持不懈 / 人中翘楚）—— 整体废除**（`users` 表那三列已删、
+>   `SubmitResponse` 不再下发；不要在任何响应里找 `growth`）；
+> ③ **解冻卡 —— 整体作废**（2026-10：改成**花能量补签**，见 prd §7.8，`freeze_count` 那列同批删除）。
+>
+> ⭐ **现行的四样**：**能量**（额度）· **饼干**（货币）· **连战天数**（习惯）· **攻克**（句子层面的目标）。
+> 「我积累了什么」这三样加起来就是全部，**没有第三个成长维度**。
+> 字段与规则以代码为准（[schema.ts](apps/server/src/db/schema.ts) · [types/api.ts](packages/shared/src/types/api.ts)）；
+> ⚠️ [docs/design/growth-and-energy.md](docs/design/growth-and-energy.md) **是旧设计稿，记的是上面 ② 那套已废除的口径** —— 读它之前先对代码。
 
 > ⚠️ 定位文案的唯一来源是 [packages/shared/src/brand.ts](packages/shared/src/brand.ts)。
 
@@ -25,14 +32,14 @@
 | **`/api/docs` + `/api/openapi.json`** | ⭐⭐ **接口的事实来源（API 以它为准）** | 方法 / 路径 / 鉴权 / 参数 / 响应形状 / 状态码**一律以它为准**（由各路由的 `createRoute()` 生成，见 `apps/server/src/openapi.ts`）。⚠️ 不是手写清单：**改接口 = 改 `createRoute` 声明 + schema**，spec 随之更新。**别在别处另写一份接口表**（端侧类型由 40 项双向比对 + `api-contract-guard.test.ts` 盯着） |
 | [plan.md](plan.md) | **唯一的目标与任务来源** | 哪些做了、哪些没做；状态只有 在做/待办/已完成/已废弃 |
 | [prd.md](prd.md) | **唯一的业务与需求来源** | 业务名词、概念、需求 |
-| **AGENT.md**（本文件） | 工程**架构索引 + 上下文索引** | 只回答「去哪看」与「怎么跑起来」 |
+| **AGENTS.md**（本文件） | 工程**架构索引 + 上下文索引** | 只回答「去哪看」与「怎么跑起来」 |
 | [spec.md](spec.md) | 技术决策记录（已降级） | 为什么这样选型；不再承载表结构（指向 `schema.ts`） |
 | [docs/](docs/README.md) | 调研 · 实验 · 设计稿 · 归档 | 需要依据与背景时 |
 
 **元规则：重复即错误。** 同一事实出现在第二个地方，即使当下一致，也已经是 bug 的种子；改一处必须删掉/改掉别处。
 所以本文件已删除一切复述业务规则 / 数据模型字段 / 产品行为的段落，只留指向代码或 prd.md 的指针。
 
-**开工顺序**：先读 AGENT.md（工程怎么跑）→ 任务看 **plan.md** → 业务看 **prd.md** → 现状看代码与注释 →
+**开工顺序**：先读 AGENTS.md（工程怎么跑）→ 任务看 **plan.md** → 业务看 **prd.md** → 现状看代码与注释 →
 **碰接口先看 `/api/docs`**（它是接口的事实来源）。
 
 **接口相关的三条铁律**（用户 2026-09 定）：
@@ -122,8 +129,8 @@
   回填见迁移 0057）。**为什么不能自增**：这张表是重算式派生索引，`rebuildParticipations`
   会整表重写 —— 自增 id 一重建就换号，发出去的链接会指到别人；哈希值重建前后逐行相等。
   ⚠️ 表的主键仍然是 `(user_id, article_id)`（领域身份）；`id` 是唯一索引上的对外地址。
-  ⚠️ 这一行还**累计三维成长值**（`growth_self/diligence/standout`）= 它下面**已出分** submissions
-  的对应列之和（与 `attempts` 同一口径，写入方仍是 `services/participations.ts`）；
+  ⚠️ 这一行**曾经**还累计三维成长值（`growth_self/diligence/standout`）——
+  那套已整体废除，现在只累计 `attempts`（见 `services/participations.ts`）；
   `submissions.participation_id` 是同一件事的反向链接（**刻意无外键**：提交先于参与行存在）。
 - 竞技场页五块**各自异步 + 各自骨架**：句子卡 / 参与概要 / 我的参与 / 排行榜 / 收藏。
 
@@ -341,7 +348,7 @@ pnpm workspace monorepo。**正文与音频的真相是 `content/`（不在库�
 
 ```
 jupin/
-├── AGENT.md  plan.md  prd.md  spec.md
+├── AGENTS.md  plan.md  prd.md  spec.md
 ├── package.json  pnpm-workspace.yaml  tsconfig.base.json
 ├── docker-compose.yml        # ⭐ 本地 MySQL + API
 ├── .dockerignore             # ⚠️ 云托管按它裁剪上传；目录要写 dir/**（带点目录不会被自动展开）、绝不写 ! 否定规则
@@ -416,7 +423,8 @@ apps/server/
 │   ├── index.ts  env.ts
 │   ├── routes/              # auth · articles · submissions · uploads · leaderboards · participations · user · pay · shop · media · public
 │   ├── engines/             # ⭐ ScoreEngine 薄适配层（types · xfyun · mock）
-│   ├── services/            # submission · scoring · streak · growth · energy · schedules · content … 的业务逻辑
+│   ├── services/            # submission · scoring · streak · cookies · energy · content … 的业务逻辑
+│   │                        # ⚠️ growth.ts / growth-rank.ts 已随三维成长值删除
 │   ├── storage/             # local / wxcloud（可替换接口）
 │   ├── db/                  # Drizzle schema + migrations + seed
 │   └── lib/
@@ -559,11 +567,11 @@ admin（本机那台）把活干完：LLM 出内容字段 + fish 出整句标准
   ⇒ 端侧不再需要、也不允许拿手机时钟算日期；`today` / `latest` 的 `date` 只喂缓存。
 - **"有哪些用户"** → `GET /api/users`（**公开**，用户目录）：
   `sort=joined`（默认，加入时间倒序）| `energy`（能量倒序）、`limit` 1..100 默认 50；
-  返回 `{ items: [{ id, nickname, avatarUrl, energy, createdAt, conqueredCount, challengedRounds, streakDays, growth }] }`，
+  返回 `{ items: [{ id, nickname, avatarUrl, energy, createdAt, conqueredCount, challengedRounds, streakDays, cookies }] }`，
   只列 `status='normal'`。
-  ⚠️ **两查一页**：主查询从 `users` 一行拿齐身份 + 能量 + 成长值 + 连战天数，
+  ⚠️ **两查一页**：主查询从 `users` 一行拿齐身份 + 能量 + 连战天数 + 饼干，
   再用**一条** `GROUP BY user_id` 的聚合拿这一页所有人的参与次数 / 挑战回合 ——
-  别退化成每行调一次 `challengeStats` / `readGrowth`（50 行就是 100+ 次查询）。
+  别退化成每行调一次 `challengeStats`（50 行就是 100+ 次查询）。
   ⚠️⚠️ 前缀是**复数** `/api/users`，与鉴权的 `/api/user/*`（单数）**不是一回事**
   （Hono 的 `/api/user/*` 不会兜住它 ⇒ 它在 auth.test.ts 里显式登记为公开）。
   ⚠️⚠️ 它是**唯一一个公开返回 `energy` 的接口**（2026-09 用户明确要求）——
@@ -973,7 +981,7 @@ dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在
 | | prod | dev |
 |---|---|---|
 | 环境创建时间 | 2026-01-21 **10:45:01** ← 首个环境（免费额度在它头上） | 2026-01-21 **10:48:12** ← 多建的那个 ⇒ **从建好那天就在计费** |
-| 服务 `jupin` 规格 | 1 核 2 G · 最小副本 **0** · 最大 5 | 1 核 2 G · 最小副本 **0** · 最大 5 |
+| 服务 `jupin` 规格 | 1 核 2 G · 最小副本 **0** · 最大 5 | 1 核 2 G · 最小副本 **0** · **最大 1**（2026-10-10 由 5 降下来）|
 
 ⚠️ 两份额度都在 **2026-04-21** 到期 ⇒ 现在**没有"免费"这个档位可切**，能做的只有**别让实例常驻**。
 单价：1 核 2 G = 0.119 元/小时 ⇒ **常驻 ≈2.86 元/天 ≈ 86 元/月**；0.25 核 0.5 G = 0.0298 元/小时（≈0.71 元/天）。
@@ -982,6 +990,32 @@ dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在
 **仍会每天产生、无法归零的**：MySQL 存储（dev 已用 0.043 GB ⇒ ≈0.005 元/天；算力已开 600 s 自动暂停）、对象存储容量（0.0043 元/GB·天）。
 ⚠️ dev/prod 的 `DELETE_AUDIO_AFTER_SCORE` 都是 `false`（**音频永久保留**，`tools/deploy-cloud.mjs` 里写死）⇒ 桶会随使用量增长，这是刻意的产品决定。
 **另外两笔按量花的钱不在云托管**：`ENGINE=xfyun`（每试读一次真计费；本机开发用 `ENGINE=mock`）、`XPAY_ENV=0`（dev 也走**现网**虚拟支付 —— 测试充值花真钱，见 `XPAY_LIVE`）。
+
+### ⭐⭐ 「部署」的账：官方写着收构建费，**实测没扣**（2026-10-10 拿 L3 明细账单核过）
+
+官方计费参数表：**「构建时长」0.05 元/分钟**，产生用量的条件是「发布服务时，采用了**本地代码 / 代码库拉取**方式」（备注：走**镜像拉取**方式**无构建用量**）。
+⚠️⚠️ **但实测账单里没有"构建"这一行** —— 2026-10-10 08:07 结算的 10-09 用量（L3 明细共 6 行）里，那天有**两次 `repository` 源构建部署**，**一分构建费都没出**。
+⇒ **别再用"每次部署要 0.1–0.2 元构建费"来估算**（我 10-10 就这么算错过一次，用户当场反问"流水线部署要收钱？？？"）。
+⭐ 另一条实测：**配置变更版本走 `UploadType: image`（复用上一个镜像）** —— 例如 `jupin-173` 的备注就是 `server config change` ⇒ 改 CPU/内存/副本数**不产生任何构建**。
+
+**真正花钱的是"部署后至少 30 分钟的运行"**（官方《服务设置》原文：「即便容器实例副本数最小值设置为 0，服务部署发布时都会**先产生 1 个容器实例**，部署成功后等待半小时再缩容至 0」）⇒ 每次部署 ≈0.06 元实例费（1 核 2 G）。
+
+#### 📊 实测拆账：10-09 dev 扣 5.80 元 / prod 扣 0 元
+
+| 计费项 | 用量 | 单价 | 金额（元） |
+|---|---|---|---|
+| 云托管 CPU | 31.43993 核时 | 0.055 元/核时 | 1.7292 |
+| 云托管 内存 | 62.87986 GiB·小时 | 0.032 | 2.0122 |
+| **MySQL-CCU** | **5.978 个·小时** | 0.342 | **2.0445** |
+| MySQL 存储 | 1.03125 GB·小时 | 0.00485 | 0.0050 |
+| 云托管 流量 | 0.010152 GB | 0.8 元/GB | 0.0081 |
+| 月度精度差异 | — | — | 0.0010 |
+| **合计** | | | **5.8000** |
+
+- CPU 31.44 核时 ÷ 1 核 = 内存 62.88 GiB·小时 ÷ 2 GiB = **31.44 实例小时**（>24 ⇒ 常驻 24 h + 滚动发布/扩容 7.4 h）⇒ **这 3.74 元就是"没怎么用也在扣"的主体**，`minNum=0` 后消失。
+- **MySQL CCU 5.978 ÷ 算力下限 0.25 ≈ 23.9 小时** ⇒ 那天库几乎没睡。⚠️ 根因是**容器不缩、库就不会暂停**（实例在跑时总有东西碰库，例如 `/health` 每次查一次）⇒ 这块钱是跟着容器走的，不是独立问题。
+- **同一个账单里 prod 一行都没有**（它一直 `minNum=0`）——这是"改 minNum 有用"的对照实验。
+- ⚠️ **`maxNum` 也得盯**：dev 原来是 5 + CPU 60% 阈值 ⇒ 测试时最多 5 × 1 核 2 G = **0.6 元/小时**；2026-10-10 已把 **dev 改成 1**（prod 保留 5）。
 
 **改规格 / 副本数**：
 ```bash
@@ -1057,7 +1091,9 @@ dev / prod 各有自己的 MySQL 与对象存储桶，互不可见。**不要在
 | 内容 | 状态 |
 |---|---|
 | [docs/archive/](docs/archive/) 下的 v1 文档 | D/Q/E/P 积分、能力分曲线、SolidJS + Azure、阿里云部署，仅历史参考 |
-| 等级徽章阶梯（8 档，原 `badges.ts` 已删） | **已整体废除**，换成三个成长值指标 |
+| 等级徽章阶梯（8 档，原 `badges.ts` 已删） | **已整体废除** |
+| **三维成长值**（自我超越 / 坚持不懈 / 人中翘楚） | **已整体废除**（`users` 三列已删、`SubmitResponse` 不再下发） |
+| **解冻卡** | **已整体作废**（2026-10 改成花能量补签） |
 | 实时逐词跟随 / 端侧评分分析 / 自检页（v1） | 产品下线；`packages/shared/src/audio/` 只保留 FFT / 重采样 / WAV |
 | 分类 / 积分 / 关卡 / 包月订阅 | 下线，见 prd.md「已删除的概念」与 plan.md「已废弃 / 明确不做」 |
 

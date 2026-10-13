@@ -17,8 +17,8 @@ import { settle } from './settle'
  *      "我的挑战"里它也永远显示「还在检测中」。
  *
  *   ② **已出分但没结算**：scoring 里"写分数"与 settle 不是同一事务，settle 只跑一次
- *      （`growth_self IS NULL` 守卫）。进程死在两者之间（或那几秒 DB 抖一下让 settle 抛错）
- *      ⇒ 分数看得见、能量也扣了，但 streak / 三项成长 / 解冻卡奖励**全漏发，且永不补**。
+ *      （`cookies_earned IS NULL` 守卫，见 settle.ts）。进程死在两者之间（或那几秒 DB 抖一下让 settle 抛错）
+ *      ⇒ 分数看得见、能量也扣了，但 streak / 饼干奖励**全漏发，且永不补**。
  *      （participations 还能靠 rebuild 重建，settle 连重建脚本都没有。）
  *
  * ⚠️ 触发方式：**惰性**（进程启动时一次 + 用户读自己的数据时按节流跑一次），
@@ -26,7 +26,7 @@ import { settle } from './settle'
  * ⚠️ 两个动作都是幂等的：
  *    · 判失败带 `status='scoring'` 条件（只有一个并发的清扫者能改成功）；
  *    · 释放能量按 (reason, refType, refId) 唯一键去重（services/energy.ts）；
- *    · 补结算走 `settle`，它自己按 `growth_self IS NULL` 做原子认领（见 settle.ts）。
+ *    · 补结算走 `settle`，它自己按 `cookies_earned IS NULL` 做原子认领（见 settle.ts）。
  */
 
 /** 心跳停多久算"这个打分进程已经死了" —— 必须**大于** scoring.ts 的接管阈值（30 秒） */
