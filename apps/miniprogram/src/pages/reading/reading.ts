@@ -477,11 +477,12 @@ Page({
      */
     attemptTitle: '',
     /**
-     * ⭐ 成长值三卡。
-     *   · s5：服务端下发了这一把的增量（SubmitResponse.growth）就是三张 +N；
-     *         拿不到（还没结算 / 老数据）时是**空数组** ⇒ 整块不渲染；
-     *   · s6：恒为三张 +0（灰）—— 且**不做数字滚动**（没有"涨"这回事，
-     *         见 cookieLineOf 与 WXML 里 s6 那一块）。
+     * ⭐ **这一把的饼干行**（`cookieLine`）—— 不是成长值。
+     *   ⚠️ 它历史上叫「成长值三卡」，而**三维成长值已整体废弃**
+     *      （`users` 表那三列已删、`SubmitResponse` 也不下发 `growth`）。
+     *   · s5：服务端下发这一把的增量 ⇒ 画成「刚领到的 +N」；
+     *         拿不到（还没结算 / 老数据）时是 `null` ⇒ 整块不渲染；
+     *   · s6：恒为 `null`（失败没有"涨"这回事，见 cookieLineOf 与 WXML 里 s6 那一块）。
      */
     cookieLine: null as CookieLine | null,
 
@@ -1230,7 +1231,7 @@ Page({
     this.missedIdx = []
     this.misreadList = []
     // ⚠️ 词上的标记也一起清（见 clearWordMarks）：判据清了、颜色还挂着的话，
-    //    按住之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
+    //    开始新一轮录音之后句子上仍然显示着**上一次**的黄标 / 灰标（同一种"第二份真相"）
     this.clearWordMarks()
     // ⚠️ 提示同理：这一遍还没判过，不能挂着上一遍那句
     this.setData({ hintText: '', hintLevel: 'ok', canSubmit: true })
@@ -1398,7 +1399,7 @@ Page({
 
     /**
      * ⚠️⚠️ **原来这里要白等 600ms**（那个缓冲已经删掉了）——
-     *    理由是"读完立刻松手，最后 1–2 个词还没进转写，直接停会判成漏读"。
+     *    理由是"读完立刻结束，最后 1–2 个词还没进转写，直接停会判成漏读"。
      *    ⭐ 那是**为流式识别存在的**缓冲：识别没了（见 lib/audio/speech-session），
      *      这个等待就只是让用户多盯 600ms 的「识别中…」✗
      *    ⇒ 直接停 ✓ 底层录音器的 onStop 本来就会等文件落完 ✓
@@ -1421,7 +1422,7 @@ Page({
    *    （要等插件的 onStop 回来、走 handleSpoken 才变 s3）。
    *    ⇒ 从清掉标记到结果到达之间，`phase` 还是 s2，按钮的文案三元就落到了
    *      「松开结束」——**用户看到按钮"退回"到录音态**，而不是进 s3。
-   *      识别越慢这个窗口越长，看起来就像"松手没生效"。
+   *      识别越慢这个窗口越长，看起来就像"我点的那下没生效"。
    *    ⇒ 所以 `releasePending` 的**唯一清除点**是"真的定稿了"：
    *      handleSpoken（s3）· onError · 停止看门狗超时。三个出口见各自的注释。
    */
@@ -1597,7 +1598,7 @@ Page({
        *    不拦的话会连着调好几次 `session.stop()` ✗（并反复重置那个 3 秒看门狗，
        *    真有异常时反而永远触发不了）。
        * ⭐ 复用 `stopSent`：它本来就是"停已经发出去了"这个意思 ✓
-       *    （用户先松手/先点结束时它已经被置真 ⇒ 这里自然不会再发一次 ✓）
+       *    （用户先点结束时它已经被置真 ⇒ 这里自然不会再发一次 ✓）
        */
       if (this.stopSent) return
       this.stopSent = true
@@ -2809,7 +2810,7 @@ Page({
    *    而"这一次的结论变了"有好几个时刻（定稿、缓存恢复）。
    *    分开各算一份，就会出现「提示说没事、门禁却拦着」这种自相矛盾。
    *
-   * @param recordMs 这一次录音的时长（"按下到松手"，见 lib/submit-hint.ts 的说明）
+   * @param recordMs 这一次录音的时长（"点开始到结束"，见 lib/submit-hint.ts 的说明）
    */
   syncSubmitHint(recordMs: number) {
     const hint = submitHintOf({

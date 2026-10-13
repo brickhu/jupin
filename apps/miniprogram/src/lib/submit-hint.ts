@@ -30,9 +30,8 @@ export const SLOW_RATIO = 2
 export const MIN_STD_MS_FOR_SLOW = 2000
 
 /**
- * ⚠️⚠️ 这个判断是**粗的**，别拿它当精确指标：`recordMs` 是"按下到松手"的时长，
- *    里面还含**开口前的停顿**和**松手缓冲期（600ms）**—— 插件不给逐词时间戳，
- *    拿不到真正的"开口时刻"，所以两者都去不掉。
+ * ⚠️⚠️ 这个判断是**粗的**，别拿它当精确指标：`recordMs` 是"**点开始到结束**"的时长，
+ *    里面还含**开口前的停顿**和**收尾窗口**—— 拿不到真正的"开口时刻"，两者都去不掉。
  *    ⇒ 阈值只能往宽了取，"有点慢"是个提示，不是测量结论。
  */
 export function isSlowReading(recordMs: number, stdMs: number): boolean {
