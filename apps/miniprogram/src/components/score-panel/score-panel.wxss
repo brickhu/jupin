@@ -1,0 +1,69 @@
+/*
+ * ⭐ 出分面板（prd §7.2）—— 见 score-panel.ts 的说明。
+ * ⚠️ 用页面默认色（浮层是白的），不走卡片主题色。
+ */
+.sp-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sp-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+.sp-mask.sp-on { opacity: 1; }
+
+.sp-card {
+  position: relative;
+  width: 620rpx;
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: 48rpx 36rpx 32rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  opacity: 0;
+  transform: scale(0.94);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.sp-card.sp-on { opacity: 1; transform: scale(1); }
+
+/* 大号分数 */
+.sp-score { font-size: 96rpx; font-weight: 700; line-height: 1; }
+
+/* 战绩胶囊：更新=绿底 / 保留=橙底 */
+.sp-pill {
+  margin-top: 24rpx;
+  padding: 10rpx 28rpx;
+  border-radius: 9999rpx;
+}
+.sp-pill-up { background: var(--tk-ok-soft, rgba(22, 163, 74, 0.1)); color: var(--tk-ok, #16a34a); }
+.sp-pill-keep { background: var(--tk-warn-soft, rgba(245, 158, 11, 0.1)); color: var(--tk-warn, #f59e0b); }
+
+.sp-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
+.sp-faint { color: var(--tk-page-on_50, rgba(17, 17, 17, 0.5)); }
+.sp-muted { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
+.sp-track { background: var(--tk-page-on_10, rgba(17, 17, 17, 0.1)); }
+.sp-ai {
+  color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65));
+  text-align: center;
+  line-height: 1.7;
+}
+
+.sp-sep {
+  width: 100%;
+  height: 1rpx;
+  background: var(--tk-line, rgba(17, 17, 17, 0.08));
+  margin: 28rpx 0;
+}
+
+.sp-actions { display: flex; gap: 16rpx; width: 100%; margin-top: 36rpx; }

@@ -4,6 +4,7 @@ import {
   WORD_GREEN_LINE,
   WORD_RED_LINE,
 } from '@jushuo/shared'
+import { PART_META, partHint, renderParts, type DimensionView } from '../../lib/score-parts'
 import type {
   ChallengeShareResponse,
   LeaderboardRow,
@@ -48,28 +49,10 @@ import { renderWordColors } from '../../lib/word-colors'
  */
 
 /** 五个分项 —— 顺序对应总分公式里的权重（由大到小） */
-type PartKey = 'prosody' | 'weakness' | 'accuracy' | 'fluency' | 'completeness'
-const PART_META: { key: PartKey; label: string }[] = [
-  { key: 'prosody', label: '语调' },
-  { key: 'weakness', label: '咬字' },
-  { key: 'accuracy', label: '发音' },
-  { key: 'fluency', label: '流利' },
-  { key: 'completeness', label: '完整' },
-]
-
 interface WordView {
   i: number
   text: string
   cls: string
-}
-
-interface DimensionView {
-  key: string
-  label: string
-  value: string
-  pct: number
-  textCls: string
-  barCls: string
 }
 
 /**
@@ -298,7 +281,7 @@ Page({
       scoreText: formatScore(result.score),
       gapText: result.gapToPrev === null ? '已是第一' : result.gapToPrev + ' 分',
       words: this.renderWords(result.text ?? '', result.words ?? []),
-      dimensions: this.renderParts(result.parts),
+      dimensions: renderParts(result.parts),
       summary: this.buildSummary(result),
       leaderboard: result.leaderboard.map((r) => ({ ...r, scoreText: formatScore(r.score) })),
       isOwner: opts.isOwner,
@@ -339,7 +322,7 @@ Page({
     总比留一句空洞的「表现不错」强。
    */
   buildSummary(result: SubmitResponse): string {
-    const weak = this.partHint(result.parts)
+    const weak = partHint(result.parts)
     if (weak) return weak
     const scored = result.words ?? []
     if (scored.length === 0) return ''
@@ -374,35 +357,6 @@ Page({
    * ⚠️ 拿不到时必须返回空数组让整块不渲染 —— 绝不能补 0：
    *    界面上出现「完整 0」会被理解成「我一个词都没读」（老成绩没有这个字段）。
    */
-  renderParts(p?: ScoreParts): DimensionView[] {
-    if (!p) return []
-    return PART_META.map(({ key, label }) => {
-      const v = p[key]
-      const level = v < WORD_RED_LINE ? 'bad' : v < WORD_GREEN_LINE ? 'warn' : 'ok'
-      return {
-        key,
-        label,
-        value: formatScore(v),
-        pct: Math.max(0, Math.min(100, v)),
-        textCls: 'text-' + level,
-        barCls: 'bg-' + level,
-      }
-    })
-  },
-
-  /** 给五个数字配一句「所以呢」—— 说出最拖后腿的那一项（完整度优先） */
-  partHint(p?: ScoreParts): string {
-    if (!p) return ''
-    if (p.completeness < 90) return '这次有漏读或读成了别的词 —— 先把整句读完，再谈发音'
-    const items = [
-      { v: p.prosody, text: '语调偏平：重音和升降调还没出来，听着像在念字' },
-      { v: p.weakness, text: '咬字不匀：大部分词清楚，但有几个词明显没读准' },
-      { v: p.accuracy, text: '发音有硬伤：有几个音素不对，跟着音标单独纠' },
-      { v: p.fluency, text: '流利度偏低：词与词之间卡顿多，先顺下来再求准' },
-    ]
-    const worst = items.reduce((a, b) => (b.v < a.v ? b : a))
-    return worst.v < WORD_GREEN_LINE ? worst.text : ''
-  },
 
   /**
    * ⭐ 试听。

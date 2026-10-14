@@ -1,0 +1,61 @@
+<!--
+  ⭐ 出分面板（prd §7.2）—— 见 score-panel.ts 的说明。
+  ⚠️ 它落在**白/浅色**浮层上，用页面默认色（不是卡片主题色）。
+  ⚠️ 两种状态（更新/保留）**共用这一切**，只有分数色/胶囊/下句三处不同。
+-->
+<view class="sp-layer">
+  <view class="sp-mask {{entered ? 'sp-on' : ''}}" catchtouchmove="noop"></view>
+
+  <view class="sp-card {{entered ? 'sp-on' : ''}}" catchtap="noop" catchtouchmove="noop">
+    <!-- ① 分数：更新=绿 / 保留=橙（⚠️ 不是红：保留不是错误） -->
+    <text class="sp-score {{state === 'keep' ? 'text-warn' : 'text-ok'}}">{{scoreText}}</text>
+
+    <!-- ② 战绩胶囊 -->
+    <view class="sp-pill {{state === 'keep' ? 'sp-pill-keep' : 'sp-pill-up'}}">
+      <text class="text-26rpx font-semibold">{{pillText}}</text>
+    </view>
+
+    <!-- ③ 下句：更新说"超越了多少 + 饼干"；保留说"本次未能超越"（⚠️ 不显示本次分） -->
+    <text class="text-24rpx sp-sub mt-2">{{subText}}</text>
+
+    <view class="sp-sep"></view>
+
+    <!-- ④ 五维（照搬 pages/challenge 的口径：lib/score-parts.ts） -->
+    <view wx:if="{{dims.length > 0}}">
+      <text class="text-24rpx block mb-2 sp-faint">成绩详情</text>
+      <text class="text-25rpx block leading-[1.6] mb-3 sp-sub" wx:if="{{hint}}">{{hint}}</text>
+      <view class="flex items-center py-2" wx:for="{{dims}}" wx:key="key">
+        <text class="text-26rpx w-[88rpx] shrink-0 sp-muted">{{item.label}}</text>
+        <view class="flex-1 h-[10rpx] rounded-full mx-3 sp-track">
+          <view class="h-[10rpx] rounded-full {{item.barCls}}" style="width:{{item.pct}}%"></view>
+        </view>
+        <text class="text-28rpx font-semibold w-[96rpx] text-right shrink-0 {{item.textCls}}">{{item.value}}</text>
+      </view>
+    </view>
+
+    <!-- ⑤ 逐词高亮 —— ⭐ **两种状态都要有**（设计稿"保留"那张漏画了，是设计稿不严谨） -->
+    <block wx:if="{{wordViews.length > 0}}">
+      <view class="sp-sep"></view>
+      <view class="flex flex-wrap">
+        <text wx:for="{{wordViews}}" wx:key="i" class="text-40rpx leading-[1.35] px-1 {{item.cls}}">{{item.text}}</text>
+      </view>
+    </block>
+
+    <!-- ⑥ AI 教练一句话（没有就整块不渲染） -->
+    <text wx:if="{{aiComment}}" class="text-26rpx sp-ai mt-4">{{aiComment}}</text>
+
+    <!-- ⑦ 底部两个动作 -->
+    <view class="sp-actions">
+      <view class="flex-1">
+        <ui-button variant="ghost" color="primary" size="lg" width="full" bind:press="onDetail">
+          <text class="text-30rpx">评测详情</text>
+        </ui-button>
+      </view>
+      <view class="flex-1">
+        <ui-button variant="fill" color="primary" size="lg" width="full" bind:press="onConfirm">
+          <text class="text-30rpx">确认</text>
+        </ui-button>
+      </view>
+    </view>
+  </view>
+</view>
