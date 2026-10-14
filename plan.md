@@ -105,19 +105,6 @@
   ⑦ 点确认 ⇒ 回 `retry` 且卡片上战绩**立刻**变成新分；
   ⑧ 点词发音（lg 卡）出声 —— ⚠️ 平台侧要先加「微信同声传译」插件，否则会提示插件没生效。
 
-- [ ] **B66** **修：提交失败仍扣能量**（⚠️ 2026-10-15 真机联调时实际踩到）
-  **症状**：`POST /api/user/submissions` 每次 500，而**每次都扣 2 点能量** ——
-  用户看到"提交失败"，账上却一路在掉。
-  **根因**：受理顺序是 ① `holdChallengeEnergy` 锁能量 → ② 落 `submissions` 行；
-  ② 有两条失败路径，而**只有一条**被兜住：
-  · `affectedRows === 0` ⇒ 有 `releaseChallengeEnergy` ✓
-  · **抛异常**（那次是 `unknown column confirmed_at` —— schema 少了列）⇒ 冒到 Hono 的 onError ⇒ 500，
-    那笔 `challenge_hold` **永远留在能量账本里** ✗
-  **修法**：把落库那句包进 `try/catch`，异常与 `affectedRows=0` **走同一条退能量 + 回 500 的路**。
-  **守门**：新增 `routes/submit-energy-guard.test.ts`（静态：try/catch 在不在、catch 里退没退、退能量出口 ≥ 2）
-  —— 已注入验证过它会红。
-  ⚠️ **同类风险**：其它"先锁资源、再写库"的地方也要照这条查一遍（锁了什么、哪几条路径会漏）。
-
 - [ ] **B57** **把所有按钮统一到 `ui-button`**（用户 2026-10 定：「接下来所有按钮都统一用这个组件」）
   ⚠️ **现状**：`ui-button` 已是唯一实现（四个维度 + 两个对外变量 `--btn-bg`/`--btn-fg`），
   但页面里还散着一批**手抄的按钮**。最典型的是「重试」—— 同一串
@@ -405,6 +392,19 @@
   ⚠️ 配色不写死：由宿主声明 `--btn-bg`/`--btn-fg`（prd §7.2）。
   ⇒ **做完的标志**：`arena-card` 里不再有参与区标记与 `.ac-pill` 样式（只剩一个 `<btn-record>`）；
   构建 + 测试绿。
+
+- [x] **B66** **修：提交失败仍扣能量**（⚠️ 2026-10-15 真机联调时实际踩到）
+  **症状**：`POST /api/user/submissions` 每次 500，而**每次都扣 2 点能量** ——
+  用户看到"提交失败"，账上却一路在掉。
+  **根因**：受理顺序是 ① `holdChallengeEnergy` 锁能量 → ② 落 `submissions` 行；
+  ② 有两条失败路径，而**只有一条**被兜住：
+  · `affectedRows === 0` ⇒ 有 `releaseChallengeEnergy` ✓
+  · **抛异常**（那次是 `unknown column confirmed_at` —— schema 少了列）⇒ 冒到 Hono 的 onError ⇒ 500，
+    那笔 `challenge_hold` **永远留在能量账本里** ✗
+  **修法**：把落库那句包进 `try/catch`，异常与 `affectedRows=0` **走同一条退能量 + 回 500 的路**。
+  **守门**：新增 `routes/submit-energy-guard.test.ts`（静态：try/catch 在不在、catch 里退没退、退能量出口 ≥ 2）
+  —— 已注入验证过它会红。
+  ⚠️ **同类风险**：其它"先锁资源、再写库"的地方也要照这条查一遍（锁了什么、哪几条路径会漏）。
 
 - [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
   `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
