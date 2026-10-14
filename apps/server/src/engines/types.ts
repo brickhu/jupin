@@ -72,3 +72,21 @@ export interface ScoreEngine {
   readonly name: string
   score(opts: ScoreOptions): Promise<ScoreResult>
 }
+
+/**
+ * ⭐⭐ **引擎"答了，但判这段音频无效"**（例如讯飞的 `is_rejected`）。
+ *
+ * ⚠️⚠️ **必须与"没触达到引擎"分开**，因为**能量扣不扣就挂在这条分界上**：
+ *    · 这个错 ⇒ 我们**真的调了引擎、也真的付了钱** ⇒ **扣**
+ *    · 其它错（网络 / 解析 / 读音频失败）⇒ 这一把等于没发生 ⇒ **退回**
+ *
+ * ⚠️ 为什么用一个**类型**而不是匹配 reason 文案：按文案匹配的话，
+ *    改一个字（比如去掉"请"）规则就**静默失效**，而且没有任何测试会发现 ——
+ *    这条纪律在 services/scoring.ts 的 `fail()` 上已经为"防刷计数"写过一次，别再犯。
+ */
+export class EngineRejectedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EngineRejectedError'
+  }
+}

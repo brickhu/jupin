@@ -5,6 +5,7 @@ import { db } from '../db'
 import { articles, submissions, users } from '../db/schema'
 import { env } from '../env'
 import { getEngine } from '../engines'
+import { EngineRejectedError } from '../engines/types'
 import { getStorage } from '../storage'
 import { trackInvalid } from './submission'
 import { releaseChallengeEnergy } from './energy'
@@ -122,7 +123,8 @@ export async function runScoring(submissionId: string): Promise<void> {
     const { userId, articleId, audioKey, audioUrl } = row
 
     const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
-    if (!article) return fail(submissionId, '文章不存在')
+    /** ⚠️ 句子不在库里是**我们的问题** ⇒ infra（不扣用户） */
+    if (!article) return fail(submissionId, '文章不存在', 'infra')
 
     // ---- 读音频 ----
     // ⚠️ 顺序：先试客户端给的带签名地址，再退回对象存储。
@@ -175,7 +177,20 @@ export async function runScoring(submissionId: string): Promise<void> {
       const refText = await loadArticleRefText(article.id)
       result = await getEngine().score({ refText, audio: normalized.pcm })
     } catch (err) {
-      return fail(submissionId, (err as Error).message)
+      /**
+       * ⭐⭐ **计费分界就在这里**（用户 2026-10-15 定：「成功调用了讯飞检测 ⇒
+       *    不管它反馈什么，都扣除；事务失败 ⇒ 回退」）。
+       *
+       *    · `EngineRejectedError` = 引擎**答了**（说这段音频没读出有效语音）
+       *      ⇒ `invalid` ⇒ **扣**（我们真的调了引擎、也真的付了钱）
+       *    · 其它（音频归一化失败 / 读正文失败 / 网络 / 引擎格式异常）
+       *      ⇒ `infra` ⇒ **退回**（这一把等于没发生）
+       *
+       * ⚠️⚠️ 这个 try 里**混着两种性质**的失败，所以判据必须是**类型**，不能是文案
+       *    （按文案匹配的话，改一个字规则就静默失效 —— 见 fail() 上那段说明）。
+       */
+      const kind = err instanceof EngineRejectedError ? 'invalid' : 'infra'
+      return fail(submissionId, (err as Error).message, kind)
     }
 
     /**
@@ -437,14 +452,35 @@ export async function markScoringFailed(submissionId: string, reason: string): P
    */
   if (failed) {
     try {
-      if (await releaseChallengeEnergy(failed.userId, submissionId)) {
+      /**
+       * ⭐⭐ **只有 `infra` 退能量**（用户 2026-10-15 定「成功调用即计费」）。
+       *
+       * ⚠️⚠️ 口径换过一次，以这条为准：
+       *    · `invalid`（引擎**答了**：判这段音频无效）⇒ **不退**，那 2 点就是花掉的 ——
+       *      我们确实调了引擎、也确实付了钱。把 energyState 记成 `charged`（与成功同值），
+       *      于是"这一把的能量到底怎么了"在任何一条路上都读得出来。
+       *    · `infra`（**没触达到**引擎）⇒ **退**，这一把等于没发生（这一行随后还会被删掉）。
+       *
+       * ⚠️ 旧口径是"失败一律退回，成本我们承担"。改掉的理由：那条规则要求
+       *    **两条失败路径都记得退**，而漏一条的症状是"用户提交失败、账上却在掉"
+       *    （2026-10-15 真机上就是这样漏的，见 routes/submissions.ts 的事务说明）——
+       *    判据越少、越贴着"钱到底花没花"，越不会漏。
+       */
+      if (kind === 'infra') {
+        if (await releaseChallengeEnergy(failed.userId, submissionId)) {
+          await db
+            .update(submissions)
+            .set({ energyState: 'released' })
+            .where(eq(submissions.id, submissionId))
+        }
+      } else {
         await db
           .update(submissions)
-          .set({ energyState: 'released' })
+          .set({ energyState: 'charged' })
           .where(eq(submissions.id, submissionId))
       }
     } catch (err) {
-      console.warn('[scoring] 退回能量失败 id=' + submissionId + '：' + (err as Error).message)
+      console.warn('[scoring] 能量结算没做完 id=' + submissionId + '：' + (err as Error).message)
     }
   }
 

@@ -151,23 +151,36 @@ export async function holdChallengeEnergy(
   now: Date = new Date(),
 ): Promise<boolean> {
   await topUpEnergy(userId, now)
+  return db.transaction((tx) => holdChallengeEnergyIn(tx, userId, submissionId))
+}
 
-  return db.transaction(async (tx) => {
-    /**
-     * ⚠️ 走公用的 spendEnergy（扣减的唯一实现），而不是在这里再写一遍
-     *    "读改写余额 + 记流水"。
-     * ⚠️ 'duplicate'（重试 / 并发重复锁同一条提交）在这里**要当成功** ——
-     *    调用方只关心"这条提交的能量锁住了没有"。
-     */
-    const spent = await spendEnergy(tx, {
-      userId,
-      amount: ENERGY_PER_CHALLENGE,
-      reason: ENERGY_REASON.hold,
-      refType: 'submission',
-      refId: submissionId,
-    })
-    return spent === 'ok' || spent === 'duplicate'
+/**
+ * ⭐ **事务内的版本** —— 给"锁能量和写别的行必须原子"的调用方用。
+ *
+ * ⚠️⚠️ 为什么会需要它（2026-10 实际踩到的）：受理提交的顺序是
+ *    ① 锁能量 → ② 落 `submissions` 行。②失败时①那笔预扣就**泄漏**在账本里 ——
+ *    用户看到"提交失败"，账上却照样少了 2 点。
+ *    ⇒ 把两步放进**同一个事务**，②一抛异常，①**自动回滚**（这就是"事务回退"）。
+ *
+ * ⚠️ 必须由调用方先把 `topUpEnergy` 跑掉（它自己开事务，不能嵌在里面）——
+ *    所以这个函数**只做扣减**，不碰每日补足。
+ * ⚠️ 走公用的 `spendEnergy`（扣减的唯一实现），而不是在这里再写一遍"读改写余额 + 记流水"。
+ * ⚠️ `'duplicate'`（重试 / 并发重复锁同一条提交）在这里**要当成功** ——
+ *    调用方只关心"这条提交的能量锁住了没有"。
+ */
+export async function holdChallengeEnergyIn(
+  ex: Executor,
+  userId: number,
+  submissionId: string,
+): Promise<boolean> {
+  const spent = await spendEnergy(ex, {
+    userId,
+    amount: ENERGY_PER_CHALLENGE,
+    reason: ENERGY_REASON.hold,
+    refType: 'submission',
+    refId: submissionId,
   })
+  return spent === 'ok' || spent === 'duplicate'
 }
 
 /**

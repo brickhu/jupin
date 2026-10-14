@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import WebSocket from 'ws'
 import { XMLParser } from 'fast-xml-parser'
+/** ⚠️ 必须**值导入**（它是 class，不能走 import type） */
+import { EngineRejectedError } from './types'
 import type { ScoreDimensions, ScoreEngine, ScoreOptions, ScoreResult, WordScore } from './types'
 
 const HOST = 'ise-api.xfyun.cn'
@@ -205,7 +207,8 @@ export function parseIseXml(xml: string): ScoreResult {
   if (!paper) throw new Error('讯飞 ISE 返回格式异常：缺少 rec_paper')
 
   const isRejected = String(paper['@_is_rejected']) === 'true'
-  if (isRejected) throw new Error('未检测到有效语音，请重新朗读')
+  /** ⚠️ 用**类型**而不是普通 Error：它决定这一次**扣不扣能量**（见 EngineRejectedError） */
+  if (isRejected) throw new EngineRejectedError('未检测到有效语音，请重新朗读')
 
   const total = Number(paper['@_total_score'])
 

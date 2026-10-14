@@ -14,7 +14,7 @@ import { articles, submissions, users } from '../db/schema'
 import { participationIdOf } from '@jushuo/shared'
 import { env } from '../env'
 import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } from '../services/audio-key'
-import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
+import { releaseChallengeEnergy, holdChallengeEnergyIn, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
 import { sentenceCookiesOf } from '../services/cookies'
@@ -327,18 +327,58 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   //
   // ⚠️ 拒绝是 **429 + 明确 code**，不是 400：它是**业务规则**，不是「请求写错了」。
   //    客户端要据此给出可行动的提示，而不是一句「请求失败」。
-  const locked = await holdChallengeEnergy(userId, submissionId)
-  if (!locked) {
-    return c.json(
-      {
-        ok: false,
-        code: 'ENERGY_EXHAUSTED',
-        energy: await readEnergy(userId),
-        error: '能量不够了 —— 明天会补到 3 点，也可以充值',
-      },
-      429,
-    )
-  }
+  /**
+   * ⭐⭐ **锁能量 + 落行 = 一个事务**（用户 2026-10-15 定：「事务绑死」）。
+   *
+   * ⚠️⚠️ 为什么要原子：顺序本来是 ① 锁 → ② 落行，而 ② 抛异常时 ① 那笔
+   *    `challenge_hold` 会**泄漏**在能量账本里 —— 用户看到"提交失败"，账上却照样少了 2 点。
+   *    （真实发生过：schema 少一列 ⇒ 每次提交都 500，而**每次都扣**。）
+   *    ⇒ 放进同一个事务之后，② 一抛异常，① **自动回滚** —— 事务回退，等于这一把没发生。
+   *
+   * ⚠️ 事务**只圈受理**，不圈引擎调用：引擎要 10–20 秒，而 `callContainer` 的超时上限是 15 秒
+   *    ⇒ 受理必须毫秒级返回（见下面 `void runScoring`）。
+   *    ⇒ 「**调用成功即计费**」那条规矩落在**结算**那一步（services/scoring.ts 的 kind 分类）。
+   */
+  let locked = false
+  let inserted: unknown = null
+  try {
+    inserted = await db.transaction(async (tx) => {
+      locked = await holdChallengeEnergyIn(tx, userId, submissionId)
+      // ⚠️ 不够就整块回滚（= 什么都没发生），调用方据此回 429
+      if (!locked) return null
+      return tx
+        .insert(submissions)
+        .values({
+          id: submissionId,
+          userId,
+          articleId,
+          /**
+           * ⭐ 这一条属于哪一行参与 —— **插入时就算好**，不看参与行在不在：
+           *    participationIdOf 是 (userId, articleId) 的纯函数，而参与行要等**出分结算**
+           *    才由 syncParticipation 建，所以不能靠 join、更不能加外键（见 db/schema.ts 的说明）。
+           */
+          participationId: participationIdOf(userId, articleId),
+          audioKey,
+          // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
+          //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
+          audioUrl: audioUrl ?? null,
+          engine: env.ENGINE,
+          isPublic,
+          // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
+          attemptId,
+          status: 'scoring',
+          heartbeatAt: new Date(),
+          attempts: 1,
+          scheduleDate,
+          // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
+          energyState: 'held',
+        })
+        /**
+         * ⚠️ 幂等自赋值（**不改任何业务列**）：只为了拿到**可靠的 affectedRows**。
+         *    写 `id = id` 而不是 `status = status` —— 后者会触发 mysql2 的
+         *    "同值更新算 0 行"行为，让 2 变成 0，又把判据搞坏。
+         */
+        .onDuplicateKeyUpdate({ set: { id: sql`id` } })
 
     // ---- 5. ⭐ 落「打分中」的行，然后**不等它** ----
     //
@@ -358,56 +398,31 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
      *    ⚠️ 并发重发时两个请求都走到这里，前者插入、后者命中的是**同一行**
      *      （同一个 submissionId），所以两边回答一致，不会 500。
      */
+    })
+  } catch (err) {
+    console.error('[submissions] 受理事务失败 id=' + submissionId + '：' + (err as Error).message)
     /**
-     * ⚠️⚠️ **插入本身也要兜住异常**（2026-10 实际踩出来的漏洞）。
-     *
-     *    下面那段 `affectedRows === 0` 只兜住了「没报错但没写进去」；
-     *    而**抛异常**（例如 schema 少一列 ⇒ `Unknown column`）会直接冒到 Hono 的 onError ⇒ 500，
-     *    于是上面第 5 步锁的那 2 点能量**永远留在账本里**。
-     *    ⚠️ 真实症状：一次 schema 没迁移上去的部署里，每次提交都 500，而且**每次都扣 2 点** ——
-     *       用户看到的是"提交失败"，账上却一路在掉。
-     *    ⇒ 异常与 affectedRows=0 **走同一条退能量 + 回 500 的路**。
+     * ⚠️ 事务已经回滚 ⇒ 那笔预扣本来就不存在了，这里再退一次是**无害的兜底**
+     *    （`releaseChallengeEnergy` 有守卫：没有 hold 行就不退，见 services/energy.ts）。
+     *    ⚠️ 留着它，是因为"回滚到底生效没有"不该靠调用方假设。
      */
-    let inserted: unknown
-    try {
-      inserted = await db
-        .insert(submissions)
-          .values({
-            id: submissionId,
-            userId,
-            articleId,
-            /**
-             * ⭐ 这一条属于哪一行参与 —— **插入时就算好**，不看参与行在不在：
-             *    participationIdOf 是 (userId, articleId) 的纯函数，而参与行要等**出分结算**
-             *    才由 syncParticipation 建，所以不能靠 join、更不能加外键（见 db/schema.ts 的说明）。
-             */
-            participationId: participationIdOf(userId, articleId),
-            audioKey,
-            // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
-            //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
-            audioUrl: audioUrl ?? null,
-            engine: env.ENGINE,
-            isPublic,
-            // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
-            attemptId,
-            status: 'scoring',
-            heartbeatAt: new Date(),
-            attempts: 1,
-            scheduleDate,
-            // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
-            energyState: 'held',
-          })
-          /**
-           * ⚠️ 幂等自赋值（**不改任何业务列**）：只为了拿到**可靠的 affectedRows**。
-           *    写 `id = id` 而不是 `status = status` —— 后者会触发 mysql2 的
-           *    "同值更新算 0 行"行为，让 2 变成 0，又把判据搞坏。
-           */
-          .onDuplicateKeyUpdate({ set: { id: sql`id` } })
-    } catch (err) {
-      console.error('[submissions] 落库抛异常 id=' + submissionId + '：' + (err as Error).message)
-      await releaseChallengeEnergy(userId, submissionId).catch(() => {})
-      return c.json({ ok: false, error: '提交没能落库，请再试一次' }, 500)
-    }
+    await releaseChallengeEnergy(userId, submissionId).catch(() => {})
+    return c.json({ ok: false, error: '提交没能落库，请再试一次' }, 500)
+  }
+
+  // ⚠️ 能量不够：拒绝是 **429 + 明确 code**，不是 400 —— 它是**业务规则**，不是「请求写错了」。
+  //    客户端要据此给出可行动的提示，而不是一句「请求失败」。
+  if (!locked) {
+    return c.json(
+      {
+        ok: false,
+        code: 'ENERGY_EXHAUSTED',
+        energy: await readEnergy(userId),
+        error: '能量不够了 —— 明天会补到 3 点，也可以充值',
+      },
+      429,
+    )
+  }
 
       /**
        * ⚠️ `affectedRows`：**1 = 新插入**，**2 = 命中已存在的那一行**（并发重发）。

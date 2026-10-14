@@ -19,7 +19,13 @@
         <text class="text-44rpx font-bold leading-[1]">⚡ -{{cost}}</text>
       </view>
       <text class="text-26rpx et-sub mt-4 leading-[1.7] text-center">本次 AI 检测将消耗能量 {{cost}} ⚡，剩余 {{balance - cost}} ⚡</text>
-      <text class="text-22rpx et-hint mt-2">评测失败不扣能量</text>
+      <!--
+        ⚠️ 这一行**不能写成"评测失败不扣能量"** —— 2026-10-15 口径改了：
+           只有**检测没跑成**（没触达到引擎：网络/读音频失败）才退回；
+           引擎**答了**（哪怕判这段音频无效）那 2 点就是花掉的。
+           ⇒ 文案只承诺能兑现的那一件事。
+      -->
+      <text class="text-22rpx et-hint mt-2">检测没跑成，能量会退回</text>
     </block>
 
     <!-- ⭐ 余额不够：不是错误，说清差多少 + 一个能走的出口 -->
