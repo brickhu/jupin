@@ -17,7 +17,8 @@ import { assertAudioKeyOwnedBy, assertAudioUrlMatchesKey, makeSubmissionId } fro
 import { releaseChallengeEnergy, holdChallengeEnergy, readEnergy } from '../services/energy'
 import { getBestExcluding, getLeaderboardAround, getRank } from '../services/leaderboard'
 import { claimStaleScoring, markScoringFailed, MAX_SCORING_ATTEMPTS, runScoring } from '../services/scoring'
-import { claimCookies, sentenceCookiesOf } from '../services/cookies'
+import { sentenceCookiesOf } from '../services/cookies'
+import { confirmSubmission } from '../services/confirm'
 import { describe } from '../services/submission-view'
 import type { Variables } from '../middleware/auth'
 import { defaultHook } from '../openapi'
@@ -409,7 +410,8 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   void runScoring(submissionId)
 
   console.log('[submissions] 已受理 id=' + submissionId + ' user=' + userId + ' article=' + articleId)
-  return c.json({ ok: true, data: { submissionId, status: 'scoring' as const } }, 202)
+  // ⚠️ 刚受理：还没出分，自然也谈不上「确认」
+  return c.json({ ok: true, data: { submissionId, status: 'scoring' as const, confirmed: false } }, 202)
 })
 
 /**
@@ -459,7 +461,7 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
      *    朗读页本来就在轮询这个接口，多开一个请求只为了一个数字不划算。
      * ⚠️ 只在**已出分**时算：没出分时它没有意义，也算不出来（账本里还没有这笔）。
      */
-    const data = done ?? { submissionId: id, status: 'failed' as const }
+    const data = done ?? { submissionId: id, status: 'failed' as const, confirmed: false }
     const sentenceCookies = await sentenceCookiesOf(userId, row.articleId)
     return c.json({ ok: true, data: { ...data, sentenceCookies } }, 200)
   }
@@ -469,7 +471,7 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
     row.heartbeatAt !== null &&
     Date.now() - new Date(row.heartbeatAt).getTime() < HEARTBEAT_TIMEOUT_MS
   if (alive) {
-    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } }, 200)
+    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const, confirmed: false } }, 200)
   }
 
   // ---- 心跳停了 ----
@@ -478,7 +480,7 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
     console.warn('[submissions] 打分重试次数用尽 id=' + id + '（' + row.attempts + ' 次）')
     await markScoringFailed(id, '打分多次中断，请重录一次')
     const dead = await describe(userId, id)
-    return c.json({ ok: true, data: dead ?? { submissionId: id, status: 'failed' as const } }, 200)
+    return c.json({ ok: true, data: dead ?? { submissionId: id, status: 'failed' as const, confirmed: false } }, 200)
   }
 
   // ⭐ 原子认领。⚠️ 认领成功后**在原地把它跑完**（await），而不是又丢回后台：
@@ -487,12 +489,12 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
   const claimed = await claimStaleScoring(id)
   if (!claimed) {
     // 被并发的另一次轮询抢走了，让它跑
-    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const } }, 200)
+    return c.json({ ok: true, data: { submissionId: id, status: 'scoring' as const, confirmed: false } }, 200)
   }
   console.log('[submissions] 接管停跳的打分任务 id=' + id + '（第 ' + (row.attempts + 1) + ' 次）')
   await runScoring(id)
   const recovered = await describe(userId, id)
-  return c.json({ ok: true, data: recovered ?? { submissionId: id, status: 'scoring' as const } }, 200)
+  return c.json({ ok: true, data: recovered ?? { submissionId: id, status: 'scoring' as const, confirmed: false } }, 200)
 })
 
 /**
@@ -535,7 +537,17 @@ const submissionClaimRoute = createRoute({
   method: 'post',
   path: '/{id}/claim',
   tags: ['挑战提交'],
-  summary: '领取这一把的饼干（点开结果之后才入账）',
+  summary: '⭐ 确认这一把（唯一真正的结算：入账饼干 + 写参与记录 + 清理语音）',
+  description:
+    '⭐⭐ **用户按下面板上那个「确认」时调它**（prd §7.2，2026-10 定）。\n\n' +
+    '一次动作做三件事：\n' +
+    '  ① 把结算时算好的饼干入账（**幂等**，重复调用不会再发）；\n' +
+    '  ② 写 `submissions.confirmed_at` —— 参与记录**只由已确认的提交撑起来**，\n' +
+    '     所以"出分但没确认"的那把**不进战绩、不进榜单**；\n' +
+    '  ③ 清掉除"当前参与记录指向的那一份"以外的语音（**永不确认 ⇒ 永不清理**）。\n\n' +
+    '⚠️ 出分之后**不自动确认** —— 用户可以忽略面板甚至关掉小程序，\n' +
+    '   所以"这把算不算数"必须由这一次调用说了算。\n' +
+    '⚠️ 重复调用安全：不重复记账、不刷新确认时间。',
   security: [{ userToken: [] }],
   request: { params: z.object({ id: z.string() }) },
   responses: {
@@ -549,7 +561,7 @@ const submissionClaimRoute = createRoute({
 
 submissionsRoutes.openapi(submissionClaimRoute, async (c) => {
   const userId = c.get('userId')
-  const r = await claimCookies(userId, c.req.param('id'))
+  const r = await confirmSubmission(userId, c.req.param('id'))
   // ⚠️ 不属于本人一律当作不存在（与状态接口同一条：不区分 403/404，那会泄露 id 是否存在）
   if (!r) return c.json({ ok: false, error: '提交记录不存在' }, 404)
   return c.json({ ok: true as const, data: { claimed: r.claimed, cookies: r.cookies } }, 200)

@@ -658,6 +658,23 @@ export const submissions = mysqlTable('submissions', {
 
   createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
   scoredAt: datetime('scored_at', { mode: 'date', fsp: 3 }),
+
+  /**
+   * ⭐⭐ **用户确认这一把的时刻**（prd §7.2「确认 = 唯一真正的结算」，2026-10 定）。
+   *
+   * ⚠️⚠️ 为什么必须有这一列、而不是"出分即算数"：
+   *    出分之后用户**可以忽略那个面板**（甚至关掉小程序）—— 那时这一把
+   *    **不该算进战绩**。所以「出分」与「算数」必须是两个时刻。
+   *
+   * ⭐ 参与记录（`participations`）**只由已确认的提交撑起来** ——
+   *    判据写在 `services/participations.ts` 的 `scoredOf()` 里（**一处**，别在别处再判一次）。
+   *    ⇒ 于是 `rebuildParticipations()` 与增量路径天然一致：都只看这一列。
+   *
+   * ⚠️ 语义是「**确认**」不是「领取饼干」：饼干在结算时就已成快照（`cookies_earned`），
+   *    确认只是把它入账 —— 两件事是同一个用户动作，但这一列只表达前者。
+   * ⚠️ 幂等：重复确认**不覆盖**这个时间（第一次为准），与 `claim` 的重复领取同口径。
+   */
+  confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 3 }),
 }, (t) => [
   /** ⭐ 按参与行取它的逐次提交（`submissions.participation_id` 的读者） */
   index('submissions_participation_idx').on(t.participationId),

@@ -39,15 +39,19 @@ export async function describe(
   const [row] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
   if (!row) return null
 
+  // ⚠️ 没出分 / 失败的都谈不上"确认" —— 确认的前提是"有分可确认"
+  const confirmed = row.confirmedAt !== null
+
   if (row.status === 'failed') {
     return {
       submissionId,
       status: 'failed',
+      confirmed,
       error: row.failReason ?? '这段录音检测失败，请重录',
     }
   }
   if (row.status !== 'scored' || row.score === null) {
-    return { submissionId, status: 'scoring' }
+    return { submissionId, status: 'scoring', confirmed }
   }
 
   // ⚠️ 排行与「上次最好成绩」都按 **articleId**（句子就是竞技场）——
@@ -139,5 +143,5 @@ export async function describe(
     dimensions: row.dimensions ? (JSON.parse(row.dimensions) as ScoreDimensions) : undefined,
     streak: row.streakDelta ? (JSON.parse(row.streakDelta) as StreakDelta) : undefined,
   }
-  return { submissionId, status: 'scored', result }
+  return { submissionId, status: 'scored', confirmed, result }
 }

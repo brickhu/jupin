@@ -100,6 +100,18 @@ export interface SubmissionStatusResponse {
   submissionId: string
   status: 'scoring' | 'scored' | 'failed'
   /**
+   * ⭐⭐ **这一把"确认"了吗**（prd §7.2，2026-10 定）。
+   *
+   * ⚠️⚠️ `status === 'scored'` 只说"**出分了**"，**不说"算数了"** ——
+   *    出分之后用户可以忽略那个面板（甚至关掉小程序）。
+   *    参与记录 / 榜单**只认已确认的**（判据在服务端 participations.ts 的 scoredOf）。
+   *
+   * ⇒ 客户端靠它把两态分开：
+   *    `scored`（已出分、**未确认** ⇒ 显示分数 + 点开面板）
+   *    `retry` （**已确认** ⇒ 战绩已更新，显示战绩分 + 麦克风）
+   */
+  confirmed: boolean
+  /**
    * ⚠️ 只在 status === 'scored' 时存在。
    *    POST 受理时如果这段音频**早就打过分**（幂等命中），也会直接带上它 ——
    *    客户端看到 scored 就不必再轮询了。

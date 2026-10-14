@@ -60,6 +60,7 @@ const P = {
   articleContent: 'apps/server/src/services/article-content.ts',
   articleDelete: 'apps/server/src/services/article-delete.ts',
   scoring: 'apps/server/src/services/scoring.ts',
+  confirm: 'apps/server/src/services/confirm.ts',
   submissionsRoute: 'apps/server/src/routes/submissions.ts',
   favorites: 'apps/server/src/services/favorites.ts',
   userService: 'apps/server/src/services/user.ts',
@@ -202,6 +203,23 @@ const COLUMN_OWNERS: Record<string, Record<string, string[]>> = {
     cookies_earned: [P.settle],
     cookie_meta: [P.settle],
     streak_delta: [P.settle],
+    /**
+     * ⭐⭐ 「**确认**」这一列只有 confirm.ts 写（prd §7.2，2026-10 定）。
+     *
+     * ⚠️ 它是「出分」与「算数」之间的那个时刻 —— 出分之后用户可以忽略面板，
+     *    所以"这一把算不算数"必须由这一次写入说了算。
+     * ⚠️ 参与记录**只由 confirmed_at 非空的提交撑起来**（判据在 participations.ts 的 scoredOf）。
+     */
+    confirmed_at: [P.confirm],
+    /**
+     * ⭐ 语音文件：受理时写入 → 出分时换成存档 key → **确认时清掉"非当前最高分"那些**。
+     *
+     * ⚠️ 这里登记成**多所有者**（含 confirm），而不是给 confirm 开一条豁免 ——
+     *    它确实是一个**正当的**写入方（prd §7.2「语音跟着参与记录走」），
+     *    豁免是留给一次性/运维/dev 路径的，别混。
+     */
+    audio_key: [P.scoring, P.submissionsRoute, P.articleDelete, P.confirm],
+    audio_url: [P.scoring, P.submissionsRoute, P.articleDelete, P.confirm],
   },
 }
 

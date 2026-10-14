@@ -1,0 +1,1 @@
+ALTER TABLE `submissions` ADD `confirmed_at` datetime(3);

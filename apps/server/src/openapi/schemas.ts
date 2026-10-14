@@ -542,6 +542,10 @@ export const SubmissionStatusResponseSchema = okEnvelope(
     .object({
       submissionId: z.string(),
       status: z.enum(['scoring', 'scored', 'failed']),
+      /** ⭐ 这一把"确认"了吗 —— scored 只说"出分了"，confirmed 才说"算数了"（prd §7.2） */
+      confirmed: z.boolean().openapi({
+        description: '这一把是否已被用户确认；参与记录/榜单只认已确认的',
+      }),
       /** 只在 scored 时存在 */
       result: SubmitResponseSchema.optional(),
       /** 只在 failed 时存在 */
