@@ -1,0 +1,54 @@
+<!--
+  ⭐ 参与区（五态）—— 见 btn-record.ts 的说明。首页 lg 卡与详情页共用同一个组件。
+  ⚠️ 卡内按钮配色由宿主声明 --btn-bg / --btn-fg；这里一个颜色都不写。
+  ⚠️ 「try」 与 「retry」 的麦克风**位置刻意不同**（整颗胶囊 vs 右侧圆钮）——
+     那是设计稿的两种形态，不是同一个控件换文案。
+-->
+<!-- ① try：没参与过 ⇒ 一颗实心胶囊 -->
+<view wx:if="{{state === 'try'}}">
+  <ui-button variant="fill" size="md" roundness="full" width="full"
+             icon="mdi:microphone" bind:press="onMic">点击录音，开始朗读</ui-button>
+</view>
+
+<!-- ② retry：参与过 ⇒ 左（声波 + 战绩）· 右（圆形麦克风） -->
+<view wx:elif="{{state === 'retry'}}" class="flex items-center justify-between">
+  <view class="flex items-center">
+    <ui-icon name="mdi:waveform" class="leading-[1] text-40rpx" />
+    <text class="text-44rpx font-semibold ml-2 leading-[1]">{{score}}</text>
+  </view>
+  <ui-button variant="fill" onlyIcon="{{true}}" size="md" roundness="full"
+             icon="mdi:microphone" bind:press="onMic" />
+</view>
+
+<!--
+  ③④⑤ recoded / checking / scored：一颗描边胶囊
+  ⚠️ 它**不是** ui-button：里面是**多个独立可点区域**（试听 / 重录 / 确认 或 分数），
+     而 ui-button 根节点 catchtap 会把点击吞掉 —— 那样每个动作都点不动。
+     ⇒「一行多个独立动作」是**组合控件**，不是按钮。
+-->
+<view wx:else class="br-pill">
+  <!-- 试听我那一段（左端）—— 复用 audio-button，它自己把时长格式化成 00:33 -->
+  <audio-button size="sm" showDuration="{{true}}" durationMs="{{durationMs}}"
+                fill="{{fill}}" ink="{{ink}}"
+                state="{{loading ? 'loading' : (playing ? 'playing' : 'unplay')}}"
+                bind:play="onPlay" />
+  <view class="flex-1"></view>
+
+  <!-- ③ recoded：↺ 重录 ｜ ✓ 确认提交 -->
+  <block wx:if="{{state === 'recoded'}}">
+    <ui-button variant="ghost" onlyIcon="{{true}}" size="sm" roundness="full"
+               icon="mdi:backup-restore" bind:press="onRedo" />
+    <ui-button variant="fill" onlyIcon="{{true}}" size="sm" roundness="full"
+               icon="mdi:check" bind:press="onConfirm" />
+  </block>
+
+  <!-- ④ checking：转圈 —— ⚠️ 这里没有可点的东西，这一把已经在云端算了 -->
+  <ui-icon wx:elif="{{state === 'checking'}}" name="mdi:loading"
+           class="br-spin leading-[1] text-40rpx" />
+
+  <!-- ⑤ scored：这一把的分 + › —— 点它**再开一次出片面板**（可反复，直到确认） -->
+  <view wx:else class="flex items-center" catchtap="onPanel">
+    <text class="text-34rpx font-semibold leading-[1]">{{score}}</text>
+    <ui-icon name="mdi:chevron-right" class="leading-[1] text-32rpx ml-1 br-faint" />
+  </view>
+</view>

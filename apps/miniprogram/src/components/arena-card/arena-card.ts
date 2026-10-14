@@ -22,6 +22,12 @@ interface Entry {
   text?: string
   translation?: string
   audio?: { full: string; kind: 'cloud' | 'http' } | null
+  /**
+   * ⭐ **我自己那一段录音**（参与区那颗试听钮播的就是它，不是标准音）。
+   * ⚠️ 与上面的 `audio`（标准音）**是两段不同的东西**：
+   *    标准音回答"这句话该怎么念"，我自己的录音回答"我刚才读成什么样"。
+   */
+  recordAudio?: { full: string; kind: 'cloud' | 'http' } | null
   /** 标准音时长（毫秒）—— 交给 audio-button 统一格式化成 00:05 */
   durationMs?: number
   stat?: string
@@ -78,6 +84,10 @@ Component({
      * ⇒ 页面把状态算好、事件接好之后，再置 true（见 prd §7.2 的迁移顺序）。
      */
     showRecord: { type: Boolean, value: false },
+    /** 参与区里"我那一段录音"是不是正在播 */
+    playingRecord: { type: Boolean, value: false },
+    /** 正在取"我那一段录音"（还没出声） */
+    loadingRecord: { type: Boolean, value: false },
     entry: { type: Object },
     /** 这张卡的标准音是不是正在播 */
     playing: { type: Boolean, value: false },
@@ -144,6 +154,15 @@ Component({
       const e = this.data.entry as Entry | null
       // ⚠️ audio 一起带上：页面不用再去自己的 data 里反查是哪一张卡
       this.triggerEvent('play', { articleId: e?.articleId, audio: e?.audio ?? null })
+    },
+    /**
+     * ⭐ 参与区里那颗「试听**我自己的**录音」—— 与上面 onPlay（标准音）分开报。
+     * ⚠️ 不合并成同一个事件：它们播的是两段音频（一个是标准音、一个是我读的），
+     *    页面要分别维护"谁在播"（同时播两个就变成了双声道）。
+     */
+    onPlayRecord() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('playRecord', { articleId: e?.articleId, audio: e?.recordAudio ?? null })
     },
     onStart() {
       const e = this.data.entry as Entry | null

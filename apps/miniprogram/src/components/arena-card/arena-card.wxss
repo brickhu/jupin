@@ -58,25 +58,3 @@
   color: currentColor;
   opacity: 0.5;
 }
-
-/*
- * ── 参与区的描边胶囊（「recoded」 / 「checking」 / 「scored」 三态共用） ──
- *
- * ⚠️ 它**不是** 「ui-button」：里面是**三个可点区域**（试听 / 重录 / 确认 或 分数），
- *    而 ui-button 的根节点 「catchtap」 会把点击吞掉 —— 那样三个动作就都点不动了。
- *    ⇒ 「一行多个独立动作」是**组合控件**，不是按钮（同 B57 里"蒙层/整卡点击"的判例）。
- * ⚠️ 边框用 「currentColor」（卡片前景色）—— 任何主题下都跟卡片一致，不用传色值。
- */
-.ac-pill {
-  display: flex;
-  align-items: center;
-  height: 88rpx;
-  padding: 0 16rpx 0 12rpx;
-  border: 2rpx solid currentColor;
-  border-radius: 9999rpx;
-  box-sizing: border-box;
-}
-
-/* 转圈（checking）—— 与 ui-button 的 ub-spin 同一套做法，但这里不是按钮 */
-.ac-spin { animation: ac-spin 0.9s linear infinite; }
-@keyframes ac-spin { to { transform: rotate(360deg); } }

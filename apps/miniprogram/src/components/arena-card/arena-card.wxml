@@ -86,57 +86,20 @@
     ⚠️ 「try」 与 「retry」 的麦克风**位置刻意不同**（整颗胶囊 vs 右侧圆钮）——
        那是设计稿的两种形态，不是同一个控件换文案。
   -->
-  <block wx:if="{{showRecord && resolved === 'lg'}}">
-    <!-- ① try -->
-    <view wx:if="{{state === 'try'}}" class="mt-4">
-      <ui-button variant="fill" size="md" roundness="full" width="full"
-                 icon="mdi:microphone" bind:press="onMic">点击录音，开始朗读</ui-button>
-    </view>
+  <!--
+    ⭐⭐ **参与区交给 「btn-record」 组件**（用户 2026-10 定：它要在**详情页共用**）。
+    ⚠️ 卡片**只转发事件**，不认识录音/面板 —— 编排在宿主页面里（见 btn-record.ts 的说明）。
+    ⚠️ 「showRecord」 默认关：宿主没把状态算好、没接事件之前**不许画**，
+       否则用户点到的是一颗**没反应的按钮**（比暂时没有它糟得多）。
+  -->
+  <view wx:if="{{showRecord && resolved === 'lg'}}" class="mt-4">
+    <btn-record state="{{state}}" score="{{score}}" durationMs="{{entry.durationMs}}"
+                audio="{{entry.recordAudio}}" playing="{{playingRecord}}" loading="{{loadingRecord}}"
+                fill="{{fg}}" ink="{{bg}}"
+                bind:mic="onMic" bind:redo="onRedo" bind:confirm="onConfirm"
+                bind:panel="onScorePanel" bind:play="onPlayRecord" />
+  </view>
 
-    <!-- ② retry：左战绩 · 右麦克风 -->
-    <view wx:elif="{{state === 'retry'}}" class="mt-4 flex items-center justify-between">
-      <view class="flex items-center">
-        <ui-icon name="mdi:waveform" class="leading-[1] text-40rpx" />
-        <text class="text-44rpx font-semibold ml-2 leading-[1]">{{score}}</text>
-      </view>
-      <ui-button variant="fill" onlyIcon="{{true}}" size="md" roundness="full"
-                 icon="mdi:microphone" bind:press="onMic" />
-    </view>
-
-    <!-- ③④⑤ recoded / checking / scored：一颗描边胶囊 -->
-    <view wx:else class="ac-pill mt-4">
-      <!-- 试听我的录音（左端）—— 复用 audio-button，它自己会把时长格式化成 00:33 -->
-      <audio-button size="sm" showDuration="{{true}}" durationMs="{{entry.durationMs}}"
-                    fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
-      <view class="flex-1"></view>
-
-      <!-- ③ recoded：↺ 重录 ｜ ✓ 确认提交 -->
-      <block wx:if="{{state === 'recoded'}}">
-        <ui-button variant="ghost" onlyIcon="{{true}}" size="sm" roundness="full"
-                   icon="mdi:backup-restore" bind:press="onRedo" />
-        <ui-button variant="fill" onlyIcon="{{true}}" size="sm" roundness="full"
-                   icon="mdi:check" bind:press="onConfirm" />
-      </block>
-
-      <!-- ④ checking：转圈（⚠️ 没有可点的东西 —— 这一把已经在云端算了） -->
-      <ui-icon wx:elif="{{state === 'checking'}}" name="mdi:loading"
-               class="ac-spin leading-[1] text-40rpx" />
-
-      <!-- ⑤ scored：这一把的分 + › —— 点它**再开一次出分面板**（可反复，直到确认） -->
-      <view wx:else class="flex items-center" catchtap="onScorePanel">
-        <text class="text-34rpx font-semibold leading-[1]">{{score}}</text>
-        <ui-icon name="mdi:chevron-right" class="leading-[1] text-32rpx ml-1 ac-faint" />
-      </view>
-    </view>
-  </block>
-
-  <!-- ⭐ **已参与角标** — 右下角浮动的圆形勾（用户 2026-09 定）。
-       ⚠️ 卡片边框现在是**每张都有**的前景色描边（见 wxss 的 .ac-card），
-          所以"我读过没有"改由这个角标表达（原来是给整张卡再加一圈描边）。
-       ⚠️ 填充用卡片**前景色**、勾用卡片**背景色**（反色小徽章）—— 任何主题下都清楚，
-          且不用 emoji（emoji 的颜色不受主题控制）。
-       ⚠️ 它是**状态标记、不是按钮**：挂在卡根节点下（不在 CTA 里），
-          位置压在卡片 padding 里、不盖住按钮的点击区。 -->
   <!-- ⚠️ 「已参与」角标**只在 sm**：lg 的参与区（retry 态直接显示战绩）说得更清楚，
        两个都画等于同一件事说两遍。 -->
   <view wx:if="{{entry.joined && resolved === 'sm'}}" class="ac-check" style="background:{{fg}};color:{{bg}}">

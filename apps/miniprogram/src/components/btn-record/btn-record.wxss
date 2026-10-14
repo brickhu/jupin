@@ -1,0 +1,20 @@
+/*
+ * ⭐ 参与区（五态）—— 见 btn-record.ts 的说明。
+ *
+ * ⚠️ 只留「组合控件」那一条胶囊的样式；三态的按钮一律走 ui-button（它自己带尺寸/圆角）。
+ * ⚠️ 边框用 currentColor（继承宿主的文字色）⇒ 任何主题下都跟卡片一致，不用传色值。
+ */
+.br-pill {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  padding: 0 16rpx 0 12rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 9999rpx;
+  box-sizing: border-box;
+}
+/* checking 的转圈 —— 与 ui-button 的 ub-spin 同一套做法（这里不是按钮） */
+.br-spin { animation: br-spin 0.9s linear infinite; }
+@keyframes br-spin { to { transform: rotate(360deg); } }
+/* 「更弱一层」的前景色（箭头） */
+.br-faint { opacity: 0.5; }
