@@ -19,6 +19,7 @@ import { ensureParticipation, loadParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
+import { speak } from '../../lib/audio/tts'
 import type { RecordState } from '../../lib/record-state'
 import type { SessionState } from '../../lib/store'
 import * as me from '../../lib/store'
@@ -855,6 +856,20 @@ Page({
     this.flow()?.onOpenPanel()
   },
 
+  /**
+   * ⭐ **点词发音**（`lg` 卡，prd §7.2）—— 词典式**孤立读音**（"这个词怎么念"），
+   *    ⚠️ 与整句标准音**刻意不同**（那是"这句话怎么念"），见 lib/audio/tts.ts。
+   * ⚠️ 插件没添加时 `speak` 会抛 —— 把原因**直接显示出来**（而不是静默无声）：
+   *    平台侧要加「微信同声传译」插件，光在 app.json 里声明不算授权。
+   */
+  onWord(e: WechatMiniprogram.CustomEvent<{ word: string }>) {
+    const w = (e.detail?.word ?? '').trim()
+    if (!w) return
+    void speak(w).catch((err: Error) => {
+      wx.showToast({ title: err?.message || '这个词的发音取不到', icon: 'none', duration: 2500 })
+    })
+  },
+
   /** 取参与流程组件（⚠️ 只在这一处 select，别每处都写一遍 id） */
   flow(): {
     open(): void
@@ -960,49 +975,10 @@ Page({
    * ⚠️ 拦的**不是**"起没起名字"（昵称/头像）：那件事随时能补、也不影响成绩归属
    *    （见 pages/join 与 lib/auth.ts 的说明）。
    */
-  async onStart(e: WechatMiniprogram.CustomEvent<{ articleId: string }>) {
-    const articleId = e.detail.articleId
-    if (!articleId) return
-    // ⚠️ 连点保护：确认身份的那几秒里按钮还在，重复点会打出好几次 /me
-    if (this.data.starting) return
-
-    // ⚠️ 已经有身份就不折腾界面：老用户点一下直接走（一次网络都不发）
-    if (isAuthed()) {
-      this.goReading(articleId)
-      return
-    }
-
-    // ⚠️ 立刻重画一次：按钮要从「开始挑战」变成「确认中…」——
-    //    toView 只在 render() 里跑，不重画的话这几秒界面上什么都没变
-    this.setData({ starting: true })
-    this.render()
-    /**
-     * ⭐ 走**通用的 auth 中间函数**（`lib/auth.ts`，用户 2026-09 定的用法）：
-     *    · 'joined'     —— users 里有我这一行，放行；
-     *    · 'not-joined' —— 服务端说库里没有我，它**已经跳了加入页**（注册在那一页）；
-     *    · 'unknown'    —— 没问到（断网 / 后端没起来），**什么都没做**，给一句提示。
-     */
-    const auth = await ensureAuthed()
-    // ⚠️ 页面可能已经被跳走了 —— 那 setData 会打在隐藏页上，无害但不必要
-    //    ⚠️ 也要把按钮文案还原：失败后用户还停在这一页，卡在「确认中…」会像坏了
-    if (!this.gone) {
-      this.setData({ starting: false })
-      this.render()
-    }
-    if (auth === 'joined') {
-      this.goReading(articleId)
-    } else if (auth === 'unknown') {
-      // ⚠️ 没问到 —— 说一句能做什么（'not-joined' 那条路 auth 已经把人带去加入页了）
-      wx.showToast({ title: AUTH_RETRY_HINT, icon: 'none', duration: 2500 })
-    }
-  },
-
   /**
-   * 进朗读页（开始挑战的唯一出口）。
-   * ⚠️ **不带日期**：挑战归哪一天由服务端在受理提交时决定（见 lib/api/client 的 submitReading）。
-   *    只有「回到某一天再挑战」（参与记录进来的那条路）才由朗读页自己带上 `?date=`。
+   * ⚠️ **旧的「开始挑战」已删**（2026-10）：它原来是"跳朗读页"的唯一出口，
+   *    而朗读页整体废弃、参与改成**首页原地弹录音面板**（见 onCardMic / participate-flow）。
+   *    ⚠️ 顺带删掉的理由：卡片只在 `showRecord` 为 false 时才画旧 CTA，
+   *       而首页那张卡已经开了 `showRecord` ⇒ 这个方法**永远不会被调到**。
    */
-  goReading(articleId: string) {
-    void go(ROUTES.reading.url + '?id=' + articleId)
-  },
 })

@@ -89,7 +89,7 @@ function makeAudioKey(articleId: string, userId: number, attemptId: string, file
  * ⭐ 生成一次提交尝试的 id（32 位十六进制，与服务端正则一致）。
  *
  * ⚠️ 调用方**必须**在"录音落地那一刻"生成一次、然后在整个重试链里复用
- *    （见 pages/reading 的 attemptId 字段）。这里只负责生成，不负责复用 ——
+ *    （见 components/participate-flow：缓存里那个 attemptId）。这里只负责生成，不负责复用 ——
  *    每次调用都会得到**不同**的值，那正是"重录一次 = 新的一次尝试"。
  */
 export function newAttemptId(): string {

@@ -418,7 +418,14 @@ Component({
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
       this.setData({ panelVisible: false })
-      /** ⚠️ 战绩变了 ⇒ 让宿主重拉参与记录（它会回传新的 bestScore，restore 再拼一次状态） */
+      /**
+       * ⚠️ 战绩变了 ⇒ 让宿主重拉参与记录（它会回传新的 bestScore，restore 再拼一次状态）。
+       *
+       * ⭐ 这一条**取代了**旧的 `lib/refresh-previous.ts`（那个"直接拿上一页实例调它的 load()"
+       *    的兜底）：那时流程跑在独立的朗读页上，出分后**上一页**（首页/竞技场）得靠人肉通知；
+       *    现在流程就在宿主页面里 ⇒ **一个显式事件**比"反查上一页是谁"干净得多
+       *    （旧办法还得按 route 分派，因为不同页的 load 参数不一样）。
+       */
       this.triggerEvent('settled', { articleId: this.data.articleId })
       this.restore()
     },

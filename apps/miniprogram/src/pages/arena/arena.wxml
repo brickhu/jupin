@@ -26,12 +26,21 @@
     </view>
   </view>
 
+  <!--
+    ⭐⭐ 详情页也**原地参与**（prd §7.2）—— 参与区与首页是**同一个组件**，
+       状态与流程是**同一份编排**（participate-flow）。
+    ⚠️ 这一页是 「sm」 卡点进来的落点，所以它就是"详情页"，不再另建一个。
+  -->
   <arena-card wx:elif="{{sentence}}" mode="featured" entry="{{sentence}}"
               playing="{{playingArticle === articleId}}"
               loading="{{loadingArticle === articleId}}"
               showFavorite="{{!favLoading}}" favorite="{{isFavorite}}"
               favoriteCount="{{favoriteCount}}"
-              bind:play="onPlayAudio" bind:favorite="onToggleFavorite" bind:start="onStart" />
+              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}"
+              bind:play="onPlayAudio" bind:favorite="onToggleFavorite"
+              bind:mic="onCardMic" bind:redo="onCardRedo"
+              bind:confirm="onCardConfirm" bind:panel="onCardPanel"
+              bind:word="onWord" />
 
   <!-- ══ 块 ② 挑战说明（challenge + advice）+ 这个句子的参与概要 ═════
        ⚠️ 顶部两句来自 ArticleDetail（**句子内容**，与块 ① 同一批到）；
@@ -139,3 +148,11 @@
     <text class="text-32rpx">邀请好友参与挑战</text>
   </button>
 </view>
+
+<!-- ⭐ 参与流程（与首页同一个组件 —— 录音面板/能量面板/出分面板都在它里面） -->
+<participate-flow id="flow"
+                  articleId="{{sentence.articleId}}"
+                  text="{{sentence.text}}"
+                  stdDurationMs="{{sentence.durationMs}}"
+                  bestScore="{{sentence.bestScore}}"
+                  bind:state="onFlowState" bind:settled="onFlowSettled" />

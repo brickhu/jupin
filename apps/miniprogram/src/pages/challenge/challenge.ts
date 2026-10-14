@@ -447,11 +447,14 @@ Page({
     const articleId = this.data.result?.articleId
     if (!articleId) return
     /**
-     * ⚠️ 「再次挑战」= 去朗读页（受保护页）⇒ 走带守卫的 replace。
+     * ⚠️ 「再次挑战」= 去**详情页**（`pages/arena`，2026-10 起朗读页已整体废弃）——
+     *    参与改在那一页**原地**弹录音面板（见 components/participate-flow）。
      *    ⚠️ 从**分享链接**进来的人可能没有账号：auth 会先静默登录一次，
-     *      仍不行就把他送到加入页 —— 而不是让他在朗读页读完才发现存不下来。
+     *      仍不行就把他送到加入页 —— 而不是让他读完了才发现存不下来。
+     *    ⚠️ `replace` 而不是 `go`：这一页是从结果面板点进来的，
+     *      再挑战时不该把它留在返回栈里（否则退回来还是那一把的结果）。
      */
-    void replace(ROUTES.reading.url + '?id=' + articleId)
+    void replace(ROUTES.arena.url + '?id=' + articleId)
   },
 
   onRetry() {

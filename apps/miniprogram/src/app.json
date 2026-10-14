@@ -2,7 +2,6 @@
   "pages": [
     "pages/index/index",
     "pages/arena/arena",
-    "pages/reading/reading",
     "pages/join/join",
     "pages/me/edit-user/edit-user",
     "pages/me/challenges/challenges",

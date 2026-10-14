@@ -26,7 +26,11 @@ import { ensureAuthed } from './auth'
 
 /** 受保护页的 route 前缀（带斜杠的 url 形式）—— 判据只有这一处 */
 const PROTECTED = [
-  '/pages/reading/reading',
+  /**
+   * ⚠️ `/pages/reading/reading` 曾经在这里 —— 那一页已**整体废弃**（2026-10）：
+   *    参与改成"首页 / 详情页**原地**弹录音面板"（见 components/participate-flow）。
+   *    ⇒ 门禁现在画在**动作**上（点麦时过 ensureAuthed），而不是画在某个页面上。
+   */
   '/pages/me/',
   '/pages/me/edit-user/edit-user',
 ]
@@ -50,7 +54,6 @@ export const ROUTES = {
   collection: { url: '/pages/me/collection/collection', route: 'pages/me/collection/collection' },
   streak: { url: '/pages/me/streak/streak', route: 'pages/me/streak/streak' },
   energy: { url: '/pages/me/energy/energy', route: 'pages/me/energy/energy' },
-  reading: { url: '/pages/reading/reading', route: 'pages/reading/reading' },
   arena: { url: '/pages/arena/arena', route: 'pages/arena/arena' },
   challenge: { url: '/pages/challenge/challenge', route: 'pages/challenge/challenge' },
   /** ⭐ 浏览句库（公开）：顶部切标签 / 难度，下面无限滚动 */

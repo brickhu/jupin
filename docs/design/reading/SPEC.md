@@ -1,3 +1,21 @@
+# ⚠️⚠️ 已整体废弃（2026-10）—— 这是**已删除的 `pages/reading`** 的施工规格
+
+> **这一页已经不存在了**，这份 SPEC 只作为**历史设计记录**保留（与 `design/` 里那几份
+> 「三维成长值 / 解冻卡」的旧设计稿同一个待遇：留着看思路，但**不要照着它改代码**）。
+>
+> ## 取代关系（现在的实现）
+>
+> | 这里写的 | 现在在哪 |
+> |---|---|
+> | s1–s6 六态内联录音 | **删掉**。改成"首页 / 详情页**原地**弹全屏录音面板" |
+> | `components/eval-dialog`（确认能量 + 等待 + 出分 + 失败四合一） | 拆成 `components/energy-tips`（只问能量）+ `components/score-panel`（出分两态）；等待是**按钮态**（`checking`），不是弹窗 |
+> | 朗读页本身就是"参与"的地方 | 参与是**一条五态状态线**（`lib/record-state.ts` + `components/btn-record`），由 `components/participate-flow` 编排，**首页与详情页 `pages/arena` 共用** |
+> | 提交即结算 | **确认才结算**（服务端 `submissions.confirmed_at`，见 `services/confirm.ts`） |
+>
+> ⚠️ 现行的产品口径以 [prd.md](../../../prd.md) §7.2 为准；实现以代码注释为准。
+
+---
+
 # 朗读页（reading）改版 —— 设计稿规格
 
 设计稿：Figma `nCFxH5FXIQFiaPKKdtudqO`，本目录 `s1.png`…`s6.png` 是用 REST API 拉的 2x PNG

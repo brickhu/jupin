@@ -9,6 +9,9 @@ import {
 import { attachAvatarSrc } from '../../lib/cloud-file'
 import { ensureStats, noteMyFavoriteToggle, statsOf } from '../../lib/stats'
 import { isUnregistered } from '../../lib/auth'
+import { speak } from '../../lib/audio/tts'
+import type { RecordState } from '../../lib/record-state'
+import { AUTH_RETRY_HINT, ensureAuthed, isAuthed } from '../../lib/auth'
 import { loadParticipation } from '../../lib/participation'
 import { fetchArticleContent } from '../../lib/content'
 import { ensureLocalAudio } from '../../lib/audio/standard'
@@ -72,6 +75,9 @@ Page({
     // ── 块 ② 参与概要（全场统计，现算） ──────────────────────
     statsLoading: true,
     statsError: '',
+    /** 参与区当前是哪一态 / 显示哪个分（participate-flow 回传） */
+    flowState: 'try' as RecordState,
+    flowScore: -1,
     participantCount: 0,
     /** 多少人收藏了这一句（`/api/stats/favorite-count`）—— 与参与人数同一排显示 */
     favoriteCount: 0,
@@ -317,6 +323,11 @@ Page({
       sentence: {
         ...base,
         joined: !!record,
+        /**
+         * ⭐ 我在这句上的**战绩**（< 0 = 没参与过）—— 交给参与流程拼状态。
+         * ⚠️ 卡片自己不判状态（见 lib/record-state 的说明）。
+         */
+        bestScore: best === null ? -1 : Number(best),
         action: startButtonLabel(!!record),
         hint: !p.loaded
           ? ''
@@ -452,11 +463,68 @@ Page({
     return c ? '朗读挑战：' + c : '这句金句，你能读多少分？'
   },
 
-  /** 去朗读（受保护页：由 lib/route 统一过 auth，这里不自己判断身份） */
+  // ── ⭐⭐ 参与流程（prd §7.2）—— 与首页**同一份编排**（participate-flow），页面里没有录音代码 ──
+
+  /** 流程回传状态 ⇒ 喂给卡片的参与区 */
+  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number }>) {
+    this.setData({ flowState: e.detail.state, flowScore: e.detail.score })
+  },
+
+  /** 确认之后（战绩已更新）⇒ 重拉这一句的参与记录，卡片上的战绩跟着变 */
+  onFlowSettled() {
+    void this.loadMine()
+  },
+
+  /**
+   * ⭐ 点麦 —— **先过身份检查，再弹录音面板**（用户 2026-10 定：统一走 ensureAuthed，
+   *    且**点麦时就要过** —— 否则用户费劲录完、点了 ✓ 才发现没身份，那段录音白录）。
+   */
+  async onCardMic() {
+    if (!isAuthed()) {
+      const auth = await ensureAuthed()
+      if (auth === 'unknown') wx.showToast({ title: AUTH_RETRY_HINT, icon: 'none', duration: 2500 })
+      if (auth !== 'joined') return
+    }
+    this.flow()?.open()
+  },
+  onCardRedo() {
+    this.flow()?.onRedo()
+  },
+  onCardConfirm() {
+    this.flow()?.onConfirm()
+  },
+  /** 点卡片上的分数/› —— 再开一次出分面板（可反复，直到确认） */
+  onCardPanel() {
+    this.flow()?.onOpenPanel()
+  },
+
+  /**
+   * ⭐ **点词发音**（`lg` 卡，prd §7.2）—— 词典式**孤立读音**（"这个词怎么念"），
+   *    ⚠️ 与整句标准音**刻意不同**（那是"这句话怎么念"），见 lib/audio/tts.ts。
+   * ⚠️ 插件没添加时 `speak` 会抛 —— 把原因**直接显示出来**（而不是静默无声）：
+   *    平台侧要加「微信同声传译」插件，光在 app.json 里声明不算授权。
+   */
+  onWord(e: WechatMiniprogram.CustomEvent<{ word: string }>) {
+    const w = (e.detail?.word ?? '').trim()
+    if (!w) return
+    void speak(w).catch((err: Error) => {
+      wx.showToast({ title: err?.message || '这个词的发音取不到', icon: 'none', duration: 2500 })
+    })
+  },
+
+  /** 取参与流程组件（只在这一处 select） */
+  flow(): { open(): void; onRedo(): void; onConfirm(): void; onOpenPanel(): void } | null {
+    return (this.selectComponent('#flow') as never) ?? null
+  },
+
+  /**
+   * @deprecated 旧的「开始挑战」= 跳朗读页 —— 那条路已随 `pages/reading` 一起废弃。
+   * ⚠️ 保留它只为兼容：`arena-card` 在 `showRecord` 为 false 时仍会画旧 CTA，
+   *    而这里已经开了 `showRecord`（走参与区），所以正常不会再被调到。
+   *    留着会让"哪条路是活的"变含糊 ⇒ 直接指向新的原地参与。
+   */
   onStart() {
-    const { articleId } = this.data
-    if (!articleId) return
-    void go(ROUTES.reading.url + '?id=' + articleId)
+    void this.onCardMic()
   },
 
   /**

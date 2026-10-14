@@ -3,6 +3,7 @@
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
     "arena-card": "/components/arena-card/arena-card",
-    "ui-button": "/components/ui-button/ui-button"
+    "ui-button": "/components/ui-button/ui-button",
+    "participate-flow": "/components/participate-flow/participate-flow"
   }
 }

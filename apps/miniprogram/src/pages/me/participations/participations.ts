@@ -112,6 +112,7 @@ Page({
     const row = this.data.rows[i]
     if (!row) return
 
-    void go(ROUTES.reading.url + '?id=' + encodeURIComponent(row.articleId))
+    /** ⭐ 落点是**详情页**（arena 就是那一页，2026-10：朗读页已废弃）—— 在那里原地参与 */
+    void go(ROUTES.arena.url + '?id=' + encodeURIComponent(row.articleId))
   },
 })

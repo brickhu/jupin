@@ -92,6 +92,18 @@
     ⚠️ 「showRecord」 默认关：宿主没把状态算好、没接事件之前**不许画**，
        否则用户点到的是一颗**没反应的按钮**（比暂时没有它糟得多）。
   -->
+  <!--
+    ⚠️⚠️ **旧的 CTA 必须留着**（「showRecord」 为 false 时）—— 它是 arena / browse 那些页面
+       此刻还在用的那颗「开始挑战」。⚠️ B59 我把它整块换成了参与区，而参与区默认关
+       ⇒ 那些页面的按钮**直接消失了**，而构建 / 测试 / typecheck **全都看不出来**（纯视觉回归）。
+       ⇒ 两条路并存：「showRecord」 开 = 新的参与区；关 = 旧 CTA（等那一页也迁过来再删）。
+  -->
+  <block wx:if="{{!showRecord && resolved === 'lg' && entry.action}}">
+    <view class="mt-4 text-center py-[26rpx] rounded-full text-30rpx font-medium"
+          style="background:{{fg}};color:{{bg}}" bindtap="onStart">{{entry.action}}</view>
+    <text wx:if="{{entry.hint}}" class="text-22rpx block text-center mt-2.5 ac-faint">{{entry.hint}}</text>
+  </block>
+
   <view wx:if="{{showRecord && resolved === 'lg'}}" class="mt-4">
     <btn-record state="{{state}}" score="{{score}}" durationMs="{{entry.durationMs}}"
                 audio="{{entry.recordAudio}}" playing="{{playingRecord}}" loading="{{loadingRecord}}"
