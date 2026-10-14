@@ -1,7 +1,7 @@
 # 句拼 · 计划（PLAN）
 
 > **这是唯一的目标与任务来源。**
-> 业务与需求看 [prd.md](prd.md) · 现状与规则看**代码及其注释** · 工程索引看 [AGENT.md](AGENT.md) · 技术选型看 [spec.md](spec.md)。
+> 业务与需求看 [prd.md](prd.md) · 现状与规则看**代码及其注释** · 工程索引看 [AGENTS.md](AGENTS.md) · 技术选型看 [spec.md](spec.md)。
 >
 > **规矩**
 > 1. **任务只能写在这里。** 其它文件里的「待办 / 待确认 / 待定 / 测试清单」都是**写作当时的快照**；
@@ -14,10 +14,10 @@
 >    天生没有 commit 的完成项（真机实验 / 外部配置 / 决定）写成普通列表项，
 >    放在下面的**「已完成 · 无 commit」**里。
 > 4. 「在做 / 待办 / 已废弃」由**所在小节**表达，不再额外写状态字段。
-> 5. 每一步都走 [AGENT.md](AGENT.md) 的**「统一开发流程」**：
+> 5. 每一步都走 [AGENTS.md](AGENTS.md) 的**「统一开发流程」**：
 >    先落任务 → 再对齐 prd → 再写代码 + 注释 → 提交时闭环。
 > 6. **记账用 `git commit`，发布才 `git push`。** push 到 `dev` / `main` 会触发 CI **真的部署**
->    （见 AGENT.md 部署一节），所以别为了「让 plan 状态生效」去推送。
+>    （见 AGENTS.md 部署一节），所以别为了「让 plan 状态生效」去推送。
 >    ⭐ **AI 的操作权限到 commit 为止 —— push 由人决定。**
 >    `plan:status` 读本地 git，但会把「已推送 / 仅本地」分开标。
 >
@@ -75,7 +75,7 @@
 
 - [ ] **B38** **把结果屏那颗播放钮也换成 recording-player**：`pages/challenge` 的 `onPlayAudio` 是同一套逻辑的第三份，但它有两处真实差异 —— ① 结果包里有 `audioRef` 可缓存（不必每次问服务端）；② 它的 loading **一路亮到真的能出声**（先亮 stop 再卡住会被读成"按了停止却没停"）。要做得给组件加"可传入地址、跳过取音"与"loading 到出声"两个能力，再删掉那份实现 —— 做完的标志：全仓库只剩 recording-player 一处 `fetchSubmissionAudio` + `ensureLocalAudio` + `playAudioUrl` 的组合。
 - [ ] **C9** **审计里需要产品/运维拍板才动的项**（本轮**故意没做**，逐条附理由）：`/api/auth/session` 零调用但**是当前唯一的部署验证探针**（别删）；`POST /api/user/unfreeze` 界面没有入口（接上还是砍）；`ArticleDetail.challenge`/`.advice` 与 `SubmitResponse.dimensions` 服务端给了但端侧从不读；三张零引用表 `subscriptions`/`likes`/`reviews` 与六个零读列（`memberUntil`/`likeCount`/`prepayId`/`refund*`/`startsAt`）—— **不可逆且 refund 系是未实现的 roadmap 位**；`paths-ignore` 可能跳过与后端 lockfile 相关的改动；`MYSQL_*`/`TOKEN_SECRET` 的 **GitHub Secrets 与本地 .env 两份真相**（本地改对了、CI 会覆盖回去）；CI 那条路**仍然产不出版本**（要查得先 `gh auth login`）。
-- [ ] **C10** **本地开发镜像是"残留档案"，不是当前代码的镜像**：`docker-compose` 挂的是源码 + `Dockerfile.development` 用 `tsx` 直跑，而 `apps/server/dist/index.mjs` 是 **9/21 的旧构建产物**（连 `attemptId` 都没有）却没被清理 ⇒ 我按它判断"本地容器跑的是旧代码"，**结论下反了**（本地确实跑新源码）。⇒ 要做的：① `docker-compose` 或 entrypoint 里打印一次"当前生效的提交 / 是否 tsx 直跑"，让判断有据可依；② 把 `apps/server/dist` 加进 `.gitignore` 或让 dev 容器启动时重建一次，别让一个从不被执行的产物误导人（`AGENT.md` 里那条"判断运行时代码要看行为、不要看产物"也补一句）。
+- [ ] **C10** **本地开发镜像是"残留档案"，不是当前代码的镜像**：`docker-compose` 挂的是源码 + `Dockerfile.development` 用 `tsx` 直跑，而 `apps/server/dist/index.mjs` 是 **9/21 的旧构建产物**（连 `attemptId` 都没有）却没被清理 ⇒ 我按它判断"本地容器跑的是旧代码"，**结论下反了**（本地确实跑新源码）。⇒ 要做的：① `docker-compose` 或 entrypoint 里打印一次"当前生效的提交 / 是否 tsx 直跑"，让判断有据可依；② 把 `apps/server/dist` 加进 `.gitignore` 或让 dev 容器启动时重建一次，别让一个从不被执行的产物误导人（`AGENTS.md` 里那条"判断运行时代码要看行为、不要看产物"也补一句）。
 - [ ] **B26** **界面名词改名批次**（只改用户可见字）：金句页标题「朗读竞技场」→「金句」；结果页按钮「看竞技场」→「看金句」；「参与场次」→「朗读金句」（列表页标题 + 用户面板菜单）；「初级场 / 中级场 / 高级场 / 专家场」→「初级 / 中级 / 高级 / 专家难度」；收藏页空态与个人主页对比文案里的「竞技场」→「金句」—— 做完的标志：界面上搜不到「竞技场 / 场次 / 场」，且没有一处混用「金句」与「句子」
 - [ ] **B45** **清掉实时波形留下的一整条死链**（B44 把波形从界面上拿掉之后，它的数据源没有任何消费者了）。
   **已经删掉的**（B44 一并做了）：朗读页的画布、`prepareWaveCanvas` / `handleFrame` / `drawSamples` /
@@ -90,6 +90,70 @@
   ⇒ **做完的标志**：删干净（`grep` 无残留）+ **真机验一次「按住 → 松手 → 提交」全通**。
   ⚠️ 保留 `docs/research/recorder-output-formats.md`：代码删了，但那份"文件 ≠ 帧、devtools 给 WebM"的
   调查结论**仍然有用**（服务端 `normalizeAudio` 的整个设计就是为它写的）。
+
+- [ ] **B57** **把所有按钮统一到 `ui-button`**（用户 2026-10 定：「接下来所有按钮都统一用这个组件」）
+  ⚠️ **现状**：`ui-button` 已是唯一实现（四个维度 + 两个对外变量 `--btn-bg`/`--btn-fg`），
+  但页面里还散着一批**手抄的按钮**。最典型的是「重试」—— 同一串
+  `mt-3 text-center py-[22rpx] rounded-full bg-accent text-white text-28rpx`
+  **在 9 个页面各抄了一遍**（tags / participations / challenges / index×2 / arena / browse / challenge / participation）。
+  ⚠️ **三类不能迁**（先记下来，别当成漏做）：
+  ① `<button open-type="share">` / `open-type="chooseAvatar"` —— 微信平台机制，**必须**是原生 `<button>`
+     （`profile-form` 头像 · `profile`/`arena`/`challenge` 分享，共 4 处）；
+  ② **蒙层 / 面板 / 卡片整体点击**（`eval-dialog`、`user-sheet`、`arena-card`、`collection` 的 `catchtap="noop"`）——
+     那是"可点区域"不是按钮；
+  ③ 纯图标入口（`nav-bar` 返回、`tags` 清搜索）—— 尺寸与命中区都不同，要单独判断。
+  ⇒ **做完的标志**：① 上面那 9 处重复消失（`grep` 不到那串类名）；② 各页面 `bindtap` → `bind:press` 且行为不变；
+  ③ `pnpm --filter @jushuo/miniprogram build` + `test` 绿；④ 真机过一遍受影响页面（空态/错误态的「重试」最容易看出来）。
+
+
+- [ ] **B58** **后端：参与记录的结算改成「用户确认时才落」**（prd §7.2/§7.3，2026-10 定）
+  ⚠️ **现状**：出分时 `syncParticipation` 就写参与行（取最高）⇒ 分数一出来战绩/榜单立刻变。
+  **要改成**：出分只是**临时结果**；**确认**那一刻才把这次 submission 的成绩+分数细节写到 participation 上，
+  新分 > 前高则替换、否则不更新。
+  ⚠️ **语音文件跟着 participation 走**：全站只留"当前最高分那一份"；**被替代的**与**没超越前值的**
+  submission 的**语音删除**，但 **submission 行保留**。
+  ⚠️ **清理只在确认那一刻发生**；用户**永不确认** ⇒ 状态永久停在 `scored`、语音**不清理**。
+  ⇒ **做完的标志**：① 新增"确认"接口（形状与 `POST /{id}/claim` 的关系要定清，别做两条并行的"确认"）；
+  ② 未确认时 participation / 榜单**不变**；③ 确认后按"超越/未超越"分别替换或保留；
+  ④ 非认可的 submission 语音被删、行还在；⑤ `/api/docs` 与端侧类型（`Equal<>` 双向比对）同步；
+  ⑥ 服务端测试绿。
+
+- [ ] **B59** **前端：`sentence_card` 的两种尺寸 + 参与区 5 态**（prd §7.2）
+  `lg` = 首页今日挑战 / 详情页（含参与区）· `sm` = 最近更新等列表（**点整卡进详情页参与**）。
+  ⭐ **两种尺寸都显示译文**（旧 `list` 的"无译文"作废）；⭐ `lg` 支持**点词播 TTS**（复用 `lib/audio/tts.ts`）。
+  5 态：`try` / `retry` / `recoded` / `checking` / `scored`，**状态从服务端恢复**（`recoded` 来自本地）。
+  卡内按钮配色：`--btn-bg = 卡片前景色`、`--btn-fg = 卡片背景色`（= 现在 CTA 的写法）。
+  ⇒ **做完的标志**：五态在展示页/真机上都能看到；`sm` 点进详情；译文两种尺寸都在；点词出声。
+
+- [ ] **B60** **前端：`recorder` 全屏录音面板**（prd §7.2）
+  点 `try`/`retry` 的麦克风 → **直接弹面板、打开即录**；结束两条路（手动 `■` / 读完自动结束）；
+  结束 ⇒ **关面板切 `recoded`**（⚠️ 结束 ≠ 提交）。
+  ⚠️ 必须沿用既有硬经验：静音自停判据（`vad.ts` 两条件）+ **30 秒硬上限**；
+  **开录前停掉三路声音**（标准音/逐词/试听）并取消"正在取音"那一路；**实时波形**（没解码帧只留中线，不摆假波形）；
+  定稿窗口内按钮 disabled；连点不出两段；从缓存恢复要标注。
+  ⚠️ **待定**（prd §7.3 的三条待确认）：面板里**要不要**逐词预检标色、"漏读门禁"还拦不拦。
+  ⇒ **做完的标志**：真机走通「点麦 → 录 → 自动停 → 关面板 → recoded」。
+
+- [ ] **B61** **前端：出分面板（两态 + 五维 + 逐词）**（prd §7.2）
+  出分 ⇒ 入口**立刻** `scored`；**面板弹出与按钮状态不耦合**（用户还在页面就顺手弹，忽略/不在就点按钮再开）。
+  两态：`更新战绩: 前高 → 新分`（绿）/ `保留战绩: 前高`（橙，不显示本次分）；
+  下句 `超越前高 {新−前高} 分，🍪 +N` / `本次未能超越`。
+  ⭐ **五维照搬 `pages/challenge` 的 `PART_META`**（语调/咬字/发音/流利/完整 + 进度条 + 数值），
+  数据是 `SubmitResponse.parts` —— **不另起一套、不拿引擎四维顶替**；⭐ 两态**都要有逐词高亮**。
+  ⇒ **做完的标志**：超越/未超越两条路径都能看到，数字与 `pages/challenge` 一致。
+
+- [ ] **B62** **前端：`energy-tips` 重做 `eval-dialog`**（prd §7.2）
+  `recoded` 的 `✓` → 弹面板；充足 = `本次 AI 检测将消耗能量 N ⚡，剩余 M ⚡` + 大号 `⚡-N` + 取消/确认；
+  不足 = 沿用现有文案（`能量不够了`/`本次评测需要 N 点`/`去补能量`）；固定扣 `ENERGY_PER_CHALLENGE`（2）；
+  取消 ⇒ 停在 `recoded`；确认 ⇒ 提交并切 `checking`。用词是「**能量**」。
+  ⇒ **做完的标志**：够/不够两条路径都在真机上看过。
+
+- [ ] **B63** **整体替换 `pages/reading`**（prd §7.2，用户 2026-10 定「这一套搞完直接整体替换 reading 页」）
+  用新的 `sentence_card(lg)` + `recorder` + 5 态 + 出分面板 + `energy-tips` 重写朗读/详情页；
+  旧的 `s1/s2/s3/s5/s6` 内联态式**作废**。
+  ⚠️ 替换时逐条核对 §7.2 的"既有硬经验"清单（停声音/实时波形/定稿 disabled/缓存恢复标注…），**别一起删掉**。
+  ⇒ **做完的标志**：`grep` 不到旧的 `s1|s2|s3|s5|s6` 相位；真机走通完整一轮；构建 + 测试绿。
+
 
 ### B2. 饼干 / 补签 / 提醒（2026-10 定，口径见 prd §7.6–7.8.1）
 
@@ -147,9 +211,9 @@
 
 - [x] **B8** plan 改用**统一 checkbox**（`- [ ]` / `- [x]`），`[x]` 由 `pnpm plan:sync` 从 git 派生并归档 —— 做完的标志：plan.md 全是 checkbox、`plan:status` 能报「有 commit 但没勾」、`--write` 幂等
 
-- [x] **B9** 写清**多任务并行**的冲突规则（四个冲突面 + 各自的消法），并加 `pnpm task:*` worktree 工具 —— 做完的标志：AGENT.md 有这一节、`pnpm task:start/list/remove` 可用
+- [x] **B9** 写清**多任务并行**的冲突规则（四个冲突面 + 各自的消法），并加 `pnpm task:*` worktree 工具 —— 做完的标志：AGENTS.md 有这一节、`pnpm task:start/list/remove` 可用
 
-- [x] **B10** AGENT.md 写清**「人怎么派活」**—— 四种句型、你只需要决定的三件事、每次任务的固定回路 —— 做完的标志：AGENT.md 有这一节，派活不用再问
+- [x] **B10** AGENTS.md 写清**「人怎么派活」**—— 四种句型、你只需要决定的三件事、每次任务的固定回路 —— 做完的标志：AGENTS.md 有这一节，派活不用再问
 
 - [x] **B11** 难度定级改为**纯 LLM 判定**：废弃「脚本算特征」方案 —— 改掉步骤说明与注释、在 spec.md 记下这条决策 —— 做完的标志：全仓库没有把它当**现行方案**的地方（注释/文档里的「已废弃」说明不算；docs/archive 不动）
 
@@ -201,7 +265,7 @@
 
 - [x] **B34** **朗读页收尾三件**（对着 `docs/design/reading/` 下那六张设计稿逐条核；用户 2026-09 让「继续完成阅读页的后续工作」）：① **顶行 `▶ 00:23`** —— 详情接口的 `audio` 从 `AudioRef` 升成 `ScheduleAudio`（带 durationMs），服务端与列表接口共用 `scheduleAudioOf`，端侧读不到就不渲染那几个字（不是 00:00）；② **s1 CTA 的麦克风字形** —— 补成 iconfont 第 13 个字形（`tools/iconfont/build.mjs` 的 ICONS + ui-button 的 KNOWN_ICONS），按钮挂 `mdi:microphone`；③ 把 SPEC 施工计划里 2/3/5 三步的真实状态标清（它们随前几轮已落地，别再挂着 ⬜） —— 做完的标志：`pnpm --filter @jushuo/server test` 里 `scheduleAudioOf` 那两条（带 durationMs / 无音频为 null）全绿，且朗读页 s1 那颗按钮左侧真的画出麦克风
 
-- [x] **B35** **界面里不许出现工程备注**（用户 2026-09 报：「你能不能不要在界面上放你的一些工作备注？」）：WXML 注释里那些"写给自己看"的话（「本轮先不做」「⇒ 别看着这块少了一行又加回来」）**有机会被小程序编译器留成文本节点显示在页面上** —— 所以注释只活在源码里、产物里一条不剩。落地：`build.mjs` 新增 `stripWxmlComments()`（拷到 dist 之后删 `dist/**/*.wxml` 的全部注释，`src/` 照旧保留），`src/wxml-comments.test.ts` 盯着产物（dist 不存在时跳过），`AGENT.md` 的样式/构建一节写明这条契约 —— 做完的标志：`pnpm --filter @jushuo/miniprogram build` 打印「从 N 个产物文件里删掉注释」，且 `grep -c '<!--' dist/pages/reading/reading.wxml` 为 0
+- [x] **B35** **界面里不许出现工程备注**（用户 2026-09 报：「你能不能不要在界面上放你的一些工作备注？」）：WXML 注释里那些"写给自己看"的话（「本轮先不做」「⇒ 别看着这块少了一行又加回来」）**有机会被小程序编译器留成文本节点显示在页面上** —— 所以注释只活在源码里、产物里一条不剩。落地：`build.mjs` 新增 `stripWxmlComments()`（拷到 dist 之后删 `dist/**/*.wxml` 的全部注释，`src/` 照旧保留），`src/wxml-comments.test.ts` 盯着产物（dist 不存在时跳过），`AGENTS.md` 的样式/构建一节写明这条契约 —— 做完的标志：`pnpm --filter @jushuo/miniprogram build` 打印「从 N 个产物文件里删掉注释」，且 `grep -c '<!--' dist/pages/reading/reading.wxml` 为 0
 
 - [x] **B36** **朗读挑战页（arena）改版**（用户 2026-09 定的五条）：① 标题「朗读竞技场」→**「朗读挑战」**；② 句子卡左上=播放参考音频、右上=收藏这一句（`arena-card` 加 `showFavorite`/`favorite` 两个属性 + `favorite` 事件；字形只有 outline 一个 ⇒ 已收藏画不透明、未收藏画半透明）；③ 句子卡下方**单独一张「参与概要」卡**：参与人数 / 全场最高分 / **全场最低分**（服务端新给 `lowestScore`，与 `topScore` 同一条 SQL、同口径：一人只算最好那次；没人参与是 null 不是 0）；④ 我的参与概要：挑战 N 回合（`participations.attempts`，只数出过分的）+ 位列第 N，下面接「重新朗读，再次挑战」；⑤ 底部 **`button[open-type=share]`**「邀请好友参与挑战」（普通 view 调不起转发面板；分享路径 = 这一句的挑战页）—— 做完的标志：真机上五项都在，且点右上角的心不会跳进详情页（catchtap 拦住冒泡）
 
@@ -334,7 +398,7 @@
 
 - [x] **C14** **删除 schedules 表与接口，统一用 today**（用户 2026-09 定的，我之前一直没做）：`schedules` 表 `DROP`（迁移 0046）· `GET /api/schedules/:date` 删除 · `services/schedules.ts` 与单测删除 · `/api/schedules` 只剩"最新上线"（不再返回 `today`）· admin 的排期面板与接口删除 · `submissions` 不再给提交日补排期行 · `challenge.ts` 打开竞技场改成按句子寻址。**保留**：`submissions.schedule_date`（它记"这次提交归到哪一天"，归属信息 ≠ 排期）与 `schedule-date.ts` 的日期校验。⚠️ 遗留：`/api/schedules` 这个**路径名**已经名不副实（它只给"最新上线"），改名待做。
 
-- [x] **C15** **文档跟上**（用户指出"AGENT.md 里连 admin 都没写"）：核实后是**写了但整节过时** —— 按事实重写 AGENT.md §1.4（admin 是唯一人工入口 / 写入走接口 / ADMIN_TOKEN 口径 / "改服务端环境变量必须同时改 deploy-cloud 的 params"）、新增 §1.5（句子的数据模型：一列一个事实、逐列标源/派生、音频放哪、日期不是内容的一部分）、改写 §1.3（流水线 9 步只有 ④ 是真的、⑨ 入库从未建过）与"正文路径由 id 推导"那节；`docs/domain-model.md` 5 处（含难度那一行**源写反**的修正）· `spec.md` · `reading/SPEC.md` 同步。
+- [x] **C15** **文档跟上**（用户指出"AGENTS.md 里连 admin 都没写"）：核实后是**写了但整节过时** —— 按事实重写 AGENTS.md §1.4（admin 是唯一人工入口 / 写入走接口 / ADMIN_TOKEN 口径 / "改服务端环境变量必须同时改 deploy-cloud 的 params"）、新增 §1.5（句子的数据模型：一列一个事实、逐列标源/派生、音频放哪、日期不是内容的一部分）、改写 §1.3（流水线 9 步只有 ④ 是真的、⑨ 入库从未建过）与"正文路径由 id 推导"那节；`docs/domain-model.md` 5 处（含难度那一行**源写反**的修正）· `spec.md` · `reading/SPEC.md` 同步。
 
 ## 已完成 · 无 commit（手写）
 
