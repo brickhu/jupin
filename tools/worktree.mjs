@@ -63,7 +63,7 @@ function start(i) {
   console.log('      需要真库时用另一套端口，或让**一条**任务线独占 Docker。')
   console.log('   ⚠️ 不要在任务分支跑 plan:sync（它整段重建 plan.md，合并必冲突）——')
   console.log('      合并进 dev 之后再跑一次。')
-  console.log('   ⚠️ 改 shared 公共类型 / 迁移的任务**不要并行**（见 AGENT.md「多任务并行」）。')
+  console.log('   ⚠️ 改 shared 公共类型 / 迁移的任务**不要并行**（见 AGENTS.md「多任务并行」）。')
   console.log('   收工：pnpm task:remove ' + i + '（分支还在，合进 dev 后再删）')
 }
 

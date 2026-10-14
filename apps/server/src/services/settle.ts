@@ -53,7 +53,7 @@ export interface SettleResult {
  *    现在多了"惰性补跑"（services/sweep.ts）⇒ 并发窗口变成真实存在的。
  *
  * ⚠️ 边界说清楚：它是**进程内**的。多副本同时补跑同一条仍然可能双结算；
- *    本项目 dev/prod 的副本数都是 1（MinReplicas 未调高，见 AGENT.md）。
+ *    本项目 dev/prod 的副本数都是 1（MinReplicas 未调高，见 AGENTS.md）。
  *    真要多副本，这里必须换成数据库层的原子认领
  *    （例如加一列 `settled_at` 并用 `UPDATE ... WHERE settled_at IS NULL` 抢占）。
  */

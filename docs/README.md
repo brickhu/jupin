@@ -1,6 +1,6 @@
 # docs —— 调研、实验与归档
 
-> **项目入口在根目录 [AGENT.md](../AGENT.md)。**
+> **项目入口在根目录 [AGENTS.md](../AGENTS.md)。**
 > 业务与需求见 [prd.md](../prd.md) · 技术决策见 [spec.md](../spec.md) ·
 > **任务与计划见 [plan.md](../plan.md)** · **现状见代码及其注释**。
 > 本目录只放**调研、评估、实验、设计方案与历史归档**。
@@ -33,6 +33,8 @@
 | [styling-decision.md](research/styling-decision.md) | 样式方案选型（StyleX / Tailwind / UnoCSS） | ⭐ 选 UnoCSS + preset-weapp —— **WXML 调不了 JS，CSS-in-JS 全部出局** · ⚠️ 变体分隔符必须是 `__` |
 | [rewarded-ad-channel.md](research/rewarded-ad-channel.md) | **看视频广告换能量**（激励视频选型 / 流量主门槛 / 服务端验证 / 单位经济与保本线） | ⚠️ **现在开不了**：流量主要累计 UV ≥ 1000 + 备案认证 · ⭐ 建议 **1 点/次、日限 2–3 次、只在余额不足时给入口** · ❓ 虚拟支付与广告并存须先问官方 |
 | [skyline-evaluation.md](research/skyline-evaluation.md) | **Skyline 渲染引擎评估**（官方文档核实） | ⭐ 现在不切、但按它的 WXSS 子集写 · ⚠️ **不开 AB 实验线上仍走 WebView** · ⚠️ 不支持 `*`/属性选择器/inline 布局/sticky/多层 shadow |
+| [douyin-platform-research.md](research/douyin-platform-research.md) | **抖音平台调研**（能力 / 支付 / 类目 / 收费形态 / 迁移成本，官方文档核实 + ❓待核实清单） | ⭐ 技术可行（2–4 人月）· ⭐ **iOS 可付但要攒资格**（钻石兑换：工具行业、上架 ≥90 天、信用分 ≥80）· ⭐ **1 钻 = ¥0.1**、平台技术服务费 **1%** · ⚠️ 担保支付已下线，走通用交易系统 · ❓ **"娱乐工具-测评"暂未开放**，类目归属是头号阻塞项 |
+| [douyin-rewarded-ad.md](research/douyin-rewarded-ad.md) | **抖音小程序流量主（激励广告）收益调研**（准入 / 广告类型 / 结算 / 收益水位 / 与微信对照） | ⭐ 门槛远低于微信：企业主体**已上线即可申请**（个人主体 DAU ≥ 50）· ⭐ 自然月结算、每月 10 日前出结算单、**有 OpenAPI 可查收入** · ❓ **eCPM 与官方分成比例均无公开数据**，须上线后自行反推 · 能量定价逻辑可直接复用微信侧结论 |
 
 ### design/ —— 设计稿
 

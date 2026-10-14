@@ -38,7 +38,7 @@
 | index.wxml:149-162（首页 streak 卡里的徽章区块） | 换成成长值展示 |
 | user-sheet.wxml:29（头像下那行徽章） | 换成成长值展示 |
 | 结果页的徽章解锁提示 | 换成成长值变化 |
-| schema.ts:54 注释、AGENT.md:16 | 改掉「等级徽章」的说法 |
+| schema.ts:54 注释、AGENTS.md:16 | 改掉「等级徽章」的说法 |
 
 ⚠️ **不要中途只删徽章不做成长体系** —— 那会有一段首页 streak 卡是空的。
 
@@ -618,16 +618,16 @@ ENERGY_PURCHASE_MIN = 10、ENERGY_REWARD_ARENA_FIRST3 = 1）
 | 1 | shared/streak.ts 的 applyRead | 断档时**自动**消耗冻结卡补天 | **用户主动**补签 | **自动花掉用户的资产** |
 | 2 | shared/streak.ts 的 freezeEarnedBetween | 纯函数推导发卡（不落库） | 事件触发 + 落库 | 改阈值会**追溯重发** |
 | 3 | **index.wxml:159** | 「每连续 7 天得 1 张冻结卡，**断档时自动补上，天数不断**」 | 用户主动 | **用户在界面上看到的那句话在撒谎** |
-| 4 | AGENT.md:14 | 「断了会用冻结卡**自动**补上」 | 同上 | 产品说明与行为相反 |
+| 4 | AGENTS.md:14 | 「断了会用冻结卡**自动**补上」 | 同上 | 产品说明与行为相反 |
 | 5 | prd.md:22 | 「连续满 7 天得 1 张冻结卡，**断档时自动补齐**」 | 同上 | 同上 |
 | 6 | schema.ts:58 | 「冻结卡：断档时**自动消耗**」 | 同上 | 注释误导实现 |
 | 7 | services/quota.ts + FREE_DAILY_CHALLENGES / MEMBER_DAILY_CHALLENGES | 免费 1 次 / 付费 50 次**每天** | 能量：补到 3 点、每次 2 点、可充值 | 两套门禁并存 |
 | 8 | routes/submissions.ts:150 | 拒绝码 QUOTA_EXHAUSTED | ENERGY_EXHAUSTED | 客户端提示对不上 |
 | 9 | reading.ts:1027 / client.ts:168 | 同上 + 「今天的免费次数用完了」 | 同上 | 同上 |
 | 10 | services/user.ts 的 withLocalDevPrivilege | 本地**发会员**换取 50 次额度 | 本地要发**能量** | 本地只有 3 点，什么都测不了 |
-| 11 | tools/dev-unlock.mjs + AGENT.md:379 | 「把本地账号置为会员（每天 1 次 → 50 次）」 | 同上 | 同上 |
+| 11 | tools/dev-unlock.mjs + AGENTS.md:379 | 「把本地账号置为会员（每天 1 次 → 50 次）」 | 同上 | 同上 |
 | 12 | shared/badges.ts + StreakView.badge/nextBadge/daysToNext + StreakDelta.newBadges/badge + 三处 UI | 徽章阶梯 | 三指标成长值 | 两套并存 |
-| 13 | AGENT.md:24 | 「三条核心：得分 · 排名 · Streak（**含由 Streak 推导的等级徽章**）」 | 徽章已删 | 产品说明过期 |
+| 13 | AGENTS.md:24 | 「三条核心：得分 · 排名 · Streak（**含由 Streak 推导的等级徽章**）」 | 徽章已删 | 产品说明过期 |
 | 14 | prd.md 的定价那一整节（221–272 行） | 「卖攻略不卖次数」「无限重试」「每天 1 次」 | 改成充值能量 | 整节作废 |
 | 15 | types/domain.ts:9 的 nextFreeAt | 24 小时冷却残留 | 早已换成每日次数 | 死字段 |
 

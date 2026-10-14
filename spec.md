@@ -9,7 +9,7 @@
 > | 表结构 | [apps/server/src/db/schema.ts](apps/server/src/db/schema.ts) |
 > | 业务、名词、概念 | [prd.md](prd.md) |
 > | 要做什么、做到哪了 | [plan.md](plan.md) |
-> | 工程索引、怎么跑 | [AGENT.md](AGENT.md) |
+> | 工程索引、怎么跑 | [AGENTS.md](AGENTS.md) |
 >
 > **规矩：能派生的不写在这里。** 字段、常量、路径、阈值、DDL 一律指向代码 ——
 > 在这里抄第二份，就是漂移的种子（本文件曾经抄过一份表结构，后来被抓到三处与代码不符）。

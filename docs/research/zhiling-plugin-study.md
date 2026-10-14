@@ -268,7 +268,7 @@ SuggestedScore = PronAccuracy × PronCompletion × (2 − PronCompletion)
 
 ### 6.3 为什么这对「句拼」是致命的
 
-看 [AGENT.md](../../AGENT.md) 的架构：
+看 [AGENTS.md](../../AGENTS.md) 的架构：
 
 ```
 录音 → onFrameRecorded(PCM 帧) → Worker → 纯函数 FFT/YIN/VAD/DTW → 音高·流利度·进度·上色

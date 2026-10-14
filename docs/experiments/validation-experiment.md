@@ -262,5 +262,5 @@ T1 真机回帧稳定？
 
 1. **一张阈值结论**（写回 prd.md 第六节「征服」）
 2. **一份引擎横评**（写回 docs/research/engine-comparison.md）
-3. **一份真机技术验证报告**（写回 spec.md / AGENT.md 的风险清单）
+3. **一份真机技术验证报告**（写回 spec.md / AGENTS.md 的风险清单）
 4. **竞技场长度结论**（写回 prd.md 第二节）

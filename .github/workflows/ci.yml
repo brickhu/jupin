@@ -71,7 +71,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # ⭐ 与仓库的验证规范一致：typecheck → test（见 AGENT.md 的"每次改动都要做"）
+      # ⭐ 与仓库的验证规范一致：typecheck → test（见 AGENTS.md 的"每次改动都要做"）
       - name: 类型检查与测试
         run: |
           pnpm typecheck

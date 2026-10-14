@@ -8,7 +8,7 @@ export type { ScoreEngine, ScoreOptions, ScoreResult, WordScore, SentenceScore }
 /**
  * 引擎工厂 —— 全系统唯一的引擎选择点。
  *
- * 按 AGENT.md 原则 1，本文件之外不应出现任何引擎专有代码。
+ * 按 AGENTS.md 原则 1，本文件之外不应出现任何引擎专有代码。
  */
 let cached: ScoreEngine | undefined
 

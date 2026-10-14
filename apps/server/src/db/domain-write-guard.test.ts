@@ -333,7 +333,7 @@ const EXEMPTIONS: Exemption[] = [
       'energy_ledger',
       'users',
     ],
-    why: '清库运维脚本本体（AGENT.md 点名的事故脚本），有探针账号与 --confirm 保护；它天然要跨所有唯一写入方清数据。',
+    why: '清库运维脚本本体（AGENTS.md 点名的事故脚本），有探针账号与 --confirm 保护；它天然要跨所有唯一写入方清数据。',
   },
   {
     audit: '#13',
@@ -345,7 +345,7 @@ const EXEMPTIONS: Exemption[] = [
     audit: '#14',
     file: 'apps/server/scripts/settle-smoke.ts',
     tables: ['energy_ledger', 'reward_grants', 'submissions', 'users'],
-    why: '结算冒烟：自建探针账号、自清自己造的行（AGENT.md 要求「只删自己造的」）；必须要能直插 scored 行。',
+    why: '结算冒烟：自建探针账号、自清自己造的行（AGENTS.md 要求「只删自己造的」）；必须要能直插 scored 行。',
   },
   {
     audit: '#14',

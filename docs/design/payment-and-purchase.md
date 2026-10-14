@@ -572,7 +572,7 @@ wx.requestVirtualPayment({ ...payOption, success, fail })
 | 环节 | 本地（wx.request + 伪 openid 或真 openid）|
 |---|---|
 | 商品列表 / 下单落库 | ✅ 可以（用 PAY=mock 走假 payData）|
-| 真拉起支付 | ❌ 不行 —— 必须真机 + 真环境（这也是 AGENT.md 既有结论）|
+| 真拉起支付 | ❌ 不行 —— 必须真机 + 真环境（这也是 AGENTS.md 既有结论）|
 | 发货推送 | ✅ 可以：本地直接 curl 打 /api/pay/notify 模拟推送 |
 
 ⇒ 加一个 env 开关 **PAY=mock | wxpay**（与 ENGINE=mock | xfyun 同一套写法）：

@@ -288,7 +288,7 @@ export async function pingDatabase(timeoutMs = 2500): Promise<'ok' | 'error' | '
  *    · 迁移前 = 「这个库原来长什么样」（诊断 v1 遗留库）
  *    · 迁移后 = 「现在到底有哪些表」（核对这次发版到底建没建出来）
  *    只留迁移前那一份的话，一次 --reset 部署之后 /health 会一直显示「空库」，
- *    而按 AGENT.md 的说法那正是「schema 不是新版」的判据 —— 于是一次成功
+ *    而按 AGENTS.md 的说法那正是「schema 不是新版」的判据 —— 于是一次成功
  *    的重建反而看起来像失败。（这个坑真实发生过：清库重建后 articleCount=null、
  *    existingTables 消失，排查时差点当成迁移没跑。）
  *
@@ -582,7 +582,7 @@ export async function initDatabase(): Promise<void> {
    * ⚠️ 上面那两次 refreshArticleCount / refreshTableList 都在**迁移之前** ——
    *    首次部署、SCHEMA_RESET 清库重建这两种情况下，那时库里还什么都没有，
    *    于是 /health 会一直停在「空库 + articleCount: null」，
-   *    而 AGENT.md 的排查表恰恰把这两个值当成「没灌上 / schema 不是新版」的判据，
+   *    而 AGENTS.md 的排查表恰恰把这两个值当成「没灌上 / schema 不是新版」的判据，
    *    ⇒ 一次成功的初始化看起来像失败。
    * ⚠️ 放在最后而不是插在中间：seed 会插文章，articles 的行数要等它跑完才算得准。
    */

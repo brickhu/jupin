@@ -1,11 +1,11 @@
 /**
  * ⭐ 文档的机械检查 —— 把「文档腐烂」变成一条会红的命令。
  *
- * 背景：项目定了四条文档真相原则（见 AGENT.md 的「文档与真相来源」）：
+ * 背景：项目定了四条文档真相原则（见 AGENTS.md 的「文档与真相来源」）：
  *   代码及注释 = 真相 · prd.md = 业务唯一来源 · plan.md = 任务唯一来源 ·
- *   AGENT.md = 工程索引。元规则是「重复即错误」。
+ *   AGENTS.md = 工程索引。元规则是「重复即错误」。
  *
- * 原则靠自觉是保不住的 —— 已经出过一次：AGENT.md 与 prd.md 都还写着「等级徽章」，
+ * 原则靠自觉是保不住的 —— 已经出过一次：AGENTS.md 与 prd.md 都还写着「等级徽章」，
  * 而代码里它早已整体废除。这个脚本只做三件**便宜且不会误报**的事：
  *
  *   ① 文档里的 markdown 链接（相对路径）必须存在；
@@ -25,7 +25,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /** 检查哪些文件（docs/archive 明确排除：历史就该过时） */
 const DOCS = [
-  'AGENT.md',
+  'AGENTS.md',
   'prd.md',
   'spec.md',
   'plan.md',
