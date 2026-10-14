@@ -36,7 +36,7 @@ import { agoText } from '../../../lib/time'
 interface RowWord {
   i: number
   text: string
-  /** 'text-ok'（读准了）/ 'text-bad' / 'text-ink' */
+  /** 'text-success'（读准了）/ 'text-error' / 'text-page-on' */
   cls: string
 }
 
@@ -73,7 +73,7 @@ interface Row {
  */
 function toWords(text: string, scores: ChallengeWordScore[] | null): RowWord[] {
   const plain = plainWordsOf(text)
-  // ⚠️ 没有逐词结果 → 继承 currentColor（原来是 text-ink；主题底上固定墨色会看不见）
+  // ⚠️ 没有逐词结果 → 继承 currentColor（原来是 text-page-on ；主题底上固定墨色会看不见）
   if (!scores) return plain.map((t, i) => ({ i, text: t, cls: '' }))
   // ⚠️ 用词对齐而不是按下标 —— 引擎词表可能多一个插入词（见 alignWordScores 的说明）
   const align = alignWordScores(text, scores.map((s) => s.word ?? ''))

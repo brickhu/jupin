@@ -3,7 +3,7 @@ import { iconClassOf, isIconName } from '../../lib/icon-names'
 /**
  * ⭐ **图标组件** —— 页面只写 **iconify 名**，不写类名。
  *
- *     <ui-icon name="clarity:favorite-solid" class="text-40rpx text-ink" />
+ *     <ui-icon name="clarity:favorite-solid" class="text-40rpx text-page-on" />
  *
  * ⚠️ 渲染出来是一个 **1em 的方块 + CSS mask**（见生成的 src/icons.wxss）：
  *    尺寸跟着字号（1em）、颜色吃 currentColor、每个图标按自己的 viewBox 撑满那一格。
@@ -19,7 +19,7 @@ import { iconClassOf, isIconName } from '../../lib/icon-names'
  *
  * ⚠️ 样式：图标**跟着宿主走** —— 颜色（currentColor）与尺寸（1em）都由调用方的 class 决定。
  *    ⇒ 把排版类写在 `<ui-icon>` 自己身上（它就是一个 inline 的宿主节点），例如
- *      `class="text-40rpx text-ink ml-2"`。
+ *      `class="text-40rpx text-page-on ml-2"`。
  *
  * ⚠️⚠️ `apply-shared` 不能去掉：`.ui-icon` 与 `.ui-icon-*` 定义在 app.wxss（icons.wxss）里，
  *    默认的 isolated 组件**拿不到全局类**，表现是图标整个不显示（且不报错）。

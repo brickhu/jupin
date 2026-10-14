@@ -15,7 +15,7 @@ export interface ColoredWord {
   /** 稳定的 key（同一个词可能出现多次，不能用 text 当 key） */
   i: number
   text: string
-  /** 'text-ok' / 'text-bad' / ''（空 = 继承 currentColor，不上色） */
+  /** 'text-success' / 'text-error' / ''（空 = 继承 currentColor，不上色） */
   cls: string
   /**
    * ⭐ 这个词的音标（⭐ 可选 ✓ —— 由调用方补进来，见 reading.ts 的说明 ✓）
@@ -42,7 +42,7 @@ export function renderWordColors(
     //    固定墨色在深色主题上会看不见 —— 颜色一律跟着 currentColor 走。
     const lvl = w ? wordLevel(w.score, w.dp) : ''
     /**
-     * ⚠️⚠️ `bad` 映射到 **warn（橙）**，不是 `text-bad`（红）—— 2026-10 按设计稿标定。
+     * ⚠️⚠️ `bad` 映射到 **warn（橙）**，不是 `text-error`（红）—— 2026-10 按设计稿标定。
      *
      * 设计稿里"读得不够好的词"是**橙色**，而不是红色：
      *     Innovation is not merely the / introduction 黑 / willingness **橙**
@@ -52,6 +52,6 @@ export function renderWordColors(
      *    颜色是**界面**的事，所以这层映射在端侧。
      */
     if (!lvl || lvl === 'ink') return { i, text: t, cls: '' }
-    return { i, text: t, cls: lvl === 'bad' ? 'text-warn' : 'text-ok' }
+    return { i, text: t, cls: lvl === 'bad' ? 'text-warning' : 'text-success' }
   })
 }

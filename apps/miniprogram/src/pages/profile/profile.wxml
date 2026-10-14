@@ -20,10 +20,10 @@
        ⚠️ 「取不到」只有两种：id 不存在（链接失效 / 账号被关 —— 服务端一律 404）
           与网络失败。**还没有我的 id** 不是错误，见下面的「加入」。 -->
   <view class="bg-white rounded-2.5 p-5" wx:if="{{loading}}">
-    <text class="text-28rpx text-muted">正在取主页…</text>
+    <text class="text-28rpx text-page-on_65">正在取主页…</text>
   </view>
   <view class="bg-white rounded-2.5 p-5" wx:elif="{{error}}">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <text class="text-28rpx text-error block leading-[1.6]">{{error}}</text>
   </view>
 
   <block wx:else>
@@ -36,10 +36,10 @@
     <view class="bg-white rounded-2.5 p-4 flex items-center">
       <view class="pr-join" wx:if="{{!hasProfile}}" bindtap="onJoin"
             hover-class="active__opacity-60">加入</view>
-      <image wx:else class="w-[112rpx] h-[112rpx] rounded-full bg-line" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
+      <image wx:else class="w-[112rpx] h-[112rpx] rounded-full bg-surface-strong" src="{{avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
       <view class="ml-3 flex-1">
-        <text class="text-34rpx font-semibold text-ink block">{{nickname}}</text>
-        <text class="text-24rpx text-faint block mt-1" wx:if="{{hasEnergy}}" bindtap="onEnergy"
+        <text class="text-34rpx font-semibold text-page-on block">{{nickname}}</text>
+        <text class="text-24rpx text-page-on_50 block mt-1" wx:if="{{hasEnergy}}" bindtap="onEnergy"
               hover-class="active__opacity-60">⚡ 能量 {{energy}} 点 ›</text>
       </view>
       <!-- ⭐ 分享按钮必须是 button[open-type=share]：小程序里只有它能主动拉起转发 -->
@@ -58,26 +58,26 @@
       <view class="flex items-center">
         <view class="flex-1 text-center">
           <view class="flex items-baseline justify-center">
-            <text class="text-40rpx font-bold text-ink">{{streakDays}}</text>
-            <text class="text-24rpx text-faint ml-1">天</text>
+            <text class="text-40rpx font-bold text-page-on">{{streakDays}}</text>
+            <text class="text-24rpx text-page-on_50 ml-1">天</text>
           </view>
-          <text class="text-22rpx text-faint block mt-1.5">连续天数</text>
+          <text class="text-22rpx text-page-on_50 block mt-1.5">连续天数</text>
         </view>
-        <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+        <view class="w-[1rpx] h-[56rpx] bg-surface-strong"></view>
         <view class="flex-1 text-center">
           <view class="flex items-baseline justify-center">
-            <text class="text-40rpx font-bold text-ink">{{conqueredCount}}</text>
-            <text class="text-24rpx text-faint ml-1">场</text>
+            <text class="text-40rpx font-bold text-page-on">{{conqueredCount}}</text>
+            <text class="text-24rpx text-page-on_50 ml-1">场</text>
           </view>
-          <text class="text-22rpx text-faint block mt-1.5">参与场次</text>
+          <text class="text-22rpx text-page-on_50 block mt-1.5">参与场次</text>
         </view>
-        <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+        <view class="w-[1rpx] h-[56rpx] bg-surface-strong"></view>
         <view class="flex-1 text-center">
           <view class="flex items-baseline justify-center">
-            <text class="text-40rpx font-bold text-ink">{{rounds}}</text>
-            <text class="text-24rpx text-faint ml-1">次</text>
+            <text class="text-40rpx font-bold text-page-on">{{rounds}}</text>
+            <text class="text-24rpx text-page-on_50 ml-1">次</text>
           </view>
-          <text class="text-22rpx text-faint block mt-1.5">挑战回合</text>
+          <text class="text-22rpx text-page-on_50 block mt-1.5">挑战回合</text>
         </view>
       </view>
 
@@ -87,11 +87,11 @@
       <view class="mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line" wx:for="{{cookieRows}}" wx:key="key">
         <view class="flex items-center" bindtap="onOpenCookies" hover-class="active__opacity-60">
           <text class="text-36rpx">{{item.icon}}</text>
-          <text class="text-28rpx text-ink font-medium ml-2 flex-1">{{item.name}}</text>
-          <text class="text-36rpx font-bold text-ink">{{item.value}}</text>
-          <text class="text-24rpx text-faint ml-2" wx:if="{{isMe}}">›</text>
+          <text class="text-28rpx text-page-on font-medium ml-2 flex-1">{{item.name}}</text>
+          <text class="text-36rpx font-bold text-page-on">{{item.value}}</text>
+          <text class="text-24rpx text-page-on_50 ml-2" wx:if="{{isMe}}">›</text>
         </view>
-        <text class="text-22rpx text-faint block mt-1 leading-[1.6]">{{item.blurb}}</text>
+        <text class="text-22rpx text-page-on_50 block mt-1 leading-[1.6]">{{item.blurb}}</text>
       </view>
     </view>
   </block>

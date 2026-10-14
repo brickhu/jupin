@@ -23,16 +23,16 @@
   <!-- 今天还没读 / 断 1 天：一行就够 -->
   <view class="flex items-center px-1 mb-2"
         wx:if="{{nudge.level === 'today' || nudge.level === 'gap1'}}">
-    <text class="text-24rpx text-warn flex-1 leading-[1.5]">{{nudge.title}} · {{nudge.note}}</text>
-    <text class="text-24rpx text-brand ml-2 shrink-0" wx:if="{{nudge.action}}"
+    <text class="text-24rpx text-warning flex-1 leading-[1.5]">{{nudge.title}} · {{nudge.note}}</text>
+    <text class="text-24rpx text-accent ml-2 shrink-0" wx:if="{{nudge.action}}"
           bindtap="onOpenStreak" hover-class="active__opacity-60">{{nudge.action}} ›</text>
   </view>
 
   <!-- 断 2 天：升级成卡片 -->
-  <view class="card p-4 mb-3 border-warn" wx:elif="{{nudge.level === 'gap2'}}">
-    <text class="text-28rpx font-medium text-ink">{{nudge.title}}</text>
-    <text class="text-24rpx text-body block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
-    <view class="mt-3 text-center py-[20rpx] rounded-full bg-brand text-white text-28rpx font-medium"
+  <view class="card p-4 mb-3 border-warning" wx:elif="{{nudge.level === 'gap2'}}">
+    <text class="text-28rpx font-medium text-page-on">{{nudge.title}}</text>
+    <text class="text-24rpx text-page-on_85 block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
+    <view class="mt-3 text-center py-[20rpx] rounded-full bg-accent text-white text-28rpx font-medium"
           bindtap="onOpenStreak" hover-class="active__opacity-60">去补签</view>
   </view>
 
@@ -41,9 +41,9 @@
   <view class="card p-4 mb-3" wx:elif="{{nudge.level === 'restart'}}">
     <view class="flex items-center">
       <text class="text-32rpx">🌱</text>
-      <text class="text-28rpx font-medium text-ink ml-2">{{nudge.title}}</text>
+      <text class="text-28rpx font-medium text-page-on ml-2">{{nudge.title}}</text>
     </view>
-    <text class="text-24rpx text-muted block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
+    <text class="text-24rpx text-page-on_65 block mt-1.5 leading-[1.6]">{{nudge.note}}</text>
   </view>
 
   <!-- ══ 块 ①：我的状态卡 ═══════════════════════════════════
@@ -62,31 +62,31 @@
       <!-- ⚠️ 第一格是**参与场次**：拿到过分数的去重句子数（一句 = 一个竞技场 = 一场）。 -->
       <view class="flex-1 text-center" bindtap="onOpenParticipations" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{stats.conqueredCount}}</text>
-          <text class="text-24rpx text-faint ml-1">场</text>
+          <text class="text-40rpx font-bold text-page-on">{{stats.conqueredCount}}</text>
+          <text class="text-24rpx text-page-on_50 ml-1">场</text>
         </view>
-        <text class="text-22rpx text-faint block mt-1.5">参与场次 ›</text>
+        <text class="text-22rpx text-page-on_50 block mt-1.5">参与场次 ›</text>
       </view>
 
-      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+      <view class="w-[1rpx] h-[56rpx] bg-surface-strong"></view>
 
       <!-- ⚠️ 第二格是**挑战回合**（一共打了几次分）—— 过程量，与「参与场次」分开看。 -->
       <view class="flex-1 text-center" bindtap="onOpenChallenges" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{stats.challengedRounds}}</text>
-          <text class="text-24rpx text-faint ml-1">次</text>
+          <text class="text-40rpx font-bold text-page-on">{{stats.challengedRounds}}</text>
+          <text class="text-24rpx text-page-on_50 ml-1">次</text>
         </view>
-        <text class="text-22rpx text-faint block mt-1.5">挑战回合 ›</text>
+        <text class="text-22rpx text-page-on_50 block mt-1.5">挑战回合 ›</text>
       </view>
 
-      <view class="w-[1rpx] h-[56rpx] bg-line"></view>
+      <view class="w-[1rpx] h-[56rpx] bg-surface-strong"></view>
 
       <view class="flex-1 text-center" bindtap="onOpenStreak" hover-class="active__opacity-60">
         <view class="flex items-baseline justify-center">
-          <text class="text-40rpx font-bold text-ink">{{stats.streakDays}}</text>
-          <text class="text-24rpx text-faint ml-1">天</text>
+          <text class="text-40rpx font-bold text-page-on">{{stats.streakDays}}</text>
+          <text class="text-24rpx text-page-on_50 ml-1">天</text>
         </view>
-        <text class="text-22rpx text-faint block mt-1.5">连战天数 ›</text>
+        <text class="text-22rpx text-page-on_50 block mt-1.5">连战天数 ›</text>
       </view>
     </block>
 
@@ -94,15 +94,15 @@
          前者是"不知道库里有没有我"，后者是"服务端说没有"。把断网画成「未加入」，
          有账号的老用户会以为账号没了（B31 定下的）。 -->
     <view wx:elif="{{statusMode === 'unknown'}}" class="flex-1 flex items-center justify-center px-2">
-      <text class="text-24rpx text-muted">连不上服务器</text>
-      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-brand text-white text-24rpx"
+      <text class="text-24rpx text-page-on_65">连不上服务器</text>
+      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-accent text-white text-24rpx"
             bindtap="onReconnect" hover-class="active__opacity-60">重新连接</view>
     </view>
 
     <!-- ⭐ 未加入：同一张卡、同一个高度（见下面 onJoin 的说明） -->
     <view wx:else class="flex-1 flex items-center justify-center px-2">
-      <text class="text-24rpx text-muted">{{brand.pitch}}</text>
-      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-brand text-white text-24rpx"
+      <text class="text-24rpx text-page-on_65">{{brand.pitch}}</text>
+      <view class="ml-3 shrink-0 px-4 py-[10rpx] rounded-full bg-accent text-white text-24rpx"
             bindtap="onJoin" hover-class="active__opacity-60">加入</view>
     </view>
   </view>
@@ -110,15 +110,17 @@
   <!-- ══ 块 ②：今日挑战 ═════════════════════════════════════
        ⚠️ 标题是**必须**的：卡片上没有日期，所以"这是今天要读的那句"只能由它说。
        ⚠️ 靠左，与「最新上线」「荣誉榜」同一档字号 + 同一处缩进（三个分组标题是一对）。 -->
-  <text class="text-28rpx font-semibold text-ink block px-1 pt-1 pb-2">今日挑战</text>
+  <text class="text-28rpx font-semibold text-page-on block px-1 pt-1 pb-2">今日挑战</text>
 
   <skeleton wx:if="{{todayLoading}}" variant="card" />
 
   <!-- ⚠️ 错误只在本块**没有内容**时占位；有缓存卡就照常画（刷新失败不该让内容消失） -->
   <view wx:elif="{{todayError && !today}}" class="card p-5">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{todayError}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
-          bindtap="onRetryToday">重试</view>
+    <text class="text-28rpx text-error block leading-[1.6]">{{todayError}}</text>
+    <view class="mt-3">
+      <ui-button variant="fill" color="accent" size="md" roundness="full" width="full"
+                 bind:press="onRetryToday">重试</ui-button>
+    </view>
   </view>
 
   <!-- ⭐ 今日推荐 = arena-card 的 featured 形态（主题色 + currentColor 分层）
@@ -137,19 +139,21 @@
           不占位、也不跟句子抢眼。 -->
   <view class="pt-6 pb-2 px-1" wx:if="{{latestLoading || latest.length > 0}}">
     <view class="flex items-center">
-      <text class="text-28rpx font-semibold text-ink flex-1">最新上线</text>
+      <text class="text-28rpx font-semibold text-page-on flex-1">最新上线</text>
       <!-- ⭐ 去浏览句库（公开页）：按标签 / 难度翻整个句库，入口就挂在这一段的标题右边 ——
            这里列的是"最新几句"，想看更多自然往这儿点。 -->
-      <text class="text-24rpx text-brand" bindtap="onOpenBrowse">浏览句库 ›</text>
+      <text class="text-24rpx text-accent" bindtap="onOpenBrowse">浏览句库 ›</text>
     </view>
   </view>
 
   <skeleton wx:if="{{latestLoading}}" variant="list" rows="3" />
 
   <view wx:elif="{{latestError && latest.length === 0}}" class="card p-5">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{latestError}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
-          bindtap="onRetryLatest">重试</view>
+    <text class="text-28rpx text-error block leading-[1.6]">{{latestError}}</text>
+    <view class="mt-3">
+      <ui-button variant="fill" color="accent" size="md" roundness="full" width="full"
+                 bind:press="onRetryLatest">重试</ui-button>
+    </view>
   </view>
 
   <!-- ⭐ 最新上线卡片**整张就是一个入口**，没有按钮：一串同构卡片每张挂按钮会变成按钮墙。 -->
@@ -165,8 +169,8 @@
   <view class="card mt-3 py-[26rpx] flex items-center justify-center"
         wx:if="{{latest.length > 0}}"
         bindtap="onOpenTags" hover-class="active__opacity-60">
-    <ui-icon class="text-28rpx text-brand shrink-0 mr-1" name="mdi:tag-outline" />
-    <text class="text-26rpx text-brand">看全部标签</text>
+    <ui-icon class="text-28rpx text-accent shrink-0 mr-1" name="mdi:tag-outline" />
+    <text class="text-26rpx text-accent">看全部标签</text>
   </view>
 
 </view>

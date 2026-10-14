@@ -15,9 +15,9 @@
   <!-- ── ① 统计 ─────────────────────────────────────────────── -->
   <view class="card p-5 flex items-center">
     <view class="flex-1">
-      <text class="text-72rpx font-bold text-ink leading-[1]">{{streakDays}}</text>
-      <text class="text-24rpx text-faint block mt-2">连续战斗</text>
-      <text class="text-22rpx text-faint block mt-1">历史最长 {{streakBest}} 天</text>
+      <text class="text-72rpx font-bold text-page-on leading-[1]">{{streakDays}}</text>
+      <text class="text-24rpx text-page-on_50 block mt-2">连续战斗</text>
+      <text class="text-22rpx text-page-on_50 block mt-1">历史最长 {{streakBest}} 天</text>
     </view>
     <text class="text-120rpx leading-[1]">🔥</text>
   </view>
@@ -27,58 +27,58 @@
           就是"我还能不能接上"，而不是先看一整个月的格子。
        ⚠️ 四种状态由 makeupViewOf 在 TS 里判好（WXML 不做判断）：
           能补 / 今天已读 / 断太久 / 整块不出现。 -->
-  <view class="card p-4 mt-3 border-warn" wx:if="{{makeupView.kind === 'ready'}}">
+  <view class="card p-4 mt-3 border-warning" wx:if="{{makeupView.kind === 'ready'}}">
     <view class="flex items-center">
       <text class="text-32rpx">🩹</text>
-      <text class="text-30rpx font-semibold text-ink ml-2 flex-1">{{makeupView.title}}</text>
+      <text class="text-30rpx font-semibold text-page-on ml-2 flex-1">{{makeupView.title}}</text>
     </view>
-    <text class="text-24rpx text-body block mt-2 leading-[1.6]">{{makeupView.note}}</text>
-    <text class="text-24rpx text-bad block mt-1.5 leading-[1.6]" wx:if="{{makeupView.short}}">{{makeupView.short}}</text>
+    <text class="text-24rpx text-page-on_85 block mt-2 leading-[1.6]">{{makeupView.note}}</text>
+    <text class="text-24rpx text-error block mt-1.5 leading-[1.6]" wx:if="{{makeupView.short}}">{{makeupView.short}}</text>
 
-    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{makeupView.canPress ? 'bg-brand text-white' : 'bg-line text-faint'}}"
+    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{makeupView.canPress ? 'bg-accent text-white' : 'bg-surface-strong text-page-on_50'}}"
           bindtap="onMakeUp" hover-class="{{makeupView.canPress ? 'active__opacity-60' : ''}}">
       {{makingUp ? '补签中…' : makeupView.button}}
     </view>
     <!-- ⚠️ 必须把"补完还得读一句"说出来：补签本身不加天数，
          今天不读，今天就是新缺口（见 makeupViewOf 的说明） -->
-    <text class="text-22rpx text-faint block mt-2 text-center" wx:if="{{makeupView.canPress}}">补签只填缺口，补完今天读一句才算接上</text>
+    <text class="text-22rpx text-page-on_50 block mt-2 text-center" wx:if="{{makeupView.canPress}}">补签只填缺口，补完今天读一句才算接上</text>
   </view>
 
   <!-- ⚠️ 断太久 ⇒ **不报失败**：说成"重新开始"，并提历史最长还在 -->
   <view class="card p-4 mt-3" wx:elif="{{makeupView.kind === 'too-long'}}">
     <view class="flex items-center">
       <text class="text-32rpx">🌱</text>
-      <text class="text-28rpx font-medium text-ink ml-2 flex-1">{{makeupView.title}}</text>
+      <text class="text-28rpx font-medium text-page-on ml-2 flex-1">{{makeupView.title}}</text>
     </view>
-    <text class="text-24rpx text-muted block mt-2 leading-[1.6]">{{makeupView.note}}</text>
+    <text class="text-24rpx text-page-on_65 block mt-2 leading-[1.6]">{{makeupView.note}}</text>
   </view>
 
   <!-- 今天已经读过：说明"补签要在读之前做"，别让他反复点 -->
   <view class="card p-4 mt-3" wx:elif="{{makeupView.kind === 'read-today'}}">
-    <text class="text-26rpx text-muted leading-[1.6]">{{makeupView.title}} —— {{makeupView.note}}</text>
+    <text class="text-26rpx text-page-on_65 leading-[1.6]">{{makeupView.title}} —— {{makeupView.note}}</text>
   </view>
 
   <!-- ── ② 连战日历 ─────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
     <view class="flex items-center">
       <view class="px-3 py-2" bindtap="onPrev" hover-class="active__opacity-60">
-        <ui-icon class="text-40rpx text-muted" name="mdi:chevron-left" />
+        <ui-icon class="text-40rpx text-page-on_65" name="mdi:chevron-left" />
       </view>
-      <text class="flex-1 text-center text-28rpx font-medium text-ink">{{monthText}}</text>
+      <text class="flex-1 text-center text-28rpx font-medium text-page-on">{{monthText}}</text>
       <view class="px-3 py-2 {{canNext ? '' : 'opacity-30'}}" bindtap="onNext" hover-class="{{canNext ? 'active__opacity-60' : ''}}">
-        <ui-icon class="text-40rpx text-muted" name="mdi:chevron-right" />
+        <ui-icon class="text-40rpx text-page-on_65" name="mdi:chevron-right" />
       </view>
     </view>
 
     <!-- 星期表头 -->
     <view class="flex mt-2">
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">日</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">一</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">二</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">三</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">四</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">五</text>
-      <text class="text-22rpx text-faint text-center" style="width:14.28%">六</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">日</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">一</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">二</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">三</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">四</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">五</text>
+      <text class="text-22rpx text-page-on_50 text-center" style="width:14.28%">六</text>
     </view>
 
     <!-- 格子：7 列自动换行。⚠️ 类是拼出来的，见 wxss 里的说明 -->
@@ -94,13 +94,13 @@
          日历的黄/蓝是这一页专有的，uno theme 里没有这两个色板（见 wxss 顶部说明） -->
     <view class="flex items-center mt-3 pt-3 border-t-[1rpx] border-t-solid border-t-line">
       <view class="streak-swatch streak-swatch-read"></view>
-      <text class="text-22rpx text-faint ml-2">连战</text>
+      <text class="text-22rpx text-page-on_50 ml-2">连战</text>
     </view>
   </view>
 
   <!-- ── 连不上 ────────────────────────────────────────────── -->
-  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
-    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
-    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-error rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-error leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-accent ml-2" bindtap="onRetry">重试</text>
   </view>
 </view>

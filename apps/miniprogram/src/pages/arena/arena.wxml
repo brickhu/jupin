@@ -19,9 +19,11 @@
   <skeleton wx:if="{{articleLoading}}" variant="card" />
 
   <view wx:elif="{{articleError}}" class="card p-5">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{articleError}}</text>
-    <view class="mt-3 text-center py-[22rpx] rounded-full bg-brand text-white text-28rpx"
-          bindtap="onRetryArticle">重试</view>
+    <text class="text-28rpx text-error block leading-[1.6]">{{articleError}}</text>
+    <view class="mt-3">
+      <ui-button variant="fill" color="accent" size="md" roundness="full" width="full"
+                 bind:press="onRetryArticle">重试</ui-button>
+    </view>
   </view>
 
   <arena-card wx:elif="{{sentence}}" mode="featured" entry="{{sentence}}"
@@ -46,8 +48,8 @@
   <skeleton wx:if="{{statsLoading}}" variant="stats" />
 
   <view wx:elif="{{statsError}}" class="card p-4 mt-3">
-    <text class="text-26rpx text-bad block">{{statsError}}</text>
-    <view class="mt-3 text-center py-[18rpx] rounded-full bg-brand text-white text-26rpx"
+    <text class="text-26rpx text-error block">{{statsError}}</text>
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-accent text-white text-26rpx"
           bindtap="onRetryStats">重试</view>
   </view>
 
@@ -59,26 +61,26 @@
          ⚠️ 两者都来自 ArticleDetail（和句子同一批到，见 arena.ts 的 loadArticle），
             都可能为 null（老内容没写）⇒ 各判各的，**不补默认话术**。 -->
     <view class="mb-3" wx:if="{{challenge || advice}}">
-      <text wx:if="{{challenge}}" class="text-28rpx text-body leading-[1.6] block">{{challenge}}</text>
-      <text wx:if="{{advice}}" class="text-24rpx text-muted leading-[1.6] block mt-1.5">{{advice}}</text>
+      <text wx:if="{{challenge}}" class="text-28rpx text-page-on_85 leading-[1.6] block">{{challenge}}</text>
+      <text wx:if="{{advice}}" class="text-24rpx text-page-on_65 leading-[1.6] block mt-1.5">{{advice}}</text>
     </view>
 
     <view class="flex" wx:if="{{participantCount > 0}}">
       <view class="flex-1">
-        <text class="text-22rpx text-faint block">参与人数</text>
-        <text class="text-40rpx font-bold text-ink">{{participantCount}}</text>
+        <text class="text-22rpx text-page-on_50 block">参与人数</text>
+        <text class="text-40rpx font-bold text-page-on">{{participantCount}}</text>
       </view>
       <view class="flex-1">
-        <text class="text-22rpx text-faint block">全场最高分</text>
-        <text class="text-40rpx font-bold text-ok">{{topScoreText}}</text>
+        <text class="text-22rpx text-page-on_50 block">全场最高分</text>
+        <text class="text-40rpx font-bold text-success">{{topScoreText}}</text>
       </view>
       <view class="flex-1">
-        <text class="text-22rpx text-faint block">全场最低分</text>
-        <text class="text-40rpx font-bold text-ink">{{lowestScoreText}}</text>
+        <text class="text-22rpx text-page-on_50 block">全场最低分</text>
+        <text class="text-40rpx font-bold text-page-on">{{lowestScoreText}}</text>
       </view>
     </view>
 
-    <text class="text-24rpx text-faint" wx:else>还没有人参与 —— 第一个成绩就是第一名</text>
+    <text class="text-24rpx text-page-on_50" wx:else>还没有人参与 —— 第一个成绩就是第一名</text>
   </view>
 
   <!-- ⚠️ 这里原来有一张单独的「我的参与概要 + CTA」卡（块 ③）——
@@ -94,20 +96,20 @@
   <skeleton wx:if="{{lbLoading}}" variant="rank" rows="5" />
 
   <view wx:elif="{{lbError}}" class="card p-4 mt-3">
-    <text class="text-24rpx text-faint block mb-2">排行榜</text>
-    <text class="text-26rpx text-bad block">{{lbError}}</text>
-    <view class="mt-3 text-center py-[18rpx] rounded-full bg-brand text-white text-26rpx"
+    <text class="text-24rpx text-page-on_50 block mb-2">排行榜</text>
+    <text class="text-26rpx text-error block">{{lbError}}</text>
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-accent text-white text-26rpx"
           bindtap="onRetryLeaderboard">重试</view>
   </view>
 
   <view wx:else class="card p-4 mt-3">
     <view class="flex items-baseline mb-2">
-      <text class="text-24rpx text-faint">排行榜</text>
-      <text class="text-22rpx text-faint ml-auto" wx:if="{{lbTotal > 0}}">共 {{lbTotal}} 人参与</text>
+      <text class="text-24rpx text-page-on_50">排行榜</text>
+      <text class="text-22rpx text-page-on_50 ml-auto" wx:if="{{lbTotal > 0}}">共 {{lbTotal}} 人参与</text>
     </view>
 
     <view class="py-[22rpx]" wx:if="{{leaderboard.length === 0}}">
-      <text class="text-24rpx text-faint">还没有人上榜 —— 第一个成绩就是第一名</text>
+      <text class="text-24rpx text-page-on_50">还没有人上榜 —— 第一个成绩就是第一名</text>
     </view>
 
     <!-- ⭐ 整行可点：看 TA 在这一句上的参与详情（自己那一行不跳，见 onOpenParticipant） -->
@@ -115,19 +117,19 @@
           wx:for="{{leaderboard}}" wx:key="rank"
           data-uid="{{item.userId}}" data-pid="{{item.participationId}}" bindtap="onOpenParticipant"
           hover-class="active__opacity-60">
-      <text class="text-26rpx w-[64rpx] text-faint">{{item.rank}}</text>
+      <text class="text-26rpx w-[64rpx] text-page-on_50">{{item.rank}}</text>
       <!-- ⭐ 头像 + 昵称：fileID 已在 arena.ts 里换过址，这里只管画。
            ⚠️ 没头像 / 换址失败时退回本地占位图（不留空圈，也不塌行高） -->
       <image class="w-[48rpx] h-[48rpx] rounded-full shrink-0 mr-2" src="{{item.avatarSrc || avatarPlaceholder}}" mode="aspectFill" />
-      <text class="text-26rpx flex-1 {{item.isMe ? 'text-brand font-semibold' : 'text-body'}}">{{item.nickname}}</text>
-      <text class="text-28rpx font-semibold text-ink">{{item.scoreText}}</text>
+      <text class="text-26rpx flex-1 {{item.isMe ? 'text-accent font-semibold' : 'text-page-on_85'}}">{{item.nickname}}</text>
+      <text class="text-28rpx font-semibold text-page-on">{{item.scoreText}}</text>
       <!-- ⭐ 行尾箭头 = "这一行能点"（与卡片/列表同一套提示）。点它看这一行的参与详情。 -->
-      <ui-icon class="text-24rpx text-faint ml-2 shrink-0" name="mdi:chevron-right" />
+      <ui-icon class="text-24rpx text-page-on_50 ml-2 shrink-0" name="mdi:chevron-right" />
     </view>
 
     <!-- ⚠️ 只列前 20。名次靠后的人在这里看不到自己，得明说 ——
          否则会被理解成「我的成绩没了」。我的名次在上面那张卡里。 -->
-    <text class="text-22rpx text-faint block mt-2" wx:if="{{lbTotal > leaderboard.length}}">只展示前 {{leaderboard.length}} 名 · 共 {{lbTotal}} 人参与</text>
+    <text class="text-22rpx text-page-on_50 block mt-2" wx:if="{{lbTotal > leaderboard.length}}">只展示前 {{leaderboard.length}} 名 · 共 {{lbTotal}} 人参与</text>
   </view>
 
   <!-- ══ ⑤ 邀请好友 ═══════════════════════════════════════════

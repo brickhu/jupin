@@ -23,7 +23,7 @@
        不要在这一页另抄一份。
        ⚠️ 这里原来还有一行「头像和昵称会显示在榜单上。不填也行 —— 成绩已经记在你的
           账号下了。」，用户 2026-09 要求删掉（解释性文案不上界面）。 -->
-  <text class="text-32rpx font-semibold text-ink block px-1 mb-2 leading-[1.5] text-center">{{brand.pitch}}</text>
+  <text class="text-32rpx font-semibold text-page-on block px-1 mb-2 leading-[1.5] text-center">{{brand.pitch}}</text>
 
   <!-- autoFocus：新人进来就把微信昵称摆到键盘上方（见组件里的说明）
        ⭐ registerMode：这一页的「确认加入」就是**注册**（唯一建 users 行的地方）——
@@ -36,8 +36,8 @@
           所以挑战 / 能量 / 参与记录 / 收藏这些功能都用不了。
           没这个入口，用户只能靠系统返回键去猜自己能不能走。 -->
   <view class="mt-3 py-2" bindtap="onSkip" hover-class="active__opacity-60">
-    <text class="text-24rpx text-faint block text-center">以后再说</text>
+    <text class="text-24rpx text-page-on_50 block text-center">以后再说</text>
   </view>
 
-  <text class="text-22rpx text-faint block mt-3 text-center">不会给你发任何消息，也不做别的用途。</text>
+  <text class="text-22rpx text-page-on_50 block mt-3 text-center">不会给你发任何消息，也不做别的用途。</text>
 </view>

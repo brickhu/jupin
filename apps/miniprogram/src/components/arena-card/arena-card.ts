@@ -10,7 +10,7 @@ import { resolveTheme } from '@jushuo/shared'
  *
  * ⚠️ 配色全部来自 entry.theme：
  *    根节点设 background / color，内部元素一律 currentColor + opacity 分层
- *    （原先把「灰」写死成 text-faint 的地方，现在改成对 currentColor 降透明度）。
+ *    （原先把「灰」写死成 text-page-on_50 的地方，现在改成对 currentColor 降透明度）。
  * ⚠️ theme 缺失（老内容）→ resolveTheme 按 articleId 复算（不是品牌色）。
  *
  * 事件：open（点卡片）/ play（点播放）/ start（点 CTA），页面据此处理。

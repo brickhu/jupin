@@ -8,14 +8,14 @@
 
   <!-- ── 句子加载中 ────────────────────────────────────────── -->
   <view class="card p-3.5 mb-3" wx:if="{{cardPhase === 'loading' && !error}}">
-    <text class="text-28rpx text-muted">正在加载句子…</text>
+    <text class="text-28rpx text-page-on_65">正在加载句子…</text>
   </view>
 
   <!-- ── 句子加载失败 ──────────────────────────────────────── -->
   <view class="card p-3.5 mb-3" wx:if="{{cardPhase === 'loading' && error}}">
-    <text class="text-28rpx text-bad block leading-[1.6]">{{error}}</text>
+    <text class="text-28rpx text-error block leading-[1.6]">{{error}}</text>
     <view class="mt-3">
-      <ui-button variant="outline" color="default" width="full" bind:press="onReload">重试</ui-button>
+      <ui-button variant="outline" color="primary" width="full" bind:press="onReload">重试</ui-button>
     </view>
   </view>
 
@@ -25,10 +25,10 @@
           用户 2026-09 把它们整体搬进了 components/eval-dialog 的浮层：
           等待期天然禁止点击，结果也不再和句子挤在同一屏。 -->
   <!-- ⭐⭐ **卡片边框和按钮是一致的**（用户 2026-10 定）—— 两边都跟着 hintLevel 走：
-         · 录音中（s2）              → **红** border-bad  #dc2626 —— 与红点 / 红计时器 / 红按钮同一套
-         · 待提交 · 朗读完整（ok）    → **绿** border-ok   #16a34a —— 与那颗绿 ✓ 同一个色值
-         · 待提交 · 只是读错（warn）  → **黄** border-warn #f59e0b —— 与那颗黄按钮同一个色值
-         · 待提交 · 被拦住（block）   → 不覆盖，用 card 自己的灰 border-cardline #cccccc
+         · 录音中（s2）              → **红** border-error  #dc2626 —— 与红点 / 红计时器 / 红按钮同一套
+         · 待提交 · 朗读完整（ok）    → **绿** border-success   #16a34a —— 与那颗绿 ✓ 同一个色值
+         · 待提交 · 只是读错（warn）  → **黄** border-warning #f59e0b —— 与那颗黄按钮同一个色值
+         · 待提交 · 被拦住（block）   → 不覆盖，用 card 自己的灰 border-surface-strong #cccccc
                                         （那时按钮也是灰的 ⇒ 仍然"和按钮一致"）
        ⚠️ 为什么不只是"录音红、待提交绿"：按钮已经按三档上色了（绿 / 黄 / 灰），
           边框只跟两档的话，**读错那一档会出现"黄按钮 + 绿边框"** ——
@@ -37,14 +37,14 @@
        ⚠️ 判据**从已有的 phase / hintLevel / canSubmit 派生**，不新增"边框色"字段 ——
           新增字段就等于多几个"忘了同步"的地方（这类 bug 这个页面犯过几次）。
        ⚠️⚠️ 与 .card 是"同特异度、后写的赢"（都设 border-color）：靠产物里
-          .border-bad / .border-ok / .border-warn 排在 .card 之后（工具类都在 shortcut 之后）。
+          .border-error / .border-success / .border-warning 排在 .card 之后（工具类都在 shortcut 之后）。
           已核对 uno.wxss 确实如此；改 uno 配置时要重新确认，
           否则会**静默失效**：边框不变色，而没有任何报错。
        ⚠️ 只换**颜色**，宽度仍是 card 里的 border-2 —— 不动尺寸，卡片不会因此跳一下。 -->
   <!-- ⚠️ 结果态（s5/s6）**不套那三档边框色**：
        cardPhase 把结果也映射成 's3'，于是它会顶着"可以提交"的绿边 ✗ ——
        而那时卡片里画的是结果，不是待提交的录音 ✓ -->
-  <view class="card p-3.5 mb-3 {{phase === 's5' || phase === 's6' ? '' : cardPhase === 's2' ? 'border-bad' : cardPhase === 's3' && hintLevel === 'warn' ? 'border-warn' : cardPhase === 's3' && canSubmit ? 'border-ok' : ''}}"
+  <view class="card p-3.5 mb-3 {{phase === 's5' || phase === 's6' ? '' : cardPhase === 's2' ? 'border-error' : cardPhase === 's3' && hintLevel === 'warn' ? 'border-warning' : cardPhase === 's3' && canSubmit ? 'border-success' : ''}}"
         wx:if="{{cardPhase === 's1' || cardPhase === 's2' || cardPhase === 's3'}}">
 
     <!-- ══════════ ★ 结果态（用户 2026-10 定：结果**就是卡片的一个状态**）══════════
@@ -93,7 +93,7 @@
                用户刚盯着同一句话读完，标色只是换个颜色，位置一动就觉得"换了一句话" ✓
              ⚠️⚠️ 所以这整块**要和上面 s1/s2/s3 那段同步改** ✗：
                「flex flex-wrap」 外层 · 「flex flex-col items-center mr-2 mb-1」 词容器 ·
-               「text-44rpx leading-[1.35] px-1」 词本身 · 「text-20rpx leading-[1.4] text-faint」 音标行
+               「text-44rpx leading-[1.35] px-1」 词本身 · 「text-20rpx leading-[1.4] text-page-on_50 」 音标行
              ⚠️ 早先这里是一个 「<text>」 里嵌 「<text>」 + 词后空格 ✗ ——
                那个写法**排版规则完全不同**（行高、断行、间距都跟不上 ✓），
                ⚠️ 当初的理由是"并列 text 会被当块排"✗ ——
@@ -102,7 +102,7 @@
           <view class="flex flex-col items-center mr-2 mb-1" wx:for="{{resultWords}}" wx:key="i">
             <text class="text-44rpx leading-[1.35] px-1 {{item.cls}}">{{item.text}}</text>
             <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 —— 与阅读时一致 ✓ -->
-            <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && item.ipa}}">{{item.ipa}}</text>
+            <text class="text-20rpx leading-[1.4] text-page-on_50" wx:if="{{ipaOn && item.ipa}}">{{item.ipa}}</text>
           </view>
         </view>
       </block>
@@ -160,7 +160,7 @@
                       bind:play="onPlaySentence" />
       </view>
       <!-- ⭐ IPA 胶囊 = 切换「单词下方显示音标」；开着时变实心，状态一眼可见 -->
-      <ui-button size="sm" variant="{{ipaOn ? 'fill' : 'ghost'}}" color="{{ipaOn ? 'brand' : 'default'}}"
+      <ui-button size="sm" variant="{{ipaOn ? 'fill' : 'ghost'}}"
                  bind:press="onToggleIpa">IPA</ui-button>
     </view>
 
@@ -184,14 +184,14 @@
                 只做透明度在小圆点上看不出来，见 reading.wxss 的说明。
              ⚠️ **只在 s2 出现**：这个动的点本身就是"正在录"的信号，
                 静止的红点和一个普通的装饰圆没有区别。 -->
-        <view class="w-[20rpx] h-[20rpx] rounded-full bg-bad shrink-0 rec-breath"></view>
-        <text class="text-28rpx text-body ml-2">录音中...</text>
+        <view class="w-[20rpx] h-[20rpx] rounded-full bg-error shrink-0 rec-breath"></view>
+        <text class="text-28rpx text-page-on_85 ml-2">录音中...</text>
       </view>
       <!-- -- 给改代码的人 --
            时间在 TS 里格式化（见 mmss）：WXML 不做任何计算。
            字号取 32rpx：s1/s3 那一行右边是 ub-s-md 的 IPA 胶囊（28rpx），
            而这是一个**正在走的计时器** —— 比胶囊里的静态标签再重一档才读得清。 -->
-      <text class="text-32rpx text-bad">{{elapsedText}}</text>
+      <text class="text-32rpx text-error">{{elapsedText}}</text>
     </view>
 
     <!-- ── s1 / s2 / s3 主体：句子（逐词渲染）────────────────────
@@ -211,11 +211,11 @@
         <!-- ⭐⭐ **定稿后的预检色**（只判"读到了没"，与提交后的评分色无关，见 prd 7.2）。
              两态**互斥**，而且**线型也要分开**（用户 2026-10 定）：
 
-               · 没读准 → **黄色 + 黄色实线**（「text-warn underline decoration-warn」）
+               · 没读准 → **黄色 + 黄色实线**（「text-warning underline decoration-warning 」）
                  实线＝"这儿有东西，只是存疑"；黄是"待确认"，不是"错"
-               · 没读到 → **灰色 + 灰色点线**（「text-muted underline decoration-dotted decoration-muted」）
+               · 没读到 → **灰色 + 灰色点线**（「text-page-on_65 underline decoration-dotted decoration-page-on_65 」）
                  点线＝"这儿空着"；灰是"不下判断"
-               · 都没有 → 正常（text-ink）
+               · 都没有 → 正常（text-page-on ）
 
              ⚠️⚠️ **不准用红**：红是**判错**的颜色（theme 的 bad），提交后的正式标色才用它。
                 这里两个状态都只是**预检**，用红等于替用户下结论，也会和正式标色撞车。
@@ -224,9 +224,9 @@
                 现在只在**结束定稿那一刻**算一次，是即时的、准的。
              ⚠️ 用**下划线**而不是填充色块：提交后的正式标色是填充色块，
                 两套视觉语言分开，用户才不会以为系统在自相矛盾。 -->
-        <text class="text-44rpx leading-[1.35] px-1 {{item.misread ? 'text-warn underline decoration-solid decoration-warn' : item.missed ? 'text-muted underline decoration-dotted decoration-muted' : 'text-ink'}} {{playingWord === item.i ? 'bg-brand_10 rounded-1' : ''}}">{{item.text}}</text>
+        <text class="text-44rpx leading-[1.35] px-1 {{item.misread ? 'text-warning underline decoration-solid decoration-warning' : item.missed ? 'text-page-on_65 underline decoration-dotted decoration-page-on_65' : 'text-page-on'}} {{playingWord === item.i ? 'bg-accent_10 rounded-1' : ''}}">{{item.text}}</text>
         <!-- ⚠️ 没有音标（老正文 / 查不到）时这一行不渲染，不占位 -->
-        <text class="text-20rpx leading-[1.4] text-faint" wx:if="{{ipaOn && item.ipa}}">{{item.ipa}}</text>
+        <text class="text-20rpx leading-[1.4] text-page-on_50" wx:if="{{ipaOn && item.ipa}}">{{item.ipa}}</text>
       </view>
     </view>
 
@@ -275,7 +275,7 @@
            ⇒ 挂在外层的 bindtap **永远收不到**（点了毫无反应 ✓ 这就是踩过的坑）
            ⚠️ （旧代码之所以能挂在外层，是因为它挂的是 touchstart/touchend ——
               触摸事件是另一条链、会冒泡 ✓ 而 tap 被 catchtap 截断了 ✗） -->
-      <ui-button variant="outline" color="error" size="xl" width="full" icon="mdi:microphone"
+      <ui-button variant="outline" color="primary" size="xl" width="full" icon="mdi:microphone"
                  bind:press="onTapRecord">
         点击录音并朗读
       </ui-button>
@@ -285,8 +285,8 @@
     <view class="mt-5 flex items-center" wx:if="{{cardPhase === 's2'}}">
       <!-- ⚠️ 录音中这颗 ↺ 是**禁用的**（用户已确认：录音中不给重录，只作占位）——
            它与 s3 那颗 ↺ 同位置、同尺寸，所以切过去时不会跳 -->
-      <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default" disabled="{{true}}">
-        <text class="text-36rpx text-ink">↺</text>
+      <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="primary" disabled="{{true}}">
+        <text class="text-36rpx text-page-on">↺</text>
       </ui-button>
 
       <view class="flex-1 min-w-0 mx-3">
@@ -299,7 +299,7 @@
         <!-- ⚠️ 还没收到**能解码的帧**时只留一条中线 —— 绝不摆一条不动的假波形 ✗
              那比没有更糟：会让人以为是自己手机 / 麦克风的问题（踩过的坑）✓ -->
         <view class="h-[64rpx] flex items-center" wx:else>
-          <view class="w-full h-[4rpx] rounded-full bg-line"></view>
+          <view class="w-full h-[4rpx] rounded-full bg-surface-strong"></view>
         </view>
       </view>
 
@@ -315,7 +315,7 @@
               （它的根节点用 catchtap 截住冒泡，外层 tap 永远收不到）
            ⚠️ disabled 时 ui-button 自己就不再 triggerEvent ⇒ 定稿中那几百毫秒
               点它确实没反应 ✓ 那是对的（onTapRecord 里也有 phase 判断兜底 ✓） -->
-      <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="error" icon="mdi:stop"
+      <ui-button onlyIcon="{{true}}" size="xl" variant="fill" color="primary" icon="mdi:stop"
                  disabled="{{releasePending}}" bind:press="onTapRecord" />
     </view>
 
@@ -324,7 +324,7 @@
       <!-- ⚠️⚠️ **这是用户唯一看到的操作说明**，交互改了它必须跟着改 ✗
            ⭐ 顺带把"自动结束"说出来：不告诉他的话，用户会一直等着自己点结束，
               而其实读完静音一会儿就自动进 s3 了 ✓ -->
-      <text class="text-24rpx leading-[1.6] text-faint">{{releasePending ? '正在识别你的朗读，请稍等' : cardPhase === 's2' ? '读完会自动结束，也可以手动结束' : '点一下开始朗读，读完会自动结束'}}</text>
+      <text class="text-24rpx leading-[1.6] text-page-on_50">{{releasePending ? '正在识别你的朗读，请稍等' : cardPhase === 's2' ? '读完会自动结束，也可以手动结束' : '点一下开始朗读，读完会自动结束'}}</text>
     </view>
 
     <!-- ── s3 底部：↺ 重录｜试听我的录音｜绿色 ✓（确认 = 提交评测）── -->
@@ -335,15 +335,15 @@
                  而按下去会清掉本地缓存、服务端那一笔却被孤立（见 reading.ts 的 clearAttempt）。
                  ⚠️ 逻辑上也挡了一道（clearAttempt 里的守卫）—— UI 与逻辑**两处都要有**，
                     因为"看起来能按、按了没反应"比直接变灰糟得多。 -->
-        <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="default"
+        <ui-button onlyIcon="{{true}}" size="xl" variant="ghost" color="primary"
                    disabled="{{detecting}}" bind:press="onRestart">
-          <text class="text-36rpx text-ink">↺</text>
+          <text class="text-36rpx text-page-on">↺</text>
         </ui-button>
 
         <!-- ⚠️ 这颗是 outline 胶囊（设计稿口径），所以用 ui-button 而不是 audio-button：
              audio-button 只有圆钮。图标走 iconify 名（mdi:play / mdi:stop） -->
         <view class="flex-1 min-w-0 mx-3">
-          <ui-button variant="outline" color="default" size="md" width="full"
+          <ui-button variant="outline" color="primary" size="md" width="full"
                      loading="{{replayState === 'loading'}}"
                      icon="{{replayState === 'playing' ? 'mdi:stop' : 'mdi:play'}}"
                      bind:press="onReplay">{{recordDurationText}}</ui-button>
@@ -367,18 +367,18 @@
                 两者合起来才是"正在检测，别再点"。
              ⚠️ 判据是 detecting（由 phasePatch 派生），不是自己再算一遍 phase。 -->
         <ui-button onlyIcon="{{true}}" size="xl" variant="fill"
-                   color="{{hintLevel === 'ok' ? 'success' : hintLevel === 'warn' ? 'warning' : 'default'}}"
+                   color="{{hintLevel === 'success' ? 'success' : hintLevel === 'warn' ? 'warning' : 'surface'}}"
                    loading="{{detecting}}"
                    disabled="{{!canSubmit || detecting}}" bind:press="onSubmit">
           <!-- ⚠️⚠️ **✓ 的颜色要跟着按钮状态走**（用户 2026-10 定）：
                disabled 时底是 color="default" 的 #111111 + opacity .45（≈#999 中灰），
-               而正常态的字是 text-ink —— **和 #111 的底同色，等于没画**。
+               而正常态的字是 text-page-on —— **和 #111 的底同色，等于没画**。
                ⇒ 禁用时换成**白色 60%**，那颗勾才看得见。
                ⚠️ 注意透明度的叠加：按钮自己还有 disabled 的 opacity .45，
                   所以 60% 白最终落在底上大约 #d4d4d4（灰底 ≈#949494）——
                   对比度不高但看得清。嫌弱就把 opacity-60 提到 80。 -->
           <!-- ⚠️ 检测中不画这颗勾：转圈已经占着同一格，两个叠在一起是一团糊 -->
-          <text class="text-36rpx {{canSubmit ? 'text-ink' : 'text-white opacity-60'}}" wx:if="{{!detecting}}">✓</text>
+          <text class="text-36rpx {{canSubmit ? 'text-page-on' : 'text-white opacity-60'}}" wx:if="{{!detecting}}">✓</text>
         </ui-button>
       </view>
 
@@ -401,7 +401,7 @@
                 而这时已经提交了、只能等 ✓ —— ⭐ 用户要的是"还要等多久" ✓
              ⚠️ 颜色也跟着换：检测中是**中性等待**，⭐ 不该用绿/黄/红里任何一档 ✗
                 （⭐ 那三档是"这一步过不过得去"的判断 ✓ 此刻还没有判断 ✓） -->
-        <text class="text-24rpx leading-[1.6] {{detecting ? 'text-faint' : hintLevel === 'ok' ? 'text-ok' : hintLevel === 'block' ? 'text-bad' : 'text-warn'}}">{{detecting ? 'AI正在检测，可能需要1-2分钟' : hintText}}</text>
+        <text class="text-24rpx leading-[1.6] {{detecting ? 'text-page-on_50' : hintLevel === 'ok' ? 'text-success' : hintLevel === 'block' ? 'text-error' : 'text-warning'}}">{{detecting ? 'AI正在检测，可能需要1-2分钟' : hintText}}</text>
       </view>
 
       <!-- ⚠️ 这一态**不再显示**「评测消耗能量2，剩余3」（用户 2026-09 定：删掉）。
@@ -456,9 +456,9 @@
        ⚠️ 麦克风没授权、能量不够、上传失败、轮询断网……都在这里说一句人话。
           s6 那句「录音不符合规范」不走这里 —— 它是 s6 的正文。
        ⚠️ 句子还没拉到时的错误已经在上面那张卡里了，别重复显示。 -->
-  <view class="mb-3 bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5"
+  <view class="mb-3 bg-red-50 border-l-[6rpx] border-solid border-error rounded-1 p-2.5"
         wx:if="{{error && cardPhase !== 'loading'}}">
-    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-error leading-[1.6]">{{error}}</text>
   </view>
 
   <!-- ══ 下方「历史挑战」——我在**这一句**上还读过哪几次 ═══════════
@@ -472,7 +472,7 @@
          那个数现在由**下面的「我的参与」摘要卡**说（而且那张说的是"含当前这一把"的全部，
          与历史行的口径不同，见 lib/article-history.ts）。同一件事不摆两处。 -->
     <view class="flex items-baseline justify-between px-1 mb-2">
-      <text class="text-26rpx text-muted">历史挑战</text>
+      <text class="text-26rpx text-page-on_65">历史挑战</text>
     </view>
 
     <!-- ══ 我的参与（摘要卡）——用户 2026-09：做成 pages/me/participations 那样的卡片 ══
@@ -488,35 +488,35 @@
          ⚠️ 数量由服务端的 sentenceCookies 给（按 article 汇总、只算已领取的），
             端侧不自己加：领取那一刻只在"刚领到的 +N"上补一次（见 reading.ts）。 -->
     <view class="card p-4 mb-3 flex items-center" wx:if="{{sentenceCookies > 0}}">
-      <text class="text-26rpx text-muted flex-1">这一句共攒了</text>
-      <text class="text-32rpx font-bold text-ink">{{sentenceCookies}}</text>
+      <text class="text-26rpx text-page-on_65 flex-1">这一句共攒了</text>
+      <text class="text-32rpx font-bold text-page-on">{{sentenceCookies}}</text>
       <text class="text-32rpx ml-1">🍪</text>
     </view>
     <view class="card p-4 mb-3" wx:if="{{historyReady}}">
       <view class="flex">
         <view class="flex-1">
-          <text class="text-22rpx text-faint block">挑战</text>
-          <text class="text-30rpx font-semibold text-ink">{{summary.attemptsText}}</text>
+          <text class="text-22rpx text-page-on_50 block">挑战</text>
+          <text class="text-30rpx font-semibold text-page-on">{{summary.attemptsText}}</text>
         </view>
         <view class="flex-1">
-          <text class="text-22rpx text-faint block">最高</text>
-          <text class="text-34rpx font-bold text-brand">{{summary.bestScoreText}}</text>
+          <text class="text-22rpx text-page-on_50 block">最高</text>
+          <text class="text-34rpx font-bold text-accent">{{summary.bestScoreText}}</text>
         </view>
         <view class="flex-1">
-          <text class="text-22rpx text-faint block">位列</text>
-          <text class="text-30rpx font-semibold text-ink">{{summary.rankText}}</text>
+          <text class="text-22rpx text-page-on_50 block">位列</text>
+          <text class="text-30rpx font-semibold text-page-on">{{summary.rankText}}</text>
         </view>
         <!-- ⭐ 第四格原来是「最低」（⭐ 用户 2026-10-09：去掉，换成已攻克/未攻克 ✓）
              ⚠️ 一屏四格都在说"我在这句上的战绩"：⭐ 挑战了几次 · 最高多少 · 位列第几 ·
                 以及**最要紧的那件事 —— 攻下来了没有** ✓
                 ⚠️ 「最低分」对用户没有行动价值 ✗（⭐ 知道他最低 65 分能干什么 ✓）
                 而"攻没攻克"正是这一整句练习的目标 ✓
-             ⚠️ 颜色：⭐ 已攻克用 text-ok（绿 ✓ 与"达标"同一套语言 ✓），
-                未攻克用 text-muted（⭐ 不下判断、不催 ✓ —— ⚠️ 绝不用红 ✗ 那是判错 ✓）
+             ⚠️ 颜色：⭐ 已攻克用 text-success （绿 ✓ 与"达标"同一套语言 ✓），
+                未攻克用 text-page-on_65 （⭐ 不下判断、不催 ✓ —— ⚠️ 绝不用红 ✗ 那是判错 ✓）
              ⚠️ 判据：⭐ 历史最高分 > 85（⭐ 严格大于 ✓ 见 article-history 的 conqueredTextOf ✓） -->
         <view class="flex-1">
-          <text class="text-22rpx text-faint block">攻克</text>
-          <text class="text-30rpx font-semibold {{summary.conqueredText === '已攻克' ? 'text-ok' : 'text-muted'}}">{{summary.conqueredText}}</text>
+          <text class="text-22rpx text-page-on_50 block">攻克</text>
+          <text class="text-30rpx font-semibold {{summary.conqueredText === '已攻克' ? 'text-success' : 'text-page-on_65'}}">{{summary.conqueredText}}</text>
         </view>
       </view>
     </view>
@@ -524,7 +524,7 @@
     <view class="card">
       <!-- ── 正在取（首次进入）────────────────────────────────── -->
       <view class="p-5" wx:if="{{historyLoading}}">
-        <text class="text-28rpx text-muted">正在取历史记录…</text>
+        <text class="text-28rpx text-page-on_65">正在取历史记录…</text>
       </view>
 
       <!-- ── 一条都没有 ────────────────────────────────────────
@@ -532,14 +532,14 @@
            ⚠️ 这条分支只有**真的读到了零条**才算数 —— 拉失败时进下面那条
               "取不到"，不能报「这句上还没有别的记录」（那是句假话）。 -->
       <view class="px-5 py-8 text-center" wx:elif="{{historyAttempts === 0 && !historyError}}">
-        <text class="text-26rpx text-faint leading-[1.6]">这句上还没有别的记录 —— 再读一次，这里就会有第二条。</text>
+        <text class="text-26rpx text-page-on_50 leading-[1.6]">这句上还没有别的记录 —— 再读一次，这里就会有第二条。</text>
       </view>
 
       <!-- ── 取不到（且一条都没拿到）→ 一句话 + 重试 ───────────── -->
       <view class="p-5" wx:elif="{{historyAttempts === 0}}">
-        <text class="text-28rpx text-bad leading-[1.6]">{{historyError}}</text>
+        <text class="text-28rpx text-error leading-[1.6]">{{historyError}}</text>
         <view class="flex justify-end mt-2">
-          <text class="text-26rpx text-brand" bindtap="onRetryHistory">重试</text>
+          <text class="text-26rpx text-accent" bindtap="onRetryHistory">重试</text>
         </view>
       </view>
 
@@ -563,25 +563,25 @@
                  ⚠️ 点它**不会**跳进详情：audio-button 自己 catchtap 拦住了冒泡。 -->
             <recording-player submissionId="{{item.submissionId}}" size="sm"
                               bind:error="onHistoryAudioError" />
-            <text class="text-28rpx text-ink font-medium ml-2">第 {{item.seq}} 次</text>
+            <text class="text-28rpx text-page-on font-medium ml-2">第 {{item.seq}} 次</text>
             <!-- ⚠️ 「最高」标在**目前的最高分**那一行（并列时都标）——
                  它比一个数字更直接地回答"我最好那次是哪回"。 -->
-            <text class="text-20rpx text-white bg-ok rounded-full px-2 py-[2rpx] ml-2"
+            <text class="text-20rpx text-white bg-success rounded-full px-2 py-[2rpx] ml-2"
                   wx:if="{{item.isBest}}">最高</text>
             <!-- ⚠️ 拿不到时间（老记录）时这一格**不渲染**，不画 Invalid Date —— 见 lib/time.ts -->
-            <text class="text-22rpx text-faint ml-2" wx:if="{{item.ago}}">{{item.ago}}</text>
+            <text class="text-22rpx text-page-on_50 ml-2" wx:if="{{item.ago}}">{{item.ago}}</text>
           </view>
           <view class="flex items-center shrink-0">
             <!-- ⚠️ 「未出分」（pending）用弱化样式，别和成绩一样粗黑体 ——
                  它不是一个分数（检测跑到了、但没读出有效语音），
                  抢眼会让人把它当成"这次考了多少"。 -->
-            <text wx:if="{{item.pending}}" class="text-26rpx text-faint">{{item.scoreText}}</text>
-            <text wx:else class="text-32rpx font-bold text-ink">{{item.scoreText}}</text>
+            <text wx:if="{{item.pending}}" class="text-26rpx text-page-on_50">{{item.scoreText}}</text>
+            <text wx:else class="text-32rpx font-bold text-page-on">{{item.scoreText}}</text>
             <!-- ⭐ 分数后面这颗 › =「点得进去」的提示（用户 2026-09 要求）。
                  ⚠️ 整行本来就 bindtap 进那一次的结果屏（见 onOpenHistory）——
                     没有它的时候这一行看起来只是一条只读记录，点了会跳是"猜"出来的。
                  ⚠️ 与「我的挑战」列表里那颗箭头是同一个图标（都走 <ui-icon name="mdi:chevron-right">）。 -->
-            <ui-icon class="text-32rpx text-faint ml-1 leading-[1]" name="mdi:chevron-right" />
+            <ui-icon class="text-32rpx text-page-on_50 ml-1 leading-[1]" name="mdi:chevron-right" />
           </view>
         </view>
       </block>
@@ -590,8 +590,8 @@
     <!-- ⚠️ 列表已经有内容、这次刷新却失败 → 一行细提示 + 重试，**保留**已有记录
          （同 pages/me/challenges：拉不到新的不该把已经看到的也抹掉）。 -->
     <view class="mt-2" wx:if="{{historyError && historyAttempts > 0}}">
-      <text class="text-22rpx text-bad">{{historyError}}</text>
-      <text class="text-22rpx text-brand ml-2" bindtap="onRetryHistory">重试</text>
+      <text class="text-22rpx text-error">{{historyError}}</text>
+      <text class="text-22rpx text-accent ml-2" bindtap="onRetryHistory">重试</text>
     </view>
   </view>
 </view>

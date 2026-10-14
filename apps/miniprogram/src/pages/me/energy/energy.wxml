@@ -13,19 +13,19 @@
 
   <!-- ⚠️ 沙箱环境要在页面上**说出来**：测试期最容易犯的错觉是「我在花钱」。 -->
   <view class="energy-sandbox rounded-1 px-3 py-2 mb-3" wx:if="{{payEnv === 1}}">
-    <text class="text-22rpx text-warn">当前是沙箱环境（测试）—— 不会真扣钱，道具也未必真发货</text>
+    <text class="text-22rpx text-warning">当前是沙箱环境（测试）—— 不会真扣钱，道具也未必真发货</text>
   </view>
 
   <!-- ── ① 余额 ───────────────────────────────────────────── -->
   <view class="card p-5 flex items-center">
     <view class="flex-1">
       <view class="flex items-baseline">
-        <text class="text-72rpx font-bold text-ink leading-[1]">{{energy}}</text>
-        <text class="text-24rpx text-faint ml-2">点</text>
+        <text class="text-72rpx font-bold text-page-on leading-[1]">{{energy}}</text>
+        <text class="text-24rpx text-page-on_50 ml-2">点</text>
       </view>
       <!-- ⚠️ 两个数都由服务端给（perChallenge / dailyFloor），端侧不写死 2 和 3 -->
-      <text class="text-22rpx text-faint block mt-3">每次挑战消耗 {{perChallenge}} 点</text>
-      <text class="text-22rpx text-faint block mt-1">每天补到 {{dailyFloor}} 点（用不完不会清零）</text>
+      <text class="text-22rpx text-page-on_50 block mt-3">每次挑战消耗 {{perChallenge}} 点</text>
+      <text class="text-22rpx text-page-on_50 block mt-1">每天补到 {{dailyFloor}} 点（用不完不会清零）</text>
     </view>
     <text class="text-120rpx leading-[1]">⚡</text>
   </view>
@@ -40,20 +40,20 @@
     <view class="flex items-center">
       <text class="text-32rpx">🍪</text>
       <view class="flex-1 ml-2">
-        <text class="text-28rpx text-ink font-medium">吃饼干补充能量</text>
-        <text class="text-22rpx text-faint block mt-0.5">{{cookiesPerEnergy}} 块 🍪 = 1 点能量</text>
+        <text class="text-28rpx text-page-on font-medium">吃饼干补充能量</text>
+        <text class="text-22rpx text-page-on_50 block mt-0.5">{{cookiesPerEnergy}} 块 🍪 = 1 点能量</text>
       </view>
-      <text class="text-32rpx font-bold text-ink">{{cookieBalance}}</text>
+      <text class="text-32rpx font-bold text-page-on">{{cookieBalance}}</text>
     </view>
 
-    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{cookieEnergy > 0 && !exchanging ? 'bg-brand text-white' : 'bg-line text-faint'}}"
+    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{cookieEnergy > 0 && !exchanging ? 'bg-accent text-white' : 'bg-surface-strong text-page-on_50'}}"
           bindtap="onExchange" hover-class="{{cookieEnergy > 0 ? 'active__opacity-60' : ''}}">
       <block wx:if="{{exchanging}}">兑换中…</block>
       <block wx:elif="{{cookieEnergy > 0}}">换 {{cookieEnergy}} 点能量</block>
       <block wx:else>再攒攒（还差 {{cookiesPerEnergy - cookieBalance}} 块）</block>
     </view>
 
-    <text class="text-22rpx text-faint block mt-2 text-center">一次换完 —— 能量既能读句子、也能补签，比饼干更经用</text>
+    <text class="text-22rpx text-page-on_50 block mt-2 text-center">一次换完 —— 能量既能读句子、也能补签，比饼干更经用</text>
   </view>
 
   <!-- ── ①.⑥ 看视频补能量 ─────────────────────────────────────
@@ -66,23 +66,23 @@
     <view class="flex items-center">
       <text class="text-32rpx">📺</text>
       <view class="flex-1 ml-2">
-        <text class="text-28rpx text-ink font-medium">看视频补能量</text>
-        <text class="text-22rpx text-faint block mt-0.5">{{adNote}}</text>
+        <text class="text-28rpx text-page-on font-medium">看视频补能量</text>
+        <text class="text-22rpx text-page-on_50 block mt-0.5">{{adNote}}</text>
       </view>
     </view>
 
-    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{adRewarding ? 'bg-line text-faint' : 'bg-brand text-white'}}"
+    <view class="mt-3 text-center py-[22rpx] rounded-full text-28rpx font-medium {{adRewarding ? 'bg-surface-strong text-page-on_50' : 'bg-accent text-white'}}"
           bindtap="onAdReward" hover-class="{{adRewarding ? '' : 'active__opacity-60'}}">
       <block wx:if="{{adRewarding}}">播放中…</block>
       <block wx:else>看视频，补 {{adPoints}} 点</block>
     </view>
 
-    <text class="text-22rpx text-faint block mt-2 text-center">每天能看几次由微信广告系统决定 —— 没有广告可放时会提示你稍后再试</text>
+    <text class="text-22rpx text-page-on_50 block mt-2 text-center">每天能看几次由微信广告系统决定 —— 没有广告可放时会提示你稍后再试</text>
   </view>
 
   <!-- ── ② 充值 ───────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
-    <text class="text-28rpx font-medium text-ink">充值</text>
+    <text class="text-28rpx font-medium text-page-on">充值</text>
 
     <view class="mt-3" wx:for="{{goods}}" wx:key="code">
       <!-- ⚠️ 买不了的两件事要分开说：下架 vs 还没配好道具。文案都用服务端那句「暂时买不了」 -->
@@ -94,13 +94,13 @@
         <image class="energy-thumb" src="{{item.image}}" mode="aspectFill" wx:if="{{item.image}}" />
         <view class="flex-1">
           <view class="flex items-center">
-            <text class="text-32rpx font-medium text-ink">{{item.title}}</text>
-            <text class="text-20rpx text-white bg-warn rounded-full px-2 py-[2rpx] ml-2" wx:if="{{item.badge}}">{{item.badge}}</text>
+            <text class="text-32rpx font-medium text-page-on">{{item.title}}</text>
+            <text class="text-20rpx text-white bg-warning rounded-full px-2 py-[2rpx] ml-2" wx:if="{{item.badge}}">{{item.badge}}</text>
           </view>
-          <text class="text-22rpx text-faint block mt-1">{{item.subtitle}} · {{item.unitText}}</text>
+          <text class="text-22rpx text-page-on_50 block mt-1">{{item.subtitle}} · {{item.unitText}}</text>
         </view>
-        <text class="text-30rpx font-semibold text-brand ml-3">{{item.priceText}}</text>
-        <text class="text-24rpx text-faint ml-2" wx:if="{{paying && payingCode === item.code}}">…</text>
+        <text class="text-30rpx font-semibold text-accent ml-3">{{item.priceText}}</text>
+        <text class="text-24rpx text-page-on_50 ml-2" wx:if="{{paying && payingCode === item.code}}">…</text>
       </view>
     </view>
 
@@ -108,26 +108,26 @@
 
   <!-- ── ③ 流水 ───────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
-    <text class="text-28rpx font-medium text-ink">能量流水</text>
+    <text class="text-28rpx font-medium text-page-on">能量流水</text>
 
     <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line" wx:for="{{rows}}" wx:key="id">
       <view class="flex-1">
-        <text class="text-26rpx text-ink block">{{item.label}}</text>
-        <text class="text-20rpx text-faint block mt-[2rpx]">{{item.timeText}}</text>
+        <text class="text-26rpx text-page-on block">{{item.label}}</text>
+        <text class="text-20rpx text-page-on_50 block mt-[2rpx]">{{item.timeText}}</text>
       </view>
       <!-- ⚠️ 入账用品牌色、出账用灰：一眼能扫出「哪几笔是花钱的」 -->
-      <text class="text-28rpx font-medium {{item.income ? 'text-brand' : 'text-muted'}}">{{item.deltaText}}</text>
+      <text class="text-28rpx font-medium {{item.income ? 'text-accent' : 'text-page-on_65'}}">{{item.deltaText}}</text>
     </view>
 
     <view class="text-center py-3" wx:if="{{hasMore}}" bindtap="onMore" hover-class="active__opacity-60">
-      <text class="text-24rpx text-brand">{{loadingMore ? '加载中…' : '看更早的'}}</text>
+      <text class="text-24rpx text-accent">{{loadingMore ? '加载中…' : '看更早的'}}</text>
     </view>
-    <text class="text-22rpx text-faint block text-center py-3" wx:elif="{{rows.length === 0 && !loading}}">还没有任何记录</text>
+    <text class="text-22rpx text-page-on_50 block text-center py-3" wx:elif="{{rows.length === 0 && !loading}}">还没有任何记录</text>
   </view>
 
   <!-- ── 连不上 ────────────────────────────────────────────── -->
-  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
-    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
-    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-error rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-error leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-accent ml-2" bindtap="onRetry">重试</text>
   </view>
 </view>

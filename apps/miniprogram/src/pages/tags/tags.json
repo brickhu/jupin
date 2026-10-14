@@ -2,6 +2,7 @@
   "navigationBarTitleText": "全部标签",
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "ui-icon": "/components/ui-icon/ui-icon"
+    "ui-icon": "/components/ui-icon/ui-icon",
+    "ui-button": "/components/ui-button/ui-button"
   }
 }

@@ -298,13 +298,13 @@ function cookieLineOf(
 ): CookieLine | null {
   if (!award) return null
 
-  if (award.earned > 0) return { text: '+' + award.earned + ' 🍪', cls: 'text-40rpx font-bold text-ink' }
+  if (award.earned > 0) return { text: '+' + award.earned + ' 🍪', cls: 'text-40rpx font-bold text-page-on' }
 
   // ⚠️ 没攻克：不显示 0，改说"还差多少"。分数拿不到就整块不渲染（宁可不显示，也不显示错的）
   if (score === null || score === undefined) return null
   const gap = pointsToConquer(score, award.passLine)
   if (gap <= 0) return null
-  return { text: '再高 ' + gap + ' 分就能攻克', cls: 'text-26rpx text-muted' }
+  return { text: '再高 ' + gap + ' 分就能攻克', cls: 'text-26rpx text-page-on_65' }
 }
 
 /**

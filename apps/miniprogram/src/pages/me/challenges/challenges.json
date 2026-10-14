@@ -4,6 +4,7 @@
   "backgroundTextStyle": "dark",
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "submission-card": "/components/submission-card/submission-card"
+    "submission-card": "/components/submission-card/submission-card",
+    "ui-button": "/components/ui-button/ui-button"
   }
 }

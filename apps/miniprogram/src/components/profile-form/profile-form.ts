@@ -32,7 +32,7 @@ import * as me from '../../lib/store'
  *
  *    小程序自定义组件默认样式隔离（isolated），而**app.wxss 里的类样式进不了组件** ——
  *    我们的 UnoCSS 工具类全部产在 app.wxss 里（见 build.mjs 的 uno 产物）。
- *    于是这个组件里写的 bg-brand / text-30rpx 会**一条都不生效**，
+ *    于是这个组件里写的 bg-accent / text-30rpx 会**一条都不生效**，
  *    而且不报错：按钮没有底色、字全是默认大小，看起来像"样式丢了"。
  *    apply-shared 让页面（含 app.wxss）的样式作用到组件内部，正好补上这一环。
  */

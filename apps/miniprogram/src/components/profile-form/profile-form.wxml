@@ -19,11 +19,11 @@
 <view class="pf-card">
   <!-- 头像：控件本身就是 chooseAvatar 按钮，点它微信弹「用微信头像 / 从相册选 / 拍照」 -->
   <view class="pf-row">
-    <text class="text-30rpx text-ink pf-label">头像</text>
+    <text class="text-30rpx text-page-on pf-label">头像</text>
     <button class="pf-avatar" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
       <image wx:if="{{avatarSrc}}" class="pf-avatar-img" src="{{avatarSrc}}" mode="aspectFill" />
       <view wx:else class="pf-avatar-img">
-        <text class="text-36rpx text-brand leading-[1]">＋</text>
+        <text class="text-36rpx text-accent leading-[1]">＋</text>
       </view>
     </button>
   </view>
@@ -32,7 +32,7 @@
 
   <!-- 昵称：type="nickname" 会让微信把他的昵称挂在键盘上方，一点就填 -->
   <view class="pf-row">
-    <text class="text-30rpx text-ink pf-label">昵称</text>
+    <text class="text-30rpx text-page-on pf-label">昵称</text>
     <input class="pf-input" type="nickname" maxlength="32"
            placeholder="填写昵称" placeholder-class="pf-input-ph"
            focus="{{focusNickname}}" value="{{nickname}}"
@@ -43,7 +43,7 @@
   <block wx:if="{{full}}">
     <view class="pf-line"></view>
     <view class="pf-row">
-      <text class="text-30rpx text-ink pf-label">性别</text>
+      <text class="text-30rpx text-page-on pf-label">性别</text>
       <picker class="pf-picker" mode="selector" range="{{genderOptions}}" value="{{genderIndex}}" bindchange="onGender">
         <view class="pf-pick {{genderIndex === 0 ? 'pf-pick-ph' : ''}}">{{genderLabel}}</view>
       </picker>
@@ -51,7 +51,7 @@
 
     <view class="pf-line"></view>
     <view class="pf-row">
-      <text class="text-30rpx text-ink pf-label">年龄</text>
+      <text class="text-30rpx text-page-on pf-label">年龄</text>
       <input class="pf-input" type="number" maxlength="3"
              placeholder="6–120（选填）" placeholder-class="pf-input-ph"
              value="{{ageText}}" bindinput="onAge" />
@@ -59,7 +59,7 @@
 
     <view class="pf-line"></view>
     <view class="pf-bio">
-      <text class="text-30rpx text-ink pf-label block mb-2">简介</text>
+      <text class="text-30rpx text-page-on pf-label block mb-2">简介</text>
       <textarea class="pf-textarea" maxlength="200" auto-height
                 placeholder="介绍一下自己（选填）" placeholder-class="pf-input-ph"
                 value="{{bio}}" bindinput="onBio" />
@@ -67,14 +67,14 @@
   </block>
 </view>
 
-<text class="text-22rpx text-faint block mt-2.5 px-1">键盘上方有你的微信昵称，点一下就填好</text>
+<text class="text-22rpx text-page-on_50 block mt-2.5 px-1">键盘上方有你的微信昵称，点一下就填好</text>
 
-<text class="text-24rpx text-bad block mt-2.5 px-1 leading-[1.6]" wx:if="{{error}}">{{error}}</text>
+<text class="text-24rpx text-error block mt-2.5 px-1 leading-[1.6]" wx:if="{{error}}">{{error}}</text>
 
 <!--
   ⚠️ 没填昵称时按钮是**静止**的：置灰、点了没有任何反应。
      不做"点了弹一句提示"——按钮就在输入框下面，提示反而是噪音；
      写清楚要填什么（placeholder 与上面那行提示）比点完再骂他更有用。
 -->
-<view class="mt-4 text-center py-[30rpx] rounded-full bg-brand text-white text-32rpx font-medium {{nickname ? '' : 'opacity-50'}}"
+<view class="mt-4 text-center py-[30rpx] rounded-full bg-accent text-white text-32rpx font-medium {{nickname ? '' : 'opacity-50'}}"
       bindtap="onSubmit">{{saving ? '保存中…' : submitLabel}}</view>

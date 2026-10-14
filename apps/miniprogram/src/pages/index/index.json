@@ -1,7 +1,8 @@
 {
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "arena-card": "/components/arena-card/arena-card"
+    "arena-card": "/components/arena-card/arena-card",
+    "ui-button": "/components/ui-button/ui-button"
   },
   "navigationBarTitleText": "句拼",
   "enablePullDownRefresh": true,

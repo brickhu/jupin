@@ -15,7 +15,7 @@
   <boot-overlay />
   <nav-bar id="nav" title="修改资料" />
 
-  <text class="text-26rpx text-muted block px-1 mb-2.5 leading-[1.6]">改完之后，榜单上显示的就是新的名字和头像。</text>
+  <text class="text-26rpx text-page-on_65 block px-1 mb-2.5 leading-[1.6]">改完之后，榜单上显示的就是新的名字和头像。</text>
 
   <profile-form submit-label="保存" full="{{true}}" bind:saved="onSaved" />
 </view>

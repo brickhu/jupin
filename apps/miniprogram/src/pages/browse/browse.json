@@ -5,6 +5,7 @@
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
     "arena-card": "/components/arena-card/arena-card",
-    "ui-icon": "/components/ui-icon/ui-icon"
+    "ui-icon": "/components/ui-icon/ui-icon",
+    "ui-button": "/components/ui-button/ui-button"
   }
 }

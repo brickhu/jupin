@@ -15,11 +15,11 @@
   <view class="card p-5 flex items-center">
     <view class="flex-1">
       <view class="flex items-baseline">
-        <text class="text-72rpx font-bold text-ink leading-[1]">{{balance}}</text>
-        <text class="text-24rpx text-faint ml-2">块</text>
+        <text class="text-72rpx font-bold text-page-on leading-[1]">{{balance}}</text>
+        <text class="text-24rpx text-page-on_50 ml-2">块</text>
       </view>
-      <text class="text-22rpx text-faint block mt-3">累计获得 {{total}} 块（只增不减）</text>
-      <text class="text-22rpx text-faint block mt-1">{{cookiesPerEnergy}} 块 = 1 点能量</text>
+      <text class="text-22rpx text-page-on_50 block mt-3">累计获得 {{total}} 块（只增不减）</text>
+      <text class="text-22rpx text-page-on_50 block mt-1">{{cookiesPerEnergy}} 块 = 1 点能量</text>
     </view>
     <text class="text-120rpx leading-[1]">🍪</text>
   </view>
@@ -29,42 +29,42 @@
           而一个点了没反应的按钮比没有按钮更糟。 -->
   <view class="card p-4 mt-3 flex items-center" wx:if="{{balance >= cookiesPerEnergy}}"
         bindtap="onOpenEnergy" hover-class="active__opacity-60">
-    <text class="text-28rpx text-ink flex-1">吃饼干补充能量</text>
-    <text class="text-24rpx text-brand">去换 ›</text>
+    <text class="text-28rpx text-page-on flex-1">吃饼干补充能量</text>
+    <text class="text-24rpx text-accent">去换 ›</text>
   </view>
 
   <!-- ── ③ 流水 ─────────────────────────────────────────────── -->
   <view class="card p-4 mt-3">
-    <text class="text-28rpx font-medium text-ink">饼干流水</text>
+    <text class="text-28rpx font-medium text-page-on">饼干流水</text>
 
     <view class="flex items-center py-3 border-b-[1rpx] border-b-solid border-b-line" wx:for="{{rows}}" wx:key="id">
       <view class="flex-1">
-        <text class="text-28rpx text-ink">{{item.label}}</text>
-        <text class="text-22rpx text-faint block mt-0.5">{{item.timeText}}</text>
+        <text class="text-28rpx text-page-on">{{item.label}}</text>
+        <text class="text-22rpx text-page-on_50 block mt-0.5">{{item.timeText}}</text>
       </view>
       <!-- ⚠️ 颜色跟着**方向**走（入账绿 / 出账灰），不是跟着位置 -->
-      <text class="text-30rpx font-medium {{item.income ? 'text-ok' : 'text-muted'}}">{{item.deltaText}}</text>
+      <text class="text-30rpx font-medium {{item.income ? 'text-success' : 'text-page-on_65'}}">{{item.deltaText}}</text>
     </view>
 
     <!-- 空态：说清"怎么才会有"，而不是只说"没有" -->
-    <text class="text-24rpx text-faint block py-6 text-center" wx:if="{{!loading && rows.length === 0}}">还没有流水 —— 攻克一句就会有</text>
+    <text class="text-24rpx text-page-on_50 block py-6 text-center" wx:if="{{!loading && rows.length === 0}}">还没有流水 —— 攻克一句就会有</text>
 
     <!-- 加载中（首屏）—— 骨架比"空白 + 转圈"稳 -->
     <view class="py-6 text-center" wx:if="{{loading}}">
-      <text class="text-24rpx text-faint">加载中…</text>
+      <text class="text-24rpx text-page-on_50">加载中…</text>
     </view>
 
     <!-- 还有更早的 -->
-    <view class="mt-3 text-center py-[18rpx] rounded-full bg-line text-faint text-26rpx"
+    <view class="mt-3 text-center py-[18rpx] rounded-full bg-surface-strong text-page-on_50 text-26rpx"
           wx:if="{{hasMore}}" bindtap="onMore" hover-class="active__opacity-60">
       {{loadingMore ? '加载中…' : '加载更早的'}}
     </view>
   </view>
 
   <!-- ── 连不上 ────────────────────────────────────────────── -->
-  <view class="bg-red-50 border-l-[6rpx] border-solid border-bad rounded-1 p-2.5 mt-3" wx:if="{{error}}">
-    <text class="text-24rpx text-bad leading-[1.6]">{{error}}</text>
-    <text class="text-24rpx text-brand ml-2" bindtap="onRetry">重试</text>
+  <view class="bg-red-50 border-l-[6rpx] border-solid border-error rounded-1 p-2.5 mt-3" wx:if="{{error}}">
+    <text class="text-24rpx text-error leading-[1.6]">{{error}}</text>
+    <text class="text-24rpx text-accent ml-2" bindtap="onRetry">重试</text>
   </view>
 
 </view>
