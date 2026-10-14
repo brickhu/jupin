@@ -7,11 +7,15 @@ import type { ArticleTheme } from '@jushuo/shared'
  * ⚠️⚠️ 为什么必须统一：以前每个页面各写一个 `view.rounded-full + bindtap`，
  *    结果同一件事（主 CTA）在五个页面长成五种样子：高度 76/88/100rpx 混用、
  *    禁用态有的降透明度有的不改、加载态有的转圈有的只是变灰。
- *    这里把「形态」和「语义」分开：
- *      · variant = 长什么样（fill / outline / ghost / link）
- *      · color   = 什么语义（brand / default / error / warning / success）
- *      · size    = 多大（sm / md / lg / xl）
- *    组合由组件算，调用方只说这两件事。
+ *    这里把「形态」和「语义」分开，四个维度（取值定义在 ui-button-variants.ts）：
+ *      · variant   = 长什么样（fill / outline / ghost / glass）
+ *      · color     = 什么语义（primary / accent / success / warning / error）
+ *      · size      = 多大（sm / md / lg / xl）
+ *      · roundness = 多圆（sm / md / lg / full）
+ *    组合由组件算，调用方只说这四件事。
+ *
+ * ⚠️ 取值解析与类名拼装在 **ui-button-variants.ts**（纯函数、有单测）——
+ *    那一段曾经内联在这里的 sync() 里，于是测不到，踩了"新值被旧表吞掉"的坑。
  *
  * ⚠️ **所有组合的类名都在 TS 里拼**（class="{{cls}}"），不在 WXML 里拼 ——
  *    WXML 里写 `class="ub-{{variant}}"` 会让构建期「类名必须能解析」那条检查
@@ -46,40 +50,49 @@ function assertIconName(icon: string): string {
   return name
 }
 
-type Variant = 'fill' | 'outline' | 'ghost' | 'link'
-type Size = 'sm' | 'md' | 'lg' | 'xl'
-type BtnColor = 'brand' | 'default' | 'error' | 'warning' | 'success'
+import { buttonClasses, iconGapClass } from './ui-button-variants'
 
 Component({
   options: { virtualHost: true },
   properties: {
-    /** fill | outline | ghost | link */
+    /** fill(默认) | outline | ghost | glass */
     variant: { type: String, value: 'fill' },
-    /** sm | md | lg | xl */
+    /**
+     * ⭐ 默认 primary —— 「默认按钮 = primary 系列」（用户 2026-10 定）。
+     * 所以 `<ui-button>文字</ui-button>` 不写任何属性就是「实心 primary 主按钮」。
+     * primary(默认) | accent | success | warning | error
+     */
+    color: { type: String, value: 'primary' },
+    /** sm | md(默认) | lg | xl */
     size: { type: String, value: 'md' },
+    /** sm | md(默认) | lg | full */
+    roundness: { type: String, value: 'md' },
+    /** iconify 名，如 mdi:mic-outline */
+    icon: { type: String, value: '' },
+    /** 图标在文字之前（start，默认）还是之后（end） */
+    iconPosition: { type: String, value: 'start' },
+    /** 只画图标 —— ⚠️ 会强制正方形（宽=高），必须给 icon，否则是个空方块 */
+    onlyIcon: { type: Boolean, value: false },
     /** 加载中：转圈 + 不吃点击 */
     loading: { type: Boolean, value: false },
     /** 禁用：降透明度 + 不吃点击 */
     disabled: { type: Boolean, value: false },
-    /** 只画图标（⚠️ 必须给 icon，否则是个空按钮） */
-    onlyIcon: { type: Boolean, value: false },
-    /** iconify 名，如 mdi:heart-outline */
-    icon: { type: String, value: '' },
-    /** brand | default | error | warning | success */
-    color: { type: String, value: 'brand' },
     /** 'full' 或数字（px）—— 不传就是内容宽度 */
     width: { type: null, value: '' },
+
   },
 
   data: {
     cls: '',
+    /** 图标与文字的间距 —— 直接用标准原子类（mr-xs / ml-xs / mr-0） */
+    gapClass: 'mr-xs',
     iconName: '',
     /** style 属性：只有 width 是数字时才需要 */
     style: '',
   },
 
   observers: {
-    'variant, size, color, disabled, onlyIcon, icon, width'() {
+    'variant, color, size, roundness, icon, iconPosition, onlyIcon, loading, disabled, width'() {
       this.sync()
     },
   },
@@ -91,28 +104,28 @@ Component({
   },
 
   methods: {
-    /** 把属性翻成类名 —— 所有组合都在这里出现，调用方不需要知道类名 */
+    /**
+     * 把属性翻成类名 —— 取值解析与拼装都在 ui-button-variants.ts 的纯函数里
+     * （那样才测得到；这里只负责把 data 递过去 + 算图标名与行内 style）。
+     */
     sync() {
       const d = this.data as Record<string, unknown>
-      const variant = (d.variant as Variant) ?? 'fill'
-      const size = (d.size as Size) ?? 'md'
-      const color = (d.color as BtnColor) ?? 'brand'
       const onlyIcon = d.onlyIcon === true
       const width = d.width
-      const cls = [
-        'ub',
-        'ub-' + variant,
-        'ub-s-' + size,
-        'ub-c-' + color,
-        onlyIcon ? 'ub-only-icon' : '',
-        d.disabled === true ? 'ub-disabled' : '',
-        d.loading === true ? 'ub-loading' : '',
-        width === 'full' ? 'ub-full' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
+
       this.setData({
-        cls,
+        cls: buttonClasses({
+          variant: d.variant,
+          color: d.color,
+          size: d.size,
+          roundness: d.roundness,
+          iconPosition: d.iconPosition,
+          onlyIcon,
+          disabled: d.disabled === true,
+          loading: d.loading === true,
+          width,
+        }),
+        gapClass: iconGapClass(onlyIcon, d.iconPosition),
         // ⚠️ loading 时图标换成转圈（icon 位置不变，按钮不跳）
         iconName: d.loading === true ? 'mdi:loading' : assertIconName(d.icon as string),
         style: typeof width === 'number' && width > 0 ? 'width:' + width + 'px' : '',

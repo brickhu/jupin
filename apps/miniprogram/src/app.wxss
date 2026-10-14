@@ -13,11 +13,13 @@
  *    （迁移前 selftest 页就重新定义了 .card 和 .btn-primary，和首页长得完全不一样）。
  *    工具类写在元素上，没有这种跨页覆盖问题。
  *
- * ⚠️ 下面两个色值是 uno.config.mjs 里 theme.colors.page / theme.colors.ink 的**镜像** ——
+ * ⚠️ 下面两个色值是 uno.config.mjs 里 theme.colors.page.DEFAULT / page.on 的**镜像** ——
  *    手写 CSS 引用不到 UnoCSS 的 token，只能写字面量。改主题色时这里要一起改。
+ * ⚠️⚠️ 它是**元素选择器、且在本文件 @import uno.wxss 之后**，所以本条**优先级高于** 页面根节点上
+ *    写的「bg-page」类。两处不一致时，页面看到的底色是**这里**这个值 —— 改色必须同时改两处。
  */
 page {
-  background: #f7f7f8; /* theme.colors.page */
+  background: #ffffff; /* theme.colors.page.DEFAULT */
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
-  color: #111; /* theme.colors.ink */
+  color: #131311; /* theme.colors.page.on */
 }

@@ -1,7 +1,7 @@
 /**
  * 小程序构建脚本。
  *
- * ⚠️ 小程序 + monorepo 有三个特有摩擦点（详见 AGENT.md 第一节）：
+ * ⚠️ 小程序 + monorepo 有三个特有摩擦点（详见 AGENTS.md 第一节）：
  *   1. 小程序不解析 node_modules 依赖树 → workspace symlink 会让「构建 npm」失灵
  *   2. Worker 必须是单文件 → 不能 require 外部包，必须独立打包
  *   3. 无打包器 → WXML/WXSS/JSON 需单独拷贝
@@ -28,6 +28,7 @@ import unoConfig, {
   escapeWxml,
   makeEscapeMap,
 } from './uno.config.mjs'
+import { buildDarkCss } from './dark-mode.mjs'
 import { lintDuplicateLine, lintMultilineText, lintWxSource } from './wxss-lint.mjs'
 import { missingHandlers } from './wxml-handlers.mjs'
 
@@ -356,13 +357,28 @@ async function buildUnoCss() {
   const source = files.map((f) => readFileSync(f, 'utf8')).join('\n')
 
   const { css, matched } = await unoGen.generate(source, { preflights: true })
+
+  /**
+   * ⭐ 暗色：构建期**自动补**反向色（见 dark-mode.mjs）——
+   *    扫产出的每条颜色声明，凡命中「某个 token 的浅色值」且该 token 有不同暗色值，
+   *    就往 `@media (prefers-color-scheme: dark)` 里补一条同选择器、换暗色的规则。
+   *    ⇒ WXML 里一个类名都不用多写，也没有「忘了加 dark:」这回事。
+   * ⚠️ 必须在 downgradeColorSyntax **之前** —— 本步产出的仍是 CSS Color 4 写法，
+   *    要和 UnoCSS 产物一起过那一道降级（否则老 WebView 整条声明丢弃）。
+   */
+  const dark = buildDarkCss(css, unoConfig.theme.colors)
+
   // ⚠️ 必须降级颜色语法，否则老 WebView 会把整条颜色声明丢掉（见 uno.config.mjs）
-  const out = downgradeColorSyntax(css)
+  const out = downgradeColorSyntax(css + (dark.css ? '\n' + dark.css : ''))
   assertWxssSafe(out) // ⚠️ 产物不合规直接让构建失败，别留到真机上才发现
   await writeFile(UNO_OUT, out, 'utf8')
 
   console.log(
-    `[uno] ${files.length} 个源文件 → ${matched.size} 个候选 → uno.wxss ${(out.length / 1024).toFixed(1)} KiB`,
+    `[uno] ${files.length} 个源文件 → ${matched.size} 个候选 → uno.wxss ${(out.length / 1024).toFixed(1)} KiB` +
+      (dark.tokens
+        ? `｜暗色 ${dark.count} 条规则 / ${dark.tokens} 个 token` +
+          (dark.skipped.length ? `（跳过 ${dark.skipped.length} 组：${dark.skipped.join('、')}）` : '')
+        : '｜暗色：无可用色对'),
   )
   return makeEscapeMap(matched)
 }

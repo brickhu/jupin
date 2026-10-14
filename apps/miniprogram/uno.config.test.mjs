@@ -59,7 +59,18 @@ describe('生成的 WXSS 满足小程序约束', () => {
     const { raw, css } = await gen('<view class="bg-brand_10 text-white_80 border-black_20">')
     expect(/rgb\(\s*[\d.]+\s+[\d.]+\s+[\d.]+\s*\//.test(raw)).toBe(true) // 前提：UnoCSS 确实这么输出
     expect(/rgb\(\s*[\d.]+\s+[\d.]+\s+[\d.]+\s*\//.test(css)).toBe(false)
-    expect(/color-mix|oklch/.test(css)).toBe(false)
+    // ⚠️ oklch 继续禁（比 color-mix 更新、更没底）
+    expect(/oklch/.test(css)).toBe(false)
+    /**
+     * ⚠️⚠️ color-mix 从 2026-10 起**允许**（用户拍板）：
+     *    按钮 fill 的高光要**从 --btn-bg 实时算一个更亮的同色**，因为未来卡片里的
+     *    按钮要配 themeFromHash 的**动态主题色**（每篇一个色相）—— 构建期算不出来。
+     * ⚠️ 代价是退出了「Skyline ∩ WebView」的交集保证；所以**用它的地方必须留一条
+     *    降级声明**（老引擎丢掉 color-mix 那条、保留前一条）——
+     *    这条规矩由 src/wxss-color-mix.test.ts 守着。
+     *    注意本用例只扫 UnoCSS 产物；color-mix 出现在**组件 WXSS**里，所以这里不会命中。
+     */
+    expect(/color-mix/.test(css)).toBe(false) // 产物里仍然不许有（只有组件手写 WXSS 可用）
   })
 
   it('变体用 __ 分隔，产出的是 WXSS 支持的普通伪类选择器', async () => {

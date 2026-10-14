@@ -1,0 +1,111 @@
+<!--
+  ⭐ ui-button 展示页 —— 把四个维度（variant × color × size × roundness）全画出来，肉眼验收用。
+
+  ⚠️ 这是开发用的展示页，不是业务页：不发请求、不写状态，按钮点了只 console.log。
+  ⚠️ 本页**刻意全用原子类**（UnoCSS）而不是另写一份页面 WXSS ——
+     页面层就该这样表达（见 AGENTS.md 的样式方案），组件层才走 shortcuts + 变量。
+  ⚠️ 类名全是**字面量**，构建期才扫得到；这里没有一处动态拼类名。
+-->
+<view class="px-3 pb-[60rpx] bg-page box-border" style="padding-top:{{navTop}}px">
+
+  <nav-bar id="nav" title="组件库 · 按钮" />
+
+  <view class="text-40rpx text-page-on font-medium mt-4 mb-1">ui-button</view>
+  <view class="text-24rpx text-page-on_50 mb-6">四个维度：variant · color · size · roundness</view>
+
+  <!-- ═══ 1. variant × color 全矩阵 ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">variant × color</view>
+  <view class="card p-3 mb-6">
+    <block wx:for="{{variants}}" wx:for-item="v" wx:key="*this">
+      <view class="text-24rpx text-page-on_50 mb-2 {{index === 0 ? '' : 'mt-4'}}">{{v}}</view>
+      <view class="flex flex-wrap gap-2">
+        <block wx:for="{{colors}}" wx:for-item="c" wx:key="*this">
+          <ui-button variant="{{v}}" color="{{c}}" size="md" roundness="full"
+                     data-v="{{v}}" data-c="{{c}}" bind:press="onPress">{{c}}</ui-button>
+        </block>
+      </view>
+    </block>
+  </view>
+
+  <!-- ═══ 2. size ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">size</view>
+  <view class="card p-3 mb-6 flex flex-wrap items-center gap-2">
+    <block wx:for="{{sizes}}" wx:for-item="s" wx:key="*this">
+      <ui-button variant="fill" color="primary" size="{{s}}" roundness="full"
+                 data-s="{{s}}" bind:press="onPress">{{s}}</ui-button>
+    </block>
+  </view>
+
+  <!-- ═══ 3. roundness ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">roundness</view>
+  <view class="card p-3 mb-6 flex flex-wrap items-center gap-2">
+    <block wx:for="{{roundness}}" wx:for-item="r" wx:key="*this">
+      <ui-button variant="fill" color="primary" size="md" roundness="{{r}}"
+                 data-r="{{r}}" bind:press="onPress">{{r}}</ui-button>
+    </block>
+  </view>
+
+  <!-- ═══ 4. 状态 ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">状态</view>
+  <view class="card p-3 mb-6 flex flex-wrap items-center gap-2">
+    <ui-button variant="fill" color="primary" size="md" roundness="full">常态</ui-button>
+    <ui-button variant="fill" color="primary" size="md" roundness="full" loading="{{true}}">加载中</ui-button>
+    <ui-button variant="fill" color="primary" size="md" roundness="full" disabled="{{true}}">禁用</ui-button>
+    <ui-button variant="fill" color="primary" size="md" roundness="full" width="full">整行宽</ui-button>
+  </view>
+
+  <!-- ═══ 5. icon / only-icon / icon-position ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">图标</view>
+  <view class="card p-3 mb-6 flex flex-wrap items-center gap-2">
+    <ui-button variant="fill" color="primary" size="md" roundness="full" icon="mdi:play">图标在前</ui-button>
+    <ui-button variant="outline" color="primary" size="md" roundness="full" icon="mdi:play" iconPosition="end">图标在后</ui-button>
+    <ui-button variant="ghost" color="primary" size="md" roundness="full" icon="mdi:play" onlyIcon="{{true}}" />
+    <ui-button variant="fill" color="primary" size="lg" roundness="full" icon="mdi:play" onlyIcon="{{true}}" />
+  </view>
+
+  <!-- ═══ 6. 玻璃态（要压在图文上才看得出模糊） ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">glass（叠在图上才看得出模糊）</view>
+  <view class="mb-6">
+    <view class="rounded-lg overflow-hidden relative" style="height:220rpx">
+      <view class="absolute inset-0" style="background:linear-gradient(135deg,#EF7203,#2B142C 55%,#21B99B)"></view>
+      <view class="absolute inset-0 flex items-center justify-center gap-2">
+        <ui-button variant="glass" color="primary" size="md" roundness="full">glass</ui-button>
+      </view>
+    </view>
+  </view>
+
+  <!-- ═══ 7. 外部覆盖 --btn-* ═══ -->
+  <!--
+    ⭐ 真实场景：把「文章主题色」喂给按钮 —— arena-card 那种卡片就是这么做的
+       （根节点内联 style 给主题色，内部一律 currentColor）。这里换成 --btn-* 也一样。
+    ⚠️ 色值来自 themeFromHash（项目里真实存在的函数），**不是手写的演示色**。
+    ⚠️ --btn-* 写在**外层 view** 上：自定义属性会继承，这样最稳。
+  -->
+  <view class="text-28rpx text-page-on_65 mb-3">外部覆盖 —— 用文章主题色驱动按钮</view>
+  <view class="card p-3 mb-6">
+    <view class="text-22rpx text-page-on_50 mb-3">
+      主题色由 id 哈希决定（themeFromHash）：底 {{themeBg}} · 字 {{themeFg}}
+    </view>
+    <view class="flex flex-wrap items-center gap-2">
+      <view style="--btn-bg:{{themeBg}};--btn-fg:{{themeFg}}">
+        <ui-button variant="fill" size="md" roundness="full" bind:press="onPress">主题填充</ui-button>
+      </view>
+      <view style="--btn-bg:{{themeFg}};--btn-fg:{{themeBg}}">
+        <ui-button variant="outline" size="md" roundness="full" bind:press="onPress">主题描边</ui-button>
+      </view>
+      <view style="--btn-bg:{{themeFg}};--btn-fg:{{themeBg}}">
+        <ui-button variant="ghost" size="md" roundness="full" bind:press="onPress">主题文字</ui-button>
+      </view>
+    </view>
+  </view>
+
+  <!-- ═══ 8. 真实业务里的三种写法 ═══ -->
+  <view class="text-28rpx text-page-on_65 mb-3">业务里的典型用法</view>
+  <view class="card p-3 mb-6 flex flex-col gap-2">
+    <!-- ⭐ 不写 variant / color：走默认 = fill + primary -->
+    <ui-button size="xl" roundness="full" width="full" bind:press="onPress">主 CTA（默认 fill + primary）</ui-button>
+    <ui-button variant="outline" color="primary" size="md" roundness="full" width="full" bind:press="onPress">次 CTA（描边全宽）</ui-button>
+    <ui-button variant="ghost" color="error" size="sm" roundness="full" bind:press="onPress">危险动作（小号 ghost）</ui-button>
+  </view>
+
+</view>

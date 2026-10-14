@@ -1,49 +1,199 @@
 /*
- * ⭐ 统一按钮的样式 —— 形态(variant) × 语义(color) × 尺寸(size)。
+ * ⭐ 统一按钮 —— 四个维度：variant / color / size / roundness（定义见 ui-button.ts）。
  *
- * ⚠️ 组合一律用 **CSS 变量**收口：variant 只管形状，color 只管给变量赋值，
- *    所以 4 形态 × 5 语义 = 20 种组合不需要写 20 段样式。
- * ⚠️ 变量都带 fallback（var(--ub-bg, #4f46e5)）：老 WebView 认不出变量时
- *    至少还是品牌色，不会变成一个没有颜色的空块。
- * ⚠️ 不用 :hover（Skyline 不支持，见 uno.config.mjs 的约束）—— 交互态走 hover-class。
+ * ══════════════════════════════════════════════════════════════════
+ * ⭐⭐ 色值是**三层**，别混
+ *
+ *   ① 「uno.config.mjs」 的 **preflights** 从 theme 导出全局 token 变量：
+ *        --tk-primary / --tk-primary-on / --tk-primary-glass / --tk-primary-50 …
+ *        --tk-space-2xl / --tk-radius-md …            （浅色一份 + 暗色一份，自动切换）
+ *   ② 「uno.config.mjs」 的 **shortcuts** 只把「这一档用哪个 token」塞进变量：
+ *        .ub-c-primary { --tk-color: <primary> }   .ub-fg-primary { --tk-on: <primary.on> }
+ *        .ub-s-md      { --ub-size: <2xl>; --ub-pad: <md> }
+ *   ③ 本文件：
+ *        a) 把 token 落成**内部默认值**「--ub-color-*」
+ *        b) 把**对外可覆盖名**「--btn-*」解析成组件内部用的「--ub-bg / --ub-fg / --ub-glass」
+ *        c) 四个 variant 只读 b) 那三个 ⇒ 覆盖与状态都在 b) 一层解决
+ *
+ *   ⭐⭐ **对外只有两个颜色变量**（用户 2026-10 定）：
+ *     --btn-bg = 基色（默认取 color 的 DEFAULT）   --btn-fg = 反色（默认取 color 的 on）
+ *   四个 variant 都由这两个派生：
+ *     fill    : bg=基色  border=基色      text=反色
+ *     outline : bg=透明  border=基色      text=基色
+ *     ghost   : bg=透明  border=透明      text=基色
+ *     glass   : bg=基色20% border=基色20% text=基色
+ *   ⚠️ 唯一例外是 glass 的 20% 底：额外读可选的 --btn-glass（原因见 variant 段）。
+ *
+ *   ⭐ 外部用法（在按钮**或它的任意祖先**上写都行 —— 自定义属性会继承）：
+ *     <view style="--btn-bg:#2B142C;--btn-fg:#fff"><ui-button variant="fill">深紫按钮</ui-button></view>
+ *     💡 outline / ghost / glass 只吃 --btn-bg，不用给 --btn-fg。
+ *
+ *   ⚠️⚠️ **组件只读「--btn-*」，绝不声明它** —— 理由见下面 .ub 的注释（自引用会成环）。
+ * ══════════════════════════════════════════════════════════════════
+ */
+/*
+ * ⚠️ 布局（flex / 居中 / box-sizing / 边框 / line-height）**不在这里** ——
+ *    它是 shortcut「ub-base」（见 uno.config.mjs），由构建期生成。
+ *
+ * ⚠️⚠️ 这里有一条铁律，踩过一次且后果是全站按钮塌成纯文字：
+ *     **绝不能声明「--btn-bg: var(--btn-bg, …)」这种引用自身的自定义属性。**
+ *     按 CSS 规范，自定义属性引用自身 = 依赖环 ⇒「invalid at computed-value time」
+ *     ⇒ 整个「--btn-bg」变成 guaranteed-invalid ⇒「background: var(--btn-bg)」那条声明
+ *       直接失效（背景回落 transparent、height 回落 auto、padding 回落 0）。
+ *     所以：**组件只「读」「--btn-*」（读的时候带 fallback），永远不「写」它**；
+ *     默认值放在**另一个名字**上（「--ub-color-*」）。
+ *     外部在按钮或它的任意祖先上写「--btn-bg: …」，因为没人声明过这个名字，
+ *     继承进来就能被读到 —— 这才是可覆盖的正确姿势。
  */
 .ub {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border: 2rpx solid transparent;
-  border-radius: 9999rpx;
-  line-height: 1;
+  /* a) 内部默认值：由 .ub-c-* / .ub-fg-* 等 shortcut 设下的 --tk-* 推导出来 */
+  --ub-color-bg: var(--tk-color);
+  --ub-color-fg: var(--tk-on, var(--tk-color));
+  /* glass 的 20% 透明底：CSS 算不出「某个变量的 20%」，所以由 token 现算后给（见下面 .ub-c-*） */
+  --ub-color-glass: var(--tk-glass, var(--tk-color));
+
+  /* b) 解析层：外部覆盖优先，否则用 a) 的默认值 —— 三个 variant 与 disabled 都只动这一层 */
+  --ub-bg: var(--btn-bg, var(--ub-color-bg));
+  --ub-fg: var(--btn-fg, var(--ub-color-fg));
+  --ub-glass: var(--btn-glass, var(--ub-color-glass));
 }
-.ub-hover { opacity: 0.85; }
-.ub-full { width: 100%; }
-.ub-disabled { opacity: 0.45; }
-.ub-icon { line-height: 1; }
+
+/*
+ * ⭐⭐ disabled：**前景与背景各自降到 50% alpha**（用户 2026-10 定）。
+ *
+ * ⚠️⚠️ 不是根节点 「opacity: 0.5」 —— 那是**群组不透明度**：先把按钮拍平、再整体淡化，
+ *    于是前景相对它**自己的底**的 alpha 其实**没变**（白字压深紫仍是纯白压深紫），
+ *    只是整组相对页面变淡。实测（fill primary 压 #F6F6F6 卡片）：
+ *      原样 16.9:1 → 群组 opacity 3.38:1 → 两层各 50% 2.02:1（本实现）
+ *    这里要的是后者：底与字**各自**半透明。
+ *
+ * ⚠️ 50% 的 rgba 由 preflights 从 token **现算**（--tk-<色>-50 / --tk-<色>-on-50）。
+ *    ⚠️ 这里**刻意不用 color-mix**（虽然项目已放开它）：禁用态是最基础的状态，
+ *      用构建期算好的实色，**不认 color-mix 的引擎上也完全正常**。
+ *      代价是外部覆盖 --btn-bg 时禁用态拿不到那份自定义色（见下一条）。
+ * ⚠️ 必须在 .ub **之后**：同特异性 0-1-0，靠源码顺序覆盖。
+ * ⚠️ glass 的 20% 底**不叠加**（它本来就是半透明）：disabled 只降它的字。
+ * ⚠️ 外部若覆盖了 --btn-bg，disabled 态会用**token 的 50%**（而不是自定义色的 50%）——
+ *    因为自定义色算不出 rgba。
+ * ⚠️ fill 的高光也要跟着换（见下面的 .ub-disabled.ub-fill）——「背景降 50%」包含那层高光。
+ */
+.ub-disabled {
+  --ub-bg: var(--tk-50, var(--ub-color-bg));
+  --ub-fg: var(--tk-on-50, var(--ub-color-fg));
+}
+
+/*
+ * ⚠️ disabled 的 fill 要把高光**换成半透明叠层**：
+ *    .ub-fill 那条 color-mix 出来的是**不透明**的亮色，会把上面 50% alpha 的底
+ *    重新盖成实心（禁用态就不再"背景 50% 透明"了）。
+ *    ⇒ 这里改用 6% 的白叠层（= 正常态 12% 的一半），保持"背景整体降 50%"的口径。
+ * ⚠️ 特异性 0-2-0 > .ub-fill 的 0-1-0，所以不依赖源码顺序。
+ */
+.ub-disabled.ub-fill {
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
+}
+
+/* 各色补上三种「从 token 现算」的值 —— 仍只设变量、不应用样式。
+   ⚠️ 基色与反色分别由 shortcuts 的「ub-c-*」/「ub-fg-*」给，不在这里。 */
+.ub-c-primary {
+  --tk-glass: var(--tk-primary-glass);
+  --tk-50: var(--tk-primary-50);
+  --tk-on-50: var(--tk-primary-on-50);
+}
+.ub-c-accent {
+  --tk-glass: var(--tk-accent-glass);
+  --tk-50: var(--tk-accent-50);
+  --tk-on-50: var(--tk-accent-on-50);
+}
+.ub-c-success {
+  --tk-glass: var(--tk-success-glass);
+  --tk-50: var(--tk-success-50);
+  --tk-on-50: var(--tk-success-on-50);
+}
+.ub-c-warning {
+  --tk-glass: var(--tk-warning-glass);
+  --tk-50: var(--tk-warning-50);
+  --tk-on-50: var(--tk-warning-on-50);
+}
+.ub-c-error {
+  --tk-glass: var(--tk-error-glass);
+  --tk-50: var(--tk-error-50);
+  --tk-on-50: var(--tk-error-on-50);
+}
+
 .ub-spin { animation: ub-spin 0.9s linear infinite; }
 @keyframes ub-spin { to { transform: rotate(360deg); } }
 
-/* ── 尺寸：高度 / 内边距 / 字号 ───────────────────────────── */
-.ub-s-sm { height: 56rpx; padding: 0 24rpx; font-size: 24rpx; }
-.ub-s-md { height: 76rpx; padding: 0 32rpx; font-size: 28rpx; }
-.ub-s-lg { height: 88rpx; padding: 0 40rpx; font-size: 30rpx; }
-.ub-s-xl { height: 100rpx; padding: 0 48rpx; font-size: 34rpx; }
-/* 只画图标时收成正方形（宽度=高度，否则是个椭圆） */
-.ub-only-icon.ub-s-sm { width: 56rpx; padding: 0; }
-.ub-only-icon.ub-s-md { width: 76rpx; padding: 0; }
-.ub-only-icon.ub-s-lg { width: 88rpx; padding: 0; }
-.ub-only-icon.ub-s-xl { width: 100rpx; padding: 0; }
+/* ── size / roundness：分别由 shortcuts 的 .ub-s-* / .ub-r-* 生成 ── */
 
-/* ── 语义色：只给变量赋值 ─────────────────────────────────── */
-.ub-c-brand { --ub-main: #4f46e5; --ub-bg: #4f46e5; --ub-fg: #ffffff; --ub-soft: rgba(79, 70, 229, 0.1); }
-.ub-c-default { --ub-main: #111111; --ub-bg: #111111; --ub-fg: #ffffff; --ub-soft: rgba(17, 17, 17, 0.06); }
-.ub-c-error { --ub-main: #dc2626; --ub-bg: #dc2626; --ub-fg: #ffffff; --ub-soft: rgba(220, 38, 38, 0.1); }
-.ub-c-warning { --ub-main: #f59e0b; --ub-bg: #f59e0b; --ub-fg: #ffffff; --ub-soft: rgba(245, 158, 11, 0.12); }
-.ub-c-success { --ub-main: #16a34a; --ub-bg: #16a34a; --ub-fg: #ffffff; --ub-soft: rgba(22, 163, 74, 0.1); }
+/* ══════════════════════════════════════════════════════════════
+ * variant：只决定「怎么用 --ub-bg / --ub-fg / --ub-glass」
+ *   fill    : bg=--ub-bg  border=--ub-bg      text=--ub-fg
+ *   outline : bg=透明      border=--ub-bg      text=--ub-bg
+ *   ghost   : bg=透明      border=透明          text=--ub-bg
+ *   glass   : bg=--ub-glass border=--ub-glass  text=--ub-bg
+ * ⚠️ 它们**不直接读 --btn-\***：读的是解析层，所以 disabled 与外部覆盖都能生效。
+ * ══════════════════════════════════════════════════════════════ */
 
-/* ── 四个形态 ─────────────────────────────────────────────── */
-.ub-fill { background: var(--ub-bg, #4f46e5); color: var(--ub-fg, #ffffff); }
-.ub-outline { background: transparent; border-color: var(--ub-main, #4f46e5); color: var(--ub-main, #4f46e5); }
-.ub-ghost { background: var(--ub-soft, rgba(79, 70, 229, 0.1)); color: var(--ub-main, #4f46e5); }
-/* link：没有底色也没有边框，左右内边距也去掉（它是个文字链） */
-.ub-link { background: transparent; color: var(--ub-main, #4f46e5); padding-left: 0; padding-right: 0; }
+/*
+ * fill：实心底 + **高光渐变** + 实心边 + 反色字。
+ *
+ * ⭐⭐ 高光 = **从 --ub-bg 实时算出的"亮一点"的同一个色**（用户 2026-10 定）：
+ *     color-mix(in srgb, var(--ub-bg) 88%, white)
+ *   ⚠️ 为什么必须**运行时**算、不能构建期算：卡片里的按钮要配 「themeFromHash」
+ *      的**动态主题色**（每篇文章一个色相），构建期根本不知道那个颜色。
+ *   ⚠️ 为什么不用「白叠层」（「rgba(255,255,255,.12)」 铺在底色上）：
+ *      那是"混白"—— 会把颜色**洗淡**（primary 饱和度 37% → 18%，发灰）。
+ *      color-mix 拿基色本身去调，色相不变、鲜艳度保得住。
+ *
+ * ⚠️⚠️ **前一条声明是降级**：不认 color-mix 的引擎会**丢掉后一条**、保留这一条
+ *    白叠层 —— 于是仍然有高光，只是偏灰。别把这条删了。
+ *     （本项目已为"老 WebView 丢整条声明"踩过坑：见 uno.config.mjs 的 downgradeColorSyntax）
+ *
+ * ⚠️ color-mix 属于较新的 CSS，是**明知风险仍采用**的决定（用户 2026-10 拍板换动态配色）。
+ *    若哪天要退回两引擎交集，删掉后一条 + 放开禁用态的覆盖即可。
+ */
+.ub-fill {
+  background-color: var(--ub-bg);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--ub-bg) 88%, white), transparent);
+  border-color: var(--ub-bg);
+  color: var(--ub-fg);
+}
+
+/* outline：透明底 + 基色描边 + 基色字 */
+.ub-outline {
+  background: transparent;
+  border-color: var(--ub-bg);
+  color: var(--ub-bg);
+}
+
+/* ghost：透明底、透明边，只有基色字（最低强度的动作） */
+.ub-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ub-bg);
+}
+
+/*
+ * glass：基色 **20% 透明**底与边 + 背景模糊 + 基色字。
+ *
+ * ⭐ 20% 是**从 --ub-bg 实时算**的：「color-mix(in srgb, var(--ub-bg) 20%, transparent)」
+ *    ⇒ 卡片里的按钮配动态主题色时，玻璃底也跟着走（和 fill 的高光同一套做法）。
+ *
+ * ⚠️⚠️ **前一条是降级**（token 现算的 20% rgba，preflights 的 --tk-<色>-glass）：
+ *    不认 color-mix 的引擎会丢掉后一条、保留这一条 —— 玻璃底照旧，只是不跟随自定义色。
+ *    ⚠️ 别删它（由 src/wxss-color-mix.test.ts 守着）。
+ * ⚠️ 「--btn-glass」 仍是可选的覆盖口子：给了它就完全按它来（不是对外主推的接口）。
+ * ⚠️ backdrop-filter 在小程序里支持不稳（Skyline 不支持）⇒ 它是**增强**：
+ *    不生效时就是纯 20% 半透明底，布局与字色都不变，不会白屏或错位。
+ */
+.ub-glass {
+  background-color: var(--ub-glass);
+  background-color: var(--btn-glass, color-mix(in srgb, var(--ub-bg) 20%, transparent));
+  border-color: var(--ub-glass);
+  border-color: var(--btn-glass, color-mix(in srgb, var(--ub-bg) 20%, transparent));
+  color: var(--ub-bg);
+  -webkit-backdrop-filter: blur(var(--tk-blur-glass));
+  backdrop-filter: blur(var(--tk-blur-glass));
+}

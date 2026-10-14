@@ -1,4 +1,4 @@
-<!-- ⭐ 统一按钮（见 ui-button.ts 的说明）：形态 × 语义 × 尺寸，调用方只说这两件事 -->
+<!-- ⭐ 统一按钮（见 ui-button.ts 的说明）：variant × color × size × roundness，调用方只说这四件事 -->
 <view
   class="{{cls}}"
   style="{{style}}"
@@ -7,6 +7,8 @@
   catchtap="onTap"
 >
   <!-- ⚠️ 图标位始终存在（loading 时换成转圈）—— 否则加载态会让按钮文字横向跳一下 -->
-  <ui-icon wx:if="{{iconName}}" name="{{iconName}}" class="ub-icon {{loading ? 'ub-spin' : ''}}" />
+  <!-- ⚠️ 图标是左还是右，靠 gapClass 的 margin 表达（不用 row-reverse）——
+      row-reverse 会把 start/end 语义也翻过去，且和 only-icon 的正方形约束打架 -->
+  <ui-icon wx:if="{{iconName}}" name="{{iconName}}" class="leading-none {{gapClass}} {{loading ? 'ub-spin' : ''}}" />
   <slot />
 </view>

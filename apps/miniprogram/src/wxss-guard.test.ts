@@ -48,7 +48,7 @@ describe('WXSS / WXML 的静态检查', () => {
 
   it('反引号要报（哪怕在注释里）', () => {
     const q = String.fromCharCode(96)
-    const text = '/**\n * 写成 ' + q + 'bg-warn/10' + q + ' 这样\n */\n'
+    const text = '/**\n * 写成 ' + q + 'bg-warning/10' + q + ' 这样\n */\n'
     expect(lintWxSource(text).some((p) => p.what.includes('反引号'))).toBe(true)
   })
 
