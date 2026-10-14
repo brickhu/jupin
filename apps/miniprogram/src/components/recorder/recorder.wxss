@@ -1,0 +1,84 @@
+/*
+ * ⭐ 全屏录音面板（prd §7.2）—— 见 recorder.ts 的说明。
+ * ⚠️ 面板底用深色：录音时用户在看句子，深底 + 亮字最不刺眼，也和"红点=正在录"配得上。
+ */
+.rc-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: #101014;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+.rc-layer.rc-on { opacity: 1; }
+
+.rc-card {
+  width: 100%;
+  padding: 0 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+/* 红点：正在录的最直接信号 */
+.rc-head { display: flex; align-items: center; }
+.rc-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 9999rpx;
+  background: #ef4444;
+  margin-right: 14rpx;
+  animation: rc-pulse 1.1s ease-in-out infinite;
+}
+@keyframes rc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.rc-ink { color: #ffffff; }
+
+/* 句子：大字、可换行、居中 —— 用户是抬着头念的 */
+.rc-sentence {
+  margin-top: 48rpx;
+  font-size: 44rpx;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+}
+
+.rc-time {
+  margin-top: 40rpx;
+  font-size: 40rpx;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.75);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 波形：固定高度（canvas 的高度由 CSS 给） */
+.rc-wavebox {
+  width: 100%;
+  height: 120rpx;
+  margin-top: 24rpx;
+  display: flex;
+  align-items: center;
+}
+.rc-wave { width: 100%; height: 120rpx; }
+
+/* 还没收到能解码的帧 —— 只留一条中线（绝不摆假波形） */
+.rc-midline {
+  width: 100%;
+  height: 2rpx;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.rc-hint {
+  margin-top: 32rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+}

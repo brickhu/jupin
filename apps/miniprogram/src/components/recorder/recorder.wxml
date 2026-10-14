@@ -1,0 +1,41 @@
+<!--
+  ⭐ 全屏录音面板（prd §7.2）—— 见 recorder.ts 的说明。
+  ⚠️ 打开即录（宿主把 visible 置 true 就是"弹面板并开始"），这里没有二次确认。
+  ⚠️ 结束两条路：读完静音自停 / 点那颗红钮；**结束 ≠ 提交**（宿主拿到录音后进 recoded）。
+-->
+<view class="rc-layer {{entered ? 'rc-on' : ''}}" wx:if="{{visible}}">
+  <view class="rc-card">
+    <!-- ① 红点 + 「录音中，请朗读」 -->
+    <view class="rc-head">
+      <view class="rc-dot"></view>
+      <text class="text-30rpx font-semibold rc-ink">录音中，请朗读</text>
+    </view>
+
+    <!-- ② 句子原文（大字，用户看着念） -->
+    <text class="rc-sentence">{{sentence}}</text>
+
+    <!-- ③ 计时 + 实时波形 -->
+    <text class="rc-time">{{elapsedText}}</text>
+    <view class="rc-wavebox">
+      <!--
+        ⚠️ 用 canvas 而不是一排 view：一帧上千个采样点，节点方案既扛不住也会糊成一块
+        ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开
+      -->
+      <canvas type="2d" id="wave" class="rc-wave" wx:if="{{waveOn}}"></canvas>
+      <!--
+        ⚠️⚠️ **还没收到能解码的帧时只留一条中线** —— 绝不摆一条不动的假波形 ✗
+        那比没有更糟：会让人以为是自己手机 / 麦克风的问题（踩过的坑）
+      -->
+      <view wx:else class="rc-midline"></view>
+    </view>
+
+    <!-- ④ 结束（红钮）—— ⚠️ 定稿窗口里必须 disabled：与下面那行文案同时表达"这一遍正在定稿" -->
+    <ui-button variant="fill" color="error" size="xl" roundness="full" onlyIcon="{{true}}"
+               icon="{{finishing ? 'mdi:loading' : 'mdi:stop'}}"
+               disabled="{{finishing}}" bind:press="onStopTap" />
+
+    <!-- ⭐ 这一行是**用户唯一看到的操作说明** —— 「读完会自动结束」必须说出来，
+         否则他会一直等着自己点结束，而其实早就进下一态了 -->
+    <text class="rc-hint">{{finishing ? '正在处理你的录音，请稍等' : '读完会自动结束，也可以点上面的按钮结束'}}</text>
+  </view>
+</view>
