@@ -1,0 +1,436 @@
+import { plainWordsOf } from '@jushuo/shared'
+
+import { claimCookies, fetchEnergy, fetchSubmissionStatus, submitReading } from '../../lib/api/client'
+import { newAttemptId, uploadAudio } from '../../lib/api/upload'
+import {
+  clearParticipate,
+  loadParticipate,
+  saveParticipate,
+  type ParticipateCache,
+} from '../../lib/participate-cache'
+import { displayScoreOf, recordStateOf, type PendingSubmission, type RecordState } from '../../lib/record-state'
+
+/**
+ * ⭐⭐ **participate-flow —— 一次"参与"的完整编排**（prd §7.2，用户 2026-10 定）。
+ *
+ * ## 为什么要它
+ *
+ * 首页的 `lg` 卡要**原地参与**，详情页（`pages/arena`）也要在**同一句**上参与 ——
+ * 两条路的流程**一模一样**：弹 recorder → 漏读粗筛 → energy-tips → 提交轮询 → 出分面板 → 确认。
+ * ⭐ 各写一份必然长歪（而且"确认才结算"这种口径错一处就是数据问题）⇒ **编排只此一处**。
+ *
+ * ## 它自己就是那三块浮层的宿主
+ *
+ * `recorder`（录音）/ `energy-tips`（能量）/ `score-panel`（出分）都在它的 WXML 里，
+ * ⚠️ 所以**宿主页面只需要**：① 放一个 `<participate-flow>`；② 点麦时调 `open()`；
+ * ③ 听 `state` 事件把状态喂给卡片。**页面里没有一行录音/提交代码**。
+ *
+ * ## ⚠️⚠️ 状态是「端侧缓存 + 服务端」拼出来的，不是内存里的一次快照
+ *
+ * | 态 | 来源 |
+ * |---|---|
+ * | `recoded` | **端侧缓存**（那段没提交的录音） |
+ * | `checking` / `scored` | 端侧缓存的 submissionId + **服务端**轮询回来的 status/confirmed |
+ * | `retry` / `try` | **服务端**参与记录（宿主通过 `bestScore` 传进来） |
+ *
+ * ⚠️ 出分那一刻用户可能**不在这个页面上**（甚至关掉小程序）——
+ *    所以"未确认的那一把"必须能在下次进来时**重新拼出来**（见 lib/participate-cache.ts）。
+ */
+/** 不该走 setData 的内部状态（见下面 data.scratch 的说明） */
+interface Scratch {
+  /** 这一句的端侧缓存（录音 + 幂等键 + submissionId） */
+  cache: ParticipateCache | null
+  /** 这一把的分数（`scored` 态显示它，还没写进战绩） */
+  pendingScore: number | null
+  pollTimer: ReturnType<typeof setInterval> | null
+  pollCount: number
+}
+
+/** 提交之后多久问一次状态 */
+const POLL_MS = 1500
+/** 最多问这么多次（之后不再自动问；用户可以手动重试，状态仍在，见 prd） */
+const POLL_MAX = 80
+/** 录音短于这个时长直接判"没读"（绝对下限；再和标准音比一次） */
+const MIN_RECORD_MS = 1500
+
+Component({
+  properties: {
+    /** 当前这一句 */
+    articleId: { type: String, value: '' },
+    /** 正文 —— 粗筛要词数（⚠️ 不能只看词表：词表为空时静音自停会静默失效） */
+    text: { type: String, value: '' },
+    /** 标准音时长（毫秒）—— 录音面板的静音自停与粗筛都用它 */
+    stdDurationMs: { type: Number, value: 0 },
+    /** 服务端参与记录里的战绩分（< 0 = 明确没参与过）—— 由宿主从 store 传进来 */
+    bestScore: { type: Number, value: -1 },
+  },
+
+  data: {
+    // ── 录音面板 ──
+    recorderVisible: false,
+    // ── 能量面板 ──
+    energyVisible: false,
+    energyPhase: 'precheck' as 'precheck' | 'ask',
+    cost: 0,
+    balance: 0,
+    // ── 粗筛/错误提示（本地小面板，不是组件：它只属于这条流程）──
+    notice: '',
+    noticeVisible: false,
+    // ── 出分面板 ──
+    panelVisible: false,
+    panelState: 'update' as 'update' | 'keep',
+    panelScore: 0,
+    panelPrev: -1,
+    panelParts: null as unknown,
+    panelText: '',
+    panelWords: [] as unknown[],
+    panelCookies: -1,
+    /**
+     * ⭐ 词数 —— 录音面板的**静音自停**要用它。
+     * ⚠️⚠️ 必须由**正文**兜底算出来：`autoStopAfter` 的第一条就是 `wordCount <= 0 ⇒ false`，
+     *    而词表为空时它就是 0 ⇒ **自动结束静默失效**（真实事故：那条文章的 words 是 []）。
+     */
+    wordCount: 0,
+    /** 当前状态（宿主拿去喂卡片） */
+    state: 'try' as RecordState,
+    /** 参与区显示的分数（< 0 = 不显示） */
+    score: -1,
+    /**
+     * ⚠️ 不走 setData 的内部状态（放 data 只为有个类型明确的家）。
+     * ⚠️ 也**不能**用自定义实例字段：小程序的 TS 会因此把 methods 全推成可选。
+     */
+    scratch: {
+      cache: null,
+      pendingScore: null,
+      pollTimer: null,
+      pollCount: 0,
+    } as Scratch,
+  },
+
+  observers: {
+    /** 换句子 ⇒ 重新拼一次状态（首页会在多张卡之间切换） */
+    'articleId, bestScore'() {
+      this.setData({ wordCount: plainWordsOf(this.data.text ?? '').length })
+      this.restore()
+    },
+  },
+
+  lifetimes: {
+    attached() {
+      this.setData({ wordCount: plainWordsOf(this.data.text ?? '').length })
+      this.restore()
+    },
+    detached() {
+      this.stopPoll()
+    },
+  },
+
+  methods: {
+    // ── 状态拼装 ───────────────────────────────────────────────
+    /**
+     * ⭐ 从「端侧缓存 + 服务端战绩」重新拼出五态之一。
+     * ⚠️ 每一处会改变状态的地方（录完 / 提交 / 出分 / 确认）都要调它 ——
+     *    状态是**拼**出来的，不是一步步改出来的（改出来就会漏一条路径）。
+     */
+    restore() {
+      const articleId = this.data.articleId
+      if (!articleId) return
+      const cache = loadParticipate(articleId)
+      this.data.scratch.cache = cache
+
+      const best = Number(this.data.bestScore)
+      const bestScore = best >= 0 ? best : null
+
+      /** ⚠️ 缓存里没有 submissionId ⇒ 还没提交过 ⇒ pending 为 null（那一把不算"在路上"） */
+      const pending: PendingSubmission | null =
+        cache && cache.submissionId
+          ? { submissionId: cache.submissionId, status: 'scored', confirmed: cache.confirmed }
+          : null
+
+      const state = recordStateOf({
+        bestScore,
+        hasPendingRecording: Boolean(cache && cache.audioPath && !cache.submissionId),
+        pending,
+      })
+
+      const score = displayScoreOf(state, {
+        bestScore,
+        pendingScore: this.data.scratch.pendingScore,
+      })
+
+      this.setData({ state, score: score === null ? -1 : score })
+      /** ⭐ 宿主据此更新卡片（卡片不自己算状态） */
+      this.triggerEvent('state', { articleId, state, score })
+
+      /** 有在路上的提交 ⇒ 接着问（可能上次离开时还没出分） */
+      if (pending && !cache?.confirmed && this.data.state === 'checking') this.startPoll()
+    },
+
+    // ── ① 点麦 ────────────────────────────────────────────────
+    /** ⭐ 宿主在用户点了参与区那颗麦/胶囊时调它 */
+    open() {
+      if (!this.data.articleId) return
+      const cache = loadParticipate(this.data.articleId)
+      /** ⚠️ 已经有一段没提交的录音时不重录（那是"重录"那条路，见 onRedo） */
+      if (cache && cache.audioPath && !cache.submissionId) return
+      this.setData({ recorderVisible: true })
+    },
+
+    /** `recoded` 的 ↺ —— 重录：丢掉旧那段再录（⚠️ 幂等键也跟着换新，因为文件变了） */
+    onRedo() {
+      const articleId = this.data.articleId
+      if (articleId) clearParticipate(articleId)
+      this.data.scratch.cache = null
+      this.data.scratch.pendingScore = null
+      this.setData({ recorderVisible: true })
+      this.restore()
+    },
+
+    // ── ② 录完 ────────────────────────────────────────────────
+    onRecorderDone(e: WechatMiniprogram.CustomEvent<{ audioPath: string; durationMs: number }>) {
+      const { audioPath, durationMs } = e.detail
+      const articleId = this.data.articleId
+      if (!articleId || !audioPath) return
+
+      /**
+       * ⭐ 幂等键在**这一刻**诞生，之后重试一直复用它
+       *    （见 lib/api/upload.ts 的 newAttemptId：换了 key 就等于"又提交了一次"）。
+       */
+      const cache: ParticipateCache = {
+        audioPath,
+        durationMs,
+        attemptId: newAttemptId(),
+        submissionId: '',
+        confirmed: false,
+      }
+      saveParticipate(articleId, cache)
+      this.data.scratch.cache = cache
+      this.setData({ recorderVisible: false })
+      this.restore()
+
+      /** ⭐ `recoded` 已经成立（上面那次 restore）—— 但**录完不等于可以提交** */
+      if (!this.precheck(durationMs)) return
+    },
+
+    onRecorderFail(e: WechatMiniprogram.CustomEvent<{ message?: string }>) {
+      this.setData({ recorderVisible: false })
+      this.showNotice(e.detail?.message || '录音失败，请重试')
+    },
+
+    /**
+     * ⭐ **漏读粗筛**（prd §7.2「漏读粗筛」，2026-10 定）—— 点 `✓` 之后、energy-tips **之前**。
+     *
+     * ⚠️⚠️ 它**只能用本地现成的数据**（录音时长 vs 标准音时长），因为端侧识别已经砍掉
+     *    （`onPartial` 没了 ⇒ `r.text` 恒 null ⇒ 精确到"哪个词漏了"本地判不出来）。
+     *    所以这一道是**粗筛**：省能量用的，措辞是"**好像没读完，建议重读**"；
+     *    精确到词的漏读反馈归**出分面板**（引擎逐词 `dp` + 完整维度 + 逐词标色）。
+     * ⚠️ 判据拿不到（没标准音时长）时**一律放行** —— 宁可不拦，也不猜。
+     */
+    precheck(recordedMs: number): boolean {
+      const std = Number(this.data.stdDurationMs)
+      if (recordedMs < MIN_RECORD_MS) {
+        this.showNotice('这次只录到 ' + Math.round(recordedMs / 1000) + ' 秒，太短了 —— 请完整读一遍')
+        return false
+      }
+      /**
+       * ⚠️ 与标准音比用的是**宽**阈值（0.6）：
+       *    录音时长含"开口前的停顿"和收尾窗口，而插件不给逐词时间戳，
+       *    拿不到真正的开口时刻 ⇒ 卡太紧会把正常的快读拦下来。
+       */
+      if (std > 2000 && recordedMs < std * 0.6) {
+        this.showNotice('好像没读完，建议重新读一遍')
+        return false
+      }
+      return true
+    },
+
+    // ── ③ 提交（`recoded` 的 ✓）────────────────────────────────
+    onConfirm() {
+      const cache = this.data.scratch.cache
+      if (!cache || !cache.audioPath) return
+      if (!this.precheck(cache.durationMs)) return
+      this.openEnergy()
+    },
+
+    showNotice(message: string) {
+      this.setData({ notice: message, noticeVisible: true })
+    },
+    onNoticeClose() {
+      this.setData({ noticeVisible: false })
+    },
+
+    // ── ④ 能量面板 ────────────────────────────────────────────
+    /**
+     * ⚠️ 余额**问服务端要**（`fetchEnergy` 顺带做当天补足）——
+     *    端侧绝不自己算余额，那是第二份真相。
+     */
+    async openEnergy() {
+      this.setData({ energyVisible: true, energyPhase: 'precheck' })
+      try {
+        const r = await fetchEnergy()
+        this.setData({ energyPhase: 'ask', cost: r.perChallenge, balance: r.energy })
+      } catch {
+        /**
+         * ⚠️ 权威检查没做完（连不上 / 身份过期）⇒ **不摆一个没有出口的弹窗**：
+         *    关掉它，在页面上挂一句人话 —— 用户此刻要做的是"检查网络、再点一次"。
+         */
+        this.setData({ energyVisible: false })
+        this.showNotice('没连上服务器，再点一次')
+      }
+    },
+
+    /** 取消 ⇒ 面板关掉，入口**停在 recoded**（录音还在、状态不变） */
+    onEnergyCancel() {
+      this.setData({ energyVisible: false })
+    },
+
+    onEnergyGo() {
+      this.setData({ energyVisible: false })
+      wx.navigateTo({ url: '/pages/me/energy/energy' })
+    },
+
+    async onEnergyConfirm() {
+      this.setData({ energyVisible: false })
+      await this.submit()
+    },
+
+    // ── ⑤ 上传 + 提交 + 轮询 ──────────────────────────────────
+    async submit() {
+      const { articleId } = this.data
+      const cache = this.data.scratch.cache
+      if (!articleId || !cache || !cache.audioPath) return
+
+      try {
+        const up = await uploadAudio(cache.audioPath, { articleId, attemptId: cache.attemptId })
+        const res = await submitReading(articleId, up.audioKey, up.audioUrl, false, cache.attemptId)
+
+        const next: ParticipateCache = { ...cache, submissionId: res.submissionId, confirmed: res.confirmed }
+        saveParticipate(articleId, next)
+        this.data.scratch.cache = next
+        /** ⭐ 已有 result（幂等命中）⇒ 直接进 scored，不必轮询 */
+        if (res.status === 'scored' && res.result) this.applyResult(res)
+        this.restore()
+        if (res.status !== 'scored') this.startPoll()
+      } catch (err) {
+        this.showNotice((err as Error).message || '提交失败，请重试')
+      }
+    },
+
+    startPoll() {
+      this.stopPoll()
+      this.data.scratch.pollCount = 0
+      this.data.scratch.pollTimer = setInterval(() => {
+        void this.pollOnce()
+      }, POLL_MS)
+    },
+    stopPoll() {
+      if (this.data.scratch.pollTimer !== null) {
+        clearInterval(this.data.scratch.pollTimer)
+        this.data.scratch.pollTimer = null
+      }
+    },
+
+    async pollOnce() {
+      const cache = this.data.scratch.cache
+      if (!cache || !cache.submissionId) return this.stopPoll()
+      this.data.scratch.pollCount += 1
+      if (this.data.scratch.pollCount > POLL_MAX) return this.stopPoll()
+      try {
+        const r = await fetchSubmissionStatus(cache.submissionId)
+        if (r.status === 'scoring') return
+        this.stopPoll()
+        if (r.status === 'failed') {
+          /** ⚠️ 失败不占状态：清掉 submissionId 之后回到 recoded（录音还在，可以再试） */
+          const next: ParticipateCache = { ...cache, submissionId: '' }
+          saveParticipate(this.data.articleId, next)
+          this.data.scratch.cache = next
+          this.restore()
+          this.showNotice(r.error || '检测失败，可以再试一次')
+          return
+        }
+        if (r.result) this.applyResult(r)
+        this.restore()
+      } catch {
+        /** ⚠️ 一次问不到不算失败（网络抖一下很正常）—— 下一次接着问 */
+      }
+    },
+
+    /**
+     * ⭐ 出分：入口**立刻**变 `scored`（`restore()` 拼出来的），
+     *    而面板**只有当这条流程还在这一页上时才弹**（prd：面板弹出与按钮状态**不耦合**）。
+     */
+    applyResult(r: { result?: unknown; submissionId: string }) {
+      const result = r.result as {
+        score: number
+        parts?: unknown
+        text?: string
+        words?: unknown[]
+        cookies?: { earned?: number }
+        previousBest?: number | null
+      }
+      const prevRaw = result.previousBest
+      const hasPrev = typeof prevRaw === 'number' && prevRaw >= 0
+      const prev = hasPrev ? (prevRaw as number) : -1
+      const state: 'update' | 'keep' = !hasPrev || result.score > prev ? 'update' : 'keep'
+
+      this.data.scratch.pendingScore = result.score
+      this.setData({
+        panelVisible: true,
+        panelState: state,
+        panelScore: result.score,
+        panelPrev: prev,
+        panelParts: result.parts ?? null,
+        panelText: result.text ?? '',
+        panelWords: result.words ?? [],
+        /** ⚠️ 没有 cookies 字段就传 -1（= 不给这个字段，整块不渲染），绝不补 0 */
+        panelCookies: result.cookies ? result.cookies.earned : -1,
+      })
+    },
+
+    /** 关掉面板（忽略）⇒ 状态**仍是 scored**，点分数/› 可以再开（见 onOpenPanel） */
+    onPanelClose() {
+      this.setData({ panelVisible: false })
+    },
+    onOpenPanel() {
+      this.setData({ panelVisible: true })
+    },
+
+    // ── ⑥ 确认（唯一真正的结算）──────────────────────────────
+    /**
+     * ⭐⭐ **只有这一下才算数**：服务端写 `confirmed_at` ⇒ 参与记录更新 + 清语音。
+     * ⚠️ 顺序：先确认、**再清本地缓存** —— 反过来万一确认失败，那一把就从端侧消失了
+     *    （而服务端那边它还在，用户再也看不到它）。
+     */
+    async onPanelConfirm() {
+      const cache = this.data.scratch.cache
+      if (!cache || !cache.submissionId) {
+        this.setData({ panelVisible: false })
+        return
+      }
+      try {
+        await claimCookies(cache.submissionId)
+      } catch {
+        /** ⚠️ 确认失败**不清缓存**：那一把仍然是 scored，用户可以再点一次 */
+        this.showNotice('确认没成功，再点一次')
+        return
+      }
+      clearParticipate(this.data.articleId)
+      this.data.scratch.cache = null
+      this.data.scratch.pendingScore = null
+      this.setData({ panelVisible: false })
+      /** ⚠️ 战绩变了 ⇒ 让宿主重拉参与记录（它会回传新的 bestScore，restore 再拼一次状态） */
+      this.triggerEvent('settled', { articleId: this.data.articleId })
+      this.restore()
+    },
+
+    /** 去结果页看完整明细（分项 / 逐词 / 榜单） */
+    onPanelDetail() {
+      const cache = this.data.scratch.cache
+      if (!cache || !cache.submissionId) return
+      wx.navigateTo({ url: '/pages/challenge/challenge?id=' + cache.submissionId })
+    },
+
+    // ── 内部状态 ──────────────────────────────────────────────
+    noop() {},
+  },
+})

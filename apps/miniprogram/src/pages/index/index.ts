@@ -15,10 +15,11 @@ import { refreshMe } from '../../lib/join'
 import { ensureStats } from '../../lib/stats'
 import { streakNudgeOf } from '../../lib/streak-nudge'
 import type { StreakNudge } from '../../lib/streak-nudge'
-import { ensureParticipation } from '../../lib/participation'
+import { ensureParticipation, loadParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
+import type { RecordState } from '../../lib/record-state'
 import type { SessionState } from '../../lib/store'
 import * as me from '../../lib/store'
 
@@ -36,6 +37,8 @@ const SHARE_IMAGE = '/assets/share-home.jpg'
 
 
 interface CardView {
+  /** ⭐ 我在这句上的**战绩**（< 0 = 没参与过）—— 传给参与流程拼状态用 */
+  bestScore?: number
   articleId: string
   /** ⭐ 视觉主题（arena-card 用它上色；老内容为 null ⇒ 品牌色兜底） */
   theme: ArticleTheme | null
@@ -272,6 +275,9 @@ Page({
      */
     nudge: { level: 'none', title: '', note: '', action: '', gapDays: 0, cost: 0 } as StreakNudge,
     today: null as CardView | null,
+    /** 参与区当前是哪一态 / 显示哪个分（由 participate-flow 的 state 事件回传） */
+    flowState: 'try' as RecordState,
+    flowScore: -1,
     /** ⭐ 最新上线：句库按上线时间倒序的最新几句（服务端给，端侧只剔掉今日重复的那句） */
     latest: [] as CardView[],
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
@@ -799,6 +805,8 @@ Page({
       audio: card.audio ? { full: card.audio.full, kind: card.audio.kind } : null,
       durationMs: card.audio ? card.audio.durationMs : null,
       hint: mine ? hintOf(mine) : '',
+      /** ⭐ 战绩交给参与流程去拼状态（卡片自己不判状态，见 lib/record-state） */
+      bestScore: mine?.record ? Number(mine.record.bestScore) : -1,
       // ⚠️ 正在确认身份（见 onStart）时按钮换一句 —— 那几秒不能毫无反馈
       action: this.data.starting ? '确认中…' : startButtonLabel(joined),
     }
@@ -808,6 +816,53 @@ Page({
   /** 下拉刷新 / 整页重试：三块一起重来 */
   onRetry() {
     void this.load()
+  },
+
+  // ── ⭐⭐ 参与流程（prd §7.2）—— 页面**一行录音/提交代码都没有**，全在 participate-flow 里 ──
+
+  /** 流程回传状态 ⇒ 喂给卡片的参与区（卡片不自己算状态） */
+  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number }>) {
+    this.setData({ flowState: e.detail.state, flowScore: e.detail.score })
+  },
+
+  /** 确认之后（战绩已更新）⇒ 重拉参与记录，让卡片上的战绩跟着变 */
+  onFlowSettled() {
+    const id = this.data.today?.articleId
+    if (id) void loadParticipation(id)
+  },
+
+  /**
+   * ⭐ 点麦 —— **先过身份检查，再弹录音面板**（用户 2026-10 定：身份检查统一走 ensureAuthed，
+   *    且**点麦时就要过** —— 否则用户费劲录完、点了 ✓ 才发现没身份，那段录音白录）。
+   */
+  async onCardMic() {
+    if (!isAuthed()) {
+      const auth = await ensureAuthed()
+      // ⚠️ 'not-joined' 时 ensureAuthed 已经把人带去加入页；'unknown' 才给提示
+      if (auth === 'unknown') wx.showToast({ title: AUTH_RETRY_HINT, icon: 'none', duration: 2500 })
+      if (auth !== 'joined') return
+    }
+    this.flow()?.open()
+  },
+  onCardRedo() {
+    this.flow()?.onRedo()
+  },
+  onCardConfirm() {
+    this.flow()?.onConfirm()
+  },
+  /** 点卡片上的分数/› —— 再开一次出分面板（可反复，直到确认） */
+  onCardPanel() {
+    this.flow()?.onOpenPanel()
+  },
+
+  /** 取参与流程组件（⚠️ 只在这一处 select，别每处都写一遍 id） */
+  flow(): {
+    open(): void
+    onRedo(): void
+    onConfirm(): void
+    onOpenPanel(): void
+  } | null {
+    return (this.selectComponent('#flow') as never) ?? null
   },
 
   /** 块 ③ 自己的重试（最新上线的错误卡上那颗按钮） */

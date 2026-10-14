@@ -1,0 +1,27 @@
+/* ⭐ 本地提示面板（漏读粗筛 / 失败）—— 见 participate-flow.wxml 的说明 */
+.pf-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pf-mask { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+.pf-card {
+  position: relative;
+  width: 560rpx;
+  padding: 48rpx 40rpx 36rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+.pf-text {
+  font-size: 28rpx;
+  line-height: 1.7;
+  text-align: center;
+  color: var(--tk-page-on, #111111);
+}

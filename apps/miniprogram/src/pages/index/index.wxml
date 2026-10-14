@@ -126,10 +126,19 @@
   <!-- ⭐ 今日推荐 = arena-card 的 featured 形态（主题色 + currentColor 分层）
        ⚠️ 参与状态（已参与描边 / 按钮文案 / 按钮下那行）全部来自 store 的 participation，
           写入方是 lib/participation（GET /api/user/participation/{articleId}）。 -->
+  <!--
+    ⭐⭐ 今日卡 = **原地参与**（prd §7.2，2026-10 定）：
+       参与区由 btn-record 画，状态由 participate-flow 拼，动作**全部由那一层转进来** ——
+       这张卡（和这个页面）不认识录音、不认识能量、也不认识出分面板。
+    ⚠️ showRecord 必须显式打开：状态没算好、事件没接好之前不许画那颗按钮。
+  -->
   <arena-card wx:elif="{{today}}" mode="featured" entry="{{today}}"
               playing="{{playingArticle === today.articleId}}"
               loading="{{loadingArticle === today.articleId}}"
-              bind:open="onOpenDetail" bind:play="onPlayAudio" bind:start="onStart" />
+              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}"
+              bind:open="onOpenDetail" bind:play="onPlayAudio"
+              bind:mic="onCardMic" bind:redo="onCardRedo"
+              bind:confirm="onCardConfirm" bind:panel="onCardPanel" />
 
   <!-- ══ 块 ③：最新上线 ══════════════════════════════════════
        ⚠️ 这一段列的是句库里按上线时间（articles.published_at）倒序的最新几句。
@@ -174,3 +183,14 @@
   </view>
 
 </view>
+
+<!--
+  ⭐⭐ **参与流程**（prd §7.2）—— 录音面板 / 能量面板 / 出分面板 / 本地提示**都在它里面**。
+  ⚠️ 页面只做两件事：放这一个组件 + 点麦时调它的 open()（见 index.ts 的 onCardMic）。
+-->
+<participate-flow id="flow"
+                  articleId="{{today.articleId}}"
+                  text="{{today.text}}"
+                  stdDurationMs="{{today.durationMs}}"
+                  bestScore="{{today.bestScore}}"
+                  bind:state="onFlowState" bind:settled="onFlowSettled" />

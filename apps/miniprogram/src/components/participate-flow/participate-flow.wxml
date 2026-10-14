@@ -1,0 +1,38 @@
+<!--
+  ⭐ 一次「参与」的三块浮层 + 一条本地提示（prd §7.2）—— 见 participate-flow.ts 的说明。
+  ⚠️ 宿主页面只需要放这一个组件 + 点麦时调 open()，页面里没有一行录音/提交代码。
+-->
+<!-- ① 录音面板：打开即录，结束两条路（点红钮 / 读完静音自停） -->
+<recorder visible="{{recorderVisible}}" sentence="{{text}}" stdDurationMs="{{stdDurationMs}}"
+          wordCount="{{wordCount}}"
+          bind:done="onRecorderDone" bind:fail="onRecorderFail" />
+
+<!-- ② 能量面板：点 ✓ 之后、漏读粗筛之后才弹 -->
+<energy-tips wx:if="{{energyVisible}}" phase="{{energyPhase}}" cost="{{cost}}" balance="{{balance}}"
+             bind:cancel="onEnergyCancel" bind:confirm="onEnergyConfirm" bind:goEnergy="onEnergyGo" />
+
+<!--
+  ③ 出分面板（更新 / 保留两态）
+  ⚠️ 它弹不弹与「入口变成 scored」**无关**（prd：这两者不耦合）——
+     关掉之后点卡片上的分数/› 能再开（onOpenPanel）。
+-->
+<score-panel wx:if="{{panelVisible}}" state="{{panelState}}" score="{{panelScore}}"
+             previousBest="{{panelPrev}}" parts="{{panelParts}}" text="{{panelText}}"
+             words="{{panelWords}}" cookies="{{panelCookies}}"
+             bind:detail="onPanelDetail" bind:confirm="onPanelConfirm" />
+
+<!--
+  ④ 本地提示（漏读粗筛不通过 / 录音失败 / 提交失败）——「面板提示」而不是 toast：
+     它带一句"下一步该干什么"，要用户看清并回应。
+-->
+<view wx:if="{{noticeVisible}}" class="pf-layer" catchtouchmove="noop">
+  <view class="pf-mask"></view>
+  <view class="pf-card" catchtap="noop">
+    <text class="pf-text">{{notice}}</text>
+    <view class="w-full mt-5">
+      <ui-button variant="fill" color="primary" size="lg" width="full" bind:press="onNoticeClose">
+        <text class="text-30rpx">知道了</text>
+      </ui-button>
+    </view>
+  </view>
+</view>
