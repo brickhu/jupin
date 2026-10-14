@@ -30,7 +30,7 @@ Component({
     /** 我那一段录音的时长（毫秒）—— 试听那一格显示成 00:33 */
     durationMs: { type: Number, value: 0 },
     /** 标准音信息（试听要用）—— 与 audio-button 的入参一致 */
-    audio: { type: Object, value: null },
+    audio: { type: Object },
     /** 我这把录音是不是正在播 */
     playing: { type: Boolean, value: false },
     /** 正在取音（还没出声）—— 试听钮显示 loading */
