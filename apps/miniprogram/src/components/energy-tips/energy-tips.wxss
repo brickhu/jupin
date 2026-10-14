@@ -1,0 +1,60 @@
+/*
+ * ⭐ 能量扣除面板（prd §7.2）—— 见 energy-tips.ts 的说明。
+ * ⚠️ 它落在**白/浅色**的浮层上，所以用页面默认色（不是卡片主题色）：
+ *    卡片里那些按钮走 --btn-bg/--btn-fg，这里是 ui-button 的默认 primary。
+ */
+.et-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.et-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+.et-mask.et-on { opacity: 1; }
+
+.et-card {
+  position: relative;
+  width: 560rpx;
+  padding: 56rpx 40rpx 40rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  opacity: 0;
+  transform: scale(0.94);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.et-card.et-on { opacity: 1; transform: scale(1); }
+
+/* 那枚大号「⚡ -N」的徽章 —— 用极浅的品牌色底，不抢主色 */
+.et-badge {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 9999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tk-primary-50, rgba(0, 0, 0, 0.05));
+  color: var(--tk-primary, #111111);
+}
+
+.et-body { display: flex; flex-direction: column; align-items: center; }
+.et-ink { color: var(--tk-page-on, #111111); }
+.et-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
+.et-hint { color: var(--tk-page-on_50, rgba(17, 17, 17, 0.5)); }
+
+.et-actions { display: flex; gap: 16rpx; width: 100%; margin-top: 40rpx; }
+
+.et-spin { animation: et-spin 0.9s linear infinite; }
+@keyframes et-spin { to { transform: rotate(360deg); } }

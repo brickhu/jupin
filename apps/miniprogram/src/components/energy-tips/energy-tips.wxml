@@ -1,0 +1,53 @@
+<!--
+  ⭐ 能量扣除面板（prd §7.2）—— 见 energy-tips.ts 的说明。
+  ⚠️ 遮罩与卡片是**兄弟**：遮罩挡滚动与点击，卡片自己 catchtap 吞掉点击，
+     否则点在卡片上会穿透到下面的页面（eval-dialog 那次的教训）。
+-->
+<view class="et-layer">
+  <view class="et-mask {{entered ? 'et-on' : ''}}" catchtouchmove="noop"></view>
+
+  <view class="et-card {{entered ? 'et-on' : ''}}" catchtap="noop" catchtouchmove="noop">
+    <!-- 正在问服务端要权威余额 —— 这几百毫秒必须看得见，否则用户以为点了没反应 -->
+    <view class="et-body" wx:if="{{phase === 'precheck'}}">
+      <ui-icon class="text-56rpx et-spin" name="mdi:loading" />
+      <text class="text-30rpx font-bold et-ink mt-3">正在确认能量…</text>
+    </view>
+
+    <!-- ⭐ 余额够：大号「⚡ -N」+ 一行把"花掉的 与 花完剩下的"**一起说** -->
+    <block wx:elif="{{balance >= cost}}">
+      <view class="et-badge">
+        <text class="text-44rpx font-bold leading-[1]">⚡ -{{cost}}</text>
+      </view>
+      <text class="text-26rpx et-sub mt-4 leading-[1.7] text-center">本次 AI 检测将消耗能量 {{cost}} ⚡，剩余 {{balance - cost}} ⚡</text>
+      <text class="text-22rpx et-hint mt-2">评测失败不扣能量</text>
+    </block>
+
+    <!-- ⭐ 余额不够：不是错误，说清差多少 + 一个能走的出口 -->
+    <block wx:else>
+      <text class="text-34rpx font-bold et-ink">能量不够了</text>
+      <text class="text-26rpx et-sub mt-3 leading-[1.7] text-center">本次评测需要 {{cost}} 点，现在有 {{balance}} 点</text>
+      <text class="text-22rpx et-hint mt-2">明天会补到 3 点；也可以现在充值</text>
+    </block>
+
+    <view class="et-actions" wx:if="{{phase !== 'precheck'}}">
+      <view class="flex-1">
+        <ui-button variant="outline" color="primary" size="lg" width="full" bind:press="onCancel">
+          <text class="text-30rpx">取消</text>
+        </ui-button>
+      </view>
+      <view class="flex-1">
+        <ui-button wx:if="{{balance >= cost}}" variant="fill" color="primary" size="lg" width="full"
+                   bind:press="onConfirm">
+          <text class="text-30rpx">确认</text>
+        </ui-button>
+        <ui-button wx:else variant="fill" color="primary" size="lg" width="full" bind:press="onGoEnergy">
+          <text class="text-30rpx">去补能量</text>
+        </ui-button>
+      </view>
+    </view>
+
+    <!-- ⚠️ 这里**没有**"检查失败"的分支，是**故意**的：权威检查没做完（连不上/身份过期）时，
+         页面关掉这一层、回 recoded 把一句人话挂在页面上 —— 用户此刻要做的是"检查网络、再点一次"，
+         而不是盯着一个没有出口的弹窗。⇒ 这一层只在**真拿到了余额**时才出现。 -->
+  </view>
+</view>
