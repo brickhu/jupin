@@ -35,10 +35,49 @@ interface Entry {
   theme?: ArticleTheme | null
 }
 
+/**
+ * ⚠️ 切词：**按空格切，并让每个词后面带一个空格**（除了最后一个）。
+ *    理由与朗读页那段逐词渲染完全一样：`<text>` 会保留空格，
+ *    而并列 `<text>` 在小程序里会被当**块**排 —— 所以间距要靠**词自带的空格**，
+ *    不能指望 margin（见 reading.wxml 的长注释）。
+ */
+function splitWords(text: string): string[] {
+  const parts = text.split(' ').filter((w) => w.length > 0)
+  return parts.map((w, i) => (i === parts.length - 1 ? w : w + ' '))
+}
+
 Component({
   properties: {
-    /** 'featured' | 'list' */
-    mode: { type: String, value: 'list' },
+    /**
+     * ⭐⭐ **两种尺寸**（prd §7.2，2026-10 定）：`lg` / `sm`。
+     *   · `lg` = 首页今日挑战 / 详情页 —— **含参与区**（5 态）+ 点词发音
+     *   · `sm` = 最近更新等列表 —— **点整卡进详情页**参与
+     * ⚠️ 两种尺寸**都显示译文**（旧 `list` 的"无译文"作废）。
+     */
+    size: { type: String, value: '' },
+    /**
+     * @deprecated 旧的 `featured` / `list` —— 保留只为不一次性改掉 4 个调用点。
+     *   `featured` → `lg`、`list` → `sm`。新代码请用 `size`。
+     */
+    mode: { type: String, value: '' },
+    /**
+     * ⭐ 这一句的**参与状态**（`lib/record-state.ts` 的五态）。
+     * ⚠️ 卡片**不自己算**它 —— 状态来自"端侧那段没提交的录音"+"服务端参与记录/提交状态"
+     *    两个不同的地方，只有页面拿得到（见 record-state.ts 的说明）。
+     */
+    state: { type: String, value: 'try' },
+    /** 参与区要显示的分数（`retry` = 战绩、`scored` = 这一把）；< 0 表示没有 */
+    score: { type: Number, value: -1 },
+    /**
+     * ⭐ 画不画**参与区**。
+     *
+     * ⚠️⚠️ 默认 false，**必须页面显式打开** —— 因为参与区的动作
+     *    （弹 recorder / 漏读粗筛 / energy-tips / 开面板）**都在页面里**。
+     *    卡片自己画一颗胶囊而页面没接 `mic` 事件 = 用户点了一颗**没反应的按钮**，
+     *    这比"暂时没有这颗按钮"糟得多。
+     * ⇒ 页面把状态算好、事件接好之后，再置 true（见 prd §7.2 的迁移顺序）。
+     */
+    showRecord: { type: Boolean, value: false },
     entry: { type: Object },
     /** 这张卡的标准音是不是正在播 */
     playing: { type: Boolean, value: false },
@@ -67,13 +106,32 @@ Component({
   data: {
     bg: '#ffffff',
     fg: '#111111',
+    /** ⭐ 解析出来的尺寸（'lg' | 'sm'）—— 由 size/mode 两个入口归一 */
+    resolved: 'sm' as 'lg' | 'sm',
+    /**
+     * ⭐ **逐词**（只在 `lg` 上渲染，为了点词发音）。
+     * ⚠️ 切词必须与朗读页**同一口径**：那边是 `plainWordsOf(text)`，
+     *    这里按空格切 —— 句子是英文、以空格分词，切出来与它逐词一致。
+     * ⚠️ 词与词之间**靠左边那个词后面带一个空格**（text 保留空格），不靠 margin
+     *    —— 这与朗读页的排法一致（见 reading.wxml 那段长注释）。
+     */
+    words: [] as string[],
   },
 
   observers: {
-    entry(entry: Entry | null | undefined) {
+    'entry, size, mode'(entry: Entry | null | undefined) {
       // ⚠️ 带上 articleId：theme 为空时按 id 复算，而不是兜品牌色
       const t = resolveTheme(entry?.theme ?? null, entry?.articleId)
-      this.setData({ bg: t.background, fg: t.foreground })
+      const size = this.data.size === 'lg' || this.data.size === 'sm'
+        ? this.data.size
+        : this.data.mode === 'featured' ? 'lg' : 'sm'
+      this.setData({
+        bg: t.background,
+        fg: t.foreground,
+        resolved: size,
+        // ⚠️ 切词只在 lg 上做（sm 不点词，省一次解析）
+        words: size === 'lg' ? splitWords(entry?.text ?? '') : [],
+      })
     },
   },
 
@@ -91,6 +149,40 @@ Component({
       const e = this.data.entry as Entry | null
       // ⚠️ 不再带 date（2026-09 统一「句子类响应不带日期」）：挑战归哪一天由服务端决定
       this.triggerEvent('start', { articleId: e?.articleId })
+    },
+    /**
+     * ⭐ 点麦克风（`try` 整颗胶囊 / `retry` 那颗圆钮）—— 页面据此**弹 recorder 面板**。
+     * ⚠️ 卡片刻意**不认识 recorder**：录音面板是页面级的浮层，
+     *    卡片的职责只是"告诉页面用户按了录音"（见 prd §7.2）。
+     */
+    onMic() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('mic', { articleId: e?.articleId })
+    },
+    /** ⭐ `recoded` 的重录 —— 语义与 onMic 相同（都是"再录一遍"），但分开报，便于页面统计/区分 */
+    onRedo() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('redo', { articleId: e?.articleId })
+    },
+    /** ⭐ `recoded` 的 ✓ —— 页面据此走"漏读粗筛 → energy-tips"（prd §7.2） */
+    onConfirm() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('confirm', { articleId: e?.articleId })
+    },
+    /** ⭐ `scored` 点右边那颗分数/› —— 页面据此**再开一次出分面板**（可反复，直到确认） */
+    onScorePanel() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('panel', { articleId: e?.articleId })
+    },
+    /**
+     * ⭐ **点词发音**（只在 `lg` 上）—— 页面调 `lib/audio/tts.ts` 的 `speak()`。
+     * ⚠️ 整句走的是我们自己的标准音（"这句话怎么念"）；点词走 TTS（"这个词怎么念"）——
+     *    两者刻意不同（见 tts.ts 的文件头）。
+     */
+    onWord(e: WechatMiniprogram.TouchEvent) {
+      const word = (e.currentTarget as { dataset?: { w?: string } })?.dataset?.w ?? ''
+      if (!word) return
+      this.triggerEvent('word', { word })
     },
     /**
      * ⭐ 点右上角那颗心 —— 收藏的是**这一句**（与"我读没读过"无关）。

@@ -3,10 +3,16 @@
   ⚠️ 布局/字号/字重与改造前的「今日卡 / 历史卡」逐项一致，只把颜色换成
      currentColor + 透明度（theme 缺失时用品牌色兜底）。
 -->
-<view class="ac-card {{mode === 'list' ? 'ac-list' : 'ac-featured'}}"
-      style="background:{{bg}};color:{{fg}}">
+<!--
+  ⭐⭐ 卡内按钮的配色**一次性声明在根节点**（prd §7.2，用户 2026-10 定）：
+      --btn-bg = 卡片**前景色**、--btn-fg = 卡片**背景色**
+  ⚠️ 这正是现在那颗 CTA 的写法（background:{{fg}};color:{{bg}}）—— 只是换成按钮的变量口径，
+     所以搬过来**视觉不变**；而卡里所有 ui-button 都自动继承这两个值，不用逐个传。
+-->
+<view class="ac-card {{resolved === 'sm' ? 'ac-sm' : 'ac-lg'}}"
+      style="background:{{bg}};color:{{fg}};--btn-bg:{{fg}};--btn-fg:{{bg}}">
   <!-- 卡片头：左（播放 + 时长）· 右（人数 + 箭头）—— 父容器 justify-between -->
-  <view wx:if="{{entry.header}}" class="flex items-center justify-between {{mode === 'list' ? 'mb-2' : 'mb-3'}}" bindtap="onOpen">
+  <view wx:if="{{entry.header}}" class="flex items-center justify-between {{resolved === 'sm' ? 'mb-2' : 'mb-3'}}" bindtap="onOpen">
     <view class="flex items-center">
       <!-- 播放钮 + 时长 = audio-button 的一格（时长格式由它统一成 00:05） -->
       <audio-button wx:if="{{entry.audio}}" size="sm"
@@ -33,7 +39,7 @@
                  往 WXML 写一个不在子集里的 icon-xxx，表现是**整颗都不画**（不是画个方框）。
            ⚠️ 不用 emoji ❤：emoji 的颜色不受主题前景色控制，在 currentColor 卡片上会跳出来。 -->
       <ui-icon wx:if="{{showFavorite}}"
-            class="shrink-0 leading-[1] ml-2 {{favorite ? '' : 'ac-faint'}} {{mode === 'list' ? 'text-32rpx' : 'text-40rpx'}}"
+            class="shrink-0 leading-[1] ml-2 {{favorite ? '' : 'ac-faint'}} {{resolved === 'sm' ? 'text-32rpx' : 'text-40rpx'}}"
             name="{{favorite ? 'clarity:favorite-solid' : 'clarity:favorite-line'}}"
             catchtap="onFavorite" />
       <!-- ⚠️ 那颗 › 在**朗读挑战页**（showFavorite）不画：用户 2026-09 要求"去掉收藏后面的 >"。
@@ -41,25 +47,87 @@
            而这一页进来的人已经在一句的详情里了，没有"再进去"可去。
            ⚠️ 首页那几张卡（showFavorite 为 false）照旧画，那里的箭头是真有去处（竞技场）。 -->
       <ui-icon wx:if="{{!showFavorite}}" name="mdi:chevron-right"
-            class="shrink-0 leading-[1] ac-faint ml-2 {{mode === 'list' ? 'text-32rpx' : 'text-36rpx'}}" />
+            class="shrink-0 leading-[1] ac-faint ml-2 {{resolved === 'sm' ? 'text-32rpx' : 'text-36rpx'}}" />
     </view>
   </view>
 
-  <view class="flex items-start" bindtap="onOpen">
-    <text class="leading-[1.5] flex-1 {{mode === 'featured' ? 'text-44rpx font-semibold' : 'text-32rpx'}}">{{entry.text}}</text>
+  <!--
+    ⭐ 「lg」：**逐词渲染** —— 只为了「点一下某个词，听它怎么念」（prd §7.2）。
+    ⚠️ 排法与朗读页**同一套**：外层 flex-wrap + 每个词一个 text，
+       **词与词之间靠"词自己带一个空格"**（text 保留空格），不靠 margin。
+       （并列 text 在小程序里会被当块排 —— 那个问题由外层 flex 容器解决，见 reading.wxml）
+    ⚠️ 「catchtap」（不是 bindtap）：点词是"I want to hear this word"，
+       不该顺手把用户送进详情页。
+    ⚠️ 「sm」 不切词（列表里点词的意义不大，还多一次解析）—— 整段照旧。
+  -->
+  <view wx:if="{{resolved === 'lg'}}" class="flex flex-wrap">
+    <text wx:for="{{words}}" wx:key="index" data-w="{{item}}" catchtap="onWord"
+          class="leading-[1.5] text-44rpx font-semibold">{{item}}</text>
+  </view>
+  <view wx:else class="flex items-start" bindtap="onOpen">
+    <text class="leading-[1.5] flex-1 text-32rpx">{{entry.text}}</text>
   </view>
 
-  <view wx:if="{{mode === 'featured' && entry.translation}}" class="mt-3" bindtap="onOpen">
+  <!-- ⭐ 译文：**两种尺寸都显示**（prd §7.2，2026-10 定；旧口径 list 无译文，作废） -->
+  <view wx:if="{{entry.translation}}" class="mt-3" bindtap="onOpen">
     <text class="text-26rpx leading-[1.6] block ac-faint">{{entry.translation}}</text>
   </view>
 
 
-  <!-- ⚠️ 挑战按钮与「还没参加」的状态**只有 featured 卡有**：
-       list（小卡）是「一眼扫过去」的列表，不放按钮，也不放参与状态。 -->
-  <block wx:if="{{mode === 'featured' && entry.action}}">
-    <view class="mt-4 text-center py-[26rpx] rounded-full text-30rpx font-medium"
-          style="background:{{fg}};color:{{bg}}" bindtap="onStart">{{entry.action}}</view>
-    <text wx:if="{{entry.hint}}" class="text-22rpx block text-center mt-2.5 ac-faint">{{entry.hint}}</text>
+  <!--
+    ⭐⭐ **参与区**（只在 「lg」）—— 五个状态，见 lib/record-state.ts 与 prd §7.2：
+      try      没参与过 ⇒ 一颗实心胶囊「点击录音，开始朗读」
+      retry    参与过   ⇒ 左（声波 + **战绩**）· 右（圆形麦克风）
+      recoded  有未提交的录音 ⇒ 一颗描边胶囊：试听 ｜ ↺ 重录 ｜ ✓ 确认
+      checking 已提交、没出结果 ⇒ 试听 ｜ 转圈
+      scored   出分、**未确认** ⇒ 试听 ｜ 分数 + ›（点它再开面板）
+    ⚠️ 状态**不由卡片算**（来自端侧那段录音 + 服务端参与记录/提交状态，只有页面拿得到）。
+    ⚠️ 卡内按钮配色由根节点统一声明（--btn-bg/--btn-fg），这里一个颜色都不写。
+    ⚠️ 「try」 与 「retry」 的麦克风**位置刻意不同**（整颗胶囊 vs 右侧圆钮）——
+       那是设计稿的两种形态，不是同一个控件换文案。
+  -->
+  <block wx:if="{{showRecord && resolved === 'lg'}}">
+    <!-- ① try -->
+    <view wx:if="{{state === 'try'}}" class="mt-4">
+      <ui-button variant="fill" size="md" roundness="full" width="full"
+                 icon="mdi:microphone" bind:press="onMic">点击录音，开始朗读</ui-button>
+    </view>
+
+    <!-- ② retry：左战绩 · 右麦克风 -->
+    <view wx:elif="{{state === 'retry'}}" class="mt-4 flex items-center justify-between">
+      <view class="flex items-center">
+        <ui-icon name="mdi:waveform" class="leading-[1] text-40rpx" />
+        <text class="text-44rpx font-semibold ml-2 leading-[1]">{{score}}</text>
+      </view>
+      <ui-button variant="fill" onlyIcon="{{true}}" size="md" roundness="full"
+                 icon="mdi:microphone" bind:press="onMic" />
+    </view>
+
+    <!-- ③④⑤ recoded / checking / scored：一颗描边胶囊 -->
+    <view wx:else class="ac-pill mt-4">
+      <!-- 试听我的录音（左端）—— 复用 audio-button，它自己会把时长格式化成 00:33 -->
+      <audio-button size="sm" showDuration="{{true}}" durationMs="{{entry.durationMs}}"
+                    fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
+      <view class="flex-1"></view>
+
+      <!-- ③ recoded：↺ 重录 ｜ ✓ 确认提交 -->
+      <block wx:if="{{state === 'recoded'}}">
+        <ui-button variant="ghost" onlyIcon="{{true}}" size="sm" roundness="full"
+                   icon="mdi:backup-restore" bind:press="onRedo" />
+        <ui-button variant="fill" onlyIcon="{{true}}" size="sm" roundness="full"
+                   icon="mdi:check" bind:press="onConfirm" />
+      </block>
+
+      <!-- ④ checking：转圈（⚠️ 没有可点的东西 —— 这一把已经在云端算了） -->
+      <ui-icon wx:elif="{{state === 'checking'}}" name="mdi:loading"
+               class="ac-spin leading-[1] text-40rpx" />
+
+      <!-- ⑤ scored：这一把的分 + › —— 点它**再开一次出分面板**（可反复，直到确认） -->
+      <view wx:else class="flex items-center" catchtap="onScorePanel">
+        <text class="text-34rpx font-semibold leading-[1]">{{score}}</text>
+        <ui-icon name="mdi:chevron-right" class="leading-[1] text-32rpx ml-1 ac-faint" />
+      </view>
+    </view>
   </block>
 
   <!-- ⭐ **已参与角标** — 右下角浮动的圆形勾（用户 2026-09 定）。
@@ -69,7 +137,9 @@
           且不用 emoji（emoji 的颜色不受主题控制）。
        ⚠️ 它是**状态标记、不是按钮**：挂在卡根节点下（不在 CTA 里），
           位置压在卡片 padding 里、不盖住按钮的点击区。 -->
-  <view wx:if="{{entry.joined}}" class="ac-check" style="background:{{fg}};color:{{bg}}">
+  <!-- ⚠️ 「已参与」角标**只在 sm**：lg 的参与区（retry 态直接显示战绩）说得更清楚，
+       两个都画等于同一件事说两遍。 -->
+  <view wx:if="{{entry.joined && resolved === 'sm'}}" class="ac-check" style="background:{{fg}};color:{{bg}}">
     <ui-icon name="mdi:check" />
   </view>
 </view>

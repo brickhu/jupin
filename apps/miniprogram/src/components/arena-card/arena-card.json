@@ -1,1 +1,1 @@
-{"component":true,"styleIsolation":"apply-shared","usingComponents":{"audio-button":"/components/audio-button/audio-button","ui-icon":"/components/ui-icon/ui-icon"}}
+{"component":true,"styleIsolation":"apply-shared","usingComponents":{"audio-button":"/components/audio-button/audio-button","ui-icon":"/components/ui-icon/ui-icon","ui-button":"/components/ui-button/ui-button"}}

@@ -24,6 +24,8 @@ export const ICON_NAMES = [
   'mdi:bell-outline', // 用户面板 通知
   'mdi:microphone', // 朗读页 s1 · 点击录音并朗读（设计稿口径）
   'mdi:check', // 金句卡 已参与角标（右下角圆形勾）
+  'mdi:waveform', // 参与区 retry 态 · 战绩分左边的声波标记
+  'mdi:backup-restore', // 参与区 recoded 态 · 重录（↺）
   'mdi:magnify', // 标签页 搜索框左侧的放大镜
   'mdi:close', // 标签页 清空搜索
   'mdi:tag-outline', // 首页「看全部标签」入口

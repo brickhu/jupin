@@ -57,6 +57,9 @@ const ICONS = [
   { name: 'mdi:bell-outline', use: '用户面板 通知' },
   { name: 'mdi:microphone', use: '朗读页 s1 · 点击录音并朗读（设计稿口径）' },
   { name: 'mdi:check', use: '金句卡 已参与角标（右下角圆形勾）' },
+  // ⭐ 2026-10 加：句子卡的参与区（prd §7.2）
+  { name: 'mdi:waveform', use: '参与区 retry 态 · 战绩分左边的声波标记' },
+  { name: 'mdi:backup-restore', use: '参与区 recoded 态 · 重录（↺）' },
   { name: 'mdi:magnify', use: '标签页 搜索框左侧的放大镜' },
   { name: 'mdi:close', use: '标签页 清空搜索' },
   { name: 'mdi:tag-outline', use: '首页「看全部标签」入口' },
