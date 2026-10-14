@@ -358,39 +358,56 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
      *    ⚠️ 并发重发时两个请求都走到这里，前者插入、后者命中的是**同一行**
      *      （同一个 submissionId），所以两边回答一致，不会 500。
      */
-    const inserted = await db
-      .insert(submissions)
-        .values({
-          id: submissionId,
-          userId,
-          articleId,
+    /**
+     * ⚠️⚠️ **插入本身也要兜住异常**（2026-10 实际踩出来的漏洞）。
+     *
+     *    下面那段 `affectedRows === 0` 只兜住了「没报错但没写进去」；
+     *    而**抛异常**（例如 schema 少一列 ⇒ `Unknown column`）会直接冒到 Hono 的 onError ⇒ 500，
+     *    于是上面第 5 步锁的那 2 点能量**永远留在账本里**。
+     *    ⚠️ 真实症状：一次 schema 没迁移上去的部署里，每次提交都 500，而且**每次都扣 2 点** ——
+     *       用户看到的是"提交失败"，账上却一路在掉。
+     *    ⇒ 异常与 affectedRows=0 **走同一条退能量 + 回 500 的路**。
+     */
+    let inserted: unknown
+    try {
+      inserted = await db
+        .insert(submissions)
+          .values({
+            id: submissionId,
+            userId,
+            articleId,
+            /**
+             * ⭐ 这一条属于哪一行参与 —— **插入时就算好**，不看参与行在不在：
+             *    participationIdOf 是 (userId, articleId) 的纯函数，而参与行要等**出分结算**
+             *    才由 syncParticipation 建，所以不能靠 join、更不能加外键（见 db/schema.ts 的说明）。
+             */
+            participationId: participationIdOf(userId, articleId),
+            audioKey,
+            // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
+            //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
+            audioUrl: audioUrl ?? null,
+            engine: env.ENGINE,
+            isPublic,
+            // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
+            attemptId,
+            status: 'scoring',
+            heartbeatAt: new Date(),
+            attempts: 1,
+            scheduleDate,
+            // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
+            energyState: 'held',
+          })
           /**
-           * ⭐ 这一条属于哪一行参与 —— **插入时就算好**，不看参与行在不在：
-           *    participationIdOf 是 (userId, articleId) 的纯函数，而参与行要等**出分结算**
-           *    才由 syncParticipation 建，所以不能靠 join、更不能加外键（见 db/schema.ts 的说明）。
+           * ⚠️ 幂等自赋值（**不改任何业务列**）：只为了拿到**可靠的 affectedRows**。
+           *    写 `id = id` 而不是 `status = status` —— 后者会触发 mysql2 的
+           *    "同值更新算 0 行"行为，让 2 变成 0，又把判据搞坏。
            */
-          participationId: participationIdOf(userId, articleId),
-          audioKey,
-          // ⚠️ 签名地址必须存下来：打分在**后台**跑，那时已经没有请求上下文了。
-          //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
-          audioUrl: audioUrl ?? null,
-          engine: env.ENGINE,
-          isPublic,
-          // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
-          attemptId,
-          status: 'scoring',
-          heartbeatAt: new Date(),
-          attempts: 1,
-          scheduleDate,
-          // ⭐ 已锁住 2 点，等打分返回再结算（见 services/energy.ts）
-          energyState: 'held',
-        })
-        /**
-         * ⚠️ 幂等自赋值（**不改任何业务列**）：只为了拿到**可靠的 affectedRows**。
-         *    写 `id = id` 而不是 `status = status` —— 后者会触发 mysql2 的
-         *    "同值更新算 0 行"行为，让 2 变成 0，又把判据搞坏。
-         */
-        .onDuplicateKeyUpdate({ set: { id: sql`id` } })
+          .onDuplicateKeyUpdate({ set: { id: sql`id` } })
+    } catch (err) {
+      console.error('[submissions] 落库抛异常 id=' + submissionId + '：' + (err as Error).message)
+      await releaseChallengeEnergy(userId, submissionId).catch(() => {})
+      return c.json({ ok: false, error: '提交没能落库，请再试一次' }, 500)
+    }
 
       /**
        * ⚠️ `affectedRows`：**1 = 新插入**，**2 = 命中已存在的那一行**（并发重发）。
