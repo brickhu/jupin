@@ -18,7 +18,7 @@
 -->
 <score-panel wx:if="{{panelVisible}}" state="{{panelState}}" score="{{panelScore}}"
              previousBest="{{panelPrev}}" parts="{{panelParts}}" text="{{panelText}}"
-             words="{{panelWords}}" cookies="{{panelCookies}}"
+             words="{{panelWords}}" cookies="{{panelCookies}}" durationMs="{{panelDurationMs}}"
              bind:detail="onPanelDetail" bind:confirm="onPanelConfirm" />
 
 <!--

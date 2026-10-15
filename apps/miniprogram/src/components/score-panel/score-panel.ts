@@ -51,11 +51,15 @@ Component({
     cookies: { type: Number, value: -1 },
     /** AI 教练的一句话（可能没有） */
     aiComment: { type: String, value: '' },
+    /** 这一把录音多长（毫秒）—— 头部那格显示成 00:23（稿 12px） */
+    durationMs: { type: Number, value: 0 },
   },
 
   data: {
     entered: false,
     scoreText: '',
+    /** 00:23 */
+    durationText: '00:00',
     /** 超越前高多少分（一位小数） */
     deltaText: '',
     /** 胶囊里那句话 */
@@ -68,26 +72,35 @@ Component({
   },
 
   observers: {
-    'state, score, previousBest, parts, text, words, cookies'() {
+    'state, score, previousBest, parts, text, words, cookies, durationMs'() {
       const state = this.data.state === 'keep' ? 'keep' : 'update'
       const score = Number(this.data.score) || 0
       const prev = Number(this.data.previousBest)
       const hasPrev = prev >= 0
       const parts = this.data.parts as ScoreParts | undefined
 
+      const total = Math.max(0, Math.floor((Number(this.data.durationMs) || 0) / 1000))
+      const mm = Math.floor(total / 60)
+      const ss = total % 60
       this.setData({
+        durationText: (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss,
         scoreText: formatScore(score),
         /**
          * ⚠️ 「更新」才谈"超越了多少" —— 「保留」时**不显示本次分、也不算差**：
          *    那是同一件事的两种说法，写出来只会让用户以为自己退步了。
          */
         deltaText: state === 'update' && hasPrev ? formatScore(score - prev) : '',
+        /**
+         * 胶囊文案（照稿 `588:1791` / `588:1814` 逐字）：
+         *   · 更新：「更新战绩 : {前高} → {新分}」（⚠️ 冒号两边各一个空格）
+         *   · 保留：「保留战绩，{新分} → {前高}」（⚠️ 逗号；箭头方向仍然是"从新到前高"）
+         */
         pillText:
           state === 'update'
             ? hasPrev
-              ? '更新战绩: ' + formatScore(prev) + ' → ' + formatScore(score)
-              : '更新战绩: ' + formatScore(score)
-            : '保留战绩: ' + (hasPrev ? formatScore(prev) : '—'),
+              ? '更新战绩 : ' + formatScore(prev) + ' → ' + formatScore(score)
+              : '更新战绩 : ' + formatScore(score)
+            : '保留战绩，' + formatScore(score) + (hasPrev ? ' → ' + formatScore(prev) : ''),
         subText:
           state === 'update'
             ? hasPrev

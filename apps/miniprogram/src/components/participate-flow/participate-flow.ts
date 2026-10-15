@@ -94,6 +94,8 @@ Component({
     panelText: '',
     panelWords: [] as unknown[],
     panelCookies: -1,
+    /** 这一把录音的时长（面板头部显示成 00:23） */
+    panelDurationMs: 0,
     /**
      * ⭐ 词数 —— 录音面板的**静音自停**要用它。
      * ⚠️⚠️ 必须由**正文**兜底算出来：`autoStopAfter` 的第一条就是 `wordCount <= 0 ⇒ false`，
@@ -543,6 +545,7 @@ Component({
         panelWords: result.words ?? [],
         /** ⚠️ 没有 cookies 字段就传 -1（= 不给这个字段，整块不渲染），绝不补 0 */
         panelCookies: result.cookies ? result.cookies.earned : -1,
+        panelDurationMs: this.data.scratch.pendingDurationMs || this.data.scratch.cache?.durationMs || 0,
       })
     },
 

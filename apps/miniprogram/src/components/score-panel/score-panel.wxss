@@ -1,6 +1,7 @@
 /*
- * ⭐ 出分面板（prd §7.2）—— 见 score-panel.ts 的说明。
- * ⚠️ 用页面默认色（浮层是白的），不走卡片主题色。
+ * ⭐ 出分面板 —— 尺寸照 Figma 588:1791 / 588:1814（1px = 2rpx）。
+ * ⚠️ 它落在**白/浅色**浮层上，用页面默认色（不是卡片主题色）：
+ *    ink = primary（稿 #2b132c = 我们的 primary）· 分数 = success（稿 #20b99a = 我们的 success）。
  */
 .sp-layer {
   position: fixed;
@@ -19,17 +20,17 @@
 }
 .sp-mask.sp-on { opacity: 1; }
 
+/* 稿：366×340 / 白 / r24 / 内容左右各 23 */
 .sp-card {
   position: relative;
-  width: 620rpx;
+  width: 704rpx;
   max-height: 84vh;
   overflow-y: auto;
-  padding: 48rpx 36rpx 32rpx;
-  border-radius: 32rpx;
+  padding: 40rpx 46rpx 18rpx;
+  border-radius: 48rpx;
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  align-items: center;
   box-sizing: border-box;
   opacity: 0;
   transform: scale(0.94);
@@ -37,33 +38,70 @@
 }
 .sp-card.sp-on { opacity: 1; transform: scale(1); }
 
-/* 大号分数 */
-.sp-score { font-size: 96rpx; font-weight: 700; line-height: 1; }
+/* ① 头部：左 波形+时长 · 右 分数 */
+.sp-head { display: flex; align-items: center; justify-content: space-between; }
+.sp-lhs { display: flex; align-items: center; gap: 16rpx; }
 
-/* 战绩胶囊：更新=绿底 / 保留=橙底 */
-.sp-pill {
-  margin-top: 24rpx;
-  padding: 10rpx 28rpx;
-  border-radius: 9999rpx;
+/* 波形 = 5 根矩形（稿 2 宽 · 高 8/16/24/16/8 · gap2） */
+.sp-wave { display: flex; align-items: center; gap: 4rpx; height: 48rpx; }
+.sp-bar { width: 4rpx; border-radius: 2rpx; background: var(--tk-primary, #2b142c); }
+
+/* 稿 20px/400 · success */
+.sp-score {
+  font-size: 40rpx;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--tk-success, #21b99b);
 }
-.sp-pill-up { background: var(--tk-ok-soft, rgba(22, 163, 74, 0.1)); color: var(--tk-ok, #16a34a); }
-.sp-pill-keep { background: var(--tk-warn-soft, rgba(245, 158, 11, 0.1)); color: var(--tk-warn, #f59e0b); }
 
-.sp-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
-.sp-faint { color: var(--tk-page-on_50, rgba(17, 17, 17, 0.5)); }
-.sp-muted { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
-.sp-track { background: var(--tk-page-on_10, rgba(17, 17, 17, 0.1)); }
-.sp-ai {
-  color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65));
+/* ② 句子（稿 20px/400 · ink）；点它是"看完整明细"的入口 */
+.sp-sentence {
+  margin-top: 36rpx;
+  color: var(--tk-primary, #2b142c);
+}
+
+/* ③ 五个分项色块（稿 57×54 · gap12 · r8 · pad8 · 上标签 12px 下分数 14px） */
+.sp-parts { display: flex; gap: 24rpx; margin-top: 40rpx; }
+.sp-part {
+  flex: 1;
+  height: 108rpx;
+  padding: 16rpx;
+  border-radius: 16rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  box-sizing: border-box;
+  /**
+   * ⚠️ 稿里的浅橙底（「#fbe5ce」）≈ 我们的 accent 兑白 —— 这里直接用稿里的值。
+   *    若要收进 token（像 primary/success 那样），说一声我加一个（别在多处散着写）。
+   */
+  background: #fbe5ce;
+  color: var(--tk-primary, #2b142c);
+}
+
+/* ④ 战绩胶囊（稿 331×40 · 实心 ink · r36）—— ⭐ 它就是「确认」这一步 */
+.sp-record {
+  margin-top: 42rpx;
+  height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 72rpx;
+  background: var(--tk-primary, #2b142c);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sp-on-ink { color: var(--tk-primary-on, #ffffff); }
+
+/* ⑤ 下句（稿 14px · 居中） */
+.sp-sub {
+  margin-top: 0;
+  font-size: 28rpx;
+  line-height: 2.2;
   text-align: center;
-  line-height: 1.7;
+  color: var(--tk-primary, #2b142c);
 }
 
-.sp-sep {
-  width: 100%;
-  height: 1rpx;
-  background: var(--tk-line, rgba(17, 17, 17, 0.08));
-  margin: 28rpx 0;
-}
-
-.sp-actions { display: flex; gap: 16rpx; width: 100%; margin-top: 36rpx; }
+.sp-t12 { font-size: 24rpx; line-height: 1.4; }
+.sp-t14 { font-size: 28rpx; line-height: 1.4; }
