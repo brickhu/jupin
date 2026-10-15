@@ -93,10 +93,20 @@
 .br-bold { font-weight: 700; }
 
 /* 图标尺寸 = 稿里的 px × 2 */
-.br-i12 { width: 24rpx; height: 24rpx; }
-.br-i14 { width: 28rpx; height: 28rpx; }
-.br-i20 { width: 40rpx; height: 40rpx; }
-.br-i24 { width: 48rpx; height: 48rpx; }
+/*
+ * ⭐⭐ **图标尺寸一律写 font-size，不写 width/height**（用户 2026-10-15 报的"图标不居中"就是这条）。
+ *
+ * ⚠️⚠️ 为什么：「ui-icon」 里面那个盒子是 **1em**（跟着**字号**走，见 icons.wxss 的 .ui-icon），
+ *    而组件的**宿主节点**才是 flex 项。在宿主上写 width/height 只会把宿主撑成那么大 ——
+ *    里面真正的图标仍是"继承来的字号"那么大，还按 「vertical-align: -0.125em」 坐在基线上
+ *    ⇒ 看起来**偏上、不居中**（尺寸也不是你以为的那个数）。
+ *    ⇒ 宿主给 「font-size」 + 「line-height: 1」：1em 就等于这个字号，宿主盒子正好裹住它，
+ *      外层 flex 的居中才是真居中。
+ */
+.br-i12 { font-size: 24rpx; line-height: 1; display: flex; }
+.br-i14 { font-size: 28rpx; line-height: 1; display: flex; }
+.br-i20 { font-size: 40rpx; line-height: 1; display: flex; }
+.br-i24 { font-size: 48rpx; line-height: 1; display: flex; }
 .br-on { color: var(--btn-fg, #ffffff); }
 
 .br-spin { animation: br-spin 0.9s linear infinite; }
