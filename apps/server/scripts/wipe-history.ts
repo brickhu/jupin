@@ -50,28 +50,38 @@ async function count(table: string, where = ''): Promise<{ n: number; missing: b
   }
 }
 
-const targets: { label: string; table: string; where?: string; note: string }[] = [
-  { label: '成绩历史', table: 'submissions', note: '全表删（含逐词、分项、AI 点评、录音引用）' },
+/**
+ * ⭐⭐ **要清的表的唯一清单** —— 计数、删除、复核**全用它**。
+ *
+ * ⚠️⚠️ 顺序就是**删除顺序**，不能按报表好看重排：`participations` / `reviews` 有外键
+ *    指向 `submissions` ⇒ 必须先删子表。
+ * ⚠️⚠️ **这里原来只有一份"报表用的列表"，而真正的 DELETE 是另写的硬编码** ——
+ *    于是我加了 `cookie_ledger` 只进了报表、**没真删**（prod 上复核剩 1 条才发现）。
+ *    ⇒ 现在只有这一份：加一张表就自动被计数、删除、复核三处都覆盖到（靠结构而不是靠记性）。
+ */
+const WIPE_TABLES: { label: string; table: string; where?: string; note: string }[] = [
   { label: '· 参与记录', table: 'participations', note: '外键指向 submissions 且由它派生，必须先删' },
-  /** ⚠️ `likes` 表已在迁移 0066 随"成绩单展示页"一起删掉 —— 这里不再列它
-   *  （列了也只是被 count() 当成"表不存在"，但那会让人以为还有点赞这个功能）。 */
   { label: '· AI 点评', table: 'reviews', note: '外键指向 submissions，必须先删' },
+  { label: '成绩历史', table: 'submissions', note: '全表删（含逐词、分项、AI 点评、录音引用）' },
   { label: '奖励发放流水', table: 'reward_grants', note: '' },
   { label: '能量流水', table: 'energy_ledger', note: '' },
   /**
    * ⚠️⚠️ **饼干流水也必须清**：`users.cookies` 是**缓存**，真相在这张流水里
    *    （见 db/schema.ts 的说明）。只把余额归零、流水留着 ⇒ 饼干页面显示一堆入账、
    *    余额却是 0 —— 正是「两个数对不上」那一类，而且**不报错**。
-   *    ⚠️ 它原来就是漏的（本机那次清库也漏了），2026-10-15 补上。
    */
   { label: '饼干流水', table: 'cookie_ledger', note: '余额归零了，流水也必须清（否则对不上账）' },
 ]
 
+/** ⚠️ 报表按这个顺序显示（好看），删除按 `WIPE_TABLES` 的顺序（正确）—— 两者刻意不同 */
+const REPORT_ORDER = ['submissions', 'participations', 'reviews', 'reward_grants', 'energy_ledger', 'cookie_ledger']
 console.log('')
 console.log('将要处理：')
 console.log('  ' + '条数'.padEnd(10) + '对象'.padEnd(20) + '说明')
 let total = 0
-for (const t of targets) {
+for (const name of REPORT_ORDER) {
+  const t = WIPE_TABLES.find((x) => x.table === name)
+  if (!t) continue
   const { n, missing } = await count(t.table, t.where)
   total += n
   const nText = missing ? '(表不存在)' : String(n)
@@ -111,14 +121,13 @@ if (total === 0 && probes.n === 0) {
 console.log('开始清理…')
 await conn.beginTransaction()
 try {
-  // ⚠️ 顺序不能反：participations / likes / reviews 都有指向 submissions 的外键
-  await conn.query('DELETE FROM participations')
-  await conn.query('DELETE FROM likes')
-  await conn.query('DELETE FROM reviews')
-  await conn.query('DELETE FROM submissions')
-
-  await conn.query('DELETE FROM reward_grants')
-  await conn.query('DELETE FROM energy_ledger')
+  /**
+   * ⚠️⚠️ **由 `WIPE_TABLES` 驱动**（顺序就是删除顺序：子表在前）——
+   *    不要再手写 DELETE 清单：那正是"报表说清了、其实没删"那个 bug 的来源。
+   */
+  for (const t of WIPE_TABLES) {
+    await conn.query('DELETE FROM ' + t.table + (t.where ? ' WHERE ' + t.where : ''))
+  }
 
   /**
    * ⚠️⚠️ `users` 上**只有**这些列是从 submissions 推出来的，只重置它们。
@@ -147,7 +156,7 @@ try {
 // ---- 复核 ----
 console.log('')
 console.log('复核：')
-for (const t of targets) {
+for (const t of WIPE_TABLES) {
   const { n } = await count(t.table, t.where)
   console.log('  ' + t.label + '：' + n + (n === 0 ? ' ✅' : ' ⚠️ 还有残留'))
 }

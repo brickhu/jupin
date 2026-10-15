@@ -342,16 +342,18 @@ const EXEMPTIONS: Exemption[] = [
   {
     audit: '#11',
     file: 'apps/server/scripts/wipe-history.ts',
-    tables: [
-      'participations',
-      'likes',
-      'reviews',
-      'submissions',
-      'reward_grants',
-      'energy_ledger',
-      'users',
-    ],
-    why: '清库运维脚本本体（AGENTS.md 点名的事故脚本），有探针账号与 --confirm 保护；它天然要跨所有唯一写入方清数据。',
+    /**
+     * ⚠️ 只剩 `users` 这一张：其余表的 DELETE 在 2026-10-15 改成了**由清单循环驱动**
+     *    （`WIPE_TABLES`，见那个脚本的说明）⇒ 它们的 SQL 是**拼出来的**，
+     *    这个 guard 的静态扫描**看不到**（所以那六条豁免成了死条目，被它自己报了出来）。
+     *
+     * ⚠️ 那个"看不见"是可接受的，**因为清库的范围另有守门**：
+     *    `scripts/wipe-scope.test.ts` 盯着"脚本的清单 vs 迁移 0069 的范围逐表一致"，
+     *    并且**不许再出现写死的 DELETE**（就是这次漂移的根源）。
+     *    ⇒ 一个管"谁可以写"，一个管"清哪些表"，各管一段，不重叠。
+     */
+    tables: ['users'],
+    why: '清库运维脚本本体（AGENTS.md 点名的事故脚本），有探针账号与 --yes 保护；它天然要跨所有唯一写入方清数据。⚠️ 表的 DELETE 是清单驱动的动态 SQL（范围见 wipe-scope.test.ts），这里只剩它直写的 users。',
   },
   {
     audit: '#13',

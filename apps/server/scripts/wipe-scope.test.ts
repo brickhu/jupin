@@ -7,13 +7,21 @@ const MIGRATION = readFileSync(
   'utf-8',
 )
 
-/** 从脚本里抠出它要清的表名 */
-function scriptTables(): string[] {
-  return [...SCRIPT.matchAll(/table: '([a-z_]+)'/g)].map((m) => m[1]).filter((t) => t !== undefined).sort()
+/** 从脚本里抠出它要清的表名（**保持源码顺序** —— 那就是删除顺序） */
+function scriptTablesInOrder(): string[] {
+  return [...SCRIPT.matchAll(/table: '([a-z_]+)'/g)].map((m) => m[1]).filter((t) => t !== undefined)
 }
-/** 从迁移里抠出它要清的表名 */
+/** 排序版（比对"集合是否相同"用） */
+function scriptTables(): string[] {
+  return [...scriptTablesInOrder()].sort()
+}
+/** 从迁移里抠出它要清的表名（**保持源码顺序**） */
+function migrationDeleteOrder(): string[] {
+  return [...MIGRATION.matchAll(/DELETE FROM `([a-z_]+)`/g)].map((m) => m[1]).filter((t) => t !== undefined)
+}
+/** 排序版（比对"集合是否相同"用） */
 function migrationTables(): string[] {
-  return [...MIGRATION.matchAll(/DELETE FROM `([a-z_]+)`/g)].map((m) => m[1]).filter((t) => t !== undefined).sort()
+  return [...migrationDeleteOrder()].sort()
 }
 
 /**
@@ -52,5 +60,46 @@ describe('清库范围：脚本与迁移必须一致', () => {
     const dels = (MIGRATION.match(/DELETE FROM /g) ?? []).length
     const bps = (MIGRATION.match(/statement-breakpoint/g) ?? []).length
     expect(bps, '断点比语句少 ⇒ drizzle 切不开').toBeGreaterThanOrEqual(dels)
+  })
+
+  /**
+   * ⭐⭐ **删除必须由那一份清单驱动**（不能再手写一遍 DELETE）。
+   *
+   * ⚠️⚠️ 真实发生过：脚本里原来有**两份**东西 —— 报表用的 `targets` 列表 +
+   *    另写的硬编码 `DELETE FROM …`。我给清单加了 `cookie_ledger`，
+   *    报表立刻显示"要清 1 条"，而**真正的删除里没有它** ⇒ prod 复核时才发现
+   *    "还有残留"。⇒ 判据是**结构上只有一份**（循环走清单），而不是"记得两边都改"。
+   */
+  it('⭐⭐ 删除语句必须由清单驱动（不许再手写一份 DELETE 列表）', () => {
+    /**
+     * 允许：拼字符串的循环；不允许：写死的表名（带反引号或不带都算）。
+     * ⚠️ 唯一允许写死的是 `users` 那一条（删探针账号，与"清表"是两回事）。
+     */
+    const KNOWN = ['participations', 'reviews', 'submissions', 'reward_grants', 'energy_ledger', 'cookie_ledger', 'likes']
+    const hardcoded = KNOWN.filter((t) =>
+      new RegExp('DELETE FROM [`]?' + t + '[`]?\\b').test(SCRIPT),
+    )
+    expect(hardcoded, '脚本里又出现了写死的 DELETE ⇒ 列表和删除会漂（就是"报表说清了、其实没删"）').toEqual([])
+    expect(SCRIPT.includes('DELETE FROM ' + "' + t.table"), '删除不是走清单循环').toBe(true)
+  })
+
+  it('⭐⭐ 删除顺序：子表在前（participations / reviews 有外键指向 submissions）', () => {
+    /**
+     * ⚠️ 判据是**"子表在前"**，不是"两份清单逐位相同"：
+     *    它们各自是一份独立的清单（脚本给人看、迁移给 drizzle 跑），
+     *    只有**外键约束**是共同的真规则；要求逐位相同是**假约束**
+     *    （我第一版就写成了逐位比较，结果被 energy/cookie 两张同层表的次序卡住）。
+     */
+    for (const [name, order] of [
+      ['脚本', scriptTablesInOrder()],
+      ['迁移', migrationDeleteOrder()],
+    ] as const) {
+      const iPart = order.indexOf('participations')
+      const iRev = order.indexOf('reviews')
+      const iSub = order.indexOf('submissions')
+      expect(iPart, name + '：participations 不在清单里').toBeGreaterThan(-1)
+      expect(iPart, name + '：participations 必须排在 submissions 之前（外键）').toBeLessThan(iSub)
+      expect(iRev, name + '：reviews 必须排在 submissions 之前（外键）').toBeLessThan(iSub)
+    }
   })
 })
