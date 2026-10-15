@@ -772,11 +772,15 @@
   （`energy-tips` 居中放大 · `user-sheet` 贴底上滑 · `participate-flow` 的本地提示卡居中无动画 ·
   `boot-overlay` 整页盖住），尺寸 / 遮罩浓度 / 出入场各抄一遍。
   **对外只有四条属性**：`show`（受控开关，组件自己不关自己）·
-  `position`（`center` = 宽 364px 居中、**从中心放大**出现 / `bottom` = 100vw 贴底、**向上滑出**）·
+  `position`（`center` = **宽度自适应外容器**：两边各留 12px、最多 390px，居中 + **从中心放大**出现 /
+  `bottom` = 100vw 贴底、**向上滑出**）·
   `title`（空则不画那一行；**与 head 槽互斥** —— 配了 title 就忽略 head）·
   `closable`（默认 true，**只决定点遮罩能不能关** —— 它就是 prd §7.2 那条「等待期点遮罩无效」）；
   槽位 `head` / `main` / `foot`，间距 = `space.md`；基础样式 `bg-page` · `text-page-on` · `rounded-lg`；
-  最小 364×240（稿 1px = 2rpx ⇒ 728×480rpx）；关闭时抛 `hide`。
+  高度下限 240（稿 1px = 2rpx ⇒ 480rpx）；关闭时抛 `hide`。
+  ⚠️ **宽度刻意不折 rpx**（用户 2026-10-15：「居中 dialog 的宽度感觉太宽了」）：rpx 随屏宽整体放大，
+  而「不超过 390px」是**上限** —— 折了之后手机上看不出问题，换宽一点的机器就跟着变宽；
+  同理**不许有 min-width**（375 宽的屏上 100%-24px 只有 351px，它会把 12px 边距吃成 12rpx）。
   落地：`components/ui-dialog/`（纯逻辑 + 结构/契约守门单测）· `pages/ui-kit` 展示页。
   **做完的标志**：`pnpm --filter @jushuo/miniprogram build` + `test` 绿；ui-kit 上五种形态肉眼过一遍。
   ⚠️ 本次**不迁业务页**（上面那四个浮层都还在原位、行为不变）—— 迁移见 B92。

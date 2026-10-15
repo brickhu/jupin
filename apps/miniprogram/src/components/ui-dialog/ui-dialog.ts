@@ -29,7 +29,8 @@ const priv = (ctx: unknown): Internals => {
  *
  * 对外只有四件事：
  *   · `show`     —— **父组件持有**的开关（受控：组件自己从不关自己）
- *   · `position` —— `center` 宽 364px、上下居中，**从中间向外放大**出现
+ *   · `position` —— `center` **宽度自适应外容器**（两边各留 12px、最多 390px）、上下居中，
+ *                   **从中间向外放大**出现
  *                   `bottom` 100vw、贴底，**从下往上滑出**
  *   · `title`    —— 空的就不画那一行；**与 head 槽互斥**（配了 title，head 槽不渲染）
  *   · `closable` —— 默认 true；**它只决定"点遮罩能不能关"**，不是"有没有关闭钮"
@@ -71,7 +72,7 @@ Component({
         this.toggle(v === true)
       },
     },
-    /** center（默认：宽 364px 居中、向外放大）| bottom（100vw 贴底、向上滑出） */
+    /** center（默认：宽度自适应外容器、两边 12px、最多 390px，居中 + 向外放大）| bottom（100vw 贴底、向上滑出） */
     position: { type: String, value: 'center' },
     /** 标题文字 —— 空就不画那一行；**配了它，head 槽就不渲染**（互斥） */
     title: { type: String, value: '' },

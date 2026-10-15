@@ -6,9 +6,12 @@
  *    ui-dialog.wxml 上（组件 WXSS 引用不到 UnoCSS 类名，但 WXML 能）。本文件只管
  *    **尺度、排布、动画**；色值改一处（uno.config.mjs 的 theme）。
  *
- * ⚠️ 稿是 1px = 2rpx（同 energy-tips / recorder）⇒ 最小 364×240 就是 728×480rpx。
- *    刻意**不**按页面帧(390)去折算比例：要跟既有的两个浮层用同一把尺子
- *    （energy-tips 366 宽 = 732rpx），否则并排出现时一个宽一个窄。
+ * ⚠️ 稿是 1px = 2rpx（同 energy-tips / recorder）：**高度**下限 240px = 480rpx 走这把尺子。
+ *    **宽度不走 rpx，是自适应的** —— 两边各留 12px、最多 390px（见 .ud-panel-center）。
+ *    为什么宽度必须用字面 px：rpx 随屏宽整体放大，而「不超过 390px」是个**上限** ——
+ *    750rpx 恒等于屏宽 ⇒ 上限写成 780rpx 在宽屏上会跟着变宽（iPad 上远超 390px）。
+ *    ⚠️ 稿里的 364/366 宽在 375 宽的机子上正好是 728/732rpx，所以按 rpx 写"在手机上看是对的"，
+ *       只有换一台更宽的机器才暴露 —— 症状就是"居中弹窗看着太宽"。
  */
 
 /* 整屏一层：遮罩与面板都挂在它下面 */
@@ -63,8 +66,7 @@
   flex-direction: column;
   gap: var(--tk-space-md, 32rpx);
   padding: var(--tk-space-lg, 48rpx) var(--tk-space-md, 32rpx);
-  /* ⭐ 最小尺寸：364 × 240（稿 1px = 2rpx） */
-  min-width: 728rpx;
+  /* ⭐ 高度下限 240（稿 1px = 2rpx）。宽度**不设下限** —— 它自适应外容器，见 .ud-panel-center */
   min-height: 480rpx;
   opacity: 0;
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
@@ -83,11 +85,18 @@
 }
 
 /*
- * center：宽 364px（固定）+ 从**中心向外放大**。
+ * center：宽度**自适应外容器**（两边各留 12px、最多 390px）+ 从**中心向外放大**。
+ *
+ * ⚠️ 24px 是 12px 的两边之和；100% 就是整屏那一层（.ud-layer-center 满屏 + flex 居中）
+ *    ⇒ 除开这 24px，剩下的平分给两边，正好一边 12px。
+ * ⚠️ **不许再给 min-width**：自适应与"最小 364px"是互斥的 —— 375 宽的屏上 100%-24px
+ *    只有 351px，留着 min-width 会把两边 12px 的边距吃成 12rpx（"看着还是太宽"就是这个）。
+ * ⚠️ 12px / 390px 用**字面 px**、不折 rpx：折了上限就随屏宽放大，宽屏上兜不住。
  * ⚠️ transform-origin 默认就是中心，"向外放大"靠 scale 本身表达，不用另写 origin。
  */
 .ud-panel-center {
-  width: 728rpx;
+  width: calc(100% - 24px);
+  max-width: 390px;
   transform: scale(0.94);
 }
 

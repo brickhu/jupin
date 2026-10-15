@@ -25,6 +25,14 @@ const TS = stripTs(read('ui-dialog.ts'))
 const JSON_SRC = JSON.parse(read('ui-dialog.json')) as Record<string, unknown>
 
 /**
+ * 取某条规则的声明体。
+ * ⚠️ 选择器必须**精确匹配**（后面紧跟 `{`）—— 否则 `.ud-panel` 会命中 `.ud-panel.ud-on`
+ *    那一条，于是"面板不许有 min-width"就查到了错的规则体（守门形同虚设）。
+ */
+const ruleOf = (selector: string) =>
+  new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(WXSS)?.[1] ?? ''
+
+/**
  * ⭐⭐ ui-dialog 的守门。
  *
  * ⚠️ 为什么值得单独写一组：这个组件里**绝大多数错都不报错**——只是画错或拦不住：
@@ -136,19 +144,38 @@ describe('ui-dialog 的尺寸 / 间距 / 动画 —— 与需求逐条对齐', (
     }
   })
 
-  it('最小 364 × 240（稿 1px = 2rpx ⇒ 728 × 480rpx），且注释里留了出处', () => {
-    expect(WXSS).toMatch(/min-width:\s*728rpx/)
+  it('高度下限 240（稿 1px = 2rpx ⇒ 480rpx），且注释里留了出处', () => {
     expect(WXSS).toMatch(/min-height:\s*480rpx/)
-    expect(read('ui-dialog.wxss')).toMatch(/364\s*[×x]\s*240/)
+    expect(read('ui-dialog.wxss')).toMatch(/240px/)
   })
 
   it('⭐ 槽位间距只有一个来源：--tk-space-md（需求里的 gap = space.md）', () => {
     expect(WXSS).toMatch(/gap:\s*var\(--tk-space-md/)
   })
 
-  it('center = 宽 364px + 从中心向外放大', () => {
-    expect(WXSS).toMatch(/\.ud-panel-center\s*\{[^}]*width:\s*728rpx/)
-    expect(WXSS).toMatch(/\.ud-panel-center\s*\{[^}]*transform:\s*scale\(0?\.\d+\)/)
+  it('⭐⭐ center 宽度自适应外容器：两边各 12px（合计 24px）+ 上限 390px，且都用**字面 px**', () => {
+    const rule = ruleOf('.ud-panel-center')
+    expect(rule, '宽度要由外容器减去两边的 12px 得到').toMatch(/width:\s*calc\(100%\s*-\s*24px\)/)
+    expect(rule).toMatch(/max-width:\s*390px/)
+    expect(rule).toMatch(/transform:\s*scale\(0?\.\d+\)/)
+    /**
+     * ⚠️⚠️ 这两条必须是字面 px、不许折成 rpx（728rpx / 780rpx）：
+     *    rpx 随屏宽整体放大，而「不超过 390px」是个**上限** ——
+     *    折了之后手机上看不出问题，换一台更宽的机器就跟着变宽（"居中弹窗太宽"的根因）。
+     */
+    expect(rule, '宽度的上限与边距不许折 rpx（折了宽屏上兜不住）').not.toMatch(/rpx/)
+  })
+
+  it('⭐⭐ 面板不许有 min-width —— 自适应与"最小 364px"互斥', () => {
+    /**
+     * ⚠️ 375 宽的屏上 100%-24px 只有 351px；留着 min-width: 728rpx 会把它顶回 364px，
+     *    两边 12px 的边距就被吃成 12rpx —— 正是"看着还是太宽"那个症状。
+     *    bottom 那版同样不能有：320 宽的屏上它会被顶出屏幕。
+     */
+    expect(ruleOf('.ud-panel')).not.toMatch(/min-width/)
+  })
+
+  it('center 从中心向外放大', () => {
     expect(WXSS).toMatch(/ud-panel-center\.ud-on\s*\{[^}]*transform:\s*scale\(1\)/)
   })
 

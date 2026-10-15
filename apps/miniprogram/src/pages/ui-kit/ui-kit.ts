@@ -76,7 +76,7 @@ function dialogCase(key: string): DialogCase {
         position: 'center',
         title: '确认删除这条录音？',
         closable: true,
-        note: 'position=center：宽 364px、上下居中、从中心向外放大',
+        note: 'position=center：宽度自适应外容器（两边 12px、最多 390px），上下居中 + 从中心向外放大',
       }
   }
 }
