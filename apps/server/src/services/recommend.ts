@@ -355,6 +355,26 @@ export async function recommendToday(
 }
 
 /**
+ * ⭐ **确定性伪随机**（mulberry32）—— 同一个种子给同一串数。
+ *
+ * ⚠️ 为什么需要它：游客的今日推荐要**按天确定**（见 pickAnonymousArticle），
+ *    而"按权重抽"这件事本身需要随机数 ⇒ 用**服务端当天的天号**当种子，
+ *    于是"同一天所有人同一句、跨天才换"，同时保留"偏热门"的意图。
+ * ⚠️ 不用"先随机再缓存"的做法：那要求调用方有状态，而这里要的是**无状态纯函数**——
+ *    谁调、调几次，结果都一样（路由、单测、未来的定时任务都不会各自记一份）。
+ */
+export function seededRng(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
  * ⭐ **加权随机（轮盘赌）** —— 纯函数，单独抽出来是为了能单测。
  *
  * ⚠️ 权重 ≤ 0 的一律按 0 处理（参与人数不可能为负，但脏数据不该让抽样炸掉）。
@@ -402,7 +422,11 @@ export function weightedPick<T>(
  *
  * @returns 初级档一句都没有（内容没铺到那一档 / 句库为空）时 null，调用方按部署问题报 503
  */
-export async function pickAnonymousArticle(database: Database = db): Promise<string | null> {
+export async function pickAnonymousArticle(
+  /** **服务端的今天**（`shared/day.ts` 的 `today()`）—— 抽样的种子，只用来"按天确定" */
+  date: string,
+  database: Database = db,
+): Promise<string | null> {
   // ① 初级档 + 有正文 —— 顺序按 id，保证"等概率"那一支抽样的集合是稳定的
   const rows = await database
     .select({ id: articles.id, text: articles.text })
@@ -419,5 +443,16 @@ export async function pickAnonymousArticle(database: Database = db): Promise<str
   )
   const weights = pool.map((r) => stats.get(r.id)?.participantCount ?? 0)
 
-  return weightedPick(pool, weights)?.id ?? null
+  /**
+   * ⭐⭐ **按「天」确定**（用户 2026-10-15）。
+   *
+   * ⚠️⚠️ 原来是 `weightedPick(pool, weights)`（默认 `Math.random`）⇒ **每次调用都换一句**：
+   *    同一个游客刷新一次首页就换一句，"今日推荐"对游客根本不成立
+   *    （首页那张卡"老变"有一半是这里 —— 另一半是端侧每次都重问，已修）。
+   * ⚠️ 现在用**服务端当天的天号**当种子：同一天所有人拿到同一句、跨天才换，
+   *    而"按参与人数加权"（偏热门）的意图**保留** —— 只是同一天里这件事不再抖。
+   * ⚠️ 种子取**服务端的**日期（调用方算好传进来）：客户端时钟可改，而且"同一天"这件事
+   *    必须所有人算出来一样。
+   */
+  return weightedPick(pool, weights, seededRng(dayNumber(date)))?.id ?? null
 }

@@ -199,10 +199,13 @@ articlesRoutes.openapi(todayArticleRoute, async (c) => {
   /**
    * ⚠️⚠️ **两种选法，别合并**（用户 2026-09 定）：
    *   · 有 uid：走 recommendToday —— 24 小时窗口 + **这个人的难度档**，确定性、窗口内固定；
-   *   · 无 uid（或 uid=0）：走 pickAnonymousArticle —— **初级档**里**随机 + 按参与人数加权**
+   *   · 无 uid（或 uid=0）：走 pickAnonymousArticle —— **初级档**里**按天确定 + 按参与人数加权**
    *     挑一条，且**一个用户行都不写**（没有"这个人"，就没有窗口可谈）。
-   *   早先的写法是把匿名也当成 recommendToday(0)，那是"按窗口起始日取模"的确定性选法，
-   *   与口径要的"随机、偏热门"不是一回事 —— 已改掉。
+   *   ⚠️ "按天确定"是 2026-10-15 定的（用户：「今日挑战在单个自然日内应该是固定的」）：
+   *     原来每次调用**随机** ⇒ 游客刷新一次就换一句，卡片"老变"。
+   *     现在用服务端当天的天号当种子 —— 同一天同一句、跨天才换，"偏热门"的意图保留。
+   *   ⚠️ 更早还试过把匿名也当成 recommendToday(0)（按窗口起始日取模）—— 那条会把匿名
+   *     绑上"窗口"概念（而匿名没有用户行、没有窗口可谈），已改掉。
    */
   const uid = c.req.valid('query').uid ?? 0
   // ⚠️ 日期一律取服务端的（客户端时钟可改，见 shared/day.ts）——
@@ -210,7 +213,7 @@ articlesRoutes.openapi(todayArticleRoute, async (c) => {
   const date = today()
 
   const pickedId =
-    uid > 0 ? (await recommendToday(uid, date))?.articleId : await pickAnonymousArticle()
+    uid > 0 ? (await recommendToday(uid, date))?.articleId : await pickAnonymousArticle(date)
   if (!pickedId) {
     // ⚠️ 与 /api/articles 同一条口径：句库为空是**部署问题**，
     //    报成"今天没有推荐"会让排查方向完全跑偏
