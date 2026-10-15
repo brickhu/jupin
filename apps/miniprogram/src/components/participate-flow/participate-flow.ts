@@ -228,15 +228,11 @@ Component({
       /** ⚠️ `checking` 不给退：那一段已经交上去在云里算了（稿里那颗 ↺ 正是禁用态 0.2） */
       if (this.data.state === 'checking') return
 
-      /** ⚠️ 文案跟着**代价**走：`recoded` 丢的是录音，`scored` 丢的是"还没确认的这一把" */
-      const scored = this.data.state === 'scored'
       wx.showModal({
-        title: scored ? '放弃这一把？' : '重新录音？',
-        content: scored
-          ? '这一把还没确认，放弃后不会算进战绩，这段录音也会从本机删掉。'
-          : '当前这段录音会被删掉，需要重新读一遍。',
-        confirmText: scored ? '放弃' : '重新录',
-        cancelText: '再想想',
+        title: '抹除录音',
+        content: '你确认抹除掉刚才录制的这一段语音吗？',
+        confirmText: '确认',
+        cancelText: '取消',
         success: (r) => {
           if (r.confirm) this.discardRecording()
         },
@@ -244,10 +240,7 @@ Component({
     },
 
     /**
-     * ⭐⭐ **`↺` = 放弃这一把，回到大 `try` / `retry` 态**（用户 2026-10-15 定）。
-     *
-     *    「↺ 点击后**本质是恢复大 try/retry 状态**，并**清除掉录好的声音**，
-     *      建议清除前可以让用户确认下清除。」
+     * ⭐⭐ **`↺` = 放弃这一把，回到大 `try` / `retry` 态**。
      *
      * ⚠️⚠️ **顺序是有讲究的：先问一次 → 确认后清掉 → 回到 `try`/`retry`**，
      *    **不**自动开录音面板。两个理由：

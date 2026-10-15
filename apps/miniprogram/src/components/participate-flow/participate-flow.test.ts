@@ -86,6 +86,11 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     expect(at, '找不到 onRedo').toBeGreaterThan(-1)
     const body = SRC.slice(at, SRC.indexOf('discardRecording()', at))
     expect(body.includes('wx.showModal'), '↺ 没先问一次 ⇒ 手一抖录音就没了（不可撤销）').toBe(true)
+    /** ⚠️ 文案由产品定死（见 prd §7.2）—— 钉住，别在重构时被顺手改掉 */
+    expect(body, '弹窗标题/正文/按钮文案与 prd 不一致').toContain('抹除录音')
+    expect(body).toContain('你确认抹除掉刚才录制的这一段语音吗？')
+    expect(body).toContain("confirmText: '确认'")
+    expect(body).toContain("cancelText: '取消'")
     expect(body.indexOf('wx.showModal')).toBeLessThan(body.indexOf('r.confirm'))
 
     const clr = SRC.slice(SRC.indexOf('discardRecording()'))
