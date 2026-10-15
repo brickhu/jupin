@@ -470,6 +470,13 @@
       "when": 1792060000000,
       "tag": "0067_quiet_record_reward",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1792061000000,
+      "tag": "0068_drop_dead_rule",
+      "breakpoints": true
     }
   ]
 }

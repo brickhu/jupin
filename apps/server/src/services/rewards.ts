@@ -34,8 +34,8 @@ export const TRIGGER = {
 export type RewardKind = 'energy'
 
 /** 预设规则的 code —— 与 reward_rules.code 一一对应 */
-/** ⚠️ `streak_unfreeze_7` 已作废（解冻卡整体下线）；库里可能还留着那行配置，
- *  但它的 trigger 不再被求值（见文件末的未知触发器告警）。 */
+/** ⚠️ 这里**只有一条**规则 —— 「按连战发道具」随解冻卡整体下线（2026-10），
+ *  它的配置行已由迁移 0068 删掉（见那条迁移的说明：为什么删而不是关）。 */
 export const RULE_CODE = {
   sentenceTopRecord: 'sentence_top_record',
 } as const

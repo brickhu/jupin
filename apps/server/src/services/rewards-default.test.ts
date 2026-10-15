@@ -25,4 +25,24 @@ describe('奖励规则：默认关（只奖励饼干，不发能量）', () => {
     expect(sql.includes('UPDATE `reward_rules` SET `enabled` = 0'), '迁移 0067 没关它').toBe(true)
     expect(sql.includes("'sentence_top_record'"), '迁移关的不是这条规则').toBe(true)
   })
+
+  /**
+   * ⭐ 已作废的规则要**真的没了**（不是"留着但不求值"）。
+   *
+   * ⚠️ `streak_unfreeze_7` 是解冻卡那套的遗留：机制整体下线了，
+   *    而"留着但不求值"会让下一个人以为「连战 7 天还有奖励」——
+   *    配置表读起来就是产品口径，表里有它，就等于产品里还有它。
+   */
+  it('⭐ 作废的规则不许再出现在代码里', () => {
+    expect(SRC.includes('streak_unfreeze_7'), '代码里又提到它了（产品口径里已经没有这条）').toBe(false)
+  })
+
+  it('⭐ 存量环境靠迁移删（0068），且删的确实是它', () => {
+    const sql = readFileSync(
+      new URL('../../drizzle/0068_drop_dead_rule.sql', import.meta.url),
+      'utf-8',
+    )
+    expect(sql.includes('DELETE FROM `reward_rules`'), '迁移 0068 没删').toBe(true)
+    expect(sql.includes("'streak_unfreeze_7'"), '删的不是这条规则').toBe(true)
+  })
 })
