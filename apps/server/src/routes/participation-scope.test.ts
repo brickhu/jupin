@@ -38,6 +38,15 @@ const ARENA_WIDE_ALLOWED: Array<{ file: string; nth: number; why: string }> = [
   { file: 'services/leaderboard.ts', nth: 6, why: '同上，另一处换算（名次→击败比例）' },
   { file: 'services/leaderboard.ts', nth: 7, why: 'getArenaStatsBatch 的 mine 分支：where 里已带 inIds + userId' },
   {
+    file: 'services/recommend.ts',
+    nth: 1,
+    why:
+      'tierTroubleWords：**档位级**聚合"这一档普遍读不好的词"，按定义就要看这一档**所有人**的行 —— ' +
+      '⚠️ 它只读 `weak_points`（词 + 次数）当排序权重，**不返回任何人的成绩/画像**，' +
+      '也不会被当成"我的"（调用方拿到的只是一个 Map<词, 次数>）；' +
+      '⚠️ 而且已按 `last_at < 窗口起始日` 过滤 —— 那是"同档同句"能成立的前提（当天内稳定）',
+  },
+  {
     file: 'services/participations.ts',
     nth: 1,
     why: 'rebuildParticipations：把派生索引从 submissions 重建，必须读全表的行再按 userId:articleId 归位 —— ' +

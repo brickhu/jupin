@@ -47,6 +47,23 @@ type Database = typeof db
 const MASTERY_SCORE = 85
 const MASTERY_COUNT = 2
 
+/**
+ * ⭐⭐ **降档的两条判据**（2026-10-15 加，见 demoteOf）。
+ *
+ * ⚠️ 为什么需要"降档"：原来的档位**只会升不会降**（② 那条"没过线 ⇒ 练过的最高档"），
+ *    于是断档半年回来的人、或在自己档里连着读崩的人，会被**一直钉在**那个档上 ——
+ *    越读越挫败，而连战也保不住。**这一条是保体验的，不是保难度的。**
+ */
+const DEMOTE_GAP_DAYS = 7
+const DEMOTE_LOW_SCORE = 60
+const DEMOTE_LOW_RUN = 3
+
+/**
+ * ⭐ **汇总多少个薄弱词**（`tierTroubleWords` 的 limit）。
+ * ⚠️ 别取太大：取到几百个之后"踩中"就变成了必然，排序等于没排。
+ */
+const TROUBLE_WORDS_LIMIT = 30
+
 export interface MyLevel {
   /** 我的水平档（0 初级 / 1 中级 / 2 高级 / 3 专家） */
   level: ArticleLevel
@@ -85,12 +102,140 @@ const DESC_LEVELS: ArticleLevel[] = [3, 2, 1, 0]
  * ⚠️ 用参与记录（rather than 逐条 submissions）是有意的：一人一句一行，
  *    "两句 ≥85"比"两条成绩 ≥85"更严 —— 重读同一句凑不出水平。
  */
-export async function myLevelOf(userId: number, database: Database = db): Promise<MyLevel> {
+/**
+ * ⭐⭐ **要不要降一档**（纯函数，便于单测）。
+ *
+ * 两条判据，命中任一条就降：
+ *   · **断档**：距上一次参与超过 `DEMOTE_GAP_DAYS` 天 ⇒ 手生了，回来先读简单一档；
+ *   · **手感**：**该档最近 `DEMOTE_LOW_RUN` 次**全都低于 `DEMOTE_LOW_SCORE` ⇒ 这一档现在读不动。
+ *
+ * ⚠️ 只看**当前这一档内**的成绩（别的档读了不算 —— 与"未读优先只看本档池子"同一条口径）。
+ * ⚠️ 降一档就停（不是"降到能读动为止"）：一次只降一档，下一轮还能再判。
+ * ⚠️ 到初级（0）就不再降。
+ * ⚠️ 断档时**不要求**有本档记录：刚升上来就没再来的也一样该降。
+ */
+export function demoteOf(input: {
+  /** 当前档位 */
+  level: ArticleLevel
+  /** 该档的参与记录（`best` 分数 + `lastAt`） */
+  inTier: { best: number | string | null; lastAt: Date | string }[]
+  /** 这个人最近一次参与的时间（没有任何参与记录时 null） */
+  lastAt: Date | string | null
+  /** 现在（注入以便单测） */
+  now: Date
+}): { level: ArticleLevel; basis: string } | null {
+  const { level, inTier, lastAt, now } = input
+  if (level <= 0) return null
+
+  const gapDays =
+    lastAt === null
+      ? null
+      : Math.floor((now.getTime() - new Date(lastAt as unknown as string).getTime()) / 86400_000)
+
+  /** ⚠️ 时钟回拨等脏数据（负数）不算断档 —— 那是"没数据"，不是"很久没读" */
+  if (gapDays !== null && gapDays >= DEMOTE_GAP_DAYS) {
+    return {
+      level: (level - 1) as ArticleLevel,
+      basis:
+        '距上次参与已经 ' + gapDays + ' 天 —— 先回' + LABEL[(level - 1) as ArticleLevel] +
+        '场找回手感（连战也保得住）',
+    }
+  }
+
+  const recent = [...inTier]
+    .sort((a, b) => new Date(b.lastAt as unknown as string).getTime() - new Date(a.lastAt as unknown as string).getTime())
+    .slice(0, DEMOTE_LOW_RUN)
+  if (recent.length === DEMOTE_LOW_RUN && recent.every((r) => Number(r.best) < DEMOTE_LOW_SCORE)) {
+    return {
+      level: (level - 1) as ArticleLevel,
+      basis:
+        LABEL[level] + '场最近 ' + DEMOTE_LOW_RUN + ' 句都没到 ' + DEMOTE_LOW_SCORE +
+        ' 分 —— 先回' + LABEL[(level - 1) as ArticleLevel] + '场',
+    }
+  }
+  return null
+}
+
+/**
+ * ⭐⭐ **这一档"普遍读不好的词"**（用户 2026-10-15：让推荐更懂这个人）。
+ *
+ * 数据来自 `participations.weak_points`（B82/B83 落地的**结构化事实**：词 + 次数 + 最低分）。
+ * 把这一档里所有人的薄弱词按次数汇总，取最高的若干个 ⇒ 用来给候选句子打分。
+ *
+ * ⚠️⚠️ **只算"窗口起始日之前更新过"的参与记录**（`last_at < dayStartUtc(date)`）——
+ *    这是"同档同句"能成立的**前提**：汇总如果随今天新产生的数据变，
+ *    那今天早开始窗口的人与晚开始的人会算出**不同的排序** ⇒ 同一档同一天拿到不同句子，
+ *    竞技场就碎了（那正是这条设计要避免的）。
+ *    ⇒ 用"昨天的状态"排今天的句：**当天内稳定**，跨天才微调。
+ *
+ * ⚠️ 返回的是 `Map<词, 次数>`；词按原文（含标点）存，与 `weak_points` 的口径一致。
+ */
+export async function tierTroubleWords(
+  level: ArticleLevel,
+  date: string,
+  limit: number,
+  database: Database = db,
+): Promise<Map<string, number>> {
+  const rows = await database
+    .select({ weak: participations.weakPoints })
+    .from(participations)
+    .innerJoin(articles, eq(articles.id, participations.articleId))
+    .where(
+      and(
+        eq(articles.difficulty, level),
+        lt(participations.lastAt, dayStartUtc(date)),
+      ),
+    )
+
+  const total = new Map<string, number>()
+  for (const r of rows) {
+    const list = (r.weak ?? []) as { word?: unknown; count?: unknown }[]
+    if (!Array.isArray(list)) continue
+    for (const w of list) {
+      const word = String(w.word ?? '')
+      if (!word) continue
+      total.set(word, (total.get(word) ?? 0) + (Number(w.count) || 0))
+    }
+  }
+
+  return new Map(
+    [...total.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, limit),
+  )
+}
+
+/**
+ * ⭐ **一句候选句子里"踩中多少薄弱词"**（纯函数，便于单测）。
+ *
+ * ⚠️ 比对用**去标点小写**的形式：`weak_points` 里的词带标点（`count.` / `simpler.`），
+ *    而比对时不带 —— 否则"同一个词换个标点"就算两回事，命中率会虚低。
+ * ⚠️ 不用子串匹配（`in` 会把 `as` 命中 `simpleaspossible` 那种）—— 逐词比 ✅。
+ */
+export function troubleScoreOf(words: string[], trouble: Map<string, number>): number {
+  if (trouble.size === 0) return 0
+  const norm = (w: string) => w.toLowerCase().replace(/[^a-z']/g, '')
+  let score = 0
+  for (const w of words) {
+    const n = norm(w)
+    if (n && trouble.has(n)) score += trouble.get(n) ?? 0
+  }
+  return score
+}
+
+export async function myLevelOf(
+  userId: number,
+  database: Database = db,
+  /** 现在（注入以便单测"断档"那条判据） */
+  now: Date = new Date(),
+): Promise<MyLevel> {
   const rows = await database
     .select({
       // difficulty 在 articles 上（参与记录只存句子 id）—— 一次 join 拿回来
       difficulty: articles.difficulty,
       best: participations.bestScore,
+      /** ⭐ 降档判据要用（断档 + 该档最近几次的手感） */
+      lastAt: participations.lastAt,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))
@@ -110,32 +255,55 @@ export async function myLevelOf(userId: number, database: Database = db): Promis
     if (Number(r.best) >= MASTERY_SCORE) proven.set(lv, (proven.get(lv) ?? 0) + 1)
   }
 
+  /** 基准档（升档那两条）—— ⚠️ 算完还要过一遍降档，见下面 */
+  let base: MyLevel | null = null
+
   // ① 最高的、过了线的那一档
   for (const lv of DESC_LEVELS) {
     const n = proven.get(lv) ?? 0
     if (n >= MASTERY_COUNT) {
-      return {
+      base = {
         level: lv,
         basis: '在' + LABEL[lv] + '场有 ' + n + ' 句拿到 ' + MASTERY_SCORE + ' 分以上 —— 你的水平在这一档',
       }
+      break
     }
   }
 
   // ② 没过线 ⇒ 练过的最高档
-  for (const lv of DESC_LEVELS) {
-    const n = played.get(lv) ?? 0
-    if (n > 0) {
-      return {
-        level: lv,
-        basis:
-          '还没有哪一档拿到 ' + MASTERY_COUNT + ' 句 ' + MASTERY_SCORE + ' 分以上 —— ' +
-          '先按你练过的最高档（' + LABEL[lv] + '，' + n + ' 句）',
+  if (!base) {
+    for (const lv of DESC_LEVELS) {
+      const n = played.get(lv) ?? 0
+      if (n > 0) {
+        base = {
+          level: lv,
+          basis:
+            '还没有哪一档拿到 ' + MASTERY_COUNT + ' 句 ' + MASTERY_SCORE + ' 分以上 —— ' +
+            '先按你练过的最高档（' + LABEL[lv] + '，' + n + ' 句）',
+        }
+        break
       }
     }
   }
 
   // ③ 有参与记录但难度都认不出来（老内容）⇒ 兜底初级
-  return { level: 0, basis: '参与过的句子没有难度信息 —— 先按初级' }
+  if (!base) return { level: 0, basis: '参与过的句子没有难度信息 —— 先按初级' }
+
+  /**
+   * ⭐⭐ **降档**（2026-10-15 加）：档位原来**只会升不会降** ⇒ 断档半年回来的人、
+   *    或在自己档里连着读崩的人，会被一直钉在那个档上。判据与理由见 demoteOf。
+   */
+  const lastAt = rows.reduce<Date | null>((acc, r) => {
+    const t = new Date(r.lastAt as unknown as string)
+    return Number.isFinite(t.getTime()) && (acc === null || t > acc) ? t : acc
+  }, null)
+  const demote = demoteOf({
+    level: base.level,
+    inTier: rows.filter((r) => normalizeLevel(r.difficulty) === base.level),
+    lastAt,
+    now,
+  })
+  return demote ?? base
 }
 
 export interface TodayPick {
@@ -272,6 +440,35 @@ export async function recommendToday(
     }
   }
   if (pool.length === 0) return null
+
+  /**
+   * ⭐⭐ **① 用上"这一档普遍读不好的词"**（用户 2026-10-15 定：让推荐更懂这个人）。
+   *
+   * ⚠️ 数据来自 `participations.weak_points`（B82/B83 落地的**结构化事实**）——
+   *    在这之前它**完全没被用过**：每个人辛苦攒的薄弱词，只躺在库里。
+   * ⚠️⚠️ 排序**必须当天稳定**（否则同一个档今天早开始窗口的人与晚开始的人拿到不同句子，
+   *    竞技场就碎了）⇒ `tierTroubleWords` 只算"窗口起始日**之前**更新过"的参与记录，
+   *    今天新产生的数据不参与 ⇒ 当天内排序不会变、跨天才微调。
+   * ⚠️ 打分相同就**按 id 升序**兜底（`orderBy` 已经按 id 排过，排序是稳定的 ✅）。
+   */
+  const trouble = await tierTroubleWords(level, date, TROUBLE_WORDS_LIMIT, database)
+  if (trouble.size > 0) {
+    const wordRows = await database
+      .select({ id: articles.id, words: articles.words })
+      .from(articles)
+      .where(inArray(articles.id, pool))
+    const scoreOf = new Map(
+      wordRows.map((r) => [
+        r.id,
+        troubleScoreOf(
+          ((r.words ?? []) as { text?: unknown }[]).map((w) => String(w.text ?? '')),
+          trouble,
+        ),
+      ]),
+    )
+    /** ⭐ 踩中越多薄弱词的排越前 —— 再取模，于是"今天这一档读哪句"就被薄弱词影响了 */
+    pool = [...pool].sort((a, b) => (scoreOf.get(b) ?? 0) - (scoreOf.get(a) ?? 0))
+  }
 
   // ★ ③ 同档同句：**窗口起始日**的天号取模（不是当前时刻，见上面的说明）
   let pickId = pool[((dayNumber(date) % pool.length) + pool.length) % pool.length] as string
