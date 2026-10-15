@@ -35,9 +35,12 @@ const inflight = new Set<string>()
  * ⚠️ 幂等、可反复调（每次 store 广播都可以调一次，见首页的 fillParticipation）：
  *    已拉过 / 正在拉 / 空 id 都会被过滤掉。
  */
-export async function ensureParticipation(articleIds: string[]): Promise<void> {
+export async function ensureParticipation(
+  articleIds: string[],
+  opts: { force?: boolean } = {},
+): Promise<void> {
   const ids = unique(articleIds).filter(
-    (id) => !me.participationOf(id).loaded && !inflight.has(id),
+    (id) => (opts.force === true || !me.participationOf(id).loaded) && !inflight.has(id),
   )
   if (ids.length === 0) return
 
@@ -78,11 +81,27 @@ export async function ensureParticipation(articleIds: string[]): Promise<void> {
 }
 
 /**
- * 单句版 —— 详情页（竞技场 / 朗读页）用。
+ * 单句版 —— 详情页（竞技场）用。
  * ⚠️ 它只是批量版的薄封装：同一套三态规则、同一个 inflight 去重。
  */
 export function loadParticipation(articleId: string): Promise<void> {
   return ensureParticipation([articleId])
+}
+
+/**
+ * ⭐⭐ **强制重拉一句**（忽略"已拉过"）—— 用在**战绩刚刚变过**的地方。
+ *
+ * ⚠️⚠️ 为什么必须有它：`ensureParticipation` 的判据是"**已拉过的不再问**"，
+ *    而"用户确认了一把"之后，服务端那一行**变了**，端侧却因为"已经拉过"**一声不吭**
+ *    ⇒ `bestScore` 停在旧值（没有战绩时就是 -1）⇒ **卡片永远切不到 `retry`**
+ *      （`try → retry` 这一步就是靠 `bestScore !== null` 判的）。
+ *
+ * ⚠️ "已拉过"这个去重本身是对的（列表一屏七八句，每次广播都重问就是并发风暴）；
+ *    错的是**把"确认"也当成一次普通广播** —— 那是一次**已知的变更**，必须重拉。
+ * ⚠️ 仍然复用同一个 `inflight` 去重：连续确认两次不会打两个请求。
+ */
+export function refreshParticipation(articleId: string): Promise<void> {
+  return ensureParticipation([articleId], { force: true })
 }
 
 /**

@@ -179,4 +179,48 @@ describe('ensureParticipation —— 列表批量版（所有句子列表都走�
     expect(peak).toBeGreaterThan(1)
     expect(store.participationOf('c7').loaded).toBe(true)
   })
+
+  /**
+   * ⭐⭐ 守的是**「战绩刚变过」必须能重拉**（`refreshParticipation`）。
+   *
+   * ⚠️⚠️ 真实后果（用户 2026-10-15 报的）：确认完第一把之后，服务端那一行变了，
+   *    而 `ensureParticipation` 的判据是「**已拉过的不再问**」⇒ 一声不吭地跳过
+   *    ⇒ `bestScore` 停在 -1 ⇒ **卡片永远切不到 `retry`**（`try → retry` 就靠它判）。
+   *    "已拉过不再问"本身是对的（列表一屏七八句，每次广播都重问是并发风暴）；
+   *    错的是把「确认」当成一次普通广播 —— 那是**已知的变更**。
+   */
+  it('⭐⭐ refreshParticipation 越过"已拉过"，把新战绩拉回来', async () => {
+    const { refreshParticipation, ensureParticipation } = participation
+    const { applyParticipations, participationOf, applyProfile } = store
+
+    applyProfile(profile())
+    // 第一次：拉到一个"还没读过"的结论
+    fetchParticipation.mockResolvedValueOnce(null)
+    await ensureParticipation(['a1'])
+    expect(participationOf('a1').loaded).toBe(true)
+
+    // 普通批量：**不该**再问（这正是列表要的行为）
+    fetchParticipation.mockClear()
+    await ensureParticipation(['a1'])
+    expect(fetchParticipation).not.toHaveBeenCalled()
+
+    // 强制重拉：**必须**再问，并把新记录写进 store（= 卡片切成 retry 的依据）
+    fetchParticipation.mockResolvedValueOnce({ id: 'p1', bestScore: 88 } as never)
+    await refreshParticipation('a1')
+    expect(fetchParticipation).toHaveBeenCalledTimes(1)
+    expect(participationOf('a1').record?.bestScore).toBe(88)
+
+    // 清干净，别影响别的用例
+    applyParticipations([{ articleId: 'a1', record: null }])
+  })
+
+  it('⭐⭐ 两个宿主的"战绩变了"回调都走强制重拉（走错就等于没刷新）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const DIR = fileURLToPath(new URL('../', import.meta.url))
+    for (const host of ['pages/index/index.ts', 'pages/arena/arena.ts']) {
+      const ts = readFileSync(DIR + host, 'utf-8')
+      expect(ts.includes('refreshParticipation'), host + ' 的战绩刷新走了"已拉过就不问"那条路').toBe(true)
+    }
+  })
 })

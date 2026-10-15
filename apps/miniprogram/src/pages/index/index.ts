@@ -15,7 +15,7 @@ import { refreshMe } from '../../lib/join'
 import { ensureStats } from '../../lib/stats'
 import { streakNudgeOf } from '../../lib/streak-nudge'
 import type { StreakNudge } from '../../lib/streak-nudge'
-import { ensureParticipation, loadParticipation } from '../../lib/participation'
+import { ensureParticipation, loadParticipation, refreshParticipation } from '../../lib/participation'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, go, goPublic } from '../../lib/route'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed, retryAuth } from '../../lib/auth'
@@ -835,7 +835,7 @@ Page({
   /** 确认之后（战绩已更新）⇒ 重拉参与记录，让卡片上的战绩跟着变 */
   onFlowSettled() {
     const id = this.data.today?.articleId
-    if (id) void loadParticipation(id)
+    if (id) void refreshParticipation(id)
   },
 
   /**

@@ -12,7 +12,7 @@ import { isUnregistered } from '../../lib/auth'
 import { speak } from '../../lib/audio/tts'
 import type { RecordState } from '../../lib/record-state'
 import { AUTH_RETRY_HINT, ensureAuthed, isAuthed } from '../../lib/auth'
-import { loadParticipation } from '../../lib/participation'
+import { loadParticipation, refreshParticipation } from '../../lib/participation'
 import { fetchArticleContent } from '../../lib/content'
 import { ensureLocalAudio } from '../../lib/audio/standard'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
@@ -259,7 +259,11 @@ Page({
    *    所以这里只负责"拉到 → 让 render 把卡重拼一遍"。
    */
   async loadMine() {
-    await loadParticipation(this.entry.articleId)
+    /**
+     * ⚠️ 走**强制重拉**：确认之后战绩变了，而「已拉过的不再问」会让界面停在旧值
+     *    （卡片就切不到 retry —— 见 lib/participation.ts 的 refreshParticipation）。
+     */
+    await refreshParticipation(this.entry.articleId)
     this.render()
   },
 
