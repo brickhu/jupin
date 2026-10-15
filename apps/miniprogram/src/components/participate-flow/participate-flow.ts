@@ -224,13 +224,50 @@ Component({
     /** `recoded` 的 ↺ —— 重录：丢掉旧那段再录（⚠️ 幂等键也跟着换新，因为文件变了） */
     onRedo() {
       const articleId = this.data.articleId
+      if (!articleId) return
+      /** ⚠️ `checking` 不给退：那一段已经交上去在云里算了（稿里那颗 ↺ 正是禁用态 0.2） */
+      if (this.data.state === 'checking') return
+
+      /** ⚠️ 文案跟着**代价**走：`recoded` 丢的是录音，`scored` 丢的是"还没确认的这一把" */
+      const scored = this.data.state === 'scored'
+      wx.showModal({
+        title: scored ? '放弃这一把？' : '重新录音？',
+        content: scored
+          ? '这一把还没确认，放弃后不会算进战绩，这段录音也会从本机删掉。'
+          : '当前这段录音会被删掉，需要重新读一遍。',
+        confirmText: scored ? '放弃' : '重新录',
+        cancelText: '再想想',
+        success: (r) => {
+          if (r.confirm) this.discardRecording()
+        },
+      })
+    },
+
+    /**
+     * ⭐⭐ **`↺` = 放弃这一把，回到大 `try` / `retry` 态**（用户 2026-10-15 定）。
+     *
+     *    「↺ 点击后**本质是恢复大 try/retry 状态**，并**清除掉录好的声音**，
+     *      建议清除前可以让用户确认下清除。」
+     *
+     * ⚠️⚠️ 我原来把它做成了"**立刻开录音面板**" —— 那是错的：
+     *    ① 少了一次确认 ⇒ 手一抖刚录好的那段就没了（**不可撤销**）；
+     *    ② 少了一个"我不想录了"的落脚点 ⇒ 用户只能退页面。
+     *    ⇒ 现在是：**先问一次 → 确认后清掉 → 回到 try/retry**（**不**自动开录音）；
+     *      要录，用户自己点那颗麦克风（那也是 `try`/`retry` 上唯一显眼的动作）。
+     *
+     * ⚠️ 服务端那一行**不动**：`scored` 放弃之后它永远停在未确认、音频也不清理
+     *    —— 这正是 prd §7.2「永不确认 ⇒ 永远停在 scored」。这里清的只是**本机这一份**。
+     */
+    discardRecording() {
+      const articleId = this.data.articleId
       if (articleId) clearParticipate(articleId)
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
       this.data.scratch.resultOf = ''
       this.data.scratch.pendingDurationMs = 0
       this.data.scratch.popped = ''
-      this.setData({ recorderVisible: true })
+      /** ⚠️ 还在轮询这一把就得停掉 —— 否则清完缓存，轮询回来又会把状态写成 scored */
+      this.stopPoll()
       this.restore()
     },
 

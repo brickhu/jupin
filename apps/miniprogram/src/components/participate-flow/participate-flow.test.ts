@@ -74,4 +74,35 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
       expect(body.includes(k), '确认之后没清：' + k).toBe(true)
     }
   })
+
+  /**
+   * ⭐⭐ `↺` 的语义（用户 2026-10-15 定）：
+   *    「点击后本质是**恢复大 try/retry 状态**，并清除掉录好的声音，
+   *      建议清除前可以让用户确认下清除。」
+   *
+   * ⚠️ 我第一版做成了"点了就开录音面板" —— 那是错的：少一次确认（录音不可撤销），
+   *    也少了一个"我不想录了"的落脚点。
+   */
+  it('⭐ ↺ 必须先确认，再清；且清完**不许自动开录音面板**', () => {
+    const at = SRC.indexOf('onRedo()')
+    expect(at, '找不到 onRedo').toBeGreaterThan(-1)
+    const body = SRC.slice(at, SRC.indexOf('discardRecording()', at))
+    expect(body.includes('wx.showModal'), '↺ 没先问一次 ⇒ 手一抖录音就没了（不可撤销）').toBe(true)
+    expect(body.indexOf('wx.showModal')).toBeLessThan(body.indexOf('r.confirm'))
+
+    const clr = SRC.slice(SRC.indexOf('discardRecording()'))
+    const clrBody = clr.slice(0, clr.indexOf('restore()'))
+    expect(clrBody.includes('clearParticipate'), '没清端侧缓存').toBe(true)
+    expect(
+      clrBody.includes('recorderVisible: true'),
+      '清完自动开了录音面板 ⇒ 那就成了"再来一遍"，不是"放弃"（用户定的语义）',
+    ).toBe(false)
+    expect(clrBody.includes('stopPoll'), '没停轮询 ⇒ 清完缓存后轮询回来又会写成 scored').toBe(true)
+  })
+
+  it('⚠️ checking 态不给退（那一段已经在云里算了）', () => {
+    const at = SRC.indexOf('onRedo()')
+    const body = SRC.slice(at, SRC.indexOf('wx.showModal', at))
+    expect(body.includes("=== 'checking'"), 'checking 没有早退 ⇒ 会给出一个退不掉的按钮').toBe(true)
+  })
 })
