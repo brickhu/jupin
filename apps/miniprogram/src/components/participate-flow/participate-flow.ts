@@ -551,8 +551,24 @@ Component({
       wx.navigateTo({ url: '/pages/me/energy/energy' })
     },
 
+    /**
+     * ⭐⭐ **能量面板点「确认」** —— 先切 `checking`，再做上传。
+     *
+     * ⚠️⚠️ 上传是**几秒级**的动作（音频要进对象存储），而 `checking` 才是"这一把已经在路上"
+     *    该有的样子。原来是在 `submit()` 里等"上传 + 受理"都回来了才 `restore()`
+     *    ⇒ 那几秒卡片**还停在 `recoded`**：界面上什么都不像在处理，
+     *    而 **✓ 还在**（用户可以再点一次 ⇒ 重复提交同一段音频）。
+     *    ⚠️ 切成 `checking` 之后那颗 ✓ 就不再渲染（设计稿里 `checking` 是「试听 + 转圈」）
+     *      ⇒ **重复提交在结构上就不可能发生**，不用再加一把锁。
+     */
     async onEnergyConfirm() {
       this.setData({ energyVisible: false })
+      /** ⚠️ 没有可提交的东西就什么都别切（否则会永远停在转圈上） */
+      const cache = this.data.scratch.cache
+      if (this.data.articleId && cache && cache.audioPath) {
+        this.setData({ state: 'checking' })
+        this.emitState('checking', null)
+      }
       await this.submit()
     },
 
@@ -583,6 +599,13 @@ Component({
         this.restore()
         if (res.status !== 'scored') this.startPoll()
       } catch (err) {
+        /**
+         * ⚠️⚠️ **失败要退回 `recoded`** —— 进来时已经把状态切到 `checking` 了（见 onEnergyConfirm），
+         *    不退回就会**永远停在转圈上**，而那段录音明明还在本地。
+         *    `restore()` 按缓存重拼：有 `audioPath`、没有 `submissionId` ⇒ `recoded` ✅
+         *    （用户可以再点一次 ✓ 重试，不必重录）。
+         */
+        this.restore()
         this.showNotice((err as Error).message || '提交失败，请重试')
       }
     },

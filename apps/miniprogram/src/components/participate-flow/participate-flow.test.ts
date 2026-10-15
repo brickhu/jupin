@@ -259,4 +259,40 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     expect(/\{\{score\}\}/.test(wxml), 'wxml 里又直接画 {{score}} 了 ⇒ 浮点会原样显示').toBe(false)
     expect(wxml.includes('{{scoreText}}'), 'wxml 没走格式化后的文本').toBe(true)
   })
+
+  /**
+   * ⭐⭐ **点能量面板的「确认」⇒ 立刻切 `checking`，不许等上传**（用户 2026-10-15 报的）。
+   *
+   * ⚠️⚠️ 上传是**几秒级**的（音频进对象存储）。原来是在 `submit()` 里等"上传 + 受理"
+   *    都回来了才切状态 ⇒ 那几秒卡片**还停在 `recoded`**：不像在处理，
+   *    而且 **✓ 还在** ⇒ 用户可以再点一次 = **重复提交同一段音频**。
+   *    ⭐ 切成 `checking` 之后那颗 ✓ 不再渲染（设计稿：`checking` = 试听 + 转圈）
+   *      ⇒ 重复提交**结构上**就不可能，不需要另加锁。
+   */
+  it('⭐⭐ 确认能量后立刻切 checking（在调 submit 之前）', () => {
+    const i = SRC.indexOf('async onEnergyConfirm()')
+    expect(i, '找不到 onEnergyConfirm').toBeGreaterThan(-1)
+    /**
+     * ⚠️⚠️ **取方法体要按同缩进的结尾 `},` 收**，不能 `slice(i, indexOf('async submit()'))` ——
+     *    `submit()` 在文件里排在 `onEnergyConfirm()` **前面**，那个 indexOf 会命中**别处**
+     *    （或 -1 ⇒ 一路切到文件尾）⇒ 守门恒过（我第一版就是这样，注入验证时才发现）。
+     */
+    const body = SRC.slice(i, SRC.indexOf('\n    },', i))
+    const setChecking = body.indexOf("state: 'checking'")
+    const callSubmit = body.indexOf('await this.submit()')
+    expect(setChecking, '没先切 checking').toBeGreaterThan(-1)
+    expect(callSubmit).toBeGreaterThan(-1)
+    expect(setChecking, '还是等 submit 回来才切 ⇒ 上传那几秒会停在 recoded（✓ 还在）').toBeLessThan(callSubmit)
+  })
+
+  it('⭐⭐ 提交失败必须退回（否则永远停在转圈上，而录音还在本地）', () => {
+    const i = SRC.indexOf('async submit()')
+    const body = SRC.slice(i, SRC.indexOf('\n    },\n', i))
+    const at = body.indexOf('} catch (err)')
+    expect(at, 'submit 没有 catch？').toBeGreaterThan(-1)
+    expect(
+      body.slice(at).includes('this.restore()'),
+      '失败没退回 ⇒ 状态留在 checking，用户看不到"可以重试"',
+    ).toBe(true)
+  })
 })
