@@ -353,6 +353,10 @@ export const ParticipationRecordSchema = z
       .string()
       .nullable()
       .openapi({ description: '这一句上"我最好那一把"的 AI 锐评（40–70 字；没有就是 null）' }),
+    bestTag: z
+      .string()
+      .nullable()
+      .openapi({ description: '同一次调用产出的海报标签（≤4 字）；缺失就是 null' }),
   })
   .openapi('ParticipationRecord')
 

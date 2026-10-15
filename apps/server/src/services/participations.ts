@@ -470,6 +470,8 @@ export interface ParticipationRecordSource {
    * ⚠️ 拿不到（没配密钥 / 模型失败 / 老数据）就是 null ⇒ 端侧**整块不渲染**。
    */
   bestComment?: string | null
+  /** ⭐ 海报标签（≤4 字；分享卡用，缺了不影响锐评） */
+  bestTag?: string | null
   // ── ⭐⭐ 竞技档案（2026-10-15，见 prd §7.2）────────────────────────────
   /** 被采纳那一份的五维明细（JSON 文本） */
   scoreParts?: string | null
@@ -544,6 +546,8 @@ export function toParticipationRecord(
      * ⚠️ null = 没有（没配密钥 / 模型失败 / 老数据 / 那次没生成）⇒ 端侧整块不渲染。
      */
     bestComment: row.bestComment ?? null,
+    /** ⭐ 海报标签（≤4 字）—— 与 bestComment 同源同一次调用；没有就不显示 */
+    bestTag: row.bestTag ?? null,
   }
 }
 
@@ -676,6 +680,8 @@ export async function participationRecordById(
       theme: articles.theme,
       /** ⭐ 战绩那把的锐评（见 ParticipationRecordSource.bestComment） */
       bestComment: submissions.aiComment,
+      /** ⭐ 海报标签（≤4 字；同样的两份数据，见 bestComment） */
+      bestTag: submissions.aiTag,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))
@@ -724,6 +730,8 @@ export async function participationRecordOf(
       theme: articles.theme,
       /** ⭐ 战绩那把的锐评（见 ParticipationRecordSource.bestComment） */
       bestComment: submissions.aiComment,
+      /** ⭐ 海报标签（≤4 字；同样的两份数据，见 bestComment） */
+      bestTag: submissions.aiTag,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))

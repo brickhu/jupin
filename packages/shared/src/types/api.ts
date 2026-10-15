@@ -1374,6 +1374,12 @@ export interface ParticipationRecord {
    * ⚠️ 拿不到（没配密钥 / 模型失败 / 老数据）就是 **null** ⇒ 端侧**整块不渲染**。
    */
   bestComment: string | null
+  /**
+   * ⭐ **海报标签**（≤4 字）—— 分享卡上的大字（"气场全无"/"Siri 附体"）。
+   * ⚠️ 与 `bestComment` 是**同一次模型调用**的两半；JSON 里没有 `tag` 时它是 null
+   *    （标签缺失**不影响**锐评）。
+   */
+  bestTag: string | null
 }
 
 export interface ParticipationsResponse {

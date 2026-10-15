@@ -300,6 +300,8 @@ void previousBest
          *    讯飞自己的反馈报告已经很全面（用户 2026-10-15），我们再说一遍是同一件事两处。
          */
         aiComment: coach?.comment ?? null,
+        /** ⭐ 海报标签（≤4 字）—— 分享卡用；缺了不影响锐评 */
+        aiTag: coach?.tag || null,
         // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
         scoreParts: breakdown ? JSON.stringify(breakdown) : null,
         scoredAt: new Date(),

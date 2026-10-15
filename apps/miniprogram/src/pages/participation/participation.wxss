@@ -31,3 +31,16 @@
   display: flex;
   align-items: baseline;
 }
+
+/*
+ * ⭐ 海报标签（≤4 字）—— 分享卡上那句大字，档案页先当一个小胶囊用。
+ * ⚠️ 浅橙底 + 主题色字，与出分面板那五个色块同一套观感（「.sp-part」 那个 #fbe5ce）。
+ */
+.pt-tag {
+  font-size: 22rpx;
+  line-height: 1;
+  padding: 8rpx 14rpx;
+  border-radius: 9999rpx;
+  background: #fbe5ce;
+  color: var(--tk-primary, #2b142c);
+}

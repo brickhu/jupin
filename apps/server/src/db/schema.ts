@@ -651,6 +651,12 @@ export const submissions = mysqlTable('submissions', {
    */
   aiComment: varchar('ai_comment', { length: 200 }),
   /**
+   * ⭐ **海报标签**（≤4 字）—— 分享卡上的大字（"气场全无"/"Siri 附体"/"硅谷 VP"）。
+   * ⚠️ 与 `ai_comment` 同一次模型调用产出；**缺失是正常的**（模型没给就用不上，不影响锐评）。
+   * ⚠️ 它只用于**展示**，不进任何结算。
+   */
+  aiTag: varchar('ai_tag', { length: 16 }),
+  /**
    * ⭐ 我们自己那套打分的**分项明细**（JSON：五个分项 + 触发过的门槛）。
    *
    * ⚠️ 为什么必须落库、不能现算：

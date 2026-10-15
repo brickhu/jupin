@@ -491,6 +491,13 @@
       "when": 1792069484527,
       "tag": "0070_robust_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "5",
+      "when": 1792080261697,
+      "tag": "0071_dashing_marvel_zombies",
+      "breakpoints": true
     }
   ]
 }

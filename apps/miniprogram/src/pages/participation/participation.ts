@@ -61,6 +61,8 @@ interface ParticipationView {
    * ⚠️ 与 `summary` 是两件事（一句话的点评 vs 这段练习的画像）。
    */
   remark: string
+  /** ⭐ 海报标签（≤4 字；空串 = 没有，那就不显示） */
+  tag: string
   summary: string
   /** ⭐ 总结的状态：pending 生成中 / failed 没生成出来（两者都要说清，别让空白自己解释） */
   summaryState: string
@@ -116,6 +118,8 @@ function toView(r: ParticipationRecord): ParticipationView {
      *    总结是"这段练习的整体画像"（逐轮更新）。
      */
     remark: (r.bestComment ?? '').trim(),
+    /** ⭐ 海报标签（≤4 字）—— 与 remark 同一次调用产出；空串 = 没有 */
+    tag: (r.bestTag ?? '').trim(),
     summary: (r.aiSummary ?? '').trim(),
     summaryState: r.summaryState ?? '',
   }

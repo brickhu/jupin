@@ -130,4 +130,51 @@ describe('AI 锐评', () => {
     /** ⭐ 别一刀切：真机实测"歇了四回"（longGapCount=4）比"停顿较多"生动得多 */
     expect(CODE.includes('事实计数可以说'), '把有用的正确计数也一起禁了').toBe(true)
   })
+
+  /**
+   * ⭐⭐ **海报标签**（`tag`）—— 用户 2026-10-15 起用的"人设版"提示词里新增的那一半。
+   */
+  it('⭐⭐ tag：超长要**丢掉**，不许截断成残词', () => {
+    /** 5 个字要留（真机实测模型会写"辞职式宣言""摸鱼式宣读"—— 这类标签截断就废） */
+    const five = parseCoachReply(JSON.stringify({ comment: GOOD, tag: '辞职式宣言' }))
+    expect(five?.tag, '5 个字的标签被砍了').toBe('辞职式宣言')
+    /** 7 个字（超上限）⇒ 整个丢掉，而不是截成 6 个字的残词 */
+    const long = parseCoachReply(JSON.stringify({ comment: GOOD, tag: '一二三四五六七' }))
+    expect(long?.tag, '超长标签被截成了残词（不成词比没有更糟）').toBe('')
+  })
+
+  it('⭐ tag 缺失不算失败（它只是锦上添花）', () => {
+    expect(parseCoachReply(JSON.stringify({ comment: GOOD }))?.comment).toBe(GOOD)
+  })
+
+  it('⭐⭐ 中文旁边的半角标点要归一（真机实测漏过 , 和 ;）', () => {
+    const r = parseCoachReply(
+      JSON.stringify({ comment: '前半句稳得像摸鱼老手,谈薪桌上稳坐泰山;可 subtle 一开口就露怯,谈崩了。' }),
+    )
+    expect(r?.comment.includes('手，谈'), '中文后面的半角逗号没归一').toBe(true)
+    expect(r?.comment.includes('泰山；可'), '中文后面的半角分号没归一').toBe(true)
+  })
+
+  /**
+   * ⭐⭐ **人设**（用户 2026-10-15 把一份「毒舌 VP」人设并了进来）。
+   *
+   * ⚠️⚠️ 最重要的一条是**人设里不许出现"打分/给饼干"** ——
+   *    真机实测反例：那份外部人设把饼干规则复述成「总分 ≥ 85 就给」，
+   *    而我们的真实规则是「**严格大于** max(攻克线, 我在这句上的历史最高)」且金额由难度×击败比例决定
+   *    （见 shared/cookies.ts）。**规则一旦交给模型复述，必然写错。**
+   */
+  it('⭐⭐ 人设要够丰满（职场梗 + 分档语气 + 边界）', () => {
+    expect(CODE.includes('SYSTEM_PERSONA'), '没有独立的人设（system 提示词）').toBe(true)
+    for (const k of ['毒舌 VP', '职场梗库', '语气随分数走', '绝不损人']) {
+      expect(CODE.includes(k), '人设里少了：' + k).toBe(true)
+    }
+  })
+
+  it('⭐⭐ 人设里**不许**出现打分/发饼干（结算归代码，不归模型）', () => {
+    const persona = CODE.slice(CODE.indexOf('const SYSTEM_PERSONA'), CODE.indexOf('/**', CODE.indexOf('const SYSTEM_PERSONA')))
+    for (const bad of ['cookie_awarded', 'total_score', 'energy_score', 'giveCookie']) {
+      expect(persona.includes(bad), '人设里混进了结算字段：' + bad + ' ⇒ 模型会复述错规则').toBe(false)
+    }
+    expect(CODE.includes('cookieAwardOf'), '人设区提到了饼干的真实实现？那条规则归 shared/cookies.ts').toBe(false)
+  })
 })

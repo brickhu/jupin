@@ -28,4 +28,13 @@ describe('竞技档案页的 AI 锐评', () => {
     expect(WXML.includes('AI 锐评')).toBe(true)
     expect(WXML.includes('AI 教练的总结'), '把总结删了？那是另一件事').toBe(true)
   })
+
+  /**
+   * ⭐ **海报标签**（≤6 字）—— 与锐评同一次调用产出的另一半（用户 2026-10-15）。
+   */
+  it('⭐⭐ 标签也要显示（且没有标签时不留空位）', () => {
+    expect(WXML.includes('{{view.tag}}'), '标签没画出来').toBe(true)
+    expect(WXML.includes('wx:if="{{view.tag}}"'), '没有标签时会留一个空胶囊').toBe(true)
+    expect(TS.includes('r.bestTag'), '没从参与记录取 bestTag').toBe(true)
+  })
 })

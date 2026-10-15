@@ -87,7 +87,11 @@
       ⚠️ 空串 = 没生成（没配大模型 / 那次调用失败 / 老数据）⇒ **整块不渲染**，不留空框。
     -->
     <view class="card p-4 mt-3" wx:if="{{view.remark}}">
-      <text class="text-26rpx font-semibold text-page-on">AI 锐评</text>
+      <view class="flex items-center">
+        <text class="text-26rpx font-semibold text-page-on">AI 锐评</text>
+        <!-- ⭐ 海报标签（≤4 字）—— 分享卡上的那句大字，先摆在这里 -->
+        <text wx:if="{{view.tag}}" class="pt-tag ml-auto">{{view.tag}}</text>
+      </view>
       <text class="text-22rpx text-page-on_50 block mt-1">战绩那把的批语</text>
       <text class="text-28rpx text-page-on leading-[44rpx] block mt-2">{{view.remark}}</text>
     </view>

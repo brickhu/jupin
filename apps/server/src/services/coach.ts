@@ -63,6 +63,11 @@ export interface CoachFacts {
  */
 export interface CoachFeedback {
   comment: string
+  /**
+   * ⭐ **海报标签**（≤4 字）—— 一个能当大字标题的短标签（"气场全无"/"Siri 附体"/"硅谷 VP"）。
+   * ⚠️ 它**只用于展示**（分享卡 / 档案页），不进任何结算。
+   */
+  tag: string
 }
 
 /**
@@ -75,6 +80,14 @@ export interface CoachFeedback {
 const COMMENT_MIN = 24
 const COMMENT_MAX = 70
 
+/**
+ * 海报标签最多几个字。
+ * ⚠️ **6** 而不是 4：真机实测里模型会写出 5 个字的标签（"辞职式朗读""摸鱼式宣读"）——
+ *    而这类标签**截断就废**（"摸鱼式宣"不成词）。上限放宽到 6，超了就**整个丢掉**
+ *    （见 parseCoachReply：宁可没有标签，也不要一个残词当海报大字）。
+ */
+const TAG_MAX = 6
+
 function dpText(dp: string): string {
   const m: Record<string, string> = {
     omission: '漏读',
@@ -84,6 +97,50 @@ function dpText(dp: string): string {
   }
   return m[dp] ?? dp
 }
+
+/**
+ * ⭐⭐ **裁判的人设**（system 提示词）。
+ *
+ * ⚠️⚠️ 为什么人设写这么长、而且单独放 system：
+ *    · 它是**固定的**，每次请求都一字不变（可被缓存 ✅），而"这一把的事实"放在 user 里 ✅；
+ *    · ⭐ "职场梗 + 分档语气 + 海报标签"这类**风格要求**靠一句"要幽默"是出不来的 ——
+ *      人设里有**梗库**和**例句**，模型才会真的往那个方向写（真机实测：有示例就有味道 ✅）。
+ *
+ * ⚠️⚠️ **人设里不许出现"打分/给饼干"** —— 那是结算，归代码（见下面那段说明）：
+ *    分数由引擎 + 我们的判据算（`scoreSentence`），饼干由 `cookieAwardOf` 算。
+ *    让模型复述规则，它必然写错（真实反例：它把"要超过 max(攻克线, 我的历史最高) 且严格大于"
+ *    复述成"总分 ≥ 85 就给饼干"）。
+ */
+const SYSTEM_PERSONA = [
+  '你叫「句拼 AI 裁判」（代号：毒舌 VP）—— 一位懂职场梗、嘴毒心善的顶级口语与声场教练。',
+  '你的工作：给职场人朗读【高燃职场金句】的表现写一句**犀利、幽默、一针见血**的锐评。',
+  '',
+  '## 你在追求什么',
+  '1. 摒弃教学软件那种死板评语，用「职场梗 + 自嘲 + 精准痛点」给用户**情绪爽感**；',
+  '2. 挖的是**气场与情绪张力**，不只是"发音准不准"；',
+  '3. 让用户忍不住截图发出去、或者忍不住再读一次。',
+  '',
+  '## 你会看重什么（按证据说，不要泛泛而谈）',
+  '· **气场与能量**：是"要打退老板"还是"在给 HR 写辞职信"；',
+  '· **语速与停顿**：是"自信的掌控感"还是"结巴/气若游丝的犹豫感"；',
+  '· **发音与连读**：吞音、机械播音腔、硬套音标的痕迹。',
+  '',
+  '## 职场梗库（挑顺手的用，别硬塞）',
+  'PPT · 摸鱼 · 画饼 · 周报 · OKR · 对齐 · 复盘 · 降本增效 · 工位 · 打卡 · 离职 · 谈薪 · 面试 · 老板 · HR · 996',
+  '',
+  '## 语气随分数走',
+  '· 高分（≥85）：**疯狂夸夸 / 反差惊艳** —— "被震碎"的爽感，给他最高规格的职场地位；',
+  '· 中分（60–84）：**职场老油条 / 精准吐槽** —— 点"标准但没魂"的播音腔，或"就差一点"；',
+  '· 低分（<60）：**毒舌直给** —— 吐槽气场全无、软绵绵像在摸鱼；也可以先给个台阶，你判断哪种更像人话。',
+  '',
+  '## ⚠️⚠️ 边界（越界即废）',
+  '· 损**这一遍的发挥**（发音 / 节奏 / 气势 / 状态 / 读法），**绝不损人**（能力、智商、外貌、口音出身）；',
+  '· 不许低俗、不许煽动对抗（"打退老板"可以说，但不能写成真的去伤害谁）；',
+  '· 不许编造上面没给的错误；**不许出现任何分数、百分比、名次**（你看不到榜单；编一个错的比不说更糟）；',
+  '· 不许"继续加油""已经很棒了"这种正能量套话 —— 那不是锐评，是敷衍。',
+  '',
+  '只输出 JSON。',
+].join('\n')
 
 function buildPrompt(f: CoachFacts): string {
   const weak = f.weakWords
@@ -120,7 +177,7 @@ function buildPrompt(f: CoachFacts): string {
     ...lines,
     '',
     '请基于以上数据输出 JSON（不要多余文字）：',
-    '{"comment": "一条 40-' + COMMENT_MAX + ' 字的锐评"}',
+    '{"comment": "一条 40-' + COMMENT_MAX + ' 字的锐评", "tag": "不超过 4 个字的标签"}',
     '',
     '要求：',
     '1. comment 是一条**锐评**：像懂行的朋友在群里点评 —— ⭐⭐ **必须幽默、有梗、有画面**，**可以毒舌**（用户 2026-10-15：「关键是要写到幽默有趣，甚至可以毒舌」）；',
@@ -144,7 +201,9 @@ function buildPrompt(f: CoachFacts): string {
     '   · ⭐ 但**上面给的事实计数可以说**（"歇了四回""这个词卡了两次"）—— 前提是**数字必须对**、且确实来自上面那几行；',
     '     ⚠️ 它们比"停顿较多"生动得多，但**编一个数就全毁了**。',
     '8. ⚠️⚠️ **毒舌的边界**：损**这一遍的发挥**（发音、节奏、气势、状态）—— 不许损**人**（能力、智商、外貌、口音出身），不许让读者觉得"我不行"；',
-    '9. ⚠️ **不要正能量套话**（"继续加油""已经很棒了"）—— 那种话不是锐评，是敷衍。',
+    '9. ⭐ **tag**：一个标签，像海报上的大字（例：气场全无 / Siri 附体 / 硅谷 VP / 辞职式朗读 / 全场最佳）；' +
+      '**不超过 ' + TAG_MAX + ' 个字**，不带标点、不带引号（超了就干脆别给这个字段）；',
+    '10. ⚠️ **不要正能量套话**（"继续加油""已经很棒了"）—— 那种话不是锐评，是敷衍。',
     '',
     '⭐ **风格示例**（只学时态与狠劲，**内容要换成这次的证据**）：',
     '· 高分：「这一句连读绝了，有硅谷高管内味儿，全场MVP！唯一的缺点就是 accept 吞音了，气势弱了半截。」',
@@ -166,9 +225,9 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
   const start = raw.indexOf('{')
   const end = raw.lastIndexOf('}')
   if (start < 0 || end <= start) return null
-  let obj: { comment?: unknown }
+  let obj: { comment?: unknown; tag?: unknown }
   try {
-    obj = JSON.parse(raw.slice(start, end + 1)) as { comment?: unknown }
+    obj = JSON.parse(raw.slice(start, end + 1)) as { comment?: unknown; tag?: unknown }
   } catch {
     return null
   }
@@ -176,7 +235,20 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
    * ⚠️ 净化：**标点留着**（锐评本来就要感叹号），只去掉包裹用的引号与换行。
    *    ⚠️ **标点必须留着**：锐评本来就要感叹号；把句读一律删掉会把它削成电报体。
    */
-  const cleaned = String(obj.comment ?? '')
+  /**
+   * ⚠️ **中文旁边的半角标点要归一**：真机实测出现过
+   *    「前半句flow稳得像摸鱼老手**,**谈薪桌上稳坐泰山**;**可 subtle…」——
+   *    模型在中英混排时会漏出半角。判据是"**紧挨着中文字**"（英文词之间的逗号不用动）。
+   */
+  const normalizePunct = (v: string) =>
+    v
+      .replace(/([\u4e00-\u9fa5])\s*,/g, '$1，')
+      .replace(/([\u4e00-\u9fa5])\s*;/g, '$1；')
+      .replace(/([\u4e00-\u9fa5])\s*:/g, '$1：')
+      .replace(/([\u4e00-\u9fa5])\s*!/g, '$1！')
+      .replace(/([\u4e00-\u9fa5])\s*\?/g, '$1？')
+
+  const cleaned = normalizePunct(String(obj.comment ?? ''))
     /**
      * ⚠️⚠️ **内部的引号也要清**（不只是首尾）：真机实测出现过
      *    「Actions」的 æ 被你读成了打嗝」—— 模型把示例里的「」学进了正文，
@@ -188,6 +260,18 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
   if (cleaned.length < COMMENT_MIN) return null
 
   /**
+   * ⭐ **海报标签**（≤4 字）—— 净化规则同锐评，另外：
+   * ⚠️ 它**缺失不算失败**：标签只是"锦上添花"，没有它锐评照样能用
+   *    （为它整条作废等于让一个可选字段把主内容顶掉）。
+   */
+  const rawTag = String(obj.tag ?? '').replace(/[「」『』“”"'、，。！？；：,.!?;:\s]/g, '')
+  /**
+   * ⚠️⚠️ **超长就丢掉，不截断** —— 真机实测：模型写"摸鱼式宣读"（5 字），
+   *    截成 4 字得到"摸鱼式宣"，不成词，比没有更糟（与"锐评不能切在半句上"同一条道理）。
+   */
+  const tag = rawTag.length <= TAG_MAX ? rawTag : ''
+
+  /**
    * ⚠️⚠️ **超长要在句子边界收，不能从词中间切断**。
    *
    *    真机实测（2026-10-15，用真模型跑三条）：模型经常写到 ~100 字，
@@ -195,7 +279,7 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
    *    锐评最值钱的就是最后那个包袱，切在那儿比不写还糟。
    *    ⇒ 先在边界（。！？；，）里找**最靠后的那个**，从那儿收；实在没有才硬切。
    */
-  if (cleaned.length <= COMMENT_MAX) return { comment: cleaned }
+  if (cleaned.length <= COMMENT_MAX) return { comment: cleaned, tag }
   const head = cleaned.slice(0, COMMENT_MAX)
 
   /**
@@ -212,7 +296,7 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
 
   /** ⚠️ 边界太靠前（<下限）也不收 —— 那等于把话说没了，宁可硬切 */
   const comment = cut + 1 >= COMMENT_MIN ? head.slice(0, cut + 1) : head
-  return { comment }
+  return { comment, tag }
 }
 
 export interface LlmConfig {
@@ -338,7 +422,7 @@ export async function generateCoachFeedback(
    */
   const text = await callLlm(
     cfg,
-    '你是一个毒舌但懂行的英文朗读陪练：点评要短、要狠、要好笑，但永远只损"这一遍的发挥"、不损人。只输出 JSON。',
+    SYSTEM_PERSONA,
     buildPrompt(facts),
     {
       json: true,
