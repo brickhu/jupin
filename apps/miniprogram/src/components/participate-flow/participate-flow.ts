@@ -225,8 +225,11 @@ Component({
     onRedo() {
       const articleId = this.data.articleId
       if (!articleId) return
-      /** ⚠️ `checking` 不给退：那一段已经交上去在云里算了（稿里那颗 ↺ 正是禁用态 0.2） */
-      if (this.data.state === 'checking') return
+      /**
+       * ⚠️ `↺` 只在 `recoded` 出现（见 btn-record），但这里是**流程自己的不变量**：
+       *    `checking` 那一段已经交上去在云里算了，丢弃它没有意义 —— 谁调都不许。
+       */
+      if (this.data.state !== 'recoded') return
 
       wx.showModal({
         title: '抹除录音',

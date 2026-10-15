@@ -121,4 +121,43 @@ describe('生成的图标样式（src/icons.wxss）', () => {
     // 没写别名的照旧是"冒号后面那一段"
     expect(mod.iconClassOf('mdi:chevron-right')).toBe('ui-icon-chevron-right')
   })
+
+  /**
+   * ⭐⭐ 守的是**「写进 WXML 的名字」必须是 iconify 原名**（2026-10-15 加）。
+   *
+   * ⚠️⚠️ `<ui-icon name="…">` / `<ui-button icon="…">` 的入参是 **iconify 名**
+   *    （`material-symbols:undo`），由 `isIconName()` 校验、`iconClassOf()` 转类名。
+   *    写成**类名/别名**（`ms-undo`）会怎样：`isIconName` 判否 ⇒ **图标静默不画**，
+   *    只留一块空白，控制台之外没有任何报错（这个仓库栽过好几次）。
+   *    ⚠️ 别名（`as: 'ms-undo'`）只存在于 **CSS 类名**那一侧，不是 WXML 的入参。
+   */
+  it('⭐⭐ WXML 里的图标入参都是 iconify 原名（不是类名/别名）', async () => {
+    const { ICON_NAMES } = (await import('./lib/icon-names')) as { ICON_NAMES: readonly string[] }
+    const known = new Set(ICON_NAMES)
+    const { readdirSync, statSync, readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const n of readdirSync(dir)) {
+        const p = join(dir, n)
+        if (statSync(p).isDirectory()) walk(p)
+        else if (p.endsWith('.wxml')) files.push(p)
+      }
+    }
+    walk(HERE + 'components')
+    walk(HERE + 'pages')
+
+    const bad: string[] = []
+    for (const f of files) {
+      const src = readFileSync(f, 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+      for (const m of src.matchAll(/<(ui-icon|ui-button)[^>]*?\b(name|icon)="([^"]+)"/g)) {
+        const v = m[3] as string
+        if (v.includes('{{')) continue
+        if (!v.includes(':')) bad.push(f.slice(HERE.length) + ' → ' + v + '（缺集合前缀）')
+        else if (!known.has(v)) bad.push(f.slice(HERE.length) + ' → ' + v + '（不在名单里）')
+      }
+    }
+    expect(bad, '这些图标名真机上画不出来（只有一块空白）：').toEqual([])
+  })
 })

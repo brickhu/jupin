@@ -103,10 +103,13 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     expect(clrBody.includes('stopPoll'), '没停轮询 ⇒ 清完缓存后轮询回来又会写成 scored').toBe(true)
   })
 
-  it('⚠️ checking 态不给退（那一段已经在云里算了）', () => {
+  it('⚠️ `↺` 只在 recoded 态成立（其余态一律早退）', () => {
     const at = SRC.indexOf('onRedo()')
     const body = SRC.slice(at, SRC.indexOf('wx.showModal', at))
-    expect(body.includes("=== 'checking'"), 'checking 没有早退 ⇒ 会给出一个退不掉的按钮').toBe(true)
+    expect(
+      body.includes("!== 'recoded'"),
+      '没有"只认 recoded"的早退 ⇒ checking/scored 也能把已提交的那一把丢掉',
+    ).toBe(true)
   })
 
   /**
