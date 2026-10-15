@@ -231,6 +231,12 @@ export async function runScoring(submissionId: string): Promise<void> {
             score,
             parts: breakdown,
             refText: await loadArticleRefText(article.id),
+            /**
+             * ⭐ **句子语境**（2026-10-15 加）：锐评要"有内味儿"就得知道这句在说什么，
+             *    否则模型只能干巴巴复述分数与错误（"发音准确 82 分"）。
+             */
+            translation: article.translation,
+            tags: article.tags ?? [],
             weakWords: [...words]
               .sort((a, b) => a.score - b.score)
               .slice(0, 3)
@@ -291,8 +297,12 @@ void previousBest
         wordScores: result.words ? JSON.stringify(result.words) : null,
         dimensions: result.dimensions ? JSON.stringify(result.dimensions) : null,
         // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
+        /**
+         * ⭐⭐ **AI 锐评**（prd §7.2b）—— 40–70 字、有观点有画面的那一条。
+         * ⚠️ 只有这一个字段：原来的 `ai_advice`（2-3 句练法）已删 ——
+         *    讯飞自己的反馈报告已经很全面（用户 2026-10-15），我们再说一遍是同一件事两处。
+         */
         aiComment: coach?.comment ?? null,
-        aiAdvice: coach?.advice ?? null,
         // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
         scoreParts: breakdown ? JSON.stringify(breakdown) : null,
         scoredAt: new Date(),

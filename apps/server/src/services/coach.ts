@@ -24,6 +24,14 @@ export interface CoachFacts {
   parts: { prosody: number; weakness: number; accuracy: number; fluency: number; completeness: number }
   /** 参考文本（让模型能指认「哪个词」） */
   refText: string
+  /**
+   * ⭐ **这句的语境**（2026-10-15 加）—— 锐评要"有内味儿"就得知道这句在说什么。
+   * ⚠️ 没有它，模型只能干巴巴地复述分数与错误（"发音准确 82 分"），
+   *    而写不出"有硅谷高管内味儿"那种话（用户给的例子就是这么来的）。
+   */
+  translation?: string | null
+  /** 标签（如 职场 / 科技）—— 同上，给"味道"提供依据 */
+  tags?: string[]
   /** 读得最差的几个词 */
   weakWords: { word: string; score: number; dp?: string }[]
   /** 读错的音素（gwpp 明显为负），已去重 */
@@ -36,13 +44,24 @@ export interface CoachFacts {
   gated: boolean
 }
 
+/**
+ * ⭐⭐ **AI 锐评**（用户 2026-10-15 重新定义）。
+ *
+ * 一条 40–70 字、**有观点有画面**的点评（例：「这一句连读绝了，有硅谷高管内味儿，全场MVP！
+ * 唯一的缺点就是 'accept' 吞音了，导致气势弱了半截。」）。
+ *
+ * ⚠️⚠️ **只有一段**：这里原来还有一个 `advice`（2-3 句练法）——
+ *    用户 2026-10-15：「advice 坦白说讯飞反馈的那个报告本身就很全面了」
+ *    ⇒ 我们再说一遍就是同一件事两处，那个字段连同生成一起删了。
+ * ⚠️ 它不是"评分报告"：分数与五维由结果面板自己画，锐评只负责**观点**。
+ */
 export interface CoachFeedback {
   comment: string
-  advice: string
 }
 
-/** 点评最多 8 个字 —— 长了就不是「短语」，展示位上会换行 */
-const COMMENT_MAX = 8
+/** 锐评的长度区间（汉字）—— 下限保证"有内容"，上限保证版位不爆（≈2 行） */
+const COMMENT_MIN = 40
+const COMMENT_MAX = 70
 
 function dpText(dp: string): string {
   const m: Record<string, string> = {
@@ -60,6 +79,8 @@ function buildPrompt(f: CoachFacts): string {
     .join('、')
   const lines = [
     '参考文本：' + f.refText,
+    f.translation ? '译文（这句在说什么）：' + f.translation : '',
+    f.tags && f.tags.length ? '标签：' + f.tags.join('、') : '',
     '总分：' + f.score + '/100',
     '分项（0-100）：韵律 ' + f.parts.prosody + '、发音短板 ' + f.parts.weakness + '、发音准确 ' + f.parts.accuracy + '、流利 ' + f.parts.fluency + '、完整 ' + f.parts.completeness,
     '读得最差的词：' + (weak || '（没有明显弱的词）'),
@@ -69,17 +90,30 @@ function buildPrompt(f: CoachFacts): string {
     f.gated ? '注意：有词漏读或被读成别的词，分数已被封顶' : '',
   ].filter(Boolean)
 
+  /**
+   * ⚠️ 语气**跟分数走**（prd §7.2b）：高分吹爆 + 一个硬伤、中分肯定一处 + 点明短板、
+   *    低分先给台阶。不按分数走的话，40 分与 95 分会拿到同一种腔调 —— 那是模板不是锐评。
+   */
+  const tone =
+    f.score >= 85
+      ? '这一把很好：**先放开夸**（夸具体的表现，比如连读、节奏、气势），再点出**唯一的那个硬伤**。'
+      : f.score >= 60
+        ? '这一把中等：**先肯定确实做对的一处**，再点明**最拖后腿的那一个**问题。'
+        : '这一把偏弱：**先给个台阶**（别让人难堪），再用一个最该改的点收尾。'
+
   return [
     ...lines,
     '',
     '请基于以上数据输出 JSON（不要多余文字）：',
-    '{"comment": "4-8 个汉字的点评", "advice": "2-3 句提升建议"}',
+    '{"comment": "一条 40-70 字的锐评"}',
     '',
     '要求：',
-    '1. comment 必须是 4-8 个汉字，像一句评价（例：语调偏平、几个词卡壳、发音很稳），不带标点、不带引号；',
-    '2. advice 必须指名道姓：说清是哪个词、哪个音的问题，并给一个能马上照做的练法；',
-    '3. 不要客套话、不要「多加练习」这类空话，不要重复分数；',
-    '4. 只依据上面给的证据，不要编造没有提到的错误。',
+    '1. comment 是一条**锐评**：像懂行的朋友在群里点评，**有观点、有画面、好玩**（例：「这一句连读绝了，有硅谷高管内味儿，全场MVP！唯一的缺点就是 accept 吞音了，导致气势弱了半截」）；',
+    '2. ' + tone,
+    '3. ⭐ **用上这句本身的语境**（内容 / 译文 / 标签）来说它"是什么味儿" —— 但**不要**复述整句原文；',
+    '4. ⭐ **必须点名具体的词或音**（用上面给的证据），并说清**它毁了什么**（"吞音 ⇒ 气势弱半截"），不要只说"发音不准"；',
+    '5. 可以是 1-2 句、可以用感叹号，但**不要**用引号包裹整段、不要换行；',
+    '6. 不许：人身攻击、低俗、编造上面没提到的错误、"多加练习"这类空话、复述分数、**任何关于名次/全场排名的断言**（你看不到榜单，说了就是编）。',
   ].join('\n')
 }
 
@@ -93,18 +127,23 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
   const start = raw.indexOf('{')
   const end = raw.lastIndexOf('}')
   if (start < 0 || end <= start) return null
-  let obj: { comment?: unknown; advice?: unknown }
+  let obj: { comment?: unknown }
   try {
-    obj = JSON.parse(raw.slice(start, end + 1)) as { comment?: unknown; advice?: unknown }
+    obj = JSON.parse(raw.slice(start, end + 1)) as { comment?: unknown }
   } catch {
     return null
   }
+  /**
+   * ⚠️ 净化：**标点留着**（锐评本来就要感叹号），只去掉包裹用的引号与换行。
+   *    原来这里把 `。，！？` 全删了 —— 那是给"4-8 字短语"用的口径，锐评照那样会被削成电报体。
+   */
   const comment = String(obj.comment ?? '')
-    .replace(/[「」“”"'。，,.!！?？\s]/g, '')
+    .replace(/^[「『“"']+|[」』”"']+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
     .slice(0, COMMENT_MAX)
-  const advice = String(obj.advice ?? '').trim().slice(0, 220)
-  if (!comment || !advice) return null
-  return { comment, advice }
+  if (comment.length < COMMENT_MIN) return null
+  return { comment }
 }
 
 export interface LlmConfig {
@@ -139,6 +178,7 @@ export async function callLlm(
       body: JSON.stringify({
         model: cfg.model,
         temperature: opts.temperature ?? 0.4,
+        /** ⚠️ 锐评要个性 ⇒ 调用方传 0.8（见 generateCoachFeedback） */
         /**
          * ⚠️⚠️ 2000 不是随手写的：deepseek-v4-flash 这类**带推理**的模型，
          *    推理内容（reasoning_content）也吃 max_tokens。
@@ -191,7 +231,15 @@ export async function generateCoachFeedback(
   facts: CoachFacts,
   cfg: LlmConfig,
 ): Promise<CoachFeedback | null> {
-  const text = await callLlm(cfg, '你是英语朗读教练。只输出 JSON。', buildPrompt(facts))
+  /**
+   * ⚠️ 温度 **0.8**：锐评的价值在"有个性"，而 0.4 那档出来的是教科书腔
+   *    （"发音准确，但流利度有待提高"）—— 那种话用户不会想读第二遍。
+   *    仍然远低于 1.0，不至于胡说。
+   */
+  const text = await callLlm(cfg, '你是英语朗读教练，点评犀利、有画面感。只输出 JSON。', buildPrompt(facts), {
+    json: true,
+    temperature: 0.8,
+  })
   if (!text) return null
   const parsed = parseCoachReply(text)
   if (!parsed) console.warn('[coach] 返回没法解析，本次不给建议')

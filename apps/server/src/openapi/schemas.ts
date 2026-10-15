@@ -349,6 +349,10 @@ export const ParticipationRecordSchema = z
       .string()
       .nullable()
       .openapi({ description: '这一句上待确认的那份成绩单（放服务端 ⇒ 换设备也能看见）' }),
+    bestComment: z
+      .string()
+      .nullable()
+      .openapi({ description: '这一句上"我最好那一把"的 AI 锐评（40–70 字；没有就是 null）' }),
   })
   .openapi('ParticipationRecord')
 
@@ -532,7 +536,6 @@ export const SubmitResponseSchema = z
   .object({
     score: z.number(),
     aiComment: z.string().optional(),
-    aiAdvice: z.string().optional(),
     parts: ScorePartsSchema.optional(),
     text: z.string().optional(),
     durationMs: z.number().optional(),

@@ -44,6 +44,8 @@ import * as me from '../../lib/store'
  */
 Page({
   data: {
+    /** ⭐ 战绩那把的 AI 锐评（prd §7.2b）；空串 = 没有 ⇒ 整块不渲染 */
+    remark: '',
     /** 根节点要让开的上边距（px）—— 自定义导航栏是浮层，不占文档流（见 lib/nav.ts） */
     navTop: 0,
 
@@ -340,6 +342,12 @@ Page({
     const stats = statsOf(base.articleId)
 
     this.setData({
+      /**
+       * ⭐⭐ **战绩那把的 AI 锐评**（prd §7.2b）—— 这一块就放在句子卡下面。
+       * ⚠️ 空串 = 没有（没配密钥 / 模型失败 / 老数据）⇒ 端侧**整块不渲染**，
+       *    绝不显示一个空框（那看起来像坏了）。
+       */
+      remark: record?.bestComment ?? '',
       sentence: {
         ...base,
         joined: !!record,

@@ -132,9 +132,8 @@ export async function describe(
     // ⚠️ 老数据可能没有 scheduleDate（见 schema），那就干脆不给 —— 端侧退回今天
     ...(row.scheduleDate ? { scheduleDate: row.scheduleDate } : {}),
     words: row.wordScores ? (JSON.parse(row.wordScores) as WordScore[]) : undefined,
-    // ⭐ AI 教练的输出（拿不到就是 undefined —— 没配大模型 / 那次调用失败）
+    // ⭐ AI **锐评**（拿不到就是 undefined —— 没配大模型 / 那次调用失败；端侧整块不渲染）
     ...(row.aiComment ? { aiComment: row.aiComment } : {}),
-    ...(row.aiAdvice ? { aiAdvice: row.aiAdvice } : {}),
     // ⭐ 分项明细 —— 结果屏的「评分详情」显示它，而不是引擎那四维
     ...(row.scoreParts ? { parts: JSON.parse(row.scoreParts) as ScoreParts } : {}),
     // ⚠️ 维度也必须从库里读回来，否则轮询取到的结果里四维会不见

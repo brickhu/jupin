@@ -135,13 +135,13 @@ export interface SubmitResponse {
   /** 云端权威分 0–100 */
   score: number
   /**
-   * ⭐ AI 教练的 4–8 字点评（展示用）。
-   * ⚠️ 可能没有：没配大模型、或调用失败 —— 前端据此整块不渲染，
+   * ⭐⭐ **AI 锐评**（prd §7.2b）：40–70 字、有观点有画面的一条点评
+   *    （例：「这一句连读绝了，有硅谷高管内味儿…唯一的缺点就是 accept 吞音了」）。
+   * ⚠️ 可能没有：没配大模型、或调用失败 —— 端侧据此**整块不渲染**，
    *    而不是显示一个空框（见 services/coach.ts）。
+   * ⚠️ 它**不是**评分报告，也**不**给逐条练法（讯飞自己的反馈报告已经很全面）。
    */
   aiComment?: string
-  /** ⭐ AI 教练的提升建议（给用户自己看，会指名到具体的词/音） */
-  aiAdvice?: string
   /**
    * ⭐ **我们自己那套打分的分项明细** —— 结果页的「评分详情」显示的就是它。
    *
@@ -1231,7 +1231,7 @@ export interface ChallengeRecord {
   isConquered: boolean
   /** scoring / scored / failed */
   status: string
-  /** AI 的 4–8 字点评（有没有取决于当时配没配大模型） */
+  /** AI 锐评（40–70 字；有没有取决于当时配没配大模型 —— 见 prd §7.2b） */
   aiComment: string | null
   /** 句子原文 —— 列表里靠它认出「这是哪一句」 */
   text: string
@@ -1366,6 +1366,14 @@ export interface ParticipationRecord {
    *    派生出来则永远是对的（首句也对），而且跨设备照样看得见（状态在服务端）。
    */
   pendingSubmissionId: string | null
+  /**
+   * ⭐⭐ **这一句上"我最好那一把"的 AI 锐评**（prd §7.2b）。
+   *
+   * ⚠️ 取的是 `best_submission_id` 那条提交的 `ai_comment` = **战绩那把**的锐评，
+   *    竞技场页「我的参与」显示它（那一块讲的就是"我在这句上的战绩"）。
+   * ⚠️ 拿不到（没配密钥 / 模型失败 / 老数据）就是 **null** ⇒ 端侧**整块不渲染**。
+   */
+  bestComment: string | null
 }
 
 export interface ParticipationsResponse {

@@ -461,6 +461,13 @@ export interface ParticipationRecordSource {
    */
   articleText?: string | null
   theme: ArticleTheme | null
+  /**
+   * ⭐⭐ **这一句上"我最好那一把"的 AI 锐评**（prd §7.2b）。
+   * ⚠️ 取的是 `best_submission_id` 指向那条提交的 `ai_comment` —— 也就是**战绩那把**的锐评。
+   *    竞技场页「我的参与」显示它（这一块讲的就是"我在这句上的战绩"）。
+   * ⚠️ 拿不到（没配密钥 / 模型失败 / 老数据）就是 null ⇒ 端侧**整块不渲染**。
+   */
+  bestComment?: string | null
   // ── ⭐⭐ 竞技档案（2026-10-15，见 prd §7.2）────────────────────────────
   /** 被采纳那一份的五维明细（JSON 文本） */
   scoreParts?: string | null
@@ -530,6 +537,11 @@ export function toParticipationRecord(
     aiSummary: row.aiSummary ?? null,
     summaryState: (row.summaryState as ParticipationRecord['summaryState']) ?? null,
     pendingSubmissionId: row.pendingSubmissionId ?? null,
+    /**
+     * ⭐⭐ **战绩那把的 AI 锐评**（prd §7.2b）—— 竞技场页「我的参与」显示它。
+     * ⚠️ null = 没有（没配密钥 / 模型失败 / 老数据 / 那次没生成）⇒ 端侧整块不渲染。
+     */
+    bestComment: row.bestComment ?? null,
   }
 }
 
@@ -660,9 +672,13 @@ export async function participationRecordById(
       /** ⚠️ 只用于"词表快照为空"时的兜底原文（不落库，见 toParticipationRecord） */
       articleText: articles.text,
       theme: articles.theme,
+      /** ⭐ 战绩那把的锐评（见 ParticipationRecordSource.bestComment） */
+      bestComment: submissions.aiComment,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))
+    // ⚠️ leftJoin：老数据 / 没配密钥时 best_submission_id 指向的那条可能没有锐评
+    .leftJoin(submissions, eq(submissions.id, participations.bestSubmissionId))
     .where(eq(participations.id, participationId))
     .limit(1)
 
@@ -704,9 +720,12 @@ export async function participationRecordOf(
       /** ⚠️ 只用于"词表快照为空"时的兜底原文（不落库，见 toParticipationRecord） */
       articleText: articles.text,
       theme: articles.theme,
+      /** ⭐ 战绩那把的锐评（见 ParticipationRecordSource.bestComment） */
+      bestComment: submissions.aiComment,
     })
     .from(participations)
     .innerJoin(articles, eq(articles.id, participations.articleId))
+    .leftJoin(submissions, eq(submissions.id, participations.bestSubmissionId))
     // ⚠️ 必须同时限 userId 与 articleId（见 routes/participation-scope.test.ts）：
     //    只按 articleId 查会把**别人**的那一行当成"我的"
     .where(and(eq(participations.userId, userId), eq(participations.articleId, articleId)))

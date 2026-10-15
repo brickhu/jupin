@@ -99,6 +99,18 @@
        数据仍来自 GET /api/user/participation/{articleId}（写全局 store）。
        ⇒ 本页不再有第三张卡，别再把它加回来。 -->
 
+  <!-- ══ 块 ②.5 AI 锐评（prd §7.2b）═════════════════════════
+       ⭐ 每次提交都有一条 40–70 字的锐评；这里显示**这一句上我最好那一把**的
+          （= 战绩那把，与上面「我的参与」讲的是同一件事）。
+       ⚠️ 没有就**整块不渲染**（空框看起来像坏了）—— 判据是空串，不是"还没拉到"。 -->
+  <view wx:if="{{remark}}" class="card p-4 mt-3">
+    <view class="flex items-baseline mb-2">
+      <text class="text-24rpx text-page-on_50">AI 锐评</text>
+      <text class="text-22rpx text-page-on_50 ml-auto">我最强的那次</text>
+    </view>
+    <text class="text-28rpx leading-[44rpx] text-page-on block">{{remark}}</text>
+  </view>
+
   <!-- ══ 块 ③ 排行榜 ═════════════════════════════════════════
        ⚠️ 数据来自 GET /api/participations?articleId=&sort=score&limit=20（公开）。
           每行带服务端算的**全局名次** rank；"是不是我"由端侧拿 userId 比出来
