@@ -30,13 +30,31 @@ describe('AI 锐评', () => {
     expect(r?.comment.includes('！'), '标点被削掉了 —— 那是"4-8 字短语"时代的口径').toBe(true)
   })
 
-  it('⭐ 太短的不收（<40 字 = 模型又写成了一句短语）', () => {
+  it('⭐ 太短的不收（<24 字 = 模型又写成了一句碎片）', () => {
     expect(parseCoachReply(JSON.stringify({ comment: '发音很稳' }))).toBeNull()
   })
 
-  it('⭐ 超长的截到 70 字（版位只有两行）', () => {
-    const long = '好'.repeat(200)
-    expect(parseCoachReply(JSON.stringify({ comment: long }))?.comment.length).toBe(70)
+  it('⭐ 短俏皮话要收（比硬凑 40 字好听）', () => {
+    const short = 'accept 吞音、θ 也溜了，整句气势全泄，可惜了。'
+    expect(short.length).toBeGreaterThanOrEqual(24)
+    expect(parseCoachReply(JSON.stringify({ comment: short }))?.comment).toBe(short)
+  })
+
+  /**
+   * ⚠️⚠️ 这条是**真机实测**逼出来的（2026-10-15 用真模型跑三条样本）：
+   *    模型经常写到 ~100 字，硬 `slice(0,70)` 会切出「…主播念到关键处突」这种**半句话** ——
+   *    锐评最值钱的就是最后那个包袱，切在那儿比不写还糟。
+   */
+  it('⭐⭐ 超长在**句子边界**收，绝不从词中间切断', () => {
+    const long = '这一句连读绝了。可惜 accept 吞音了。'.repeat(6)
+    const got = parseCoachReply(JSON.stringify({ comment: long }))?.comment ?? ''
+    expect(got.length).toBeLessThanOrEqual(70)
+    expect(['。', '！', '？'].includes(got.slice(-1)), '结尾不是句末 ⇒ 收在了半句上（逗号收住的仍是半句）').toBe(true)
+  })
+
+  it('⚠️ 完全没边界可收（一长串无标点）时才硬切', () => {
+    const got = parseCoachReply(JSON.stringify({ comment: '好'.repeat(200) }))?.comment ?? ''
+    expect(got.length).toBe(70)
   })
 
   it('⚠️ 不合法 / 空一律 null（端侧整块不渲染，绝不影响成绩落库）', () => {
@@ -65,5 +83,26 @@ describe('AI 锐评', () => {
     for (const k of ['>= 85', '>= 60']) {
       expect(CODE.includes(k), '少了分数档 ' + k + ' ⇒ 40 分与 95 分会拿到同一种腔调').toBe(true)
     }
+  })
+
+  /**
+   * ⭐⭐ 守的是**风格**（用户 2026-10-15：「关键是要写到幽默有趣，甚至可以毒舌」）。
+   *
+   * ⚠️ 这类要求靠"说教"没用 —— 提示词里必须真的出现**风格示例**（few-shot 才是有效杠杆），
+   *    而"毒舌"必须有**边界**（只损这一遍的发挥，不损人），否则会变成人身攻击。
+   */
+  it('⭐⭐ 提示词要求幽默有梗、允许毒舌，且给了风格示例', () => {
+    expect(CODE.includes('幽默'), '没要求幽默').toBe(true)
+    expect(CODE.includes('毒舌'), '没允许毒舌').toBe(true)
+    expect(CODE.includes('风格示例'), '没有示例 —— 模型会退回教科书腔').toBe(true)
+  })
+
+  it('⭐⭐ 毒舌必须有边界：只损"这一遍的发挥"，不损人', () => {
+    expect(CODE.includes('毒舌的边界'), '没写边界').toBe(true)
+    expect(CODE.includes('不许损**人**'), '边界写得不明确（会滑向人身攻击）').toBe(true)
+  })
+
+  it('⭐ 明令禁止正能量套话（"继续加油"不是锐评）', () => {
+    expect(CODE.includes('正能量套话')).toBe(true)
   })
 })
