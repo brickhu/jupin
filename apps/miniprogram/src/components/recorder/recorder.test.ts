@@ -8,6 +8,7 @@ const TS = RAW.split('\n').filter((l) => {
   return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*')
 }).join('\n')
 const WXML = readFileSync(new URL('./recorder.wxml', import.meta.url), 'utf-8')
+const WXSS = readFileSync(new URL('./recorder.wxss', import.meta.url), 'utf-8')
 
 /**
  * 取一个方法体：⚠️ 必须按 **4 空格缩进的方法声明**去找 ——
@@ -60,5 +61,29 @@ describe('录音与提示音的顺序（麦克风开着时不放声音）', () =
     for (const bad of ['太短', '没读完']) {
       expect(WXML.includes(bad), '录音面板上出现了"' + bad + '" ⇒ 结束就是结束，判定归 ✓ 之后').toBe(false)
     }
+  })
+
+  /**
+   * ⭐ 录音面板的**结构与尺寸**（稿 `583:1727`）—— 这里是白底 + 红系，
+   *   纵向：句子 → 红点+「录音中，请朗读」→ 胶囊[计时 ｜ 波形 ｜ 停止]。
+   */
+  it('⭐ 白底面板 + 红色胶囊 + 胶囊贴底（稿的结构）', () => {
+    expect(WXSS.includes('background: #ffffff'), '面板不是白底（稿是白的）').toBe(true)
+    const pill = /\.rc-pill\s*\{([^}]*)\}/.exec(WXSS)?.[1] ?? ''
+    expect(pill, '找不到 .rc-pill').not.toBe('')
+    expect(pill.includes('height: 96rpx'), '胶囊不是稿里的 48（96rpx）').toBe(true)
+    expect(pill.includes('justify-content: space-between'), '胶囊里三组没贴两边').toBe(true)
+    expect(pill.includes('margin-top: auto'), '胶囊没贴到面板底部（稿里句子与它之间是空白）').toBe(true)
+    expect(pill.includes('var(--tk-error'), '胶囊描边不是红系（稿里是红的）').toBe(true)
+    // 白底 + 红字：句子是 ink（我们的 primary）
+    expect(WXSS).toContain('var(--tk-primary')
+  })
+
+  it('⭐ 停止钮走 ui-button（不自画），且定稿窗口禁用', () => {
+    const at = WXML.indexOf('onStopTap')
+    expect(at, '找不到停止钮').toBeGreaterThan(-1)
+    const tag = WXML.slice(WXML.lastIndexOf('<ui-button', at), WXML.indexOf('/>', at))
+    expect(tag.includes('ui-button'), '停止钮不是 ui-button（自己画 = 把圆角/禁用态/按压反馈再实现一次）').toBe(true)
+    expect(tag.includes('disabled="{{finishing}}"'), '定稿窗口里没禁用 ⇒ "看起来能按、按了没反应"').toBe(true)
   })
 })

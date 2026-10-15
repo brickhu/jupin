@@ -1,41 +1,48 @@
 <!--
-  ⭐ 全屏录音面板（prd §7.2）—— 见 recorder.ts 的说明。
-  ⚠️ 打开即录（宿主把 visible 置 true 就是"弹面板并开始"），这里没有二次确认。
-  ⚠️ 结束两条路：读完静音自停 / 点那颗红钮；**结束 ≠ 提交**（宿主拿到录音后进 recoded）。
+  ⭐ 录音面板 —— 结构照 Figma 「583:1727」（1px = 2rpx）。
+  纵向：**句子 → 红点+「录音中，请朗读」 → 胶囊[ 00:00 ｜ 波形 ｜ ■ ]**
+  ⚠️ 稿里胶囊**贴在面板底部**（句子与它之间是空白）⇒ 这里用 margin-top:auto 顶下去。
+  ⚠️ 打开即录，没有二次确认；结束两条路（读完静音自停 / 点那颗红钮）。
 -->
 <view class="rc-layer {{entered ? 'rc-on' : ''}}" wx:if="{{visible}}">
-  <view class="rc-card">
-    <!-- ① 红点 + 「录音中，请朗读」 -->
-    <view class="rc-head">
-      <view class="rc-dot"></view>
-      <text class="text-30rpx font-semibold rc-ink">录音中，请朗读</text>
-    </view>
+  <view class="rc-mask"></view>
 
-    <!-- ② 句子原文（大字，用户看着念） -->
+  <view class="rc-card">
+    <!-- ① 句子（稿 20px/400） -->
     <text class="rc-sentence">{{sentence}}</text>
 
-    <!-- ③ 计时 + 实时波形 -->
-    <text class="rc-time">{{elapsedText}}</text>
-    <view class="rc-wavebox">
-      <!--
-        ⚠️ 用 canvas 而不是一排 view：一帧上千个采样点，节点方案既扛不住也会糊成一块
-        ⚠️ 尺寸必须由 CSS 给（canvas 默认 300×150），backing store 在 JS 里按 dpr 开
-      -->
-      <canvas type="2d" id="wave" class="rc-wave" wx:if="{{waveOn}}"></canvas>
-      <!--
-        ⚠️⚠️ **还没收到能解码的帧时只留一条中线** —— 绝不摆一条不动的假波形 ✗
-        那比没有更糟：会让人以为是自己手机 / 麦克风的问题（踩过的坑）
-      -->
-      <view wx:else class="rc-midline"></view>
+    <!-- ② 红点 + 「录音中，请朗读」（稿 12px） -->
+    <view class="rc-head">
+      <view class="rc-dot"></view>
+      <text class="rc-t12 rc-ink">录音中，请朗读</text>
     </view>
 
-    <!-- ④ 结束（红钮）—— ⚠️ 定稿窗口里必须 disabled：与下面那行文案同时表达"这一遍正在定稿" -->
-    <ui-button variant="fill" color="error" size="xl" roundness="full" onlyIcon="{{true}}"
-               icon="{{finishing ? 'mdi:loading' : 'mdi:stop'}}"
-               disabled="{{finishing}}" bind:press="onStopTap" />
+    <!-- ③ 胶囊：左 计时 ｜ 中 波形 ｜ 右 停止（稿：红色描边 · r36 · pad12 · SPACE_BETWEEN） -->
+    <view class="rc-pill">
+      <text class="rc-time">{{elapsedText}}</text>
 
-    <!-- ⭐ 这一行是**用户唯一看到的操作说明** —— 「读完会自动结束」必须说出来，
-         否则他会一直等着自己点结束，而其实早就进下一态了 -->
-    <text class="rc-hint">{{finishing ? '正在处理你的录音，请稍等' : '读完会自动结束，也可以点上面的按钮结束'}}</text>
+      <view class="rc-wavebox">
+        <!--
+          ⚠️ 用 canvas：一帧上千采样点，节点方案既扛不住也会糊成一块（尺寸必须由 CSS 给）
+        -->
+        <canvas type="2d" id="wave" class="rc-wave" wx:if="{{waveOn}}"></canvas>
+        <!--
+          ⚠️⚠️ **还没收到能解码的帧时只留一条中线** —— 绝不摆一条不动的假波形 ✗
+          那比没有更糟：会让人以为是自己手机 / 麦克风的问题
+        -->
+        <view wx:else class="rc-midline"></view>
+      </view>
+
+      <!--
+        停止（稿：24×24 红色实心圆 + 白方块）
+        ⚠️ 用 ui-button 而不是自己画：「sm」 是 64rpx（稿 48rpx）——
+           **故意取大一档**，因为 24px 的点击区在真机上太小（拇指够不准）。
+        ⚠️ 定稿窗口（finishing）里它必须 disabled —— 说了停还在等录音器回调，
+           "看起来能按、按了没反应"比变灰糟得多。
+      -->
+      <ui-button variant="fill" color="error" size="sm" roundness="full" onlyIcon="{{true}}"
+                 icon="{{finishing ? 'mdi:loading' : 'material-symbols:stop'}}"
+                 disabled="{{finishing}}" bind:press="onStopTap" />
+    </view>
   </view>
 </view>

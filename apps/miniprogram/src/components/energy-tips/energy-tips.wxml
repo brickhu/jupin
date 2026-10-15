@@ -1,59 +1,44 @@
 <!--
-  ⭐ 能量扣除面板（prd §7.2）—— 见 energy-tips.ts 的说明。
-  ⚠️ 遮罩与卡片是**兄弟**：遮罩挡滚动与点击，卡片自己 catchtap 吞掉点击，
-     否则点在卡片上会穿透到下面的页面（eval-dialog 那次的教训）。
+  ⭐ 能量扣除面板 —— 结构照 Figma 「612:2044」（1px = 2rpx）。
+  纵向顺序：**文案 → 大号 ⚡-N → 两个按钮**（稿里文案在上、大字在中间）。
+  ⚠️ 两个数由**页面**从服务端权威值算好传进来，组件不做减法。
 -->
 <view class="et-layer">
   <view class="et-mask {{entered ? 'et-on' : ''}}" catchtouchmove="noop"></view>
 
   <view class="et-card {{entered ? 'et-on' : ''}}" catchtap="noop" catchtouchmove="noop">
     <!-- 正在问服务端要权威余额 —— 这几百毫秒必须看得见，否则用户以为点了没反应 -->
-    <view class="et-body" wx:if="{{phase === 'precheck'}}">
-      <ui-icon class="text-56rpx et-spin" name="mdi:loading" />
-      <text class="text-30rpx font-bold et-ink mt-3">正在确认能量…</text>
+    <view wx:if="{{phase === 'precheck'}}" class="et-precheck">
+      <ui-icon class="et-spin text-56rpx" name="mdi:loading" />
+      <text class="et-t14 et-sub mt-3">正在确认能量…</text>
     </view>
 
-    <!-- ⭐ 余额够：大号「⚡ -N」+ 一行把"花掉的 与 花完剩下的"**一起说** -->
-    <block wx:elif="{{balance >= cost}}">
-      <view class="et-badge">
-        <text class="text-44rpx font-bold leading-[1]">⚡ -{{cost}}</text>
-      </view>
-      <text class="text-26rpx et-sub mt-4 leading-[1.7] text-center">本次 AI 检测将消耗能量 {{cost}} ⚡，剩余 {{balance - cost}} ⚡</text>
-      <!--
-        ⚠️ 这一行**不能写成"评测失败不扣能量"** —— 2026-10-15 口径改了：
-           只有**检测没跑成**（没触达到引擎：网络/读音频失败）才退回；
-           引擎**答了**（哪怕判这段音频无效）那 2 点就是花掉的。
-           ⇒ 文案只承诺能兑现的那一件事。
-      -->
-      <text class="text-22rpx et-hint mt-2">检测没跑成，能量会退回</text>
-    </block>
-
-    <!-- ⭐ 余额不够：不是错误，说清差多少 + 一个能走的出口 -->
     <block wx:else>
-      <text class="text-34rpx font-bold et-ink">能量不够了</text>
-      <text class="text-26rpx et-sub mt-3 leading-[1.7] text-center">本次评测需要 {{cost}} 点，现在有 {{balance}} 点</text>
-      <text class="text-22rpx et-hint mt-2">明天会补到 3 点；也可以现在充值</text>
+      <!-- ① 文案（稿 14px，在**大字的上面**） -->
+      <text wx:if="{{balance >= cost}}" class="et-t14 et-ink">本次 AI 检测将消耗能量 {{cost}} ⚡，剩余 {{balance - cost}} ⚡</text>
+      <!-- ⭐ 不够**不是错误，是业务规则**：说清差多少 + 一个能走的出口，不写成"失败" -->
+      <text wx:else class="et-t14 et-ink">能量不够了 —— 本次评测需要 {{cost}} 点，现在有 {{balance}} 点</text>
+
+      <!-- ② 大号 ⚡-N（稿 64px/400） -->
+      <text class="et-big mt-[72rpx]">⚡-{{cost}}</text>
+
+      <!-- ③ 两个按钮（稿 40 高）—— ⚠️ 取消在左（描边）、确认在右（实心） -->
+      <view class="et-actions">
+        <view class="flex-1">
+          <ui-button variant="outline" color="primary" size="md" roundness="full" width="full" bind:press="onCancel">
+            <text class="et-t14">取消</text>
+          </ui-button>
+        </view>
+        <view class="flex-1">
+          <ui-button wx:if="{{balance >= cost}}" variant="fill" color="primary" size="md" roundness="full" width="full"
+                     bind:press="onConfirm">
+            <text class="et-t14">确认</text>
+          </ui-button>
+          <ui-button wx:else variant="fill" color="primary" size="md" roundness="full" width="full" bind:press="onGoEnergy">
+            <text class="et-t14">去补能量</text>
+          </ui-button>
+        </view>
+      </view>
     </block>
-
-    <view class="et-actions" wx:if="{{phase !== 'precheck'}}">
-      <view class="flex-1">
-        <ui-button variant="outline" color="primary" size="lg" width="full" bind:press="onCancel">
-          <text class="text-30rpx">取消</text>
-        </ui-button>
-      </view>
-      <view class="flex-1">
-        <ui-button wx:if="{{balance >= cost}}" variant="fill" color="primary" size="lg" width="full"
-                   bind:press="onConfirm">
-          <text class="text-30rpx">确认</text>
-        </ui-button>
-        <ui-button wx:else variant="fill" color="primary" size="lg" width="full" bind:press="onGoEnergy">
-          <text class="text-30rpx">去补能量</text>
-        </ui-button>
-      </view>
-    </view>
-
-    <!-- ⚠️ 这里**没有**"检查失败"的分支，是**故意**的：权威检查没做完（连不上/身份过期）时，
-         页面关掉这一层、回 recoded 把一句人话挂在页面上 —— 用户此刻要做的是"检查网络、再点一次"，
-         而不是盯着一个没有出口的弹窗。⇒ 这一层只在**真拿到了余额**时才出现。 -->
   </view>
 </view>

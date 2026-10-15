@@ -1,7 +1,6 @@
 /*
- * ⭐ 能量扣除面板（prd §7.2）—— 见 energy-tips.ts 的说明。
- * ⚠️ 它落在**白/浅色**的浮层上，所以用页面默认色（不是卡片主题色）：
- *    卡片里那些按钮走 --btn-bg/--btn-fg，这里是 ui-button 的默认 primary。
+ * ⭐ 能量扣除面板 —— 尺寸照 Figma 612:2044（1px = 2rpx）。见 energy-tips.wxml 的说明。
+ * ⚠️ 它落在**白/浅色**浮层上，用页面默认色（不是卡片主题色）。
  */
 .et-layer {
   position: fixed;
@@ -21,11 +20,12 @@
 }
 .et-mask.et-on { opacity: 1; }
 
+/* 稿：366 宽 / r24 / pad 30 18 22 */
 .et-card {
   position: relative;
-  width: 560rpx;
-  padding: 56rpx 40rpx 40rpx;
-  border-radius: 32rpx;
+  width: 732rpx;
+  padding: 60rpx 36rpx 44rpx;
+  border-radius: 48rpx;
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -37,24 +37,29 @@
 }
 .et-card.et-on { opacity: 1; transform: scale(1); }
 
-/* 那枚大号「⚡ -N」的徽章 —— 用极浅的品牌色底，不抢主色 */
-.et-badge {
-  width: 160rpx;
-  height: 160rpx;
-  border-radius: 9999rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--tk-primary-50, rgba(0, 0, 0, 0.05));
-  color: var(--tk-primary, #111111);
+/* ⚠️ 稿里文案在**大字上面**、且居中；它比卡片窄 ⇒ 居中要自己给（不是 flex 的默认行为） */
+.et-ink { color: var(--tk-page-on, #111111); text-align: center; }
+.et-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
+
+/* 稿 64px/400 —— ⚡ 是文字的一部分，不是图标 */
+.et-big {
+  font-size: 128rpx;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--tk-page-on, #111111);
 }
 
-.et-body { display: flex; flex-direction: column; align-items: center; }
-.et-ink { color: var(--tk-page-on, #111111); }
-.et-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }
-.et-hint { color: var(--tk-page-on_50, rgba(17, 17, 17, 0.5)); }
+/* 稿：两个按钮各约 150×40、间距 21 ⇒ 42rpx */
+.et-actions {
+  display: flex;
+  gap: 42rpx;
+  width: 100%;
+  margin-top: 70rpx;
+}
 
-.et-actions { display: flex; gap: 16rpx; width: 100%; margin-top: 40rpx; }
+/* 稿 14px */
+.et-t14 { font-size: 28rpx; line-height: 1.4; }
 
+.et-precheck { display: flex; flex-direction: column; align-items: center; padding: 40rpx 0; }
 .et-spin { animation: et-spin 0.9s linear infinite; }
 @keyframes et-spin { to { transform: rotate(360deg); } }
