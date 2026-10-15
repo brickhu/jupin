@@ -1,5 +1,18 @@
+import { readFileSync } from 'node:fs'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { today } from '@jushuo/shared'
+
+/**
+ * 静态断言用：store.ts 的源码（守"哪些字段能落 storage"这类写法）。
+ * ⚠️ **先剥注释** —— 否则"解释这条规则的注释"会自己触发守门（这个坑我踩过好几次了）。
+ */
+const SRC = readFileSync(new URL('./store.ts', import.meta.url), 'utf-8')
+  .split('\n')
+  .filter((l) => {
+    const t = l.trim()
+    return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*')
+  })
+  .join('\n')
 
 /**
  * store 的单测。
@@ -354,5 +367,29 @@ describe('hydrate —— 冷启动读回上次的战绩', () => {
     fresh.hydrate()
     expect(fn).toHaveBeenCalled()
     expect(fresh.getState().latestCards?.items.length).toBe(1)
+  })
+
+  /**
+   * ⭐⭐ 守的是**「值会变的东西不落 storage」**（用户 2026-09 定的规矩）。
+   *
+   * ⚠️⚠️ 真实后果（用户 2026-10-15 当场看到）：清完库之后首页卡片**还画着旧战绩 85** ——
+   *    因为 `persist()` 摘了统计三样、**没摘参与记录**，而 `hydrate()` 又把它读回来。
+   *    它**看起来完全正常**：数据是错的，界面没有任何异常。
+   *
+   * ⚠️ 判据不是"哪个字段有印象"，而是**它会不会变**：
+   *    · 参与记录 —— 每次确认都变（B82/B83 之后还挂了 pending / aiSummary / weakPoints / audio）；
+   *    · 参与统计 / 句子详情 / 收藏数 —— 同理。
+   *    ⇒ 只有"不会变"的（userInfo 的身份字段、今日卡、最新列表）才该进 storage 图一秒钟开屏。
+   */
+  it('⭐⭐ 参与记录不落 storage：persist 摘掉它、hydrate 也不读旧的', () => {
+    expect(SRC.includes('delete snapshot.participation'), 'persist 又把参与记录落盘了').toBe(true)
+    expect(
+      /participation: \{\},/.test(SRC),
+      'hydrate 又把旧的参与记录读回来了 ⇒ 冷启动会画一份可能过期的战绩',
+    ).toBe(true)
+    expect(
+      SRC.includes('raw.participation'),
+      'hydrate 里又在读 raw.participation 了',
+    ).toBe(false)
   })
 })

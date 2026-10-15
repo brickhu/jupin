@@ -327,6 +327,18 @@ function persist(): void {
     delete snapshot.articleDetail
     delete snapshot.articleStats
     delete snapshot.articleFavoriteCounts
+    /**
+     * ⚠️⚠️ **参与记录也不落 storage** —— 判据与上面三条同一条：**值会变**。
+     *    而它变得比统计**更勤**（每次确认都变），B82/B83 之后上面还挂了
+     *    `pendingSubmissionId` / `aiSummary` / `weakPoints` / `audio`。
+     *
+     * ⚠️ 落盘的症状是**离线/清库之后界面还在说旧战绩**：
+     *    服务端已经一条参与都没有了，卡片照样画着上一次的分数与录音入口 ——
+     *    而它**看起来完全正常**（这正是最坏的一种：数据错、界面无异常）。
+     *    ⇒ 页面照常会向服务端刷一遍（`ensureParticipation` / `loadParticipation`），
+     *      首帧少一次秒开，换的是"显示的永远是服务端的答案"。
+     */
+    delete snapshot.participation
     wx.setStorageSync(STORAGE_KEY, snapshot)
   } catch {
     // 存储写不进去不该影响主流程
@@ -354,8 +366,12 @@ export function hydrate(): void {
         latestCards: raw.latestCards ?? null,
         // ⚠️ 老缓存里没有它（那时还没缓存今日卡）⇒ null，首屏少一次秒开，不会解错
         today: raw.today ?? null,
-        // ⚠️ 同上：老缓存里没有参与记录 ⇒ 空表（= 全部"还没拉过"），不会解错
-        participation: raw.participation ?? {},
+        /**
+         * ⚠️⚠️ **永远是空的** —— 参与记录不落 storage（见 persist 的说明）。
+         *    旧缓存里可能还留着一份**清库前的**战绩：读了它，冷启动首帧就会画错的分数
+         *    （而且看起来完全正常）。这里刻意**不读** `raw.participation`。
+         */
+        participation: {},
         // ⚠️⚠️ **永远是空的**：句子详情是会话缓存，不落 storage（见 MeState.articleDetail）
         articleDetail: {},
         // ⚠️ 同理：参与统计是"最近一次拿到的值"，不落 storage（见 MeState.articleStats）
