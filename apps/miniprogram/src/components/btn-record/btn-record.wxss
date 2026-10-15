@@ -20,10 +20,11 @@
   color: var(--btn-fg, #ffffff);
 }
 
-/* ③④⑤ 描边胶囊 */
+/* ③④⑤ 描边胶囊 —— ⚠️ 三组**贴两边均匀分布**（稿 main=SPACE_BETWEEN · pad 左右 0） */
 .br-line {
+  justify-content: space-between;
   gap: 16rpx;             /* 稿 gap8 */
-  padding: 0 16rpx;       /* 稿 pad8 */
+  padding: 0;             /* 稿 pad 左右 = 0 */
   border: 2rpx solid currentColor;   /* 稿 stroke 1px */
 }
 

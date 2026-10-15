@@ -42,15 +42,15 @@ interface Entry {
 }
 
 /**
- * ⚠️ 切词：**按空格切，并让每个词后面带一个空格**（除了最后一个）。
- *    理由与朗读页那段逐词渲染完全一样：`<text>` 会保留空格，
- *    而并列 `<text>` 在小程序里会被当**块**排 —— 所以间距要靠**词自带的空格**，
- *    不能指望 margin（见 reading.wxml 的长注释）。
+ * ⚠️ 切词：**按空格切，但不要拼回尾随空格**。
+ *    词与词之间的间距由 `mr-1`（margin）给 —— 见 wxml。
+ *    ⚠️ "让每个词自带一个空格"（`w + ' '`）**不行**：小程序渲染 `<text>` 时会把结尾的空格吃掉，
+ *       结果是 `Everythingshouldbemadeas` 这种连成一串（真机上验过）。
  */
 function splitWords(text: string): string[] {
-  const parts = text.split(' ').filter((w) => w.length > 0)
-  return parts.map((w, i) => (i === parts.length - 1 ? w : w + ' '))
+  return text.split(' ').filter((w) => w.length > 0)
 }
+
 
 Component({
   properties: {

@@ -2,7 +2,15 @@
    ⚠️ 尺寸/间距与改造前的今日卡（featured）/ 历史卡（list）逐项对齐。 */
 
 .ac-card {
-  border-radius: 20rpx;
+  border-radius: 24rpx;   /* 稿 r=12 ⇒ 24rpx */
+  /**
+   * ⭐ **卡内四块（头部 / 句子 / 译文 / 参与区）用 gap 拉开**（稿：VERTICAL gap=16 ⇒ 32rpx）。
+   * ⚠️ 不要在各块上写 「mt-*」 / 「mb-*」 拼间距 —— 那是四份"各写各的"，改一处忘三处；
+   *    而且 「wx:if」 掉的块不会产生 gap，写 margin 就会多出空档（flex gap 自动跳过）。
+   */
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
   /**
    * ⚠️⚠️ **每张句子卡都有的一圈前景色边框**（用户 2026-09 定）。
    *    用 currentColor = 根节点内联的 color: {{fg}} ⇒ 深色主题配浅边、浅色主题配深边，
@@ -14,16 +22,15 @@
   position: relative;
 }
 
-/* 今日卡：p-5（40rpx） */
-/* ⭐ lg（首页今日挑战 / 详情页）：大字句子 + 参与区 */
+/* ⭐ lg（首页今日挑战 / 详情页）：大字句子 + 参与区。稿：pad 20 ⇒ 40rpx */
 .ac-lg {
   padding: 40rpx;
 }
 
-/* 历史卡：p-4（32rpx）+ mb-3（24rpx） */
-/* ⭐ sm（最近更新等列表）：小一号句子，**点整卡进详情**参与 */
+/* ⭐ sm（最近更新等列表）：小一号句子，**点整卡进详情**参与。稿：pad 20 ⇒ 40rpx */
 .ac-sm {
-  padding: 32rpx;
+  padding: 40rpx;
+  /* ⚠️ 这一条是**列表间距**（卡片之外的事），不是卡内 gap */
   margin-bottom: 24rpx;
 }
 

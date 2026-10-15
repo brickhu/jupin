@@ -12,7 +12,7 @@
 <view class="ac-card {{resolved === 'sm' ? 'ac-sm' : 'ac-lg'}}"
       style="background:{{bg}};color:{{fg}};--btn-bg:{{fg}};--btn-fg:{{bg}}">
   <!-- 卡片头：左（播放 + 时长）· 右（人数 + 箭头）—— 父容器 justify-between -->
-  <view wx:if="{{entry.header}}" class="flex items-center justify-between {{resolved === 'sm' ? 'mb-2' : 'mb-3'}}" bindtap="onOpen">
+  <view wx:if="{{entry.header}}" class="flex items-center justify-between" bindtap="onOpen">
     <view class="flex items-center">
       <!-- 播放钮 + 时长 = audio-button 的一格（时长格式由它统一成 00:05） -->
       <audio-button wx:if="{{entry.audio}}" size="sm"
@@ -21,7 +21,7 @@
                     fill="{{fg}}" ink="{{bg}}" bind:play="onPlay" />
     </view>
     <view class="flex items-center">
-      <text wx:if="{{entry.stat}}" class="text-22rpx shrink-0 ac-faint">{{entry.stat}}</text>
+      <text wx:if="{{entry.stat}}" class="text-24rpx shrink-0 ac-faint">{{entry.stat}}</text>
       <!-- ⭐ 收藏数（在心的**左边**，见 arena-card.ts 的 favoriteCount）：
            ⚠️ 0 / 还没拉到都不画（favoriteCount > 0 才渲染）—— 空心旁边挂个 0 是噪音。
            ⚠️ 同样 catchtap 拦住冒泡：点数字也该是"切换收藏"，而不是被送进详情页。 -->
@@ -62,15 +62,15 @@
   -->
   <view wx:if="{{resolved === 'lg'}}" class="flex flex-wrap">
     <text wx:for="{{words}}" wx:key="index" data-w="{{item}}" catchtap="onWord"
-          class="leading-[1.5] text-44rpx font-semibold">{{item}}</text>
+          class="leading-[1.5] text-40rpx mr-1">{{item}}</text>
   </view>
   <view wx:else class="flex items-start" bindtap="onOpen">
-    <text class="leading-[1.5] flex-1 text-32rpx">{{entry.text}}</text>
+    <text class="leading-[1.5] flex-1 text-28rpx">{{entry.text}}</text>
   </view>
 
   <!-- ⭐ 译文：**两种尺寸都显示**（prd §7.2，2026-10 定；旧口径 list 无译文，作废） -->
-  <view wx:if="{{entry.translation}}" class="mt-3" bindtap="onOpen">
-    <text class="text-26rpx leading-[1.6] block ac-faint">{{entry.translation}}</text>
+  <view wx:if="{{entry.translation}}" bindtap="onOpen">
+    <text class="text-24rpx leading-[1.5] block ac-faint">{{entry.translation}}</text>
   </view>
 
 
@@ -104,7 +104,7 @@
     <text wx:if="{{entry.hint}}" class="text-22rpx block text-center mt-2.5 ac-faint">{{entry.hint}}</text>
   </block>
 
-  <view wx:if="{{showRecord && resolved === 'lg'}}" class="mt-4">
+  <view wx:if="{{showRecord && resolved === 'lg'}}">
     <!--
       ⚠️ 只传**三个**入参（设计稿 539:871 里就这三样）：状态、分数、**我那段录音的时长**。
          时长不是标准音的时长 —— 稿里那个 00:33 是"我刚才读了多久"。
