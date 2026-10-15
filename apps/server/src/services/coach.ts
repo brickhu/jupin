@@ -54,6 +54,10 @@ export interface CoachFacts {
  *    用户 2026-10-15：「advice 坦白说讯飞反馈的那个报告本身就很全面了」
  *    ⇒ 我们再说一遍就是同一件事两处，那个字段连同生成一起删了。
  * ⚠️ 它不是"评分报告"：分数与五维由结果面板自己画，锐评只负责**观点**。
+ *
+ * ⭐⭐ **它写给"这一份成绩单"**（用户的比喻：**像考完试老师在卷子后面写的一句话**）——
+ *    针对的就是**这一次录音**。之后如果这把**超越前高被采纳**，整份试卷（含这句批语）
+ *    才写进战绩档案（`participations`，读法见 `ParticipationRecord.bestComment`）。
  */
 export interface CoachFeedback {
   comment: string

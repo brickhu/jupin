@@ -462,9 +462,11 @@ export interface ParticipationRecordSource {
   articleText?: string | null
   theme: ArticleTheme | null
   /**
-   * ⭐⭐ **这一句上"我最好那一把"的 AI 锐评**（prd §7.2b）。
-   * ⚠️ 取的是 `best_submission_id` 指向那条提交的 `ai_comment` —— 也就是**战绩那把**的锐评。
-   *    竞技场页「我的参与」显示它（这一块讲的就是"我在这句上的战绩"）。
+   * ⭐⭐ **被采纳那份成绩单上的 AI 锐评**（prd §7.2b）。
+   *
+   * ⚠️ 锐评**本来是写在成绩单上的**（`submissions.ai_comment`，针对那一次录音，
+   *    像考完试老师在卷子后面写的一句话）；**只有超越前高、被采纳的那一份**
+   *    才整份写进战绩档案 ⇒ 所以这里取 `best_submission_id` 那份的批语。
    * ⚠️ 拿不到（没配密钥 / 模型失败 / 老数据）就是 null ⇒ 端侧**整块不渲染**。
    */
   bestComment?: string | null
