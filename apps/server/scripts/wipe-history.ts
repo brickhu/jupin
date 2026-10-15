@@ -20,7 +20,8 @@ import mysql from 'mysql2/promise'
  * ⚠️⚠️ **participations 必须跟着 submissions 一起删**（它在列表里排在最后、实际最先删）：
  *    它的 best_submission_id 有指向 submissions 的外键，而且它是从 submissions
  *    派生的 —— 成绩清空而参与记录留着，就是"幽灵参与者"（榜单上有人、点进去没成绩）。
- * ⚠️ articles 的 participant_count / conquered_count 曾经也在这里被归零，
+ * ⚠️ user 上的 streak_* / cookies / energy 同理（见下面 UPDATE 的说明）。
+⚠️ articles 的 participant_count / conquered_count 曾经也在这里被归零，
  *    但两列已删（迁移 0034）—— 参与人数**从 submissions 派生**（现在是物化在 participations 里的派生索引，
  *    成绩删干净了它自然就是 0，不需要、也不可能再去"对齐"一份副本 ——
  *    这也正是上面那条"participations 必须一起删"的理由。
@@ -75,14 +76,16 @@ console.log('')
 console.log('  账号：' + users.n + ' 个（**不删**，只重置下面的字段）')
 console.log('    其中探针账号 ' + probes.n + " 个（openid 以 probe 开头，会被删掉）")
 console.log('')
-console.log('会重置的字段（users）：')
-console.log('  streak_days / streak_best / last_read_date / cookies')
+console.log('会重置的字段（users）—— 只有那些"由 submissions 推出来"的：')
+console.log('  streak_days / streak_best / last_read_date')
+console.log('  cookies / energy / energy_date')
 console.log('  invalid_count / invalid_date')
-console.log('  growth_self / growth_diligence / growth_standout')
-console.log('  energy / energy_date')
 console.log('')
-console.log('**保留不动**：articles 的正文 / 音频 / 发布状态、schedules 排期、')
-console.log('              用户的昵称头像、reward_rules 规则表')
+console.log('**保留不动**：用户的账号与昵称头像、articles 的正文 / 音频 / 发布状态、')
+console.log('              favorites 收藏、payments 支付流水、reward_rules 规则表')
+console.log('')
+console.log('⚠️⚠️ **对象存储里的用户录音不在本脚本范围内**（这里只清库）——')
+console.log('    清完库之后，云上那些 mp3 就成了没人引用的孤儿文件（见 plan B86）。')
 console.log('')
 
 if (!apply) {
@@ -109,10 +112,15 @@ try {
   await conn.query('DELETE FROM reward_grants')
   await conn.query('DELETE FROM energy_ledger')
 
+  /**
+   * ⚠️⚠️ `users` 上**只有**这些列是从 submissions 推出来的，只重置它们。
+   *    ⚠️ 别把已经删掉的列写进来（曾经这里还重置三维成长值 `growth_*`）——
+   *      那种写法一旦列没了就是 `Unknown column` ⇒ **整个事务回滚、看起来"跑了但什么都没清"**
+   *      （最坏的一种失败：你以为清了）。
+   */
   await conn.query(
     'UPDATE users SET streak_days = 0, streak_best = 0, last_read_date = NULL,' +
       ' cookies = 0, invalid_count = 0, invalid_date = NULL,' +
-      ' growth_self = 0, growth_diligence = 0, growth_standout = 0,' +
       ' energy = 0, energy_date = NULL',
   )
 
