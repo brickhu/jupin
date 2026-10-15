@@ -9,6 +9,7 @@ import {
   type ArticleTheme,
   type ArticleWordItem,
   type DifficultyScores,
+  type WeakPoint,
 } from '@jushuo/shared'
 
 /**
@@ -814,6 +815,34 @@ export const participations = mysqlTable('participations', {
   //    而客户端声明日期整条已经删掉（提交时服务端一律取今天）⇒ 没有任何地方读它。
   //    它的值现在恒等于 dayKey(last_at)，是纯派生 —— 留着只会让人以为"按天"还有一层。
 
+  // ── ⭐⭐ 竞技档案的状态（2026-10-15 起它不再是"纯派生索引"，见 prd §7.2）──────
+  /**
+   * ⭐ **被采纳那一份的五维明细**（与 `submissions.score_parts` 同形）。
+   * ⚠️ 只有**被采纳**的成绩单才能写进来（分数/明细/录音是"只进不退"的）。
+   */
+  scoreParts: text('score_parts'),
+  /**
+   * ⭐⭐ **被采纳那份录音**（这句上读得最好那一次）。
+   * ⚠️ 全站只留这一份：没被采纳的成绩单，语音在确认那一刻就删掉了（见 services/confirm.ts）。
+   * ⚠️ 它是**展示**用的（一律公开）；`audio_key` 才是存储侧的地址。
+   */
+  audioKey: varchar('audio_key', { length: 512 }),
+  audioUrl: varchar('audio_url', { length: 512 }),
+  audioDurationMs: int('audio_duration_ms'),
+  /**
+   * ⭐⭐ **累计薄弱词汇** —— **结构化事实**，由 submissions 的逐词分聚合而来
+   * （确定性、可重算；`WeakPoint[]` 见 shared）。
+   * ⚠️ 每次确认都会合并一次：`新的 = 老的 + 这份成绩单的`（**合并不是覆盖**）。
+   */
+  weakPoints: json('weak_points').$type<WeakPoint[]>(),
+  /**
+   * ⭐ **AI 总结（LLM 产物，逐轮更新）**。生成规则见 `services/coach.ts` + `services/summary.ts`。
+   * ⚠️⚠️ 它**不可复现**，所以这张表**不再是"整表重建前后一模一样"的纯派生表** ——
+   *    这是用户 2026-10-15 明确接受的破例（见 plan A18）。
+   */
+  aiSummary: text('ai_summary'),
+  /** AI 总结的状态：`pending` 正在生成 / `ready` 好了 / `failed` 失败（下次读取时补） */
+  summaryState: varchar('summary_state', { length: 16 }),
   /**
    * ⭐ **对比标准**：我的最高分挑战。
    * ⚠️ 并列时取**先达到该分数**的那条 —— 榜单的同分先后就是按它排的。

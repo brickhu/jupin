@@ -986,8 +986,8 @@ export function claimAdEnergy(requestId: string): Promise<AdEnergyResponse> {
  * ⚠️ **幂等**：服务端靠账本的唯一键 + affectedRows 保证重复调用不会多发 ✓
  *    ⇒ 连点两下、或两条路都走到，也只会发一次 ✓
  */
-export function claimCookies(submissionId: string): Promise<ClaimCookiesResponse> {
-  return request<ClaimCookiesResponse>('/api/user/submissions/' + submissionId + '/claim', {
+export function confirmSubmission(submissionId: string): Promise<ClaimCookiesResponse> {
+  return request<ClaimCookiesResponse>('/api/user/submissions/' + submissionId + '/confirm', {
     method: 'POST',
     // ⚠️ 这个 client 的约定是 data（不是 body）；没有参数也要给个空对象，
     //    否则 request() 不会带上 content-type，服务端解析不到 body

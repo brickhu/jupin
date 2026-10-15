@@ -107,15 +107,28 @@ export function parseCoachReply(raw: string): CoachFeedback | null {
   return { comment, advice }
 }
 
+export interface LlmConfig {
+  apiKey: string
+  baseUrl: string
+  model: string
+  timeoutMs?: number
+}
+
 /**
- * 调一次模型（OpenAI 兼容的 /chat/completions）。
+ * ⭐⭐ **模型通道**（OpenAI 兼容的 `/chat/completions`）—— 全服务端**只此一处**发请求。
  *
- * @returns 失败一律返回 null（见文件头的约束 2）。
+ * ⚠️ 谁要调模型都从这里走（现在两个调用方：`generateCoachFeedback` 的单次点评、
+ *    `services/summary.ts` 的逐轮总结）—— 抄一份 fetch 就会分叉出两套超时/重试/日志，
+ *    而"哪一套在生效"是查不出来的。
+ *
+ * @returns 失败、超时、返回不合法一律 null（见文件头的约束 2：失败必须静默降级）。
  */
-export async function generateCoachFeedback(
-  facts: CoachFacts,
-  cfg: { apiKey: string; baseUrl: string; model: string; timeoutMs?: number },
-): Promise<CoachFeedback | null> {
+export async function callLlm(
+  cfg: LlmConfig,
+  system: string,
+  user: string,
+  opts: { json?: boolean; temperature?: number } = {},
+): Promise<string | null> {
   const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions'
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), cfg.timeoutMs ?? 12_000)
@@ -125,7 +138,7 @@ export async function generateCoachFeedback(
       headers: { 'content-type': 'application/json', authorization: 'Bearer ' + cfg.apiKey },
       body: JSON.stringify({
         model: cfg.model,
-        temperature: 0.4,
+        temperature: opts.temperature ?? 0.4,
         /**
          * ⚠️⚠️ 2000 不是随手写的：deepseek-v4-flash 这类**带推理**的模型，
          *    推理内容（reasoning_content）也吃 max_tokens。
@@ -135,16 +148,16 @@ export async function generateCoachFeedback(
          *    给 2000 之后正文正常返回（推理 512 + 正文 165）。
          */
         max_tokens: 2000,
-        response_format: { type: 'json_object' },
+        ...(opts.json === false ? {} : { response_format: { type: 'json_object' } }),
         messages: [
-          { role: 'system', content: '你是英语朗读教练。只输出 JSON。' },
-          { role: 'user', content: buildPrompt(facts) },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
       }),
       signal: controller.signal,
     })
     if (!res.ok) {
-      console.warn('[coach] 模型返回 ' + res.status + '（本次不给建议）')
+      console.warn('[coach] 模型返回 ' + res.status)
       return null
     }
     const body = (await res.json()) as {
@@ -161,13 +174,26 @@ export async function generateCoachFeedback(
       console.warn('[coach] 模型只回了推理内容、没有正文 —— max_tokens 给太小了')
       return null
     }
-    const parsed = parseCoachReply(text)
-    if (!parsed) console.warn('[coach] 返回没法解析，本次不给建议')
-    return parsed
+    return text
   } catch (err) {
-    console.warn('[coach] 调用失败（本次不给建议）：' + (err as Error).message)
+    console.warn('[coach] 调用失败：' + (err as Error).message)
     return null
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * 单次点评（结果页那两句话）。
+ * @returns 失败一律 null（见文件头的约束 2）。
+ */
+export async function generateCoachFeedback(
+  facts: CoachFacts,
+  cfg: LlmConfig,
+): Promise<CoachFeedback | null> {
+  const text = await callLlm(cfg, '你是英语朗读教练。只输出 JSON。', buildPrompt(facts))
+  if (!text) return null
+  const parsed = parseCoachReply(text)
+  if (!parsed) console.warn('[coach] 返回没法解析，本次不给建议')
+  return parsed
 }

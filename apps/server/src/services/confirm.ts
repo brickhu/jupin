@@ -4,8 +4,11 @@ import { getStorage } from '../storage'
 import { db } from '../db'
 import { participations, submissions } from '../db/schema'
 import { claimCookies, readCookies } from './cookies'
-import { syncParticipation } from './participations'
-import type { CookieView } from '@jushuo/shared'
+import { applyConfirmation, syncParticipation } from './participations'
+import { getBestExcluding } from './leaderboard'
+import { mergeWeakPoints, weakPointsOf } from './weak-points'
+import { refreshParticipationSummary, summaryEnabled } from './summary'
+import type { CookieView, WeakPoint, WordScore } from '@jushuo/shared'
 
 /**
  * ⭐⭐ **确认 —— 唯一真正的结算**（prd §7.2，用户 2026-10 定）。
@@ -37,6 +40,8 @@ import type { CookieView } from '@jushuo/shared'
 export interface ConfirmOutcome {
   /** 这一次真的把"确认"落库了吗（false = 还没出分） */
   confirmed: boolean
+  /** ⭐ 这一把**被采纳**了吗（分 ≥ 前高）—— 采纳才换分数/明细/录音（诊断 + 端侧文案） */
+  adopted: boolean
   /** 这一次真的发了多少饼干（重复确认是 0，见 claimCookies 的说明） */
   claimed: number
   cookies: CookieView
@@ -61,6 +66,15 @@ export async function confirmSubmission(
       id: submissions.id,
       articleId: submissions.articleId,
       status: submissions.status,
+      /** ⭐ 采纳与否看它（见 ③） */
+      score: submissions.score,
+      /** ⭐ 薄弱词的事实来源 */
+      wordScores: submissions.wordScores,
+      /** ⭐ 被采纳时要搬到档案上的三样 */
+      scoreParts: submissions.scoreParts,
+      audioKey: submissions.audioKey,
+      audioUrl: submissions.audioUrl,
+      audioDurationMs: submissions.audioDurationMs,
     })
     .from(submissions)
     .where(and(eq(submissions.id, submissionId), eq(submissions.userId, userId)))
@@ -79,6 +93,7 @@ export async function confirmSubmission(
   if (row.status !== 'scored') {
     return {
       confirmed: false,
+      adopted: false,
       claimed: granted?.claimed ?? 0,
       cookies: granted?.cookies ?? (await readCookiesOnly(userId)),
       audioPurged: 0,
@@ -86,7 +101,18 @@ export async function confirmSubmission(
   }
 
   /**
-   * ③ 标记确认。
+   * ③ ⭐⭐ **采纳与否 —— 拿"确认过的前高"比**（prd §7.2 的表）。
+   *
+   * ⚠️⚠️ 前高必须与"战绩"**同一口径**（只认确认过的，见 record-rule.ts）——
+   *    拿一个没算数的分当参照，就会出现"明明超越了却显示没超越"（真出过这个 bug）。
+   * ⚠️ **`≥` 就算采纳**（用户定）：等于也换 —— 同分但这次明细/录音更能代表当下。
+   */
+  const score = row.score === null ? null : Number(row.score)
+  const previousBest = await getBestExcluding(row.articleId, userId, submissionId)
+  const adopted = score !== null && (previousBest === null || score >= previousBest)
+
+  /**
+   * ④ 标记确认。
    * ⚠️ `confirmed_at IS NULL` 这个条件让它**幂等** —— 重复确认不会把时间往后推
    *    （"第一次确认为准"，与 claim 的重复领取同口径）。
    */
@@ -96,21 +122,76 @@ export async function confirmSubmission(
     .where(and(eq(submissions.id, submissionId), isNull(submissions.confirmedAt)))
 
   /**
-   * ④ 参与记录 —— **唯一写入方**（services/participations.ts）。
-   * ⚠️ 必须在 ③ **之后**：它只聚合 `confirmed_at` 非空的行。
-   * ⚠️ 它在出分那一刻也会被调一次（services/scoring.ts），那时这一条还没确认
-   *    ⇒ 算出来的还是原来那一行（空操作）。口径自己就对了，不用去删那段。
+   * ⑤ **薄弱词汇累计**：`新的 = 老的 + 这份成绩单的`（合并，不是覆盖）。
+   * ⚠️ 读老值要在写之前（同一个事务之外读一次即可 —— 这个用户在这一句上的确认是串行的：
+   *    他自己点，而且每次都以 submissionId 为单位）。
+   */
+  const [old] = await db
+    .select({ weakPoints: participations.weakPoints })
+    .from(participations)
+    .where(and(eq(participations.userId, userId), eq(participations.articleId, row.articleId)))
+    .limit(1)
+  const added = weakPointsOf(parseWordScores(row.wordScores))
+  const weakPoints = mergeWeakPoints((old?.weakPoints ?? []) as WeakPoint[], added)
+
+  /**
+   * ⑥ 参与记录的**派生列** —— 唯一写入方（services/participations.ts）。
+   * ⚠️ 必须在 ④ **之后**：它只聚合 `confirmed_at` 非空的行。
+   * ⚠️ 它**只写派生列**（见 upsertOne），所以碰不到下面那些"算不出来的状态"。
    */
   await syncParticipation(userId, row.articleId)
 
-  // ⑤ 语音清理：只留参与记录指着的那一份
+  /**
+   * ⑦ **竞技档案的状态列**（prd §7.2）：
+   *   · 被采纳 ⇒ **分数明细 / 录音换成这一份**（分数本身由 ⑥ 的聚合给出）
+   *   · 没采纳 ⇒ 这三样**都不动**（只进不退）
+   *   · **两条路都要**：薄弱词累计 · 总结转为待生成
+   *     （"待确认指针"是**读时派生**的 —— 这一步把它标成确认之后，它自然就不再是那条）
+   */
+  await applyConfirmation({
+    userId,
+    articleId: row.articleId,
+    weakPoints,
+    adopted,
+    summaryEnabled: summaryEnabled(),
+    scoreParts: row.scoreParts,
+    audioKey: row.audioKey,
+    audioUrl: row.audioUrl,
+    audioDurationMs: row.audioDurationMs,
+  })
+
+  // ⑧ 语音清理：只留参与记录指着的那一份（没被采纳的那份就在这里被删）
   const audioPurged = await purgeSupersededAudio(userId, row.articleId)
+
+  /**
+   * ⑨ ⭐ **AI 总结异步补**（逐轮更新）—— 复用 coach 的模型通道。
+   *
+   * ⚠️⚠️ **不 await、失败不影响这次确认**：分数/次数/薄弱词/录音上面都已经定下来了，
+   *    总结只是文案。模型慢/挂了不该让用户看到"确认失败"（同 coach.ts 的纪律）。
+   * ⚠️ 状态先写 `pending`，由 summary 服务改成 `ready` / `failed` ——
+   *    这样"卡在 pending"一眼能看出是没跑完，而不是"没这个功能"。
+   */
+  void refreshParticipationSummary(userId, row.articleId).catch((err: unknown) => {
+    console.warn('[summary] 生成失败（不影响确认）：' + (err as Error).message)
+  })
 
   return {
     confirmed: true,
+    adopted,
     claimed: granted?.claimed ?? 0,
     cookies: granted?.cookies ?? (await readCookiesOnly(userId)),
     audioPurged,
+  }
+}
+
+/** `submissions.word_scores` 是 JSON 文本；脏数据当空（一条坏行不该让确认失败） */
+function parseWordScores(text: string | null): WordScore[] {
+  if (!text) return []
+  try {
+    const v = JSON.parse(text) as unknown
+    return Array.isArray(v) ? (v as WordScore[]) : []
+  } catch {
+    return []
   }
 }
 

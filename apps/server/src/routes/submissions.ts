@@ -565,38 +565,48 @@ submissionsRoutes.openapi(submissionStatusRoute, async (c) => {
  * ⚠️ 幂等：服务层靠账本的唯一键 + affectedRows 保证重复调用**不会多发** ✓
  *    ⇒ 两条路都调、或者连点两下，都只会发一次 ✓
  */
-const submissionClaimRoute = createRoute({
+const submissionConfirmRoute = createRoute({
   method: 'post',
-  path: '/{id}/claim',
+  path: '/{id}/confirm',
   tags: ['挑战提交'],
-  summary: '⭐ 确认这一把（唯一真正的结算：入账饼干 + 写参与记录 + 清理语音）',
+  summary: '⭐ 确认这一把 —— 拿这份成绩单去更新竞技档案（唯一真正的结算）',
   description:
-    '⭐⭐ **用户按下面板上那个「确认」时调它**（prd §7.2，2026-10 定）。\n\n' +
-    '一次动作做三件事：\n' +
+    '⭐⭐ **用户按下面板上那个「更新战绩」时调它**（prd §7.2，2026-10 定）。\n\n' +
+    '`submissions` 是**临时成绩单**（只增不改、不参与竞技），`participations` 是**竞技档案**；\n' +
+    '这次调用就是"拿成绩单去更新档案"那一步，一次做四件事：\n' +
     '  ① 把结算时算好的饼干入账（**幂等**，重复调用不会再发）；\n' +
-    '  ② 写 `submissions.confirmed_at` —— 参与记录**只由已确认的提交撑起来**，\n' +
+    '  ② 写 `submissions.confirmed_at` —— 档案**只由已确认的提交撑起来**，\n' +
     '     所以"出分但没确认"的那把**不进战绩、不进榜单**；\n' +
-    '  ③ 清掉除"当前参与记录指向的那一份"以外的语音（**永不确认 ⇒ 永不清理**）。\n\n' +
+    '  ③ **更新档案**：分 ≥ 前高 ⇒ **采纳**（分数/明细/录音换成这一份）；\n' +
+    '     分 < 前高 ⇒ 这三样**保留**。⚠️ **两条路都**累计挑战次数、累加薄弱词汇、重生成 AI 总结；\n' +
+    '  ④ 清掉除"档案里那一份"以外的语音（**永不确认 ⇒ 永不清理**）。\n\n' +
     '⚠️ 出分之后**不自动确认** —— 用户可以忽略面板甚至关掉小程序，\n' +
     '   所以"这把算不算数"必须由这一次调用说了算。\n' +
+    '⚠️ **AI 总结是异步的**（`participations.summary_state`：pending → ready/failed）：\n' +
+    '   模型慢或挂了**不影响这次确认** —— 分数/次数/薄弱词在第 ③ 步就已经定下来了。\n' +
     '⚠️ 重复调用安全：不重复记账、不刷新确认时间。',
   security: [{ userToken: [] }],
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
       content: { 'application/json': { schema: ClaimCookiesResponseSchema } },
-      description: '成功（重复领取也回 200，金额不会再涨）',
+      description:
+        '成功（重复确认也回 200，金额不会再涨）。`adopted` = 这一把的分有没有被采纳（≥ 前高）',
     },
     404: errorResponse('提交记录不存在（或不属于当前用户）'),
   },
 })
+const submissionClaimRoute = submissionConfirmRoute
 
 submissionsRoutes.openapi(submissionClaimRoute, async (c) => {
   const userId = c.get('userId')
   const r = await confirmSubmission(userId, c.req.param('id'))
   // ⚠️ 不属于本人一律当作不存在（与状态接口同一条：不区分 403/404，那会泄露 id 是否存在）
   if (!r) return c.json({ ok: false, error: '提交记录不存在' }, 404)
-  return c.json({ ok: true as const, data: { claimed: r.claimed, cookies: r.cookies } }, 200)
+  return c.json(
+    { ok: true as const, data: { claimed: r.claimed, adopted: r.adopted, cookies: r.cookies } },
+    200,
+  )
 })
 
 const submissionVisibilityRoute = createRoute({

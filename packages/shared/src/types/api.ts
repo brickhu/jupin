@@ -482,6 +482,11 @@ export type MakeupFailureReason =
 export interface ClaimCookiesResponse {
   /** 这一次实际到账的饼干；0 = 本来就没攻克，或者之前已经领过了 */
   claimed: number
+  /**
+   * ⭐ **这一把的分被采纳了吗**（≥ 前高即为采纳）。
+   * ⚠️ 采纳才换竞技档案上的**分数 / 明细 / 录音**；不采纳只累计次数与薄弱词（prd §7.2）。
+   */
+  adopted: boolean
   /** 领取之后的余额（用它刷新界面，别在端侧自己加） */
   cookies: CookieView
 }
@@ -1272,6 +1277,24 @@ export interface SubmissionAudioResponse {
  * ⚠️ 一条记录对应「我对这一句的全部战绩」，不是一次提交：
  *    同一句读十次，这里仍然只是一条（次数在 attempts 里）。
  */
+/**
+ * ⭐ **一个薄弱词**（竞技档案上**累计**的结构化事实）。
+ *
+ * ⚠️⚠️ 这是**事实**，不是 AI 说的 —— 由 submissions 的逐词分聚合而来（确定性、可重算）。
+ *    AI 写的那段人话是另一个字段（`aiSummary`）。两者分开存，
+ *    才可能"只重算事实、不动文本"，也才看得出哪些是模型说的。
+ */
+export interface WeakPoint {
+  /** 词（含标点，与 `words[].text` 同一套切法） */
+  word: string
+  /** 在这句上累计被记了几次 */
+  count: number
+  /** 见过的**最低分**（分越低越差） */
+  lowest: number
+  /** 最近一次的错法（`漏读` / `读错` / `多读了` / `回读`；正常就不给） */
+  dp?: string
+}
+
 export interface ParticipationRecord {
   /**
    * ⭐ **这一行的地址** = `sha256(userId + ':' + articleId)` 前 24 位十六进制（见 db/schema.ts）。
@@ -1320,6 +1343,32 @@ export interface ParticipationRecord {
   text?: string
   /** ⭐ 视觉主题（保留字段，本页暂不消费） */
   theme: ArticleTheme | null
+
+  // ── ⭐⭐ 竞技档案（2026-10-15 起它不再是"纯派生索引"，见 prd §7.2）────────
+  /**
+   * ⭐⭐ **被采纳的那份录音**（= 这句上读得最好那一次的语音）。
+   *
+   * ⚠️ 全站只留这一份：没被采纳的成绩单，它的语音在确认那一刻就删了。
+   * ⚠️ 它**一律公开**（用户 2026-10-15 定："语音一律公开，隐藏起来就失去社交的意义"）。
+   */
+  audio: { url: string; durationMs: number } | null
+  /** ⭐ 五维明细（被采纳那一份的；与 `SubmitResponse.parts` 同形） */
+  scoreParts: ScoreParts | null
+  /** ⭐ 累计薄弱词汇（**结构化事实**，由 submissions 聚合；不是 AI 说的） */
+  weakPoints: WeakPoint[]
+  /** ⭐ AI 总结（LLM 产物，逐轮更新；没生成出来就是 null） */
+  aiSummary: string | null
+  /** ⭐ AI 总结的状态：`pending` 正在生成 / `ready` 好了 / `failed` 失败（下次读取时补） */
+  summaryState: 'pending' | 'ready' | 'failed' | null
+  /**
+   * ⭐⭐ 这一句上**待确认**的那份成绩单（没有就是 null）。
+   *
+   * ⚠️⚠️ 它是**读时派生**的（"这一句上最近的、已出分但未确认的那一条"），**不是一列** ——
+   *    存成列就要求"提交那一刻参与行必须已存在"，而**首次挑战根本没有参与行**；
+   *    硬建一行就得把 best/worst 填 0 ⇒ 榜上会多出一个 0 分的幽灵。
+   *    派生出来则永远是对的（首句也对），而且跨设备照样看得见（状态在服务端）。
+   */
+  pendingSubmissionId: string | null
 }
 
 export interface ParticipationsResponse {

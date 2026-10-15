@@ -1,6 +1,6 @@
 import { plainWordsOf } from '@jushuo/shared'
 
-import { claimCookies, fetchEnergy, fetchSubmissionAudio, fetchSubmissionStatus, submitReading } from '../../lib/api/client'
+import { confirmSubmission, fetchEnergy, fetchSubmissionAudio, fetchSubmissionStatus, submitReading } from '../../lib/api/client'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
 import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import {
@@ -570,7 +570,7 @@ Component({
         return
       }
       try {
-        await claimCookies(cache.submissionId)
+        await confirmSubmission(cache.submissionId)
       } catch {
         /** ⚠️ 确认失败**不清缓存**：那一把仍然是 scored，用户可以再点一次 */
         this.showNotice('确认没成功，再点一次')

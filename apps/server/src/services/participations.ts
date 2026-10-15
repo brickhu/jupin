@@ -1,8 +1,8 @@
-import { and, asc, count, desc, eq, max, min, or, sum } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNull, max, min, or, sum } from 'drizzle-orm'
 
 import { db } from '../db'
 import { participationIdOf } from '@jushuo/shared'
-import type { ArticleTheme, ArticleWordItem, ParticipationRecord } from '@jushuo/shared'
+import type { ArticleTheme, ArticleWordItem, ParticipationRecord, ScoreParts, WeakPoint } from '@jushuo/shared'
 import { countedAsRecord } from './record-rule'
 import { getRank } from './leaderboard'
 
@@ -461,6 +461,22 @@ export interface ParticipationRecordSource {
    */
   articleText?: string | null
   theme: ArticleTheme | null
+  // ── ⭐⭐ 竞技档案（2026-10-15，见 prd §7.2）────────────────────────────
+  /** 被采纳那一份的五维明细（JSON 文本） */
+  scoreParts?: string | null
+  /** 被采纳那份录音 */
+  audioUrl?: string | null
+  audioDurationMs?: number | null
+  /** 累计薄弱词汇（JSON 文本） */
+  weakPoints?: string | null
+  /** AI 总结（LLM 产物）与它的状态 */
+  aiSummary?: string | null
+  summaryState?: string | null
+  /**
+   * 这一句上**待确认**的成绩单 —— ⚠️ **读时派生**（见 shared 的说明），不是这一行的列。
+   * 由两个读取函数各自查一次塞进来。
+   */
+  pendingSubmissionId?: string | null
 }
 
 /** 参与行 + 名次 → ParticipationRecord（两个接口唯一的映射入口） */
@@ -503,6 +519,119 @@ export function toParticipationRecord(
     participantCount: rankInfo.participantCount,
     lastAt: new Date(row.lastAt as unknown as string).toISOString(),
     theme: row.theme,
+    // ── ⭐⭐ 竞技档案（见 prd §7.2）───────────────────────────────────────
+    /** ⚠️ 老列是 JSON 文本，解析失败就当作没有（**不要**让一条脏数据把整个列表打挂） */
+    scoreParts: parseJson<ScoreParts>(row.scoreParts),
+    audio:
+      row.audioUrl
+        ? { url: row.audioUrl, durationMs: Number(row.audioDurationMs ?? 0) }
+        : null,
+    weakPoints: parseJson<WeakPoint[]>(row.weakPoints) ?? [],
+    aiSummary: row.aiSummary ?? null,
+    summaryState: (row.summaryState as ParticipationRecord['summaryState']) ?? null,
+    pendingSubmissionId: row.pendingSubmissionId ?? null,
+  }
+}
+
+/**
+ * ⭐⭐ **把一次"确认"的结果落到档案的状态列上**（prd §7.2）。
+ *
+ * ⚠️⚠️ 它必须在这里 —— `participations` 的**唯一写入方是本文件**（`domain-write-guard` 机器守着）。
+ *    确认流程（services/confirm.ts）只调它，不自己 `db.update(participations)`。
+ *
+ * 规则（用户 2026-10-15 定）：
+ *   · **采纳**（分 ≥ 前高）⇒ 分数明细 / 录音**换成这一份**；
+ *   · **没采纳** ⇒ 这三样**一个字都不动**（只进不退）；
+ *   · **两条路都**：薄弱词累计 · 总结转为待生成（总结由 services/summary.ts 异步补）。
+ *
+ * ⚠️ 分数本身（bestScore）不在这里写 —— 它是**派生列**，由 `syncParticipation` 从
+ *    "已确认的 submissions"聚合出来（见 upsertOne），两处都写就成了两份真相。
+ */
+export async function applyConfirmation(
+  args: {
+    userId: number
+    articleId: string
+    weakPoints: WeakPoint[]
+    adopted: boolean
+    /** ⭐ AI 总结这个功能开了吗 —— 没开就**不写** `pending`（否则界面一直"生成中"） */
+    summaryEnabled: boolean
+    scoreParts: string | null
+    audioKey: string | null
+    audioUrl: string | null
+    audioDurationMs: number | null
+  },
+  database: Database = db,
+): Promise<void> {
+  await database
+    .update(participations)
+    .set({
+      weakPoints: args.weakPoints,
+      summaryState: args.summaryEnabled ? 'pending' : null,
+      ...(args.adopted
+        ? {
+            scoreParts: args.scoreParts,
+            audioKey: args.audioKey,
+            audioUrl: args.audioUrl,
+            audioDurationMs: args.audioDurationMs,
+          }
+        : {}),
+    })
+    .where(and(eq(participations.userId, args.userId), eq(participations.articleId, args.articleId)))
+}
+
+/**
+ * ⭐ **写回 AI 总结**（`services/summary.ts` 生成完之后调它）。
+ *
+ * ⚠️ 同样必须在这里：`participations` 的唯一写入方是本文件（`domain-write-guard` 机器守着）。
+ * ⚠️ `summary = null` ⇒ 状态落 `failed`（**不是** ready）：界面上"这段总结没生成出来"
+ *    与"生成了一段空的"必须能分开。
+ */
+export async function saveAiSummary(
+  userId: number,
+  articleId: string,
+  summary: string | null,
+  database: Database = db,
+): Promise<void> {
+  await database
+    .update(participations)
+    .set({ aiSummary: summary, summaryState: summary ? 'ready' : 'failed' })
+    .where(and(eq(participations.userId, userId), eq(participations.articleId, articleId)))
+}
+
+/**
+ * ⭐ **这一句上待确认的那份成绩单**（读时派生，见 shared 的 ParticipationRecord 说明）。
+ *
+ * 判据与"确认"正好互斥：**已出分 + 未确认**，取最近的一条。
+ * ⚠️ 那个 `status='scored'` 不能少：`scoring` 的还没出分（没有可确认的东西），
+ *    `failed` 的更不算 —— 它们都不该在界面上显示成"你有一份没提交的成绩单"。
+ */
+export async function pendingSubmissionOf(userId: number, articleId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: submissions.id })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.userId, userId),
+        eq(submissions.articleId, articleId),
+        eq(submissions.status, 'scored'),
+        isNull(submissions.confirmedAt),
+      ),
+    )
+    .orderBy(desc(submissions.createdAt))
+    .limit(1)
+  return row?.id ?? null
+}
+
+/**
+ * ⚠️ **解析失败就当作没有** —— 一条脏 JSON 不该把整个列表打挂
+ *    （这些字段是"锦上添花"的档案信息，不是主数据）。
+ */
+function parseJson<T>(text: string | null | undefined): T | null {
+  if (!text) return null
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    return null
   }
 }
 
@@ -538,7 +667,14 @@ export async function participationRecordById(
     .limit(1)
 
   if (!row) return null
-  return toParticipationRecord(row, await getRank(row.articleId, row.userId))
+  /**
+   * ⚠️ pending 是**读时派生**的（不是这一行的列，见 shared 的说明）——
+   *    每个读取口各查一次，两条路才给同一个答案。
+   */
+  return toParticipationRecord(
+    { ...row, pendingSubmissionId: await pendingSubmissionOf(row.userId, row.articleId) },
+    await getRank(row.articleId, row.userId),
+  )
 }
 
 /**
@@ -577,5 +713,8 @@ export async function participationRecordOf(
     .limit(1)
 
   if (!row) return null
-  return toParticipationRecord(row, await getRank(articleId, userId))
+  return toParticipationRecord(
+    { ...row, pendingSubmissionId: await pendingSubmissionOf(userId, articleId) },
+    await getRank(articleId, userId),
+  )
 }

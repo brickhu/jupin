@@ -286,6 +286,27 @@ export const CookieAwardViewSchema = z
   })
   .openapi('CookieAwardView')
 
+export const ScorePartsSchema = z
+  .object({
+    prosody: z.number(),
+    weakness: z.number(),
+    accuracy: z.number(),
+    fluency: z.number(),
+    completeness: z.number(),
+    gates: z.array(z.string()),
+  })
+  .openapi('ScoreParts')
+
+/** ⭐ 一个薄弱词（累计的结构化事实；`aiSummary` 才是模型说的话） */
+export const WeakPointSchema = z
+  .object({
+    word: z.string(),
+    count: z.number().int(),
+    lowest: z.number(),
+    dp: z.string().optional(),
+  })
+  .openapi('WeakPoint')
+
 /** ⭐ 「参与场次」一条（一句一行 = 一个竞技场） */
 export const ParticipationRecordSchema = z
   .object({
@@ -313,6 +334,21 @@ export const ParticipationRecordSchema = z
      */
     text: z.string().optional(),
     theme: ArticleThemeSchema.nullable(),
+    // ── ⭐⭐ 竞技档案（2026-10-15，见 prd §7.2）──────────────────────────
+    audio: z
+      .object({ url: z.string(), durationMs: z.number().int() })
+      .nullable()
+      .openapi({ description: '被采纳的那份录音（一律公开）；没有就是 null' }),
+    scoreParts: ScorePartsSchema.nullable(),
+    weakPoints: z.array(WeakPointSchema).openapi({
+      description: '累计薄弱词汇 —— **结构化事实**（由 submissions 聚合），不是 AI 说的',
+    }),
+    aiSummary: z.string().nullable().openapi({ description: 'AI 总结（LLM 产物，逐轮更新）' }),
+    summaryState: z.enum(['pending', 'ready', 'failed']).nullable(),
+    pendingSubmissionId: z
+      .string()
+      .nullable()
+      .openapi({ description: '这一句上待确认的那份成绩单（放服务端 ⇒ 换设备也能看见）' }),
   })
   .openapi('ParticipationRecord')
 
@@ -409,17 +445,6 @@ export const ScoreDimensionsSchema = z
   .openapi('ScoreDimensions')
 
 /** 我们自己那套分项明细（结果页「评分详情」）—— 加起来就是总分 */
-export const ScorePartsSchema = z
-  .object({
-    prosody: z.number(),
-    weakness: z.number(),
-    accuracy: z.number(),
-    fluency: z.number(),
-    completeness: z.number(),
-    gates: z.array(z.string()),
-  })
-  .openapi('ScoreParts')
-
 /** streak 变化（只有真正打分成功的那一次才有） */
 export const StreakDeltaSchema = z
   .object({
@@ -930,6 +955,8 @@ export const ClaimCookiesResponseSchema = okEnvelope(
   z
     .object({
       claimed: z.number().int().openapi({ description: '这一次实际到账的饼干；0 = 没攻克或已领过' }),
+      /** ⭐ 这一把的分有没有被采纳（≥ 前高）—— 采纳才换档案上的分数/明细/录音 */
+      adopted: z.boolean().openapi({ description: '分 ≥ 前高即为采纳；false = 只累计次数与薄弱词' }),
       cookies: CookieViewSchema,
     })
     .openapi('ClaimCookiesResponse'),
