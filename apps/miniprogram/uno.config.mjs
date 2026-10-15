@@ -135,7 +135,7 @@ const theme = {
     borderRadius: {
       none: '0rpx',
       sm: '8rpx',
-      md: '16rpx',
+      md: '20rpx',
       lg: '32rpx',
       full: '9999rpx',
     },
