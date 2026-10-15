@@ -218,7 +218,7 @@ export async function runScoring(submissionId: string): Promise<void> {
     }
 
     /**
-     * ⭐ AI 教练：出「4-8 字点评」+「提升建议」。
+     * ⭐ **AI 锐评**（prd §7.2b）：出 40–70 字、针对**这一份成绩单**的点评。
      *
      * ⚠️ 放在**翻状态之前**：客户端轮询到 scored 就停了，
      *    点评若在这之后才写库，用户在结果页上永远看不到它。
