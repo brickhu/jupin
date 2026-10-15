@@ -451,7 +451,9 @@ Page({
    *
    * · **默认（邀请好友）**：路径 = 这一句的朗读挑战页，对方看到同一句、同一个榜单；
    * · **`data-kind="record"`（分享我的战绩）**：路径 = **我的竞技档案**
-   *   （`pages/profile?u=&pid=`）—— 对方看到的是**我在这句上的分数与那条录音**。
+   *   （`pages/participation?id=`）—— 对方看到的是**我在这句上的分数、那条录音、薄弱词与 AI 总结**。
+   *   ⚠️ 档案页是**独立的一页**，不是个人主页：`pages/profile` 回答"这个人积累了什么"，
+   *      档案回答"他在这**一句**上表现如何"——两件事，别借同一个路径。
    *
    * ⚠️⚠️ **成绩单（submission）没有自己的分享入口**（用户 2026-10-15 定：
    *    "submission 不支持分享，成绩单的展示页直接干掉；用户唯一存在的分享路径是分享我的 participation"）。
@@ -465,7 +467,7 @@ Page({
       const myId = me.getState().userInfo?.id ?? 0
       return {
         title: '我在这句上读了 ' + mine.scoreText + ' 分，来听听',
-        path: '/pages/profile/profile?u=' + myId + '&pid=' + mine.participationId,
+        path: ROUTES.participationDetail.url + '?id=' + mine.participationId,
       }
     }
     return {

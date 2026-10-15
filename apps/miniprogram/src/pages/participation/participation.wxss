@@ -1,3 +1,33 @@
 /* ⭐ 「参与详情」—— 样式一律用 UnoCSS 工具类写在 WXML 上（见 docs/research/styling-decision.md），
    这里只留确实无法用工具类表达的东西。
    ⚠️ 目前一条都没有 —— 保留文件是因为小程序要求页面四件套齐全。 */
+
+/* ⭐ 档案区的三小块 —— 与出分面板同一套语言（色块 / 圆角 / 灰阶） */
+.pt-play {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 9999rpx;
+  background: var(--tk-primary, #2b142c);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pt-part {
+  flex: 1;
+  padding: 16rpx 8rpx;
+  border-radius: 16rpx;
+  background: #fbe5ce;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  box-sizing: border-box;
+}
+.pt-chip {
+  padding: 8rpx 16rpx;
+  border-radius: 9999rpx;
+  border: 2rpx solid var(--tk-line, rgba(43, 20, 44, 0.2));
+  display: flex;
+  align-items: baseline;
+}

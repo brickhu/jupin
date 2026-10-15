@@ -4,7 +4,8 @@
   ⚠️ 这一屏**只画接口给的那一条**（GET /api/participation/{id}）：
      句子 / 最高分 / 最低分 / 挑战次数 / 名次 / 成长值 / 词表快照，全部来自它。
      页面不加工、不补算、也不去别处凑数 —— 榜上那一行是什么，这里就是什么。
-  ⚠️ 公开页：从分享链接进来的陌生人看的是同一屏（与挑战结果页同一套口径）。
+  ⚠️ 公开页：从分享链接进来的陌生人看的是同一屏 —— 它也是**唯一**能被分享的东西
+     （成绩单不支持分享，用户 2026-10-15 定）。
   ⚠️ padding-top 由 navTop 给（= 导航栏总高 + 12），这里不要再写 pt-3 —— 见 lib/nav.ts
 -->
 <view class="px-3 pb-[60rpx] bg-page min-h-[100vh] box-border" style="padding-top:{{navTop}}px">
@@ -61,6 +62,61 @@
         <text class="text-26rpx text-page-on_85 flex-1">这一句赚到的饼干</text>
         <text class="text-40rpx font-bold text-page-on">{{view.cookieText}} 🍪</text>
       </view>
+    </view>
+
+    <!--
+      ⭐⭐ ③b 那条录音 —— **全站只留这一份**（这句上读得最好那一次的声音）。
+      ⚠️ 没被采纳的成绩单，语音在确认那一刻就删了（见 services/confirm.ts）⇒ 这里最多一条。
+      ⚠️ 音频一律公开（用户 2026-10-15 定：隐藏起来就失去社交的意义）⇒ 陌生人点分享链接也能听。
+    -->
+    <view class="card p-4 mt-3" wx:if="{{view.audioUrl}}">
+      <view class="flex items-center" bindtap="onPlayAudio">
+        <view class="pt-play">
+          <ui-icon name="{{playing ? 'mdi:stop' : 'material-symbols:play-arrow'}}" class="text-32rpx" />
+        </view>
+        <text class="text-28rpx text-page-on ml-3 flex-1">{{playing ? '正在播放…' : '听听我读得最好的那一次'}}</text>
+        <text class="text-26rpx text-page-on_65">{{view.audioMsText}}</text>
+      </view>
+    </view>
+
+    <!-- ⭐⭐ ③c 五维明细（被采纳那一份的；稿里是五个色块，不是进度条） -->
+    <view class="card p-4 mt-3" wx:if="{{view.parts.length > 0}}">
+      <text class="text-26rpx font-semibold text-page-on">这次的五个分项</text>
+      <view class="flex gap-3 mt-3">
+        <view class="pt-part" wx:for="{{view.parts}}" wx:key="key">
+          <text class="text-22rpx text-page-on_65">{{item.label}}</text>
+          <text class="text-28rpx text-page-on">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!--
+      ⭐⭐ ③d 累计薄弱词汇 —— **结构化事实**（由每次成绩单的逐词分聚合而来，合并不是覆盖）。
+      ⚠️ 与下面那段 AI 总结**分开**：「次数 / 最低分」是事实，模型说的话是另一块 ——
+         分开才看得出哪些是结论、哪些是数据。
+    -->
+    <view class="card p-4 mt-3" wx:if="{{view.weak.length > 0}}">
+      <text class="text-26rpx font-semibold text-page-on">一直读不好的词</text>
+      <text class="text-22rpx text-page-on_50 block mt-1">每读一次都会累计，读好了也不会消失</text>
+      <view class="flex flex-wrap gap-2 mt-3">
+        <view class="pt-chip" wx:for="{{view.weak}}" wx:key="word">
+          <text class="text-26rpx text-page-on">{{item.word}}</text>
+          <text class="text-22rpx text-page-on_65 ml-2">{{item.times}}{{item.dp ? ' · ' + item.dp : ''}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!--
+      ⭐⭐ ③e AI 总结（**LLM 产物，逐轮更新**）。
+      ⚠️ 状态要分开说：「pending」 = 还在生成（别显示成空白），「failed」 = 这次没生成出来（下次会补）。
+         ⚠️ 生成是**异步**的、失败**不影响确认**（见 services/summary.ts）——
+            所以"没有"是正常情况之一，不是错误。
+    -->
+    <view class="card p-4 mt-3" wx:if="{{view.summary || view.summaryState}}">
+      <text class="text-26rpx font-semibold text-page-on">AI 教练的总结</text>
+      <text wx:if="{{view.summary}}" class="text-28rpx text-page-on leading-[1.7] block mt-2">{{view.summary}}</text>
+      <text wx:elif="{{view.summaryState === 'pending'}}" class="text-26rpx text-page-on_50 block mt-2">正在生成…</text>
+      <text wx:else class="text-26rpx text-page-on_50 block mt-2">这次没生成出来（下次挑战时会重试）</text>
     </view>
 
     <!-- ④ 词表快照：接口原样给的那些词（音标 / 句中释义有就画） -->

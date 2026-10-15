@@ -154,7 +154,8 @@ curl -sS -H "X-Figma-Token: $TOKEN" \
   那会让响应形状变成 oneOf，而 `openapi/schemas.ts` 的 parity 检查要求"schema 与 TS 类型逐字段相等"。
 - **我的** `GET /api/user/participation/{articleId}`、`GET /api/user/favorited` —— 按用户寻址，要身份。
 - **别人的** `GET /api/participation/{id}`（公开）—— 一条参与记录的详情，从榜单点某一行进去看
-  （落点是公开的个人主页 `pages/profile?u=&pid=`）。
+  （落点是独立的**竞技档案页** `pages/participation?id=` —— ⚠️ 不是个人主页：
+    主页回答"这个人积累了什么"，档案回答"他在这**一句**上表现如何"）。
   ⚠️⚠️ `{id}` 就是 **`participations.id`**，而它是**派生地址**：
   `sha256(userId + ':' + articleId)` 的前 24 位十六进制（`services/participation-id.ts`，
   回填见迁移 0057）。**为什么不能自增**：这张表是重算式派生索引，`rebuildParticipations`

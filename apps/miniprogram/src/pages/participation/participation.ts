@@ -2,6 +2,8 @@ import { formatScore } from '@jushuo/shared'
 import type { ParticipationRecord } from '@jushuo/shared'
 
 import { fetchParticipationDetail } from '../../lib/api/client'
+import { playAudioUrl, stopAudio } from '../../lib/audio/play'
+import { renderParts } from '../../lib/score-parts'
 import { navPadTop, notifyNavScroll } from '../../lib/nav'
 import { ROUTES, goPublic } from '../../lib/route'
 import { agoText } from '../../lib/time'
@@ -43,12 +45,34 @@ interface ParticipationView {
   /** ⭐ 这一句累计赚到的饼干（成品文本，视图不自己算） */
   cookieText: string
   words: WordRow[]
+
+  // ── ⭐⭐ 竞技档案（2026-10-15 起 participation 是有状态的，见 prd §7.2）──────
+  /** ⭐ 那条录音的地址（**全站只留这一份** = 这句上读得最好那一次）；没有 = 空串 */
+  audioUrl: string
+  /** 这条录音多长（成品文本，如 00:23） */
+  audioMsText: string
+  /** ⭐ 五维明细（上标签下分数；被采纳那一份的） */
+  parts: { key: string; label: string; value: string }[]
+  /** ⭐ 累计薄弱词汇 —— **结构化事实**（由 submissions 聚合），不是 AI 说的 */
+  weak: { word: string; times: string; dp: string }[]
+  /** ⭐ AI 总结（LLM 产物，逐轮更新）；没生成出来就是空串 */
+  summary: string
+  /** ⭐ 总结的状态：pending 生成中 / failed 没生成出来（两者都要说清，别让空白自己解释） */
+  summaryState: string
 }
 
 /**
  * ⚠️ 原文**从 words 拼**（`words[].text` 自带标点），不是另存一份 text ——
  *    与 ParticipationRecord 的口径一致；只有快照为空（内容缺口）时才用服务端给的 text。
  */
+/** 毫秒 → `00:23`（WXML 里做不了格式化，所以在这里就拼好） */
+function msText(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const mm = Math.floor(total / 60)
+  const ss = total % 60
+  return (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss
+}
+
 function toView(r: ParticipationRecord): ParticipationView {
   return {
     articleId: r.articleId,
@@ -69,6 +93,18 @@ function toView(r: ParticipationRecord): ParticipationView {
       ipa: (w.ipa ?? '').trim(),
       meaning: (w.meaning ?? '').trim(),
     })),
+    // ── ⭐⭐ 竞技档案 ──────────────────────────────────────────────
+    audioUrl: r.audio?.url ?? '',
+    audioMsText: msText(r.audio?.durationMs ?? 0),
+    parts: renderParts(r.scoreParts).map((d) => ({ key: d.key, label: d.label, value: d.value })),
+    /** ⚠️ 排序由服务端定（次数多的在前）—— 端侧不要再排，否则两处口径会漂 */
+    weak: r.weakPoints.map((w) => ({
+      word: w.word,
+      times: w.count + ' 次',
+      dp: w.dp ?? '',
+    })),
+    summary: (r.aiSummary ?? '').trim(),
+    summaryState: r.summaryState ?? '',
   }
 }
 
@@ -77,6 +113,8 @@ Page({
     navTop: 0,
     loading: true,
     error: '',
+    /** ⭐ 那条录音在放吗（同一时刻只放一路，见 onPlayAudio） */
+    playing: false,
     /** 取到的那一条（null = 还没取到 / 取不到） */
     view: null as ParticipationView | null,
   },
@@ -138,6 +176,25 @@ Page({
     const articleId = this.data.view?.articleId
     if (!articleId) return
     goPublic(ROUTES.arena.url + '?article=' + encodeURIComponent(articleId))
+  },
+
+  /**
+   * ⭐ **试听档案里那条录音** —— 它是**这句上读得最好那一次**的声音
+   *   （没被采纳的那些成绩单，语音在确认那一刻就删了，见 services/confirm.ts）。
+   * ⚠️ 播之前先 `stopAudio()`：标准音/上一次试听同时响，用户分不清在放什么。
+   */
+  async onPlayAudio() {
+    const src = this.data.view?.audioUrl
+    if (!src) return
+    stopAudio()
+    this.setData({ playing: true })
+    try {
+      await playAudioUrl(src, '这段录音')
+    } catch (err) {
+      wx.showToast({ title: (err as Error).message || '这段录音播不出来', icon: 'none' })
+    } finally {
+      this.setData({ playing: false })
+    }
   },
 
   onShareAppMessage() {
