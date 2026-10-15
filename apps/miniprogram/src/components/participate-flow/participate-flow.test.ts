@@ -105,4 +105,31 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     const body = SRC.slice(at, SRC.indexOf('wx.showModal', at))
     expect(body.includes("=== 'checking'"), 'checking 没有早退 ⇒ 会给出一个退不掉的按钮').toBe(true)
   })
+
+  /**
+   * ⭐⭐ 粗筛的**唯一触发点**是 `recoded` 上那颗 `✓`（用户 2026-10-15 报的错）。
+   *
+   *    用户原话：「结束就是结束，声音太短不符合提交**应该放到 recoded 用户点击确认后提示**」
+   *
+   * ⚠️⚠️ 我原来在 `onRecorderDone`（录音刚落完）里也调了一次 ⇒
+   *    那句「好像没读完，建议重读」**在录音刚停的那一刻就弹出来**，而且盖在
+   *    "结束录音"那条路上 —— 看起来像录音本身出了问题（其实录音一切正常，只是短）。
+   */
+  it('⭐⭐ 粗筛只能由 ✓ 触发，**录完那一刻不许弹**', () => {
+    const doneAt = SRC.indexOf('onRecorderDone(')
+    expect(doneAt, '找不到 onRecorderDone').toBeGreaterThan(-1)
+    const doneBody = SRC.slice(doneAt, SRC.indexOf('onRecorderFail(', doneAt))
+    expect(
+      doneBody.includes('precheck('),
+      '录音刚落完就调了 precheck ⇒ 提示会盖在"结束录音"那条路上（用户报过这个错）',
+    ).toBe(false)
+    expect(doneBody.includes('showNotice('), '录音刚落完就弹提示 ⇒ 同上').toBe(false)
+
+    // 而 ✓ 那一条必须有
+    const okAt = SRC.indexOf('onConfirm()')
+    const okBody = SRC.slice(okAt, SRC.indexOf('showNotice(', okAt))
+    expect(okBody.includes('precheck('), '✓ 之后没做粗筛 ⇒ 短录音会白花能量').toBe(true)
+    // 顺序：粗筛必须在 energy-tips **之前**（不花能量）
+    expect(okBody.indexOf('precheck(')).toBeLessThan(okBody.indexOf('openEnergy('))
+  })
 })
