@@ -45,4 +45,20 @@ describe('句子卡的排版（Figma 539:860）', () => {
   it('⭐ 译文 12px（24rpx）', () => {
     expect(WXML).toContain('text-24rpx leading-[1.5] block ac-faint')
   })
+
+  /**
+   * ⭐⭐ 参与区胶囊：**三组贴两边（space-between）且左右各内缩 8**。
+   *
+   * ⚠️ 这两个数来自稿子的**两处**（外层 `button` 的 pad 左右 0 + 内层 `Frame 13/15` 的 pad 左右 8），
+   *    只看外层就会写成 pad 0 ⇒ 两颗圆**顶到胶囊圆角上被切掉**（真机上就是这个样子）。
+   */
+  it('⭐ 参与区胶囊：space-between + 左右各内缩 8', () => {
+    const pill = readFileSync(new URL('../btn-record/btn-record.wxss', import.meta.url), 'utf-8')
+    /** ⚠️ 要取**最后一条** `.br-line` —— 第一条是 `.br-fill, .br-line` 的共享规则（那里是 center） */
+    const all = [...pill.matchAll(/\.br-line\s*\{([^}]*)\}/g)]
+    const rule = (all[all.length - 1]?.[1] as string) ?? ''
+    expect(rule, '找不到 .br-line').not.toBe('')
+    expect(rule.includes('justify-content: space-between'), '三组没有贴两边').toBe(true)
+    expect(rule.includes('padding: 0 16rpx'), '左右没内缩 ⇒ 圆会被胶囊圆角切掉').toBe(true)
+  })
 })

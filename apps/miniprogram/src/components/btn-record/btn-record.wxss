@@ -20,11 +20,19 @@
   color: var(--btn-fg, #ffffff);
 }
 
-/* ③④⑤ 描边胶囊 —— ⚠️ 三组**贴两边均匀分布**（稿 main=SPACE_BETWEEN · pad 左右 0） */
+/*
+ * ③④⑤ 描边胶囊 —— 三组**贴两边均匀分布**，且**左右各内缩 8**。
+ * ⚠️ 两个数缺一不可（都来自稿子的两处，别只看外层那个）：
+ *    · 外层 「button」：「main=SPACE_BETWEEN」、pad 左右 **0**；
+ *    · 内层 「Frame 13」 / 「Frame 15」（那两颗圆所在的组）：宽 58、**pad 左右各 8** ⇒
+ *      32 的圆从 **8** 处开始 ⇒ 视觉上圆是**内缩**的，不会顶到胶囊的圆角上被切掉。
+ * ⚠️ 所以这里写 「padding: 0 16rpx」（= 外层 0 + 内层 8）——
+ *    只写 「space-between」 会让两颗圆贴边被圆角切一半。
+ */
 .br-line {
   justify-content: space-between;
   gap: 16rpx;             /* 稿 gap8 */
-  padding: 0;             /* 稿 pad 左右 = 0 */
+  padding: 0 16rpx;       /* 稿：外层 0 + 内层各 8 */
   border: 2rpx solid currentColor;   /* 稿 stroke 1px */
 }
 
