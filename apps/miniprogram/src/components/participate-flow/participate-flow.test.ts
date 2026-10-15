@@ -219,14 +219,39 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
    *    ① `awaitRoll` 只由 `onPanelConfirm` 置上（换页 / 普通广播都不该滚）；
    *    ② 新的 bestScore **必须高于**上次那个（记录只增不减；没超越 ⇒ 值不变 ⇒ 不滚）。
    */
-  it('⭐⭐ 只有"确认之后、战绩真的涨了"才滚数字', () => {
-    expect(SRC.includes('awaitRoll = true'), '没人置 awaitRoll ⇒ 永远不会滚').toBe(true)
-    expect(SRC.includes('awaitRoll && prev !== null && next > prev'), '滚动判据不完整 ⇒ 没破纪录也会涨').toBe(true)
+  it('⭐⭐ 只有"确认之后、战绩真的涨了"才跳数字', () => {
+    expect(SRC.includes('awaitRoll = true'), '没人置 awaitRoll ⇒ 永远不会动').toBe(true)
+    expect(SRC.includes('awaitRoll && prev !== null && next > prev'), '触发判据不完整 ⇒ 没破纪录也会动').toBe(true)
     /** ⚠️ 置位必须在 `settled` **之前**：事件同步派发，晚了就错过那一次 */
     const i = SRC.indexOf('awaitRoll = true')
     const j = SRC.indexOf("triggerEvent('settled'", i)
     expect(j, 'awaitRoll 不是设置在 settled 之前那次').toBeGreaterThan(i)
-    /** 滚完要精确落在目标值上（不能停在 84.7） */
-    expect(SRC.includes('i >= STEPS ? to :'), '最后一帧没落在目标值上').toBe(true)
+    /** 最后一帧要**精确落在目标值**上（不能停在 84.7） */
+    expect(SRC.includes('last\n          ? to'), '最后一帧没落在目标值上').toBe(true)
+  })
+
+  it('⭐⭐ 数字动画是"随机跳"而不是"从旧值补间"，且每一帧都收成 1 位小数', () => {
+    /**
+     * ⚠️⚠️ 两条都是用户 2026-10-15 当场指出的：
+     *   ① **不补间** —— 要的是"数字出现时的随机跳"，不是"从旧值过渡到新值"；
+     *   ② **1 位小数** —— 中间帧的值会被直接画到卡片上，浮点就是 `79.43333333`。
+     */
+    expect(SRC.includes('Math.random()'), '不是随机跳（没有随机数）').toBe(true)
+    expect(
+      /from \+ \(to - from\) \*/.test(SRC),
+      '又写回"从旧值补间"了 ⇒ 用户明确不要这种',
+    ).toBe(false)
+    expect(SRC.includes('round1('), '每一帧没收成 1 位小数 ⇒ 卡片上会出现 79.43333333').toBe(true)
+    /** 收口函数本身：四舍五入到 1 位 */
+    expect(/function round1\(v: number\): number \{\s*return Math\.round\(v \* 10\) \/ 10/.test(SRC)).toBe(true)
+  })
+
+  it('⭐⭐ 卡片画的是格式化后的文本（不许直接画原始数字）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const DIR = fileURLToPath(new URL('../../', import.meta.url))
+    const wxml = readFileSync(DIR + 'components/btn-record/btn-record.wxml', 'utf-8')
+    expect(/\{\{score\}\}/.test(wxml), 'wxml 里又直接画 {{score}} 了 ⇒ 浮点会原样显示').toBe(false)
+    expect(wxml.includes('{{scoreText}}'), 'wxml 没走格式化后的文本').toBe(true)
   })
 })

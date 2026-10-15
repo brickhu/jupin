@@ -30,7 +30,7 @@
       <view class="br-bar" style="height:32rpx"></view>
       <view class="br-bar" style="height:16rpx"></view>
     </view>
-    <text class="br-t16">{{score}}</text>
+    <text class="br-t16">{{scoreText}}</text>
   </view>
   <view class="br-c48" bindtap="onMic">
     <ui-icon name="material-symbols:mic-outline" class="br-i20 br-on" />
@@ -75,7 +75,7 @@
   <ui-icon wx:elif="{{state === 'checking'}}" name="material-symbols:progress-activity-sharp" class="br-i24 br-spin" />
   <!-- scored = 分数 14/700 + › 12（稿：Frame 25 46×20 / gap4） -->
   <view wx:else class="br-hit br-arrow" catchtap="onPanel">
-    <text class="br-t14 br-bold">{{score}}</text>
+    <text class="br-t14 br-bold">{{scoreText}}</text>
     <ui-icon name="material-symbols:arrow-forward-ios" class="br-i12" />
   </view>
 </view>

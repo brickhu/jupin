@@ -31,6 +31,8 @@
  * ⚠️ 配色：**不写任何色值**，由宿主通过 `--btn-bg` / `--btn-fg` 声明
  *    （prd §7.2：卡内按钮 = `--btn-bg` 取卡片前景色、`--btn-fg` 取卡片背景色）。
  */
+import { formatScore } from '@jushuo/shared'
+
 Component({
   options: { virtualHost: true },
 
@@ -44,11 +46,27 @@ Component({
   },
 
   data: {
+    /**
+     * ⭐ **画出来的那个分数文本**（1 位小数）。
+     *
+     * ⚠️⚠️ 不许在 wxml 里直接画 `{{score}}`：那个值来自"数字动画"的中间帧，
+     *    浮点会原样显示（`79.43333333`）—— 用户 2026-10-15 当场看到的就是这个。
+     *    ⇒ **显示这一层统一走 `formatScore`**（与全站同一个口径），
+     *      不管上游给的是整数、浮点还是动画中间值，画出来永远是 1 位小数。
+     * ⚠️ `score < 0` 是"没有分数"的哨兵（见 record-state.ts）⇒ 画空，**不是** -1.0。
+     */
+    scoreText: '',
     /** 00:33 */
     durationText: '00:00',
   },
 
   observers: {
+    /** ⭐ 分数一变就重算显示文本（见 data.scoreText 的说明） */
+    score() {
+      const v = Number(this.data.score)
+      this.setData({ scoreText: v < 0 || !Number.isFinite(v) ? '' : formatScore(v) })
+    },
+
     durationMs(v: number) {
       const total = Math.max(0, Math.floor((v || 0) / 1000))
       const m = Math.floor(total / 60)

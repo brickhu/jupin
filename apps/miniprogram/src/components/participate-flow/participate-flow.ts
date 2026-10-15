@@ -64,6 +64,14 @@ interface Scratch {
   rollToken: number
 }
 
+/**
+ * ⚠️ 分数一律 **1 位小数**（与 `shared` 的 `formatScore` 同一口径）——
+ *    动画中间帧也一样：那个值会被直接画到卡片上。
+ */
+function round1(v: number): number {
+  return Math.round(v * 10) / 10
+}
+
 /** 提交之后多久问一次状态 */
 const POLL_MS = 1500
 /** 最多问这么多次（之后不再自动问；用户可以手动重试，状态仍在，见 prd） */
@@ -168,7 +176,7 @@ Component({
          *    `this.stopPoll` / `this.precheck` 全都报），**指不到真正的那一行**。
          *    ⇒ 一律"先调用、再空 `return`"。
          */
-        this.rollScore(prev, next)
+        this.flipScore(next)
         return
       }
       this.data.scratch.awaitRoll = false
@@ -273,43 +281,45 @@ Component({
     },
 
     /**
-     * ⭐⭐ **战绩数字滚上去**（用户 2026-10-15 定：点更新、弹窗关掉之后，
-     *     卡片上那个战绩数字要有数字动画）。
+     * ⭐⭐ **数字"跳"出来**（用户 2026-10-15 定：点更新、弹窗关掉之后，卡片上那个战绩数字
+     *     要有数字动画）。⭐ 用户同日又定了一次形态：**不要"从旧值过渡到新值"的补间**，
+     *     就是"**随机数字快速闪几下、最后落在目标值上**"。
      *
      * ⚠️ 为什么在流程里做，而不是给卡片写一套动画：卡片显示的那个分数
-     *    **本来就是流程 emit 的** —— 连续 emit 中间值，卡片自然就滚起来了。
+     *    **本来就是流程 emit 的** —— 连续 emit 中间值，卡片自然就动起来了。
      *    在组件里再写一遍，等于同一件事做两遍（还会跟状态机抢这个数）。
      *
      * ⚠️⚠️ **必须能被打断**：换句子、用户又录了一把、或又确认了一次 ⇒ `rollToken` 一变就停。
      *    不停的话，旧动画会把一个**过期的分数**写回卡片（"数字自己跳回去"）。
-     * ⚠️ 最后一帧**精确落在目标值**上（别停在 84.7 —— 那比不滚还糟）。
+     * ⚠️ 最后一帧**精确落在目标值**上（别停在 84.7 —— 那比不动还糟）。
      */
-    rollScore(from: number, to: number) {
+    flipScore(to: number) {
       const token = ++this.data.scratch.rollToken
-      const STEPS = 14
-      const STEP_MS = 45
+      /** 闪几下就停（8 帧 × 55ms ≈ 0.44s）—— 再长就变成"加载中"了 */
+      const FRAMES = 8
+      const FRAME_MS = 55
       let i = 0
-      /**
-       * ⚠️⚠️ **必须是函数声明，不能写成 `const tick = () => {… setTimeout(tick) }`** ——
-       *    那是**自引用箭头函数**，TS 推不出它自己的类型，而那一处推断失败会让
-       *    **整个 Component 字面量的 `this` 类型崩掉**：满屏 "Cannot invoke an object
-       *    which is possibly 'undefined'"（37 条），而真正的根源只是这一个 `const`。
-       *    函数声明是提升的，自引用合法。
-       */
       const flow = this
+      /**
+       * ⚠️⚠️ **必须是函数声明**（不能写成 `const tick = () => {… setTimeout(tick) }`）——
+       *    自引用箭头函数推不出自己的类型，而那一处推断失败会让**整个 Component
+       *    字面量的 `this` 类型崩掉**（满屏 "possibly undefined"，指不到真凶）。
+       */
       function tick(): void {
         if (flow.data.scratch.rollToken !== token) return
         i++
-        /** ease-out：先快后慢 —— 像计价器停下来那样 */
-        const eased = 1 - Math.pow(1 - i / STEPS, 3)
-        const v = i >= STEPS ? to : from + (to - from) * eased
-        flow.setData({ state: 'retry', score: v })
-        flow.emitState('retry', v)
-        if (i < STEPS) {
-          setTimeout(tick, STEP_MS)
-        } else {
-          flow.noteBest(to)
-        }
+        const last = i >= FRAMES
+        /**
+         * ⚠️⚠️ **每一帧都要收成 1 位小数**：这个值会一路画到卡片上，
+         *    直接给浮点（79.43333333）就是原样显示 —— 用户 2026-10-15 当场看到的。
+         */
+        const shown = last
+          ? to
+          : round1(Math.max(0, Math.min(100, to + (Math.random() - 0.5) * 40)))
+        flow.setData({ state: 'retry', score: shown })
+        flow.emitState('retry', shown)
+        if (last) flow.noteBest(to)
+        else setTimeout(tick, FRAME_MS)
       }
       tick()
     },
