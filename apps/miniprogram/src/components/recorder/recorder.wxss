@@ -83,6 +83,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * ⚠️ **操作说明那一行**（见 wxml 的说明）：它是"这个界面怎么用"的唯一来源，
+ *    尺寸比正文小一档、颜色弱化 —— 但**必须看得见**。
+ */
+.rc-hint {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--tk-primary_50, rgba(43, 20, 44, 0.5));
+}
+
 /* 波形（稿 weave 62×24 · 柱色 ink） */
 .rc-wavebox {
   width: 124rpx;
