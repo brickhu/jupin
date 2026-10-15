@@ -91,4 +91,20 @@ describe('句子卡的排版（Figma 539:860）', () => {
   it('⚠️ `joined` 必须在 Entry 里声明（wxml 一直在用它，TS 原来不知道）', () => {
     expect(TS.includes('joined?: boolean'), 'Entry 没声明 joined ⇒ 宿主忘了传也不报错').toBe(true)
   })
+
+  /**
+   * ⭐⭐ 守的是**"参与过"只有一处表达**（用户 2026-10-15 定：角标去掉）。
+   *
+   * ⚠️⚠️ 它原来有两处：**.ac-check 右下角的小勾** + 现在这条**边框浓度**。
+   *    同一件事画两遍正是仓库那条元规则要防的（"两个都画等于同一件事说两遍"）。
+   *    ⇒ 边框是整张卡的属性，扫列表时比角落一个小勾更显眼 —— 留下边框，去掉小勾。
+   *    ⚠️ 这条守门的价值是**防回潮**：谁哪天觉得"角落再放个勾更清楚"就会被它拦下。
+   */
+  it('⭐⭐ 参与过只由边框表达（没有第二个角标）', () => {
+    expect(WXML.includes('ac-check'), '「已参与」角标又回来了 ⇒ 与边框浓度重复').toBe(false)
+    expect(WXSS.includes('.ac-check'), '角标样式还在（没人用就是死CSS）').toBe(false)
+    /** 而边框那套必须还在（否则"参与过"就没人表达了） */
+    expect(WXSS.includes('color-mix(in srgb, currentColor 10%, transparent)')).toBe(true)
+    expect(WXSS.includes('.ac-card.ac-joined')).toBe(true)
+  })
 })

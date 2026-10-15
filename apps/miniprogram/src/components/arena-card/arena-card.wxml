@@ -113,10 +113,4 @@
                 bind:mic="onMic" bind:redo="onRedo" bind:confirm="onConfirm"
                 bind:panel="onScorePanel" bind:play="onPlayRecord" bind:record="onOpenRecord" />
   </view>
-
-  <!-- ⚠️ 「已参与」角标**只在 sm**：lg 的参与区（retry 态直接显示战绩）说得更清楚，
-       两个都画等于同一件事说两遍。 -->
-  <view wx:if="{{entry.joined && resolved === 'sm'}}" class="ac-check" style="background:{{fg}};color:{{bg}}">
-    <ui-icon name="mdi:check" />
-  </view>
 </view>
