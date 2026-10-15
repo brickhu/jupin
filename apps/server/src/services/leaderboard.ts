@@ -1,3 +1,4 @@
+import { countedAsRecord } from './record-rule'
 import { and, asc, count, desc, eq, gt, lt, max, min, ne, or, sql, type SQL } from 'drizzle-orm'
 import type { LeaderboardRow } from '@jushuo/shared'
 import { db } from '../db'
@@ -98,6 +99,11 @@ export async function getBestExcluding(
         eq(submissions.articleId, articleId),
         eq(submissions.userId, userId),
         eq(submissions.status, 'scored'),
+        /**
+         * ⚠️⚠️ **必须与"战绩"同一口径**（只有确认过的才算数，见 record-rule.ts）——
+         *    否则这里会拿一个**没算数的分**当"前高"，于是明明超越了却显示「保留战绩」。
+         */
+        countedAsRecord(),
         ne(submissions.id, excludeSubmissionId),
       ),
     )

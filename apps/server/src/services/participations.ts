@@ -1,8 +1,9 @@
-import { and, asc, count, desc, eq, isNotNull, max, min, or, sum } from 'drizzle-orm'
+import { and, asc, count, desc, eq, max, min, or, sum } from 'drizzle-orm'
 
 import { db } from '../db'
 import { participationIdOf } from '@jushuo/shared'
 import type { ArticleTheme, ArticleWordItem, ParticipationRecord } from '@jushuo/shared'
+import { countedAsRecord } from './record-rule'
 import { getRank } from './leaderboard'
 
 import { articles, participations, submissions } from '../db/schema'
@@ -64,17 +65,8 @@ function scoredOf(userId: number, articleId: string) {
     eq(submissions.userId, userId),
     eq(submissions.articleId, articleId),
     eq(submissions.status, 'scored'),
-    /**
-     * ⭐⭐ **只有"用户确认过"的提交才算参与**（prd §7.2，2026-10 定）。
-     *
-     * ⚠️⚠️ 这一行就是「确认才生效」的全部实现 —— 判据**只有这一处**，
-     *    所以增量路径（出分后那次 sync）与 `rebuildParticipations()` 不可能漂。
-     * ⚠️ 出分但没确认的那些：submission 行在、分数在，**但不进战绩/榜单**。
-     * ⭐ 于是 `services/scoring.ts` 在出分那一刻调 `syncParticipation` 会变成**空操作**
-     *    （这一条还没确认 ⇒ 不参与聚合 ⇒ 算出来还是原来那一行）。
-     *    这正是我们要的：**不必去删那段调用**，口径自己就对了。
-     */
-    isNotNull(submissions.confirmedAt),
+    /** ⭐⭐ 只认"用户确认过"的提交 —— 判据在 `record-rule.ts`（**一处**，别抄） */
+    countedAsRecord(),
   )
 }
 

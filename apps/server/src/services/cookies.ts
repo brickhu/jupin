@@ -1,3 +1,4 @@
+import { countedAsRecord } from './record-rule'
 import { and, desc, eq, lt, ne, sql } from 'drizzle-orm'
 import {
   COOKIE_PASS_LINE,
@@ -66,6 +67,8 @@ export async function highestInSentence(
         eq(submissions.userId, userId),
         eq(submissions.articleId, articleId),
         eq(submissions.status, 'scored'),
+        /** ⚠️ **必须与"战绩"同一口径**（只有确认过的才算数）—— 否则攻克线会拿没算数的分当参照 */
+        countedAsRecord(),
         ne(submissions.id, excludeSubmissionId),
       ),
     )
@@ -96,6 +99,12 @@ export async function arenaSnapshot(
       and(
         eq(submissions.articleId, articleId),
         eq(submissions.status, 'scored'),
+        /**
+         * ⚠️⚠️ 这里说的是"**与榜单同一个口径**"，而榜单读的是 `participations` ——
+         *    它只认**已确认**的提交（见 record-rule.ts）⇒ 这里也必须带上，
+         *    否则分位会用一个"没算数的分"算出来，用户对着榜单核不上。
+         */
+        countedAsRecord(),
         ne(submissions.id, excludeSubmissionId),
       ),
     )

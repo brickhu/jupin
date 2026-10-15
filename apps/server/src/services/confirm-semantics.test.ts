@@ -28,7 +28,7 @@ function walk(dir: string, out: string[] = []): string[] {
  *    它守的是"写法"，不是某一次查询的结果。
  */
 describe('确认口径 —— 参与记录只认已确认的提交', () => {
-  it('⭐ participations.ts 的 scoredOf 必须带上 confirmed_at 判据', () => {
+  it('⭐ participations.ts 的 scoredOf 必须走统一判据 countedAsRecord()', () => {
     const src = read('services/participations.ts')
     const at = src.indexOf('function scoredOf(')
     expect(at, '找不到 scoredOf —— 它是不是被改名/删了？').toBeGreaterThan(-1)
@@ -36,8 +36,8 @@ describe('确认口径 —— 参与记录只认已确认的提交', () => {
     // 取该函数体（到第一个右花括号）
     const body = src.slice(at, src.indexOf('\n}', at))
     expect(
-      body.includes('isNotNull(submissions.confirmedAt)'),
-      'scoredOf 少了 confirmed_at 判据 ⇒ 出分但没确认的提交会被算进战绩/榜单',
+      body.includes('countedAsRecord()'),
+      'scoredOf 没走统一判据 ⇒ 出分但没确认的提交会被算进战绩/榜单',
     ).toBe(true)
   })
 
@@ -57,7 +57,31 @@ describe('确认口径 —— 参与记录只认已确认的提交', () => {
     expect(iSync, '必须先 syncParticipation 再清语音（否则不知道留哪一份）').toBeLessThan(iPurge)
   })
 
-  it('⚠️ 判据只允许一处：「confirmed_at 算不算参与」不许在别处再判一次', () => {
+  it('⭐⭐ 判据只允许一处（record-rule.ts）：谁也不许把那个条件抄进自己的 where', () => {
+    /**
+     * ⚠️⚠️ 抄一份的症状很隐蔽：**两处口径不同** ⇒ "明明超越了却显示没超越"、
+     *    "战绩涨了但榜单没动" —— 不报错、类型不报错、测试也未必红。
+     *    真实发生过：`participations.scoredOf` 过滤了 `confirmed_at`，
+     *    而 `getBestExcluding` 没过滤 ⇒ **出分面板永远显示「保留战绩」**。
+     */
+    const bad: string[] = []
+    for (const f of [
+      'services/participations.ts',
+      'services/leaderboard.ts',
+      'services/cookies.ts',
+      'services/scoring.ts',
+      'services/settle.ts',
+    ]) {
+      if (/isNotNull\(\s*submissions\.confirmedAt\s*\)/.test(read(f))) bad.push(f)
+    }
+    expect(bad, '这些文件自己抄了一份"算不算战绩"的条件 ⇒ 两处口径会漂：').toEqual([])
+    // 两个调用方都必须走统一判据
+    for (const f of ['services/participations.ts', 'services/leaderboard.ts', 'services/cookies.ts']) {
+      expect(read(f).includes('countedAsRecord()'), f + ' 没走统一判据').toBe(true)
+    }
+  })
+
+  it('⚠️ 判据的唯一实现里带着 confirmed_at', () => {
     /**
      * 允许出现 `confirmedAt` 的文件 —— 每一个都有明确理由：
      *   · schema.ts           列的定义本身
@@ -68,6 +92,8 @@ describe('确认口径 —— 参与记录只认已确认的提交', () => {
      */
     const ALLOWED = new Set([
       'db/schema.ts',
+      /** ⭐ 判据的**唯一**实现（`countedAsRecord`）—— 别的文件只许调它 */
+      'services/record-rule.ts',
       'services/participations.ts',
       'services/confirm.ts',
       'services/submission-view.ts',
@@ -82,7 +108,7 @@ describe('确认口径 —— 参与记录只认已确认的提交', () => {
 
     expect(
       offenders,
-      '这些文件也碰了 confirmedAt —— 判据一旦散开就会与 scoredOf 漂：\n' + offenders.join('\n'),
+      '这些文件也碰了 confirmedAt —— 判据一旦散开就会与"算不算战绩"漂：\n' + offenders.join('\n'),
     ).toEqual([])
   })
 })
