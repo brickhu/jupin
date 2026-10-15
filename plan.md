@@ -163,6 +163,30 @@
   ⇒ **做完的标志**：① 上面那 9 处重复消失（`grep` 不到那串类名）；② 各页面 `bindtap` → `bind:press` 且行为不变；
   ③ `pnpm --filter @jushuo/miniprogram build` + `test` 绿；④ 真机过一遍受影响页面（空态/错误态的「重试」最容易看出来）。
 
+- [ ] **B91** **统一弹窗组件 `ui-dialog`**（用户 2026-10-15 定：「统一封装一个弹窗组件」，
+  DOM 结构参考 Figma `662:2476`）
+  ⚠️ 与 B57 同一族：`ui-button` 统一了按钮，这一条统一**浮层** —— 现状是四份各写各的
+  （`energy-tips` 居中放大 · `user-sheet` 贴底上滑 · `participate-flow` 的本地提示卡居中无动画 ·
+  `boot-overlay` 整页盖住），尺寸 / 遮罩浓度 / 出入场各抄一遍。
+  **对外只有四条属性**：`show`（受控开关，组件自己不关自己）·
+  `position`（`center` = 宽 364px 居中、**从中心放大**出现 / `bottom` = 100vw 贴底、**向上滑出**）·
+  `title`（空则不画那一行；**与 head 槽互斥** —— 配了 title 就忽略 head）·
+  `closable`（默认 true，**只决定点遮罩能不能关** —— 它就是 prd §7.2 那条「等待期点遮罩无效」）；
+  槽位 `head` / `main` / `foot`，间距 = `space.md`；基础样式 `bg-page` · `text-page-on` · `rounded-lg`；
+  最小 364×240（稿 1px = 2rpx ⇒ 728×480rpx）；关闭时抛 `hide`。
+  落地：`components/ui-dialog/`（纯逻辑 + 结构/契约守门单测）· `pages/ui-kit` 展示页。
+  **做完的标志**：`pnpm --filter @jushuo/miniprogram build` + `test` 绿；ui-kit 上五种形态肉眼过一遍。
+  ⚠️ 本次**不迁业务页**（上面那四个浮层都还在原位、行为不变）—— 迁移见 B92。
+  ⚠️ 稿子当天读不到（Figma REST 一直 429），面板 padding / 标题字号是**按仓库既有口径取的**，
+  等能读稿时按稿核一遍。
+
+- [ ] **B92** **把既有浮层迁到 `ui-dialog`**（B91 的下一步，等用户点头再动）
+  ⚠️ **一次只迁一个**并真机复验：`energy-tips`（居中 + 两个按钮）·
+  `participate-flow` 的本地提示卡 · `user-sheet`（贴底 + **抓手拖拽** —— 那套手势是它独有的，
+  要定"搬进组件"还是"留在页面"）· `boot-overlay`（整页盖住，**它不是弹窗**，大概率不迁）。
+  **做完的标志**：这几个组件里不再各自出现 `.xx-layer` / `.xx-mask` / `.xx-card` 三件套；
+  遮罩浓度、出入场、最小尺寸在全站只剩 `ui-dialog` 一处定义。
+
 
 - [ ] **B60** **前端：`recorder` 全屏录音面板（组件）**（prd §7.2，2026-10 定）
   ⭐ 它是**独立组件** `components/recorder/`：首页与详情页**共用**（同 `btn-record` 的理由）。

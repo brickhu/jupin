@@ -8,7 +8,7 @@
 -->
 <view class="px-3 pb-[60rpx] bg-page box-border" style="padding-top:{{navTop}}px">
 
-  <nav-bar id="nav" title="组件库 · 按钮" />
+  <nav-bar id="nav" title="组件库" />
 
   <view class="text-40rpx text-page-on font-medium mt-4 mb-1">ui-button</view>
   <view class="text-24rpx text-page-on_50 mb-6">四个维度：variant · color · size · roundness</view>
@@ -107,5 +107,52 @@
     <ui-button variant="outline" color="primary" size="md" roundness="full" width="full" bind:press="onPress">次 CTA（描边全宽）</ui-button>
     <ui-button variant="ghost" color="error" size="sm" roundness="full" bind:press="onPress">危险动作（小号 ghost）</ui-button>
   </view>
+
+  <!-- ═══ 9. ui-dialog ═══ -->
+  <view class="text-40rpx text-page-on font-medium mt-4 mb-1">ui-dialog</view>
+  <view class="text-24rpx text-page-on_50 mb-6">
+    两条位置（center 居中放大 / bottom 贴底上滑）× title（与 head 槽互斥）× closable（只管遮罩）
+  </view>
+
+  <view class="card p-3 mb-6">
+    <view class="flex flex-wrap gap-2">
+      <ui-button size="md" roundness="full" data-case="centerTitle" bind:press="onOpenDialog">center + title</ui-button>
+      <ui-button variant="outline" size="md" roundness="full" data-case="centerHead" bind:press="onOpenDialog">center + head 槽</ui-button>
+      <ui-button variant="outline" size="md" roundness="full" data-case="centerNoMask" bind:press="onOpenDialog">center + closable=false</ui-button>
+      <ui-button variant="outline" size="md" roundness="full" data-case="bottom" bind:press="onOpenDialog">bottom + title</ui-button>
+      <ui-button variant="ghost" size="md" roundness="full" data-case="bare" bind:press="onOpenDialog">只有 main + foot</ui-button>
+    </view>
+    <view class="text-22rpx text-page-on_50 mt-3">
+      点遮罩关闭会走 hide（这一页只 console.log 一句）；closable=false 那一版点遮罩没有反应。
+    </view>
+  </view>
+
+  <!--
+    ⭐ 演示用的**那一个**弹窗：上面五个按钮共用它，换的只是下面这四个属性。
+    ⚠️ 四个属性全在页面 data 上（受控）—— 这就是它的契约：组件自己不关自己，
+       点遮罩只抛 hide，关不关由页面说了算（见 ui-kit.ts 的 onDialogHide）。
+    ⚠️ show 为 false 时组件不渲染任何节点（收起动画放完才摘）。
+  -->
+  <ui-dialog show="{{dlgShow}}" position="{{dlgPosition}}" title="{{dlgTitle}}" closable="{{dlgClosable}}"
+             bind:hide="onDialogHide">
+    <!-- 只有 title 为空时才画这一块（配了 title，head 槽整个不渲染） -->
+    <view slot="head" class="text-32rpx text-page-on font-medium">自定义 head（title 为空时才画这一块）</view>
+    <!--
+      ⚠️ main 有两条路，这里**两条都用了**（都在同一块 main 区域里）：
+         · slot="main" = 具名槽，需求里写的就是它；
+         · 不写 slot 的那一段 = 默认槽 —— 小程序没有"没写 slot 的内容自动进具名槽"这回事，
+           只留具名槽的话，忘写 slot 的内容会**静默不见**（所以组件里额外留了默认槽）。
+    -->
+    <view slot="main" class="text-28rpx text-page-on_65">{{dlgNote}}</view>
+    <view class="text-22rpx text-page-on_50">这一段没写 slot 属性，走的是 main 里的默认槽。</view>
+    <view slot="foot" class="flex gap-2">
+      <view class="flex-1">
+        <ui-button variant="outline" size="md" roundness="full" width="full" bind:press="onDialogClose">取消</ui-button>
+      </view>
+      <view class="flex-1">
+        <ui-button size="md" roundness="full" width="full" bind:press="onDialogClose">知道了</ui-button>
+      </view>
+    </view>
+  </ui-dialog>
 
 </view>

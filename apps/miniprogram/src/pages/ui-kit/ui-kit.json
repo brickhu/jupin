@@ -1,7 +1,8 @@
 {
-  "navigationBarTitleText": "组件库 · 按钮",
+  "navigationBarTitleText": "组件库",
   "usingComponents": {
     "nav-bar": "/components/nav-bar/nav-bar",
-    "ui-button": "/components/ui-button/ui-button"
+    "ui-button": "/components/ui-button/ui-button",
+    "ui-dialog": "/components/ui-dialog/ui-dialog"
   }
 }

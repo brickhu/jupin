@@ -1,0 +1,58 @@
+<!--
+  ⭐ 统一弹窗（契约见 ui-dialog.ts）—— 两种位置 × 三个槽位。
+
+  ⚠️ 遮罩与面板是**兄弟**、不是父子：
+     catchtouchmove 加在遮罩上是为了挡住底下的页面跟着滚，而那是"冒泡层面"的拦截 ——
+     面板一旦被包进遮罩里，面板内部要滚的东西会被一起挡住。做成兄弟之后各管各的。
+  ⚠️ mounted / entered 是**两个**状态：前者决定在不在渲染树里、后者决定放到位没有。
+     合成一个 = 元素和最终样式同帧生效 = **没有出入场动画**。
+-->
+<view wx:if="{{mounted}}" class="{{layerCls}}">
+  <!-- closable=false 时点它没有任何反应（等待期就靠这一条拦误触） -->
+  <!--
+    ⚠️ 用 catchtap 而不是 bindtap：这是**模态**那一层，事件不该再往页面冒泡 ——
+       页面根节点上常有自己的 tap 处理器（「点空白收起搜索」那种），冒泡过去
+       就是"关掉弹窗的同时又顺手做了另一件事"。
+  -->
+  <view class="ud-mask {{entered ? 'ud-on' : ''}}" catchtap="onMaskTap" catchtouchmove="noop"></view>
+
+  <!--
+    ⚠️ 基础样式三条按需求写在**这里**（组件 WXSS 引用不到 UnoCSS 类名，但 WXML 能）：
+       bg-page（页面底色）· text-page-on（页面通用字色）· rounded-lg（圆角 32rpx）
+       ⚠️ 这三个 token 的浅 / 暗两版由 dark-mode.mjs 构建期自动反向，不用写 dark 变体。
+    ⚠️ 面板上的 catchtap 挡的是**底下那个页面**：面板与遮罩是兄弟，点面板不会冒泡到遮罩
+       （"点内容把自己关了"本来就不会发生）—— 但它会一路冒到页面根节点上。
+    ⚠️ catchtouchmove 是挡"面板开着、底下的页面还能被拖着滚"；它会连带挡住 main 里的滚动，
+       将来 main 真要有滚动内容，就改成"没滚到边界时才拦"（见 ui-dialog.ts 的 noop）。
+  -->
+  <view class="{{panelCls}} bg-page text-page-on rounded-lg {{entered ? 'ud-on' : ''}}"
+        catchtap="noop" catchtouchmove="noop">
+
+    <!--
+      head 那一行：title 与 head 槽**互斥**（配了 title，head 槽整个不渲染）——
+      判据在 ui-dialog-variants.ts 的 headMode，这里只按它二选一。
+    -->
+    <view wx:if="{{headMode === 'title'}}" class="ud-head">
+      <text class="ud-title">{{title}}</text>
+    </view>
+    <view wx:else class="ud-head">
+      <slot name="head" />
+    </view>
+
+    <!--
+      ⚠️ main 里有**两个** slot，这是故意的：
+         · 「slot name="main"」= 需求里的 main 槽，父组件写 slot="main" 落在这里；
+         · 「slot」不带 name（默认槽）= 父组件**忘写 slot 属性**时内容仍然进得来。
+           小程序没有"没写 slot 的内容自动进某个具名槽"这回事 —— 只留具名槽的话，
+           忘写 slot 的内容会**静默不见**（不报错），那是最难查的一类问题。
+    -->
+    <view class="ud-main">
+      <slot name="main" />
+      <slot />
+    </view>
+
+    <view class="ud-foot">
+      <slot name="foot" />
+    </view>
+  </view>
+</view>

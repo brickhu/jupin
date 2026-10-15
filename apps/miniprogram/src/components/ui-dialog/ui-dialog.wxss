@@ -1,0 +1,145 @@
+/*
+ * ⭐ 统一弹窗 —— 两种位置（center / bottom）× 三个槽位（head / main / foot）。
+ *    契约与 API 见 ui-dialog.ts，纯逻辑与判据见 ui-dialog-variants.ts。
+ *
+ * ⚠️ 色 / 圆角**刻意不在这里**：面板的 bg-page · text-page-on · rounded-lg 三个类写在
+ *    ui-dialog.wxml 上（组件 WXSS 引用不到 UnoCSS 类名，但 WXML 能）。本文件只管
+ *    **尺度、排布、动画**；色值改一处（uno.config.mjs 的 theme）。
+ *
+ * ⚠️ 稿是 1px = 2rpx（同 energy-tips / recorder）⇒ 最小 364×240 就是 728×480rpx。
+ *    刻意**不**按页面帧(390)去折算比例：要跟既有的两个浮层用同一把尺子
+ *    （energy-tips 366 宽 = 732rpx），否则并排出现时一个宽一个窄。
+ */
+
+/* 整屏一层：遮罩与面板都挂在它下面 */
+.ud-layer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+}
+
+/* center：这一层自己就是居中容器 ⇒ 面板就地居中，不需要绝对定位 */
+.ud-layer-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * ⚠️ 逐条写 top/right/bottom/left，**不用「inset: 0」简写** ——
+ *    老 WebView 不认它，整条声明会被丢掉（那一层就变成 0 尺寸、弹窗直接看不见）。
+ */
+.ud-mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.ud-mask.ud-on {
+  opacity: 1;
+}
+
+/*
+ * 面板：排布 + 尺度 + 动画。
+ * ⚠️ 槽位间距走「gap」，值只有一个来源「--tk-space-md」（theme.spacing.md = 32rpx）——
+ *    它就是需求里的 gap = space.md：改刻度时这里一个字都不用动。
+ * ⚠️ 时长必须与 ui-dialog-variants.ts 的 ANIM_MS 一致（收起是"先播动画、再摘节点"，
+ *    这里更长就会看到节点被提前摘掉）。ui-dialog.test.ts 把两处钉在一起。
+ */
+.ud-panel {
+  position: relative;
+  /* ⚠️ 必须在遮罩之上：两者同层，靠 z-index 分前后 */
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tk-space-md, 32rpx);
+  padding: var(--tk-space-lg, 48rpx) var(--tk-space-md, 32rpx);
+  /* ⭐ 最小尺寸：364 × 240（稿 1px = 2rpx） */
+  min-width: 728rpx;
+  min-height: 480rpx;
+  opacity: 0;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.ud-panel.ud-on {
+  opacity: 1;
+}
+
+/*
+ * main 吸收"最小高度带来的空档" ⇒ 内容比 240 矮时 foot 贴底（弹窗最常见的那种排布）；
+ * 内容更高时它就是内容高度（flex 项的 auto 最小尺寸挡住内容被压扁）。
+ */
+.ud-main {
+  flex: 1;
+}
+
+/*
+ * center：宽 364px（固定）+ 从**中心向外放大**。
+ * ⚠️ transform-origin 默认就是中心，"向外放大"靠 scale 本身表达，不用另写 origin。
+ */
+.ud-panel-center {
+  width: 728rpx;
+  transform: scale(0.94);
+}
+
+.ud-panel.ud-panel-center.ud-on {
+  transform: scale(1);
+}
+
+/*
+ * bottom：100vw 贴底 + 从下往上滑出。
+ * ⚠️ 宽度用 left/right 都贴 0 表达（等价 100vw，且不依赖 vw 单位）。
+ * ⚠️ 圆角只留上面两个：贴着屏幕底边时，下面两个圆角会把页面底色从角上漏出来。
+ *    选择器带上 .ud-panel（0-3-0）是为了**压过** WXML 上那个 .rounded-lg（0-1-0）——
+ *    不依赖两张样式表的先后顺序（谁先加载都不该改变结果）。
+ * ⚠️ 内边距底部要给全面屏那条横条让位；constant() 是 iOS 11.0-11.2 的老写法，
+ *    两行都留着，不认的那条会被丢掉、上一条照旧生效。
+ */
+.ud-panel.ud-panel-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  border-radius: var(--tk-radius-lg, 32rpx) var(--tk-radius-lg, 32rpx) 0 0;
+  transform: translateY(100%);
+  padding-bottom: calc(var(--tk-space-lg, 48rpx) + constant(safe-area-inset-bottom));
+  padding-bottom: calc(var(--tk-space-lg, 48rpx) + env(safe-area-inset-bottom));
+}
+
+.ud-panel.ud-panel-bottom.ud-on {
+  transform: translateY(0);
+}
+
+/*
+ * head 行：title 与 head 槽共用这一行（互斥，见 wxml）。不伸缩，永远按内容占位。
+ *
+ * ⚠️ 待真机确认（本机没法跑模拟器/真机）：**没填 head 槽时这一行会不会仍占一个 gap**。
+ *    小程序的「slot」是"具名插入点"，未填充时是否在 DOM 里留空节点没有权威说明 ——
+ *    若留，则"只有 main + foot"的弹窗顶部会多出 space.md（32rpx）。
+ *    ⚠️ 刻意**不加**开关属性去绕它：忘了开的失败方式是"内容静默不见"（比多 16px 难查得多）。
+ *    ui-kit 的「只有 main + foot」那一版就是拿来看这一条的：看着对就删掉这段说明。
+ */
+.ud-head {
+  flex-shrink: 0;
+}
+
+/* 标题字色跟随面板的 text-page-on（继承），这里只定字号与字重 —— 走刻度 token */
+.ud-title {
+  font-size: var(--tk-font-lg, 36rpx);
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.ud-foot {
+  flex-shrink: 0;
+}
