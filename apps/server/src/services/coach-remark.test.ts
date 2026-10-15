@@ -76,6 +76,11 @@ describe('AI 锐评', () => {
     expect(CODE.includes('NEVER GIVE UP'), '少了"引用句中的词"那条示例').toBe(true)
     /** ⭐ 夸满了就不必硬找缺点（那条示例全是夸，没有硬伤） */
     expect(CODE.includes('夸满了就不必硬找缺点'), '又在强求"必须找一个缺点"了').toBe(true)
+    /** ⭐ 低分也不强制"先给台阶"（用户给的那条低分示例是纯损、一句没夸） */
+    expect(CODE.includes('在向 HR 申请离职'), '少了"低分纯损"那条示例').toBe(true)
+    expect(!CODE.includes('先给个台阶**（别让人难堪），再用'), '又在强制低分必须给台阶').toBe(true)
+    /** ⭐ 对比梗模板 */
+    expect(CODE.includes('对比梗'), '少了"对比梗"这条手法').toBe(true)
     expect(CODE.includes('名次'), '没禁止名次断言 ⇒ 模型会编"全场MVP"（它看不到榜单）').toBe(true)
   })
 
@@ -108,5 +113,21 @@ describe('AI 锐评', () => {
 
   it('⭐ 明令禁止正能量套话（"继续加油"不是锐评）', () => {
     expect(CODE.includes('正能量套话')).toBe(true)
+  })
+
+  /**
+   * ⚠️⚠️ 下面两条都是**真机实测**逼出来的（2026-10-15 跑真模型时抓到的）：
+   */
+  it('⭐⭐ 输出里的中文引号要清掉（模型把示例里的「」学进了正文）', () => {
+    const r = parseCoachReply(JSON.stringify({ comment: '「Actions」的 æ 被你读成了打嗝，这话说得像在念说明书。' }))
+    expect(r?.comment.includes('「')).toBe(false)
+    expect(r?.comment.includes('」')).toBe(false)
+  })
+
+  it('⭐⭐ 分数/百分比必须禁（模型会把 58 分写成"48 分不冤"）；事实计数可用但必须对', () => {
+    expect(CODE.includes('分数与百分比一个都不要出现'), '没禁分数 ⇒ 模型会编一个错的分数').toBe(true)
+    expect(CODE.includes('48 分不冤'), '没把实测的那次编造写进提示词当反例').toBe(true)
+    /** ⭐ 别一刀切：真机实测"歇了四回"（longGapCount=4）比"停顿较多"生动得多 */
+    expect(CODE.includes('事实计数可以说'), '把有用的正确计数也一起禁了').toBe(true)
   })
 })
