@@ -5,7 +5,7 @@ import { resolveTheme } from '@jushuo/shared'
  * ⭐ 提交卡 —— 一次提交（submission）的两种呈现。
  *
  *   · bar  —— 「我的挑战」列表里的一行（页面 pages/me/challenges）
- *   · card —— 挑战结果页的整张结果卡（页面 pages/challenge），内容由页面通过 slot 放进
+ *   · card —— 一整张结果卡（内容由调用方通过 slot 放进），⚠️ 成绩单**没有**自己的展示页了
  *
  * ⚠️ 配色来自 theme（bar 取 row.theme；card 取页面传进来的 theme）：
  *    根节点给 background / color，内部一律 currentColor + 透明度。

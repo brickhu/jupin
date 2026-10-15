@@ -37,7 +37,6 @@ const item = (
   seq,
   createdAt,
   scheduleDate,
-  isPublic: false,
 })
 
 describe('historyRowsOf —— 朗读页的历史挑战列表', () => {

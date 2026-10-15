@@ -2,7 +2,7 @@ import { WORD_GREEN_LINE, WORD_RED_LINE, formatScore } from '@jushuo/shared'
 import type { ScoreParts } from '@jushuo/shared'
 
 /**
- * ⭐⭐ **五个分项的展示口径** —— 结果页（`pages/challenge`）与出分面板（`components/score-panel`）
+ * ⭐⭐ **五个分项的展示口径** —— 出分面板（`components/score-panel`）与「我的挑战」列表
  *    **共用这一份**。
  *
  * ⚠️⚠️ 为什么必须抽出来：它是「我们自己那套打分」的**唯一**展示口径 ——

@@ -235,8 +235,6 @@ async function main(): Promise<void> {
         audioKey: makeAudioKey(articleId, userId, attemptIdOf(userId, articleId, at)),
         audioBytes: 40000 + Math.round(rnd() * 60000),
         audioDurationMs: 3200 + Math.round(rnd() * 4200),
-        // 绝大多数公开，留一部分关掉 —— 隐私开关那条路也要有数据可查
-        isPublic: rnd() > 0.15,
         dimensions: JSON.stringify(dimensionsOf(score, jitter)),
         engine: 'mock',
         attempts: 1,

@@ -147,6 +147,18 @@
   <button class="ar-invite mt-4" open-type="share">
     <text class="text-32rpx">邀请好友参与挑战</text>
   </button>
+
+  <!--
+    ⭐ **分享我的战绩** —— 指向**我的竞技档案**（「pages/profile?u=&pid=」），
+    对方点开看到的是我在这句上的分数与那条录音。
+    ⚠️⚠️ 成绩单（submission）**没有**分享入口（用户 2026-10-15 定）——
+       它是"更新档案的参考依据"，不是给人看的东西。
+    ⚠️ 没有我的记录时**不画**这颗按钮（画了就会分享一条不存在的档案）。
+  -->
+  <button wx:if="{{leaderboard.length > 0 && myRow}}" class="ar-invite mt-3" open-type="share"
+          data-kind="record">
+    <text class="text-32rpx">分享我的战绩</text>
+  </button>
 </view>
 
 <!-- ⭐ 参与流程（与首页同一个组件 —— 录音面板/能量面板/出分面板都在它里面） -->

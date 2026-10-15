@@ -18,16 +18,15 @@ import { ensureAuthed } from './auth'
  *   · `/pages/join/join`      —— 它就是"没账号"时的去处，拦它 = 死循环；
  *   · `/pages/index/index`    —— 首页公开（服务端那侧也刻意不加鉴权，见 index.ts 的说明）；
  *   · `/pages/arena/arena`    —— 竞技场按句子寻址、对陌生人可见，匿名也能看榜；
- *   · `/pages/challenge/challenge` —— 挑战详情可分享，从分享链接进来的人没有账号也该看得到；
  *   · `/pages/profile/profile`     —— 别人（以及我自己）的成绩墙，公开。
- *   前三者里凡是**真的要写数据**的动作（收藏、提交、改资料），在动作那一处单独要身份 ——
+ *   这几者里凡是**真的要写数据**的动作（收藏、提交、改资料），在动作那一处单独要身份 ——
  *   门禁画在"动作"上，而不是画在"页面"上，这样匿名浏览永远打得开。
  */
 
 /** 受保护页的 route 前缀（带斜杠的 url 形式）—— 判据只有这一处 */
 const PROTECTED = [
   /**
-   * ⚠️ `/pages/reading/reading` 曾经在这里 —— 那一页已**整体废弃**（2026-10）：
+   * ⚠️ 「朗读页」曾经在这个清单里 —— 那一页已**整体废弃**（2026-10）：
    *    参与改成"首页 / 详情页**原地**弹录音面板"（见 components/participate-flow）。
    *    ⇒ 门禁现在画在**动作**上（点麦时过 ensureAuthed），而不是画在某个页面上。
    */
@@ -55,7 +54,6 @@ export const ROUTES = {
   streak: { url: '/pages/me/streak/streak', route: 'pages/me/streak/streak' },
   energy: { url: '/pages/me/energy/energy', route: 'pages/me/energy/energy' },
   arena: { url: '/pages/arena/arena', route: 'pages/arena/arena' },
-  challenge: { url: '/pages/challenge/challenge', route: 'pages/challenge/challenge' },
   /** ⭐ 浏览句库（公开）：顶部切标签 / 难度，下面无限滚动 */
   browse: { url: '/pages/browse/browse', route: 'pages/browse/browse' },
   /** ⭐ 全部标签（公开）：标签名录，点一个去 browse */

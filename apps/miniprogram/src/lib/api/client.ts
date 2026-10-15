@@ -1356,9 +1356,8 @@ export function submitReading(
   /**
    * ⭐ 是否公开这次录音（「卡片之外的入口」能不能听到）—— 默认 **false**。
    * ⚠️ 提交时**不问**用户，统一按默认私密落库；结果页那个「允许公众收听」
-   *    开关再改成 true（见 pages/challenge 的 onTogglePublic）。
+   *    ⚠️ 「是否公开」那个开关已经取消（用户 2026-10-15 定）：**语音一律公开**，没有第二条路。
    */
-  isPublic = false,
   attemptId = '',
 ): Promise<SubmissionStatusResponse> {
   return request<SubmissionStatusResponse>('/api/user/submissions', {
@@ -1374,7 +1373,7 @@ export function submitReading(
      *    这里给它一个缺省空串只是为了让调用方显式想起它；服务端会拒绝空值（400）。
      */
     // ⚠️ **不再传 scheduleDate**（2026-09 删）：这次挑战归哪一天由服务端受理时取它的今天。
-    data: { articleId, audioKey, audioUrl, isPublic, attemptId },
+    data: { articleId, audioKey, audioUrl, attemptId },
   })
 }
 
@@ -1385,21 +1384,6 @@ export function submitReading(
  *    （读一行记录而已）。它只在「服务端发现上次的打分进程死了、就地重跑」
  *    那一种情况下才会变慢；即便那次请求超时，下一轮轮询也能拿到结果。
  */
-/**
- * ⭐ 改这段录音的可见性 —— **提交之后**才问用户（见结果页的开关）。
- *
- * ⚠️ 服务端只允许本人改（不校验归属的话，任何人都能把别人的录音设成公开）。
- */
-export function setSubmissionVisibility(
-  submissionId: string,
-  isPublic: boolean,
-): Promise<{ submissionId: string; isPublic: boolean }> {
-  return request<{ submissionId: string; isPublic: boolean }>(
-    '/api/user/submissions/' + submissionId + '/visibility',
-    { method: 'POST', data: { isPublic } },
-  )
-}
-
 export function fetchSubmissionStatus(submissionId: string): Promise<SubmissionStatusResponse> {
   return request<SubmissionStatusResponse>('/api/user/submissions/' + submissionId)
 }
@@ -1430,7 +1414,7 @@ export function fetchUserProfile(userId: number): Promise<UserProfileResponse> {
  * ⭐ 单取一段录音的**可播地址** —— 「我的挑战」列表里那个播放按钮。
  *
  * ⚠️ 走**开放路径**（与 /api/challenge/:sid 同一条口径）：不做用户鉴权、
- *    也不判 isPublic —— 音频的可见性由入口决定，不由这条查询决定。
+ *    ⚠️ 音频**一律公开**（用户 2026-10-15 定：隐藏起来就失去社交的意义）——
  * ⚠️ 地址会过期，所以不能缓存、也不能提前批量取：每一步都按用户真正点下去
  *    那一下来。云端第一次播放可能在服务端转一次码，转好的副本会留在对象存储里。
  */

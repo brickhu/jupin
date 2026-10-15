@@ -4,7 +4,7 @@
  * ⚠️ 为什么单独一个模块：**路由常量**只该有一处 ——
  *    用户面板、列表页、朗读页好几处都要用，各写一个字面量，改路径时必漏一个。
  * ⚠️ 路由分层：属于「我」的页面放在 pages/me/ 下（我的挑战 / 参与场次）；
- *    而**挑战结果页**（pages/challenge）刻意留在 me 之外 ——
+ *    **竞技场页**（pages/arena）刻意留在 me 之外 ——
  *    它要能被分享、被陌生人打开，不属于任何一个人的私有地盘。
  *
  * ⚠️⚠️ 这里每个函数都**不再自己写 `wx.navigateTo`**，一律走 `lib/route` 的 `go` / `goOnce` ——
@@ -16,8 +16,12 @@ import { go, goOnce, goPublic } from './route'
 
 /** 「我的挑战」列表页 */
 const CHALLENGES_PAGE = '/pages/me/challenges/challenges'
-/** 「挑战结果」页 —— 录音打完分要 redirect 过去的那一页（可分享，故不在 me 下） */
-export const CHALLENGE_PAGE = '/pages/challenge/challenge'
+/**
+ * ⭐ **成绩单没有自己的展示页**（用户 2026-10-15 定：submission 不支持分享，
+ *    "成绩单的展示页直接干掉"）—— 唯一对外的东西是**竞技档案**，
+ *    而它就在这句子的竞技场页上。所以"看某一次挑战"= 去**那句子的竞技场**。
+ */
+const ARENA_PAGE = '/pages/arena/arena'
 /**
  * ⭐ 「用户主页」—— 只读的成绩墙。
  *
@@ -107,8 +111,8 @@ export function openChallengesPage(): void {
  *    AI 点评都放在同一个结果包里）—— 传一堆参数反而会出现「参数与实际不一致」。
  * ⚠️ 检测还没出结果的记录不该点进来（列表那边已经拦了），这里不管。
  */
-export function openChallengePage(submissionId: string): void {
-  const url = CHALLENGE_PAGE + '?sid=' + encodeURIComponent(submissionId)
+export function openArenaPage(articleId: string): void {
+  const url = ARENA_PAGE + '?articleId=' + encodeURIComponent(articleId)
   // ⚠️ 公开页：从分享链接进来的人**没有账号也该看得到**（见文件头）
   goPublic(url)
 }

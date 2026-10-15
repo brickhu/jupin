@@ -27,7 +27,7 @@ import { renderWordColors } from '../../lib/word-colors'
  * ## 五维与逐词都来自公共 lib
  *
  * ⚠️ 绝不能在这里另写一份渲染口径：「lib/score-parts.ts」 与 「lib/word-colors.ts」
- *    是结果页（「pages/challenge」）与本面板**共用**的那一份。
+ *    是「我的挑战」列表与本面板**共用**的那一份。
  *    ⚠️ 尤其**不要拿引擎那四维**（accuracy/fluency/standard/integrity）顶替五维 ——
  *       总分不按它们等权算，摆在一起用户对不上（"我准确度 91，为什么总分 85"）。
  */

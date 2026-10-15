@@ -433,7 +433,7 @@ Component({
 
       try {
         const up = await uploadAudio(cache.audioPath, { articleId, attemptId: cache.attemptId })
-        const res = await submitReading(articleId, up.audioKey, up.audioUrl, false, cache.attemptId)
+        const res = await submitReading(articleId, up.audioKey, up.audioUrl, cache.attemptId)
 
         const next: ParticipateCache = { ...cache, submissionId: res.submissionId, confirmed: res.confirmed }
         saveParticipate(articleId, next)
@@ -599,7 +599,8 @@ Component({
     onPanelDetail() {
       const cache = this.data.scratch.cache
       if (!cache || !cache.submissionId) return
-      wx.navigateTo({ url: '/pages/challenge/challenge?id=' + cache.submissionId })
+      /** ⚠️ 成绩单**没有**自己的展示页（用户 2026-10-15 定）⇒ 去看这句的竞技档案 */
+      wx.navigateTo({ url: '/pages/arena/arena?articleId=' + this.data.articleId })
     },
 
     // ── 内部状态 ──────────────────────────────────────────────

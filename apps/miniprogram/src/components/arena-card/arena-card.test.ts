@@ -12,7 +12,7 @@ const TS = readFileSync(new URL('./arena-card.ts', import.meta.url), 'utf-8')
  *    逐词渲染（为了点词发音）时，如果靠"让每个词自带一个尾随空格"（`w + ' '`）来排，
  *    **小程序渲染 `<text>` 会把结尾的空格吃掉** ⇒ 真机上是一串 `Everythingshouldbemadeas`，
  *    而模拟器/类型/测试**全都看不出来**（只能靠肉眼看设计图对比）。
- *    ⇒ 间距必须由 **margin/padding 类**给（与 `pages/challenge` 的逐词排法一致）。
+ *    ⇒ 间距必须由 **margin/padding 类**给（全仓库逐词都这么排，见 score-panel）。
  */
 describe('句子卡的排版（Figma 539:860）', () => {
   /** 逐词那一行的属性（⚠️ 不能拿 indexOf('{{item}}') 定位 —— 它先命中 data-w="{{item}}"） */

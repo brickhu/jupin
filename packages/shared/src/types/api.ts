@@ -82,7 +82,6 @@ export interface SubmitRequest {
    *    通知）进来的任何人都能听，不受这一位影响（链接即凭据）。
    *    语音是生物特征 —— 默认必须是不公开，公开由用户自己打开开关。
    */
-  isPublic?: boolean
 }
 
 /**
@@ -189,7 +188,6 @@ export interface SubmitResponse {
    *    所以这里必须回传**权威值**，不能让客户端自己猜一个：
    *    用户可能已经改过，而结果页会被反复拉到。
    */
-  isPublic: boolean
   /** ⭐ 这一句的视觉主题 —— 结果卡用它上色；老内容为 null ⇒ 品牌色兜底 */
   theme: ArticleTheme | null
   /** 上一次成绩，用于「🎉 62 → 87」 */
@@ -799,7 +797,6 @@ export interface ParticipationSubmissionItem {
   /** 这次挑战属于哪一天（点进竞技场要用；老记录可能没有） */
   scheduleDate: string | null
   /** 别人能不能听到这段录音 */
-  isPublic: boolean
 }
 
 /** `GET /api/user/participation/{articleId}/submissions` 的响应 */

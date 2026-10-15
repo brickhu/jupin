@@ -456,6 +456,13 @@
       "when": 1792037231150,
       "tag": "0065_dizzy_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1792040470750,
+      "tag": "0066_brave_salo",
+      "breakpoints": true
     }
   ]
 }

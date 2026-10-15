@@ -66,7 +66,7 @@ const HEARTBEAT_TIMEOUT_MS = 30_000
  * ⭐ 路由声明（POST /api/user/submissions）。
  *
  * ⚠️ 请求体只把**服务端真正必需的**两个字段标成必填（articleId / audioKey）——
- *    其余（audioUrl / isPublic / attemptId）保持可选：
+ *    其余（audioUrl / attemptId）保持可选：
  *    它们各有自己的校验分支与错误文案（比如 attemptId 不合法时的提示语），
  *    在这里标必填会把那些分支挡掉、错误文案也跟着变。
  *
@@ -99,7 +99,6 @@ const submitRoute = createRoute({
              *    这是端到端测试当场抓到的回归（真机上就是"提交不了"）。
              */
             audioUrl: z.string().nullish().openapi({ description: '带签名的下载地址（可选，可为 null）' }),
-            isPublic: z.boolean().nullish().openapi({ description: '是否公开这次录音（默认 false）' }),
             attemptId: z.string().nullish().openapi({ description: '幂等键（32 位十六进制）' }),
           }),
         },
@@ -135,7 +134,6 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
     articleId?: string
     audioKey?: string
     audioUrl?: string
-    isPublic?: boolean
     attemptId?: string
   }>()
   const articleId = body.articleId
@@ -144,7 +142,6 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
   const attemptId = body.attemptId
   // ⚠️ 缺省必须是 false（与 DB 默认值一致）—— 公开是用户**自己打开开关**的结果，
   //    不是默认。没传就是私密，由结果页那个「允许公众收听」开关改成 true。
-  const isPublic = body.isPublic === true
   if (!articleId || !audioKey) {
     return c.json({ ok: false, error: '缺少 articleId 或 audioKey' }, 400)
   }
@@ -363,7 +360,6 @@ submissionsRoutes.openapi(submitRoute, async (c) => {
           //    不存它就只能走「开放接口服务」——那条路在本项目 dev 环境实测没通。
           audioUrl: audioUrl ?? null,
           engine: env.ENGINE,
-          isPublic,
           // ⭐ 幂等键落库（见 db/schema.ts）—— 打分过程会改写 audioKey，但这一列永不变
           attemptId,
           status: 'scoring',
@@ -607,58 +603,6 @@ submissionsRoutes.openapi(submissionClaimRoute, async (c) => {
     { ok: true as const, data: { claimed: r.claimed, adopted: r.adopted, cookies: r.cookies } },
     200,
   )
-})
-
-const submissionVisibilityRoute = createRoute({
-  method: 'post',
-  path: '/{id}/visibility',
-  tags: ['挑战提交'],
-  summary: '改这次录音的可见性（允许公众收听 / 关掉）',
-  security: [{ userToken: [] }],
-  request: {
-    params: z.object({ id: z.string().openapi({ description: '提交 id' }) }),
-    body: {
-      content: {
-        'application/json': {
-          schema: z.object({ isPublic: z.boolean().openapi({ description: 'true = 允许公众收听' }) }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: okEnvelope(z.object({ submissionId: z.string(), isPublic: z.boolean() })),
-        },
-      },
-      description: '改完之后的权威值',
-    },
-    400: errorResponse('缺 isPublic'),
-    404: errorResponse('提交记录不存在（或不属于当前用户）'),
-  },
-})
-
-submissionsRoutes.openapi(submissionVisibilityRoute, async (c) => {
-  const userId = c.get('userId')
-  const id = c.req.param('id')
-
-  const body = await c
-    .req.json<{ isPublic?: boolean }>()
-    .catch(() => ({}) as { isPublic?: boolean })
-  if (typeof body.isPublic !== 'boolean') {
-    return c.json({ ok: false, error: '缺少 isPublic' }, 400)
-  }
-
-  const [row] = await db.select().from(submissions).where(eq(submissions.id, id)).limit(1)
-  // ⚠️ 不属于本人一律当作不存在 —— 与 GET /:id 同一条口径
-  if (!row || row.userId !== userId) {
-    return c.json({ ok: false, error: '提交记录不存在' }, 404)
-  }
-
-  await db.update(submissions).set({ isPublic: body.isPublic }).where(eq(submissions.id, id))
-  console.log('[submissions] 可见性改为 ' + (body.isPublic ? '公开' : '私密') + ' id=' + id)
-  return c.json({ ok: true, data: { submissionId: id, isPublic: body.isPublic } }, 200)
 })
 
 // ⚠️ describe() 已经搬到 services/submission-view.ts ——

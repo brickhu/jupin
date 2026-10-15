@@ -106,6 +106,15 @@ Page({
       scoreText: string
       isMe: boolean
     }[],
+    /**
+     * ⭐ 榜单里**我的那一行**（没有就是 null）—— "分享我的战绩"要用它的 participationId。
+     * ⚠️⚠️ WXML 里做不了 `.find()`：直接写 `{{leaderboard.find(...)}}` **画不出来且不报错**
+     *    （WXML 不做类型检查）⇒ 必须在 data 里备好。这一条我踩过一次。
+     */
+    myRow: null as {
+      participationId: string
+      scoreText: string
+    } | null,
     /** 参与者总数（来自参与资源，用来显示"共 N 人参与"与分页提示） */
     lbTotal: 0,
 
@@ -272,7 +281,12 @@ Page({
           scoreText: formatScore(r.bestScore),
         })),
       )
-      this.setData({ lbLoading: false, leaderboard: rows, lbTotal: res.total })
+      this.setData({
+        lbLoading: false,
+        leaderboard: rows,
+        myRow: rows.find((r) => r.isMe) ?? null,
+        lbTotal: res.total,
+      })
     } catch (err) {
       this.setData({ lbLoading: false, lbError: (err as Error).message || '排行榜取不到' })
     }
@@ -433,10 +447,27 @@ Page({
   },
 
   /**
-   * ⭐ 邀请好友 —— 分享内容在这里决定（`<button open-type="share">` 只负责拉起面板）。
-   * ⚠️ 路径 = **这一句的朗读挑战页**：对方点开看到的是同一句、同一个榜单。
+   * ⭐ 分享 —— 两种，靠按钮上的 `data-kind` 区分（`<button open-type="share">` 只负责拉起面板）。
+   *
+   * · **默认（邀请好友）**：路径 = 这一句的朗读挑战页，对方看到同一句、同一个榜单；
+   * · **`data-kind="record"`（分享我的战绩）**：路径 = **我的竞技档案**
+   *   （`pages/profile?u=&pid=`）—— 对方看到的是**我在这句上的分数与那条录音**。
+   *
+   * ⚠️⚠️ **成绩单（submission）没有自己的分享入口**（用户 2026-10-15 定：
+   *    "submission 不支持分享，成绩单的展示页直接干掉；用户唯一存在的分享路径是分享我的 participation"）。
+   *    所以这里分享的是**档案**，不是某一次提交。
+   * ⚠️ 没有我的记录时**退回邀请那条**（绝不能拼出一个指向不存在档案的链接）。
    */
-  onShareAppMessage() {
+  onShareAppMessage(e?: { target?: { dataset?: Record<string, unknown> } }) {
+    const kind = e?.target?.dataset?.kind
+    const mine = this.data.leaderboard.find((r) => r.isMe)
+    if (kind === 'record' && mine?.participationId) {
+      const myId = me.getState().userInfo?.id ?? 0
+      return {
+        title: '我在这句上读了 ' + mine.scoreText + ' 分，来听听',
+        path: '/pages/profile/profile?u=' + myId + '&pid=' + mine.participationId,
+      }
+    }
     return {
       title: this.shareTitle(),
       path: '/pages/arena/arena?article=' + this.data.articleId,

@@ -380,7 +380,6 @@ export const ParticipationSubmissionItemSchema = z
     seq: z.number().int(),
     createdAt: z.string(),
     scheduleDate: z.string().nullable(),
-    isPublic: z.boolean(),
   })
   .openapi('ParticipationSubmissionItem')
 
@@ -545,7 +544,6 @@ export const SubmitResponseSchema = z
     isPersonalBest: z.boolean(),
     isConquered: z.boolean(),
     articleId: z.string(),
-    isPublic: z.boolean(),
     theme: ArticleThemeSchema.nullable(),
     previousBest: z.number().nullable(),
     /** 这一把是这句的第几次（可空：序号只在"有结论"时才分配） */

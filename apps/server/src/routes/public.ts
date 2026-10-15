@@ -153,8 +153,7 @@ challengeRoutes.openapi(challengeShareRoute, async (c) => {
       owner: ownerView,
       result: status.result,
       // ⭐ 录音**无条件给**：从挑战详情分享卡片（群聊 / 个人聊天 / 通知）进来的
-      //    任何人都能听，不看 isPublic —— 链接即凭据（sid 是 24 位 hash）。
-      //    isPublic 只决定「卡片之外的入口」给不给音频，那些入口自己判。
+      //    ⚠️ 音频**一律公开**（用户 2026-10-15 定）：曾经有个 is_public 开关，已删。
       audio: await playbackRefOf(sid, row.audioKey),
       at: (row.scoredAt ?? row.createdAt).toISOString(),
     },
@@ -168,7 +167,7 @@ challengeRoutes.openapi(challengeShareRoute, async (c) => {
  *    地址单独授权、会过期，几十条一次性全取等于让「打开列表」变成一次批量探测；
  *    而它又不需要整个结果包（列表已经有成绩了）。
  *    结果页反过来：它拿的是 /:sid 里那一份，不用再调这里。
- * ⚠️ 不判 isPublic、不校验归属 —— 理由见上面那条路由的隐私说明。
+ * ⚠️ 不校验归属、也不判可见性（音频一律公开）—— 理由见上面那条路由的隐私说明。
  */
 const challengeAudioRoute = createRoute({
   method: 'get',

@@ -204,7 +204,6 @@ userRoutes.openapi(participationSubmissionsRoute, async (c) => {
       score: submissions.score,
       createdAt: submissions.createdAt,
       scheduleDate: submissions.scheduleDate,
-      isPublic: submissions.isPublic,
       /** ⚠️ 客户端按它区分「未出分」与「有分」（见下面 where 的说明） */
       status: submissions.status,
     })
@@ -245,7 +244,6 @@ userRoutes.openapi(participationSubmissionsRoute, async (c) => {
     score: r.score === null || r.score === undefined ? null : Number(r.score),
     createdAt: r.createdAt.toISOString(),
     scheduleDate: r.scheduleDate ?? null,
-    isPublic: r.isPublic === true,
   }))
 
   /**

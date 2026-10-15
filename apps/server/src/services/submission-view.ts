@@ -86,8 +86,6 @@ export async function describe(
     // ⚠️ 服务端认定的句子 —— 客户端用它当「我在这句上的战绩」的键。
     //    竞技数据跟着句子走，与日期无关（见 services/leaderboard.ts）。
     articleId,
-    // ⚠️ 从库里读回来，不是写死 —— 用户可能在结果页改过（见 /visibility）
-    isPublic: row.isPublic,
     // ⭐ 视觉主题（结果卡上色）；老内容 / 已删句子为 null ⇒ 端侧品牌色兜底
     theme: article[0]?.theme ?? null,
     isPersonalBest: previous === null || scoreNum > previous,

@@ -561,7 +561,6 @@ export const submissions = mysqlTable('submissions', {
    * ⚠️ 默认 false：公开必须是用户自己打开开关的结果。
    *    从挑战详情分享卡片进来的任何人本来就能听（链接即凭据），不受这一位影响。
    */
-  isPublic: boolean('is_public').notNull().default(false),
 
   /**
    * ⭐ 这次提交**继承自 articles.theme** 的视觉主题**快照**。
@@ -573,7 +572,6 @@ export const submissions = mysqlTable('submissions', {
   theme: json('theme').$type<ArticleTheme>(),
 
   /** ① 点赞数（冗余计数 —— 要能排序，每次 COUNT 会随点赞变多而变慢） */
-  likeCount: int('like_count').notNull().default(0),
 
   /** 词级分数（JSON，随讯飞结果一次性写入） */
   wordScores: text('word_scores'),
@@ -1015,17 +1013,6 @@ export const favorites = mysqlTable('favorites', {
   primaryKey({ columns: [t.userId, t.articleId] }),
   /** 「我的收藏」列表：按收藏时间倒序（最近收的排前面） */
   index('favorites_user_time_idx').on(t.userId, t.createdAt),
-])
-
-/** 点赞 —— 谁赞了哪条 submission */
-export const likes = mysqlTable('likes', {
-  id: int('id').autoincrement().primaryKey(),
-  submissionId: varchar('submission_id', { length: SUBMISSION_ID_LENGTH }).notNull().references(() => submissions.id),
-  userId: int('user_id').notNull().references(() => users.id),
-  createdAt: datetime('created_at', { mode: 'date', fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
-}, (t) => [
-  uniqueIndex('likes_submission_user_idx').on(t.submissionId, t.userId),
-  index('likes_submission_idx').on(t.submissionId),
 ])
 
 /** LLM 对某次提交的反馈 */

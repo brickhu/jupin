@@ -10,7 +10,7 @@ import type { ArticleTheme, ChallengeRecord, ChallengeWordScore } from '@jushuo/
 
 import { fetchChallenges } from '../../../lib/api/client'
 import { stopAudio } from '../../../lib/audio/play'
-import { openChallengePage } from '../../../lib/challenges'
+import { openArenaPage } from '../../../lib/challenges'
 import { navPadTop, notifyNavScroll } from '../../../lib/nav'
 import { agoText } from '../../../lib/time'
 
@@ -219,6 +219,6 @@ Page({
       return
     }
     stopAudio()
-    openChallengePage(row.submissionId)
+    openArenaPage(row.articleId)
   },
 })
