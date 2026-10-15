@@ -226,24 +226,29 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     const i = SRC.indexOf('awaitRoll = true')
     const j = SRC.indexOf("triggerEvent('settled'", i)
     expect(j, 'awaitRoll 不是设置在 settled 之前那次').toBeGreaterThan(i)
-    /** 最后一帧要**精确落在目标值**上（不能停在 84.7） */
-    expect(SRC.includes('last\n          ? to'), '最后一帧没落在目标值上').toBe(true)
+    /** 最后一帧要**精确落在目标值**上（不能停在 84.7）—— 见下面那条更细的守门 */
+    expect(SRC.includes('done ? to :'), '最后一帧没落在目标值上').toBe(true)
   })
 
-  it('⭐⭐ 数字动画是"随机跳"而不是"从旧值补间"，且每一帧都收成 1 位小数', () => {
+  it('⭐⭐ 数字动画照搬朗读页那份调过的实现（从 0 滚、末帧精确、1 位小数）', () => {
     /**
-     * ⚠️⚠️ 两条都是用户 2026-10-15 当场指出的：
-     *   ① **不补间** —— 要的是"数字出现时的随机跳"，不是"从旧值过渡到新值"；
-     *   ② **1 位小数** —— 中间帧的值会被直接画到卡片上，浮点就是 `79.43333333`。
+     * ⚠️⚠️ 形态与常数都是**别人调过的**，不许自己编：
+     *    · **从 0 滚到最终值** —— 不是"从旧战绩过渡到新战绩"（用户 2026-10-15 否掉了后者）；
+     *    · `ROLL_MS = 600` / `ROLL_FRAME_MS = 16` —— 600ms 是产品给的区间（500–700），
+     *      16ms ≈ 60fps；`pages/reading` 那份实现里写着这两条的理由。
+     *    · **末帧无条件写精确值** —— 缓动算出来的近似值会让 89.46 停在 89.4，
+     *      而服务端给的是 89.5（"动画结束时差 0.1"）。
      */
-    expect(SRC.includes('Math.random()'), '不是随机跳（没有随机数）').toBe(true)
-    expect(
-      /from \+ \(to - from\) \*/.test(SRC),
-      '又写回"从旧值补间"了 ⇒ 用户明确不要这种',
-    ).toBe(false)
+    expect(/const ROLL_MS = 600\b/.test(SRC), '时长常数被改了（它是产品调过的）').toBe(true)
+    expect(/const ROLL_FRAME_MS = 16\b/.test(SRC), '帧间隔被改了').toBe(true)
+    expect(SRC.includes('1 - Math.pow(1 - t, 3)'), 'ease-out cubic 没了').toBe(true)
+    expect(SRC.includes('done ? to :'), '末帧没无条件写精确值').toBe(true)
+    expect(SRC.includes('to * k'), '不是从 0 滚到最终值').toBe(true)
     expect(SRC.includes('round1('), '每一帧没收成 1 位小数 ⇒ 卡片上会出现 79.43333333').toBe(true)
-    /** 收口函数本身：四舍五入到 1 位 */
-    expect(/function round1\(v: number\): number \{\s*return Math\.round\(v \* 10\) \/ 10/.test(SRC)).toBe(true)
+    /** 反向：不许再出现"从旧值补间"（那是被否掉的那版） */
+    expect(/from \+ \(to - from\) \*/.test(SRC), '又写回"从旧值补间"了').toBe(false)
+    /** 也不许退化成"随机跳"（我中途编过的那版，同样被否） */
+    expect(SRC.includes('Math.random()'), '又变成随机数字了 —— 要的是照搬那份滚动').toBe(false)
   })
 
   it('⭐⭐ 卡片画的是格式化后的文本（不许直接画原始数字）', async () => {

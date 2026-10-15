@@ -72,6 +72,17 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10
 }
 
+/**
+ * ⭐⭐ **数字滚动的时长与帧间隔** —— 照搬朗读页那份**已经调过**的实现
+ * （`pages/reading` 的 `ROLL_MS` / `ROLL_FRAME_MS`，那一页整体废弃时把它留在这里了）。
+ *
+ * ⚠️ 600ms：短了看不清"在涨"，长了就变成拖时间（**产品给的区间是 500–700ms**）。
+ * ⚠️ 16ms ≈ 60fps：用 `setTimeout` 逐帧推进、**不引任何动画库** ——
+ *    小程序端没有可靠的 `requestAnimationFrame` 等价物，而这点计算量足够小。
+ */
+const ROLL_MS = 600
+const ROLL_FRAME_MS = 16
+
 /** 提交之后多久问一次状态 */
 const POLL_MS = 1500
 /** 最多问这么多次（之后不再自动问；用户可以手动重试，状态仍在，见 prd） */
@@ -176,7 +187,7 @@ Component({
          *    `this.stopPoll` / `this.precheck` 全都报），**指不到真正的那一行**。
          *    ⇒ 一律"先调用、再空 `return`"。
          */
-        this.flipScore(next)
+        this.rollScore(next)
         return
       }
       this.data.scratch.awaitRoll = false
@@ -281,9 +292,12 @@ Component({
     },
 
     /**
-     * ⭐⭐ **数字"跳"出来**（用户 2026-10-15 定：点更新、弹窗关掉之后，卡片上那个战绩数字
-     *     要有数字动画）。⭐ 用户同日又定了一次形态：**不要"从旧值过渡到新值"的补间**，
-     *     就是"**随机数字快速闪几下、最后落在目标值上**"。
+     * ⭐⭐ **战绩数字滚动**（用户 2026-10-15 定：点更新、弹窗关掉之后，卡片上那个战绩数字
+     *     要有数字动画）。
+     *
+     * ⚠️⚠️ 形态**照搬朗读页那份已经调过的实现**（`ROLL_MS = 600` / 16ms 帧 / ease-out cubic /
+     *    **从 0 滚到最终值** / 末帧无条件写精确值）—— 那一页整体废弃时我把它一起删了、
+     *    然后自己编了个"从旧值补间"的版本，被用户当场否掉。**别再自己编时长和曲线**。
      *
      * ⚠️ 为什么在流程里做，而不是给卡片写一套动画：卡片显示的那个分数
      *    **本来就是流程 emit 的** —— 连续 emit 中间值，卡片自然就动起来了。
@@ -293,33 +307,40 @@ Component({
      *    不停的话，旧动画会把一个**过期的分数**写回卡片（"数字自己跳回去"）。
      * ⚠️ 最后一帧**精确落在目标值**上（别停在 84.7 —— 那比不动还糟）。
      */
-    flipScore(to: number) {
+    rollScore(to: number) {
       const token = ++this.data.scratch.rollToken
-      /** 闪几下就停（8 帧 × 55ms ≈ 0.44s）—— 再长就变成"加载中"了 */
-      const FRAMES = 8
-      const FRAME_MS = 55
-      let i = 0
+      const startedAt = Date.now()
       const flow = this
       /**
        * ⚠️⚠️ **必须是函数声明**（不能写成 `const tick = () => {… setTimeout(tick) }`）——
-       *    自引用箭头函数推不出自己的类型，而那一处推断失败会让**整个 Component
+       *    自引用箭头函数推不出自己的类型，那一处推断失败会让**整个 Component
        *    字面量的 `this` 类型崩掉**（满屏 "possibly undefined"，指不到真凶）。
        */
       function tick(): void {
-        if (flow.data.scratch.rollToken !== token) return
-        i++
-        const last = i >= FRAMES
         /**
-         * ⚠️⚠️ **每一帧都要收成 1 位小数**：这个值会一路画到卡片上，
-         *    直接给浮点（79.43333333）就是原样显示 —— 用户 2026-10-15 当场看到的。
+         * ⚠️ 判活：销毁 / 换句子 / 又确认了一次 ⇒ 立刻停。
+         *    不停的话它会往**已经换掉的界面**上继续写分数（"数字自己跳回去"）。
          */
-        const shown = last
-          ? to
-          : round1(Math.max(0, Math.min(100, to + (Math.random() - 0.5) * 40)))
+        if (flow.data.scratch.rollToken !== token) return
+        /**
+         * ⚠️ 用**墙上时钟**算进度（不是"第几帧"）：定时器抖动不会让动画变慢或变快。
+         */
+        const t = Math.min(1, (Date.now() - startedAt) / ROLL_MS)
+        const done = t >= 1
+        /** ⭐ ease-out cubic：开头快、结尾慢 —— 用户对"最后停在哪个数"最敏感 */
+        const k = 1 - Math.pow(1 - t, 3)
+        /**
+         * ⚠️⚠️ **从 0 滚到最终值**，不是"从旧战绩过渡到新战绩"（用户 2026-10-15 明确否掉了后者）。
+         * ⚠️⚠️ **末帧无条件写精确值** —— 不能用缓动算出来的近似值：
+         *    四舍五入会让 89.46 停在 89.4，而服务端给的是 89.5，
+         *    "动画结束时差 0.1"是最不该有的错（朗读页那份实现里就写着这条）。
+         * ⚠️ 每一帧都 `round1`：这个值会被直接画到卡片上，浮点就是 `79.43333333`。
+         */
+        const shown = done ? to : round1(to * k)
         flow.setData({ state: 'retry', score: shown })
         flow.emitState('retry', shown)
-        if (last) flow.noteBest(to)
-        else setTimeout(tick, FRAME_MS)
+        if (done) flow.noteBest(to)
+        else setTimeout(tick, ROLL_FRAME_MS)
       }
       tick()
     },
