@@ -1,7 +1,8 @@
 import { plainWordsOf } from '@jushuo/shared'
 
-import { claimCookies, fetchEnergy, fetchSubmissionStatus, submitReading } from '../../lib/api/client'
+import { claimCookies, fetchEnergy, fetchSubmissionAudio, fetchSubmissionStatus, submitReading } from '../../lib/api/client'
 import { newAttemptId, uploadAudio } from '../../lib/api/upload'
+import { playAudioUrl, stopAudio } from '../../lib/audio/play'
 import {
   clearParticipate,
   loadParticipate,
@@ -265,6 +266,41 @@ Component({
       /** ⚠️ 还在轮询这一把就得停掉 —— 否则清完缓存，轮询回来又会把状态写成 scored */
       this.stopPoll()
       this.restore()
+    },
+
+    /**
+     * ⭐ **试听我自己的录音**（参与区中间那格 `▶ 00:33`）。
+     *
+     * ⚠️ 两段音频**取哪一份，看这一把走到哪一步了**：
+     *    · 还没提交（`recoded`）⇒ 播**本机**那一段（就是这份文件本身，不必去服务端转一圈）；
+     *    · 已提交（`checking` / `scored`）⇒ 播**服务端存档**的那一份
+     *      （本机那份可能已经被清掉/换掉，而服务端那行是这一把的权威）。
+     *
+     * ⚠️ 播之前先 `stopAudio()`：它和**标准音**是两路声音，同时响不只吵 ——
+     *    用户根本分不清现在放的是"标准音"还是"我刚才读的"。
+     */
+    async playRecording() {
+      const cache = this.data.scratch.cache
+      if (!cache) return
+      stopAudio()
+      try {
+        if (cache.audioPath && !cache.submissionId) {
+          await playAudioUrl(cache.audioPath, '我的录音')
+          return
+        }
+        if (cache.submissionId) {
+          const r = await fetchSubmissionAudio(cache.submissionId)
+          const src = r.audio?.src
+          if (!src) {
+            this.showNotice('这一段的录音已经不在了')
+            return
+          }
+          await playAudioUrl(src, '我的录音')
+        }
+      } catch (err) {
+        /** ⚠️ 播不出来就说一句（本地文件可能已被系统清掉）—— 不要静默 */
+        this.showNotice((err as Error).message || '这段录音播不出来')
+      }
     },
 
     // ── ② 录完 ────────────────────────────────────────────────

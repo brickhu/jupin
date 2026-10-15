@@ -22,12 +22,7 @@ interface Entry {
   text?: string
   translation?: string
   audio?: { full: string; kind: 'cloud' | 'http' } | null
-  /**
-   * ⭐ **我自己那一段录音**（参与区那颗试听钮播的就是它，不是标准音）。
-   * ⚠️ 与上面的 `audio`（标准音）**是两段不同的东西**：
-   *    标准音回答"这句话该怎么念"，我自己的录音回答"我刚才读成什么样"。
-   */
-  recordAudio?: { full: string; kind: 'cloud' | 'http' } | null
+
   /** 标准音时长（毫秒）—— 交给 audio-button 统一格式化成 00:05 */
   durationMs?: number
   stat?: string
@@ -164,7 +159,11 @@ Component({
      */
     onPlayRecord() {
       const e = this.data.entry as Entry | null
-      this.triggerEvent('playRecord', { articleId: e?.articleId, audio: e?.recordAudio ?? null })
+      /**
+       * ⚠️ 只报"用户按了试听"，**不带音频** —— 那一段在哪（本机文件 / 服务端存档）
+       *    只有流程知道（见 participate-flow 的 playRecording）。
+       */
+      this.triggerEvent('playRecord', { articleId: e?.articleId })
     },
     onStart() {
       const e = this.data.entry as Entry | null

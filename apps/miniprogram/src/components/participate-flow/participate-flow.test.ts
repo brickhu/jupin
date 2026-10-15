@@ -137,4 +137,40 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
     // 顺序：粗筛必须在 energy-tips **之前**（不花能量）
     expect(okBody.indexOf('precheck(')).toBeLessThan(okBody.indexOf('openEnergy('))
   })
+
+  /**
+   * ⭐⭐ 试听「我自己的录音」（参与区中间那格 `▶ 00:33`）。
+   *
+   * ⚠️ 两段音频**取哪一份，看这一把走到哪一步**：
+   *    · 还没提交（recoded）⇒ 播**本机**那一段（不必去服务端转一圈）
+   *    · 已提交（checking / scored）⇒ 播**服务端存档**的那一份（本机那份可能已被清掉）
+   * ⚠️ 播之前必须先 `stopAudio()`：它与**标准音**是两路声音，同时响用户分不清在放哪一段。
+   */
+  it('⭐⭐ playRecording：先停标准音，再按"提交没提交"选那一份', () => {
+    const at = SRC.indexOf('async playRecording()')
+    expect(at, '找不到 playRecording').toBeGreaterThan(-1)
+    const body = SRC.slice(at, SRC.indexOf('// ── ② 录完', at))
+
+    expect(body.includes('stopAudio()'), '播之前没停标准音 ⇒ 两路声音一起响').toBe(true)
+    expect(body.indexOf('stopAudio()'), '先播后停等于没停').toBeLessThan(body.indexOf('playAudioUrl'))
+
+    /** 未提交走本机文件 */
+    expect(body.includes('cache.audioPath && !cache.submissionId'), '没走"本机那一份"').toBe(true)
+    /** 已提交走服务端存档 */
+    expect(body.includes('fetchSubmissionAudio'), '没走"服务端存档那一份"').toBe(true)
+  })
+
+  it('⭐ 试听是通的：btn-record → 卡片 → 宿主 → 流程（这条链断过）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const SRC_DIR = fileURLToPath(new URL('../../', import.meta.url))
+    // 卡片把 btn-record 的 play 转成 playRecord
+    const card = readFileSync(SRC_DIR + 'components/arena-card/arena-card.wxml', 'utf-8')
+    expect(card.includes('bind:play="onPlayRecord"'), '卡片没接 btn-record 的 play').toBe(true)
+    // 两个宿主都把 playRecord 接到流程上
+    for (const host of ['pages/index/index.wxml', 'pages/arena/arena.wxml']) {
+      const wxml = readFileSync(SRC_DIR + host, 'utf-8')
+      expect(wxml.includes('bind:playRecord="onCardPlay"'), host + ' 没绑 playRecord ⇒ 点了没反应').toBe(true)
+    }
+  })
 })

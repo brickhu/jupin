@@ -862,6 +862,11 @@ Page({
     this.flow()?.onOpenPanel()
   },
 
+  /** ⭐ 参与区中间那格 `▶ 00:33` —— 试听**我自己的录音**（放哪一份由流程决定） */
+  onCardPlay() {
+    void this.flow()?.playRecording()
+  },
+
   /**
    * ⭐ **点词发音**（`lg` 卡，prd §7.2）—— 词典式**孤立读音**（"这个词怎么念"），
    *    ⚠️ 与整句标准音**刻意不同**（那是"这句话怎么念"），见 lib/audio/tts.ts。
@@ -882,6 +887,7 @@ Page({
     onRedo(): void
     onConfirm(): void
     onOpenPanel(): void
+    playRecording(): void
   } | null {
     return (this.selectComponent('#flow') as never) ?? null
   },

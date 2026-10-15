@@ -139,7 +139,7 @@
               bind:open="onOpenDetail" bind:play="onPlayAudio"
               bind:mic="onCardMic" bind:redo="onCardRedo"
               bind:confirm="onCardConfirm" bind:panel="onCardPanel"
-              bind:word="onWord" />
+              bind:playRecord="onCardPlay" bind:word="onWord" />
 
   <!-- ══ 块 ③：最新上线 ══════════════════════════════════════
        ⚠️ 这一段列的是句库里按上线时间（articles.published_at）倒序的最新几句。
