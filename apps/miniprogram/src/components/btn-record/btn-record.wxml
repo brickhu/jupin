@@ -17,7 +17,12 @@
      ⚠️ 分数在稿里是 16/700（比另外两态的 14 大一档）。
 -->
 <view wx:elif="{{state === 'retry'}}" class="br-row">
-  <view class="br-score">
+  <!--
+    ⭐ 这一组 [波形 + 分数] **可以点进「竞技档案」**（用户 2026-10-15 定）——
+       它就是"我在这句上的战绩"，点它当然该看到那份档案（分数明细 / 那条录音 / 薄弱词 / AI 总结）。
+    ⚠️ tap 而不是 catchtap：外面那层胶囊/卡片还要收自己的点击（这里不吞事件）。
+  -->
+  <view class="br-score" bindtap="onOpenRecord">
     <view class="br-wave">
       <view class="br-bar" style="height:16rpx"></view>
       <view class="br-bar" style="height:32rpx"></view>

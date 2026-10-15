@@ -43,7 +43,13 @@
   justify-content: space-between;
   height: 96rpx;
 }
-.br-score { display: flex; align-items: center; gap: 16rpx; }
+.br-score { display: flex; align-items: center; gap: 16rpx;   /**
+   * ⚠️ **热区**：稿里这组只有 60×24（= 120×48rpx）—— 手指够不准。
+   *    加竖向内边距把它撑到 88rpx 左右（**视觉不变**：柱子与数字仍然各自居中）。
+   */
+  padding: 20rpx 8rpx;
+  box-sizing: content-box;
+}
 
 /* ⭐ 波形 = 5 根矩形（稿 Frame 26 18×24 · 2 宽 · gap2） */
 .br-wave { display: flex; align-items: center; gap: 4rpx; height: 48rpx; }

@@ -157,6 +157,16 @@ Component({
      * ⚠️ 不合并成同一个事件：它们播的是两段音频（一个是标准音、一个是我读的），
      *    页面要分别维护"谁在播"（同时播两个就变成了双声道）。
      */
+    /**
+     * ⭐ 点「波形 + 分数」（`retry` 态）—— **报给宿主去开竞技档案**。
+     * ⚠️ 卡片不带 participationId：它是**服务端派生的地址**（`sha256(userId:articleId)` 前 24 位），
+     *    端侧算不出来（那需要 Node 的 sha256）⇒ 让宿主从 store 里那一份记录上取。
+     */
+    onOpenRecord() {
+      const e = this.data.entry as Entry | null
+      this.triggerEvent('record', { articleId: e?.articleId })
+    },
+
     onPlayRecord() {
       const e = this.data.entry as Entry | null
       /**

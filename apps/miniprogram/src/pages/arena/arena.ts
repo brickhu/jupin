@@ -537,6 +537,20 @@ Page({
     this.flow()?.onOpenPanel()
   },
 
+  /**
+   * ⭐ 点参与区那组「波形 + 战绩分」—— **进这一句的竞技档案**（`pages/participation?id=`）。
+   *
+   * ⚠️⚠️ participationId 是**服务端派生的地址**（`sha256(userId:articleId)` 前 24 位），
+   *    端侧**算不出来**（要 sha256）⇒ 只能从 store 里那一份参与记录上取它的 `id`。
+   * ⚠️ 没有记录就不跳（`retry` 态必然有，但别在这里假设）。
+   * ⚠️ 档案页是**公开页** ⇒ 走 `goPublic`（与榜单点一行同一个落点与同一条路）。
+   */
+  onCardRecord() {
+    const articleId = this.data.articleId
+    const rec = articleId ? me.participationOf(articleId).record : null
+    if (rec) goPublic(ROUTES.participationDetail.url + '?id=' + rec.id)
+  },
+
   /** ⭐ 参与区中间那格 `▶ 00:33` —— 试听**我自己的录音**（放哪一份由流程决定） */
   onCardPlay() {
     void this.flow()?.playRecording()

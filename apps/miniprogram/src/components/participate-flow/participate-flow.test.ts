@@ -173,4 +173,41 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
       expect(wxml.includes('bind:playRecord="onCardPlay"'), host + ' 没绑 playRecord ⇒ 点了没反应').toBe(true)
     }
   })
+
+  /**
+   * ⭐ 点「波形 + 战绩分」（`retry` 态）→ **进竞技档案页**。
+   *
+   * ⚠️⚠️ 这条链跨四个文件（组件 → 卡片 → 宿主 → 导航），**断一节就点了没反应**，
+   *    而编译/测试全绿 —— 试听那条就是这么断过一次的（B77）。
+   * ⚠️ 落点必须是 `pages/participation`（**独立**的档案页），
+   *    不是个人主页：主页回答"这个人积累了什么"，档案回答"他在这**一句**上表现如何"。
+   */
+  it('⭐⭐ 战绩那一组能点进竞技档案（四个文件一条链）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const DIR = fileURLToPath(new URL('../../', import.meta.url))
+
+    // ① btn-record：那一组可点，且报出 record
+    const btn = readFileSync(DIR + 'components/btn-record/btn-record.wxml', 'utf-8')
+    expect(/class="br-score"[^>]*bindtap="onOpenRecord"/.test(btn), 'btn-record 里那组不可点').toBe(true)
+    expect(
+      readFileSync(DIR + 'components/btn-record/btn-record.ts', 'utf-8').includes("triggerEvent('record')"),
+      'btn-record 没报 record 事件',
+    ).toBe(true)
+
+    // ② 卡片：接住并转发
+    const card = readFileSync(DIR + 'components/arena-card/arena-card.wxml', 'utf-8')
+    expect(card.includes('bind:record="onOpenRecord"'), '卡片没接 btn-record 的 record').toBe(true)
+
+    // ③ 两个宿主：绑定 + 落点是档案页
+    for (const host of ['pages/index/index.wxml', 'pages/arena/arena.wxml']) {
+      const wxml = readFileSync(DIR + host, 'utf-8')
+      expect(wxml.includes('bind:record="onCardRecord"'), host + ' 没绑 record ⇒ 点了没反应').toBe(true)
+    }
+    for (const host of ['pages/index/index.ts', 'pages/arena/arena.ts']) {
+      const ts = readFileSync(DIR + host, 'utf-8')
+      expect(ts.includes('ROUTES.participationDetail.url'), host + ' 的落点不是竞技档案页').toBe(true)
+      expect(ts.includes('goPublic('), host + ' 没走公开页通道（档案页是公开的）').toBe(true)
+    }
+  })
 })

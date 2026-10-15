@@ -40,7 +40,8 @@
               bind:play="onPlayAudio" bind:favorite="onToggleFavorite"
               bind:mic="onCardMic" bind:redo="onCardRedo"
               bind:confirm="onCardConfirm" bind:panel="onCardPanel"
-              bind:playRecord="onCardPlay" bind:word="onWord" />
+              bind:playRecord="onCardPlay"
+              bind:record="onCardRecord" bind:word="onWord" />
 
   <!-- ══ 块 ② 挑战说明（challenge + advice）+ 这个句子的参与概要 ═════
        ⚠️ 顶部两句来自 ArticleDetail（**句子内容**，与块 ① 同一批到）；

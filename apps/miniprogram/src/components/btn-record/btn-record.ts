@@ -59,6 +59,15 @@ Component({
 
   methods: {
     /** ⭐ `try` 整颗胶囊 / `retry` 那颗圆钮 —— 宿主据此**弹 recorder 全屏面板** */
+    /**
+     * ⭐ 点「波形 + 分数」—— **进这一句的竞技档案**（`pages/participation?id=`）。
+     * ⚠️ 组件不自己跳页（它不知道 participationId，那是服务端派生的地址）——
+     *    只把"用户点了战绩"这件事报上去，由宿主去拿 id 并导航（与 mic/redo/confirm 同一套）。
+     */
+    onOpenRecord() {
+      this.triggerEvent('record')
+    },
+
     onMic() {
       this.triggerEvent('mic')
     },
