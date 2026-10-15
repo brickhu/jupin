@@ -219,9 +219,12 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
    *    ① `awaitRoll` 只由 `onPanelConfirm` 置上（换页 / 普通广播都不该滚）；
    *    ② 新的 bestScore **必须高于**上次那个（记录只增不减；没超越 ⇒ 值不变 ⇒ 不滚）。
    */
-  it('⭐⭐ 只有"确认之后、战绩真的涨了"才跳数字', () => {
+  it('⭐⭐ 只有"确认之后、战绩真的出现/涨了"才滚数字（**首次也要滚**）', () => {
     expect(SRC.includes('awaitRoll = true'), '没人置 awaitRoll ⇒ 永远不会动').toBe(true)
-    expect(SRC.includes('awaitRoll && prev !== null && next > prev'), '触发判据不完整 ⇒ 没破纪录也会动').toBe(true)
+    expect(
+      SRC.includes('awaitRoll && (prev === null || next > prev)'),
+      '触发判据不对：要么漏了"首次"（prev 是 null），要么没破纪录也会动',
+    ).toBe(true)
     /** ⚠️ 置位必须在 `settled` **之前**：事件同步派发，晚了就错过那一次 */
     const i = SRC.indexOf('awaitRoll = true')
     const j = SRC.indexOf("triggerEvent('settled'", i)

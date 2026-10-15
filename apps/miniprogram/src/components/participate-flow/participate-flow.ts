@@ -167,9 +167,13 @@ Component({
        * ⭐⭐ **战绩刷新 ⇒ 数字滚上去**（用户 2026-10-15 定：点更新、弹窗关掉之后，
        *    卡片上那个战绩数字要有数字动画）。
        *
-       * ⚠️⚠️ 触发的**唯一条件**是「上一次确认之后，战绩真的变了」：
+       * ⚠️⚠️ 触发的**唯一条件**是「上一次确认之后，战绩**真的出现/变了**」：
        *    · `awaitRoll` 只由 `onPanelConfirm` 置上（别的路径不滚 —— 换页/普通广播都不该动）；
-       *    · 且新的 bestScore **必须高于**上次那个（记录只增不减；没超越时值不变 ⇒ 不滚）。
+       *    · 且 `prev === null`（**这一句上第一次有战绩**）**或** `next > prev`（破了纪录）。
+       *      ⚠️ 记录只增不减 ⇒ "没超越"时值不变 ⇒ 不滚。
+       *    ⚠️ **首次必须也滚**（用户 2026-10-15 明确要求）：那一刻 `prev` 是 null，
+       *      而 `rollScore` 本来就是**从 0 滚到最终值** ⇒ 正好是"这个数字第一次出现"该有的样子。
+       *      只写 `next > prev` 的话会漏掉它（`null > x` 永远不成立）。
        *    ⚠️ 少了任一条，就会出现"我没破纪录，数字却在我眼前涨了一截"这种假喜报。
        */
       const next = Number(this.data.bestScore)
@@ -177,7 +181,7 @@ Component({
       /** ⚠️ 用直接 `if` 收窄 `prev`（写成 `const roll = … && prev !== null` 再传进
        *  `rollScore(from: number)` 是不行的 —— TS 不会跨那个布尔变量收窄，
        *  而那一处类型错会让**整个** `this` 的推断崩掉，满屏 "possibly undefined"） */
-      if (this.data.scratch.awaitRoll && prev !== null && next > prev) {
+      if (this.data.scratch.awaitRoll && (prev === null || next > prev)) {
         this.data.scratch.awaitRoll = false
         /**
          * ⚠️⚠️ **观察者里不许 `return` 一个值**（写成 `return this.rollScore(...)` 就中招）：
