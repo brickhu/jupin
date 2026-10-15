@@ -138,22 +138,6 @@
   `node tools/wipe-history.mjs dev --yes` · `node tools/wipe-history.mjs prod --yes`
   ⚠️ 这两条是**不可逆**的，且我（agent）的权限到 commit 为止。
 
-- [ ] **B86** **清对象存储里的孤儿录音**（用户 2026-10-15：「B86你先清除一下」）
-  **为什么**：`wipe-history` **只清库** ⇒ 库清了、盘上那些用户录音还在（没人引用，
-  白占存储，而且里面是用户的语音）。
-  **判据一条**：**盘上有、但库里没人引用**（引用来源两处：`submissions.audio_key` +
-  `participations.audio_key`）。⚠️ **只碰 `audio/` 前缀**（用户录音 = `audio/{句子}/{用户}/{attemptId}.{mp3,pcm}`）——
-  标准音在 `content/audio/` 下，卷进来就是**全站标准音被删** ⇒ 脚本里有**硬断言**，不靠"我记得"。
-  **工具**：`pnpm recordings:prune [--yes]`（`apps/server/scripts/prune-recordings.ts`，默认只看不改）。
-  ✅ **本机已清**：150 个孤儿 / 18.5 MB；复核 `audio/` 剩 0，`content/` 的 90 个标准音**一个没动**。
-  ⚠️⚠️ **云端清不了**（不是"没做"，是**做不到**）：云托管对象存储只有
-  `/tcb/uploadfile` · `/tcb/batchdownloadfile` · `/tcb/batchdeletefile` **三个接口，没有列举**；
-  而孤儿之所以是孤儿，正是"库里已经查不到它们的 key 了"（key 里带客户端生成的 attemptId，猜不出来）
-  ⇒ **没有枚举就无解**。脚本遇到 `STORAGE != local` 会**直接说清楚并退出**，不假装清过。
-  ⇒ 云端请在**控制台按前缀 `audio/` 删除**（或在开通「开放接口服务」后用 COS 的列举接口）。
-  **守门**：`prune-recordings.test.ts`（只删 audio/ 前缀 + 硬断言在 / 默认根与 storage/local.ts 同源 /
-  云端必须明说并退出 / `--yes` 必须被认）—— 4 条。
-
 - [ ] **B57** **把所有按钮统一到 `ui-button`**（用户 2026-10 定：「接下来所有按钮都统一用这个组件」）
   ⚠️ **现状**：`ui-button` 已是唯一实现（四个维度 + 两个对外变量 `--btn-bg`/`--btn-fg`），
   但页面里还散着一批**手抄的按钮**。最典型的是「重试」—— 同一串
@@ -713,6 +697,22 @@
     ⚠️ 没有我的记录时**不画**这颗按钮。
   ⚠️ **剩下的**（属于"竞技档案页"本身，见 B87）：把 `weak_points` / `ai_summary` / 明细 / 录音画到
   `pages/profile` 的参与详情上 —— 服务端已经在给这些字段了，界面上还没消费。
+
+- [x] **B86** **清对象存储里的孤儿录音**（用户 2026-10-15：「B86你先清除一下」）
+  **为什么**：`wipe-history` **只清库** ⇒ 库清了、盘上那些用户录音还在（没人引用，
+  白占存储，而且里面是用户的语音）。
+  **判据一条**：**盘上有、但库里没人引用**（引用来源两处：`submissions.audio_key` +
+  `participations.audio_key`）。⚠️ **只碰 `audio/` 前缀**（用户录音 = `audio/{句子}/{用户}/{attemptId}.{mp3,pcm}`）——
+  标准音在 `content/audio/` 下，卷进来就是**全站标准音被删** ⇒ 脚本里有**硬断言**，不靠"我记得"。
+  **工具**：`pnpm recordings:prune [--yes]`（`apps/server/scripts/prune-recordings.ts`，默认只看不改）。
+  ✅ **本机已清**：150 个孤儿 / 18.5 MB；复核 `audio/` 剩 0，`content/` 的 90 个标准音**一个没动**。
+  ⚠️⚠️ **云端清不了**（不是"没做"，是**做不到**）：云托管对象存储只有
+  `/tcb/uploadfile` · `/tcb/batchdownloadfile` · `/tcb/batchdeletefile` **三个接口，没有列举**；
+  而孤儿之所以是孤儿，正是"库里已经查不到它们的 key 了"（key 里带客户端生成的 attemptId，猜不出来）
+  ⇒ **没有枚举就无解**。脚本遇到 `STORAGE != local` 会**直接说清楚并退出**，不假装清过。
+  ⇒ 云端请在**控制台按前缀 `audio/` 删除**（或在开通「开放接口服务」后用 COS 的列举接口）。
+  **守门**：`prune-recordings.test.ts`（只删 audio/ 前缀 + 硬断言在 / 默认根与 storage/local.ts 同源 /
+  云端必须明说并退出 / `--yes` 必须被认）—— 4 条。
 
 - [x] **B87** **竞技档案页把新数据画出来**（用户 2026-10-15：「直接拉取 participation 来出展示即可」）
   落点是**已有的独立页** `pages/participation?id=<participations.id>`（⚠️ **不是** `pages/profile`：
