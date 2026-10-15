@@ -53,6 +53,15 @@ interface Scratch {
   pendingDurationMs: number
   pollTimer: ReturnType<typeof setInterval> | null
   pollCount: number
+  /**
+   * ⭐ 战绩**刚被刷新**、正等着新的 bestScore 回来做数字滚动（见 rollScore）。
+   * ⚠️ 它只由 `onPanelConfirm` 置上 —— 别的路径（换页、普通广播）不该触发滚动。
+   */
+  awaitRoll: boolean
+  /** 上一次看到的战绩分（用来判断"这次真的刷新了吗"） */
+  prevBest: number | null
+  /** 滚动动画的会话令牌 —— 换句子/重录时把在跑的那一段打断（见 rollScore） */
+  rollToken: number
 }
 
 /** 提交之后多久问一次状态 */
@@ -125,6 +134,9 @@ Component({
       pendingDurationMs: 0,
       pollTimer: null,
       pollCount: 0,
+      awaitRoll: false,
+      prevBest: null,
+      rollToken: 0,
     } as Scratch,
   },
 
@@ -132,6 +144,34 @@ Component({
     /** 换句子 ⇒ 重新拼一次状态（首页会在多张卡之间切换） */
     'articleId, bestScore'() {
       this.setData({ wordCount: plainWordsOf(this.data.text ?? '').length })
+      /**
+       * ⭐⭐ **战绩刷新 ⇒ 数字滚上去**（用户 2026-10-15 定：点更新、弹窗关掉之后，
+       *    卡片上那个战绩数字要有数字动画）。
+       *
+       * ⚠️⚠️ 触发的**唯一条件**是「上一次确认之后，战绩真的变了」：
+       *    · `awaitRoll` 只由 `onPanelConfirm` 置上（别的路径不滚 —— 换页/普通广播都不该动）；
+       *    · 且新的 bestScore **必须高于**上次那个（记录只增不减；没超越时值不变 ⇒ 不滚）。
+       *    ⚠️ 少了任一条，就会出现"我没破纪录，数字却在我眼前涨了一截"这种假喜报。
+       */
+      const next = Number(this.data.bestScore)
+      const prev = this.data.scratch.prevBest
+      /** ⚠️ 用直接 `if` 收窄 `prev`（写成 `const roll = … && prev !== null` 再传进
+       *  `rollScore(from: number)` 是不行的 —— TS 不会跨那个布尔变量收窄，
+       *  而那一处类型错会让**整个** `this` 的推断崩掉，满屏 "possibly undefined"） */
+      if (this.data.scratch.awaitRoll && prev !== null && next > prev) {
+        this.data.scratch.awaitRoll = false
+        /**
+         * ⚠️⚠️ **观察者里不许 `return` 一个值**（写成 `return this.rollScore(...)` 就中招）：
+         *    微信把 `observers` 的类型定成 `=> void`，返回非空表达式会**让整个
+         *    Component 字面量的 `this` 类型推断崩掉** —— 症状是**满屏 37 条
+         *    「Cannot invoke an object which is possibly 'undefined'」**（`this.restore` /
+         *    `this.stopPoll` / `this.precheck` 全都报），**指不到真正的那一行**。
+         *    ⇒ 一律"先调用、再空 `return`"。
+         */
+        this.rollScore(prev, next)
+        return
+      }
+      this.data.scratch.awaitRoll = false
       this.restore()
     },
   },
@@ -198,13 +238,8 @@ Component({
       })
 
       this.setData({ state, score: score === null ? -1 : score })
-      /**
-       * ⭐ 宿主据此更新卡片（卡片不自己算状态）。
-       * ⚠️ 一起给**我那段录音的时长** —— 参与区那颗试听要显示成 00:33（设计稿 539:871）。
-       *    优先用"这把结果里的时长"（服务端记录的），否则用本地缓存里那段录音的。
-       */
-      const durationMs = this.data.scratch.pendingDurationMs || cache?.durationMs || 0
-      this.triggerEvent('state', { articleId, state, score, durationMs })
+      this.noteBest(bestScore)
+      this.emitState(state, score)
 
       /** 有在路上的提交 ⇒ 接着问（可能上次离开时还没出分） */
       /**
@@ -212,6 +247,71 @@ Component({
        *    把状态补对就够了，**不要**自动弹面板 —— 用户没在等它。
        */
       if (pending && !cache?.confirmed && this.data.state === 'checking') this.startPoll(true)
+    },
+
+    /**
+     * ⭐ 把状态报给宿主（卡片不自己算状态）。
+     * ⚠️ 一起给**我那段录音的时长** —— 参与区那颗试听要显示成 00:33（设计稿 539:871）。
+     *    优先用"这把结果里的时长"（服务端记录的），否则用本地缓存里那段录音的。
+     */
+    emitState(state: RecordState, score: number | null) {
+      const durationMs = this.data.scratch.pendingDurationMs || this.data.scratch.cache?.durationMs || 0
+      this.triggerEvent('state', {
+        articleId: this.data.articleId,
+        state,
+        score: score === null ? -1 : score,
+        durationMs,
+      })
+    },
+
+    /**
+     * 记下"上一次看到的战绩分" —— **只有这里写**（滚动判据读它，见观察者）。
+     * ⚠️ `-1` 是宿主的哨兵值（= 没有战绩）⇒ 落成 null。
+     */
+    noteBest(best: number | null) {
+      this.data.scratch.prevBest = best === null || best < 0 ? null : best
+    },
+
+    /**
+     * ⭐⭐ **战绩数字滚上去**（用户 2026-10-15 定：点更新、弹窗关掉之后，
+     *     卡片上那个战绩数字要有数字动画）。
+     *
+     * ⚠️ 为什么在流程里做，而不是给卡片写一套动画：卡片显示的那个分数
+     *    **本来就是流程 emit 的** —— 连续 emit 中间值，卡片自然就滚起来了。
+     *    在组件里再写一遍，等于同一件事做两遍（还会跟状态机抢这个数）。
+     *
+     * ⚠️⚠️ **必须能被打断**：换句子、用户又录了一把、或又确认了一次 ⇒ `rollToken` 一变就停。
+     *    不停的话，旧动画会把一个**过期的分数**写回卡片（"数字自己跳回去"）。
+     * ⚠️ 最后一帧**精确落在目标值**上（别停在 84.7 —— 那比不滚还糟）。
+     */
+    rollScore(from: number, to: number) {
+      const token = ++this.data.scratch.rollToken
+      const STEPS = 14
+      const STEP_MS = 45
+      let i = 0
+      /**
+       * ⚠️⚠️ **必须是函数声明，不能写成 `const tick = () => {… setTimeout(tick) }`** ——
+       *    那是**自引用箭头函数**，TS 推不出它自己的类型，而那一处推断失败会让
+       *    **整个 Component 字面量的 `this` 类型崩掉**：满屏 "Cannot invoke an object
+       *    which is possibly 'undefined'"（37 条），而真正的根源只是这一个 `const`。
+       *    函数声明是提升的，自引用合法。
+       */
+      const flow = this
+      function tick(): void {
+        if (flow.data.scratch.rollToken !== token) return
+        i++
+        /** ease-out：先快后慢 —— 像计价器停下来那样 */
+        const eased = 1 - Math.pow(1 - i / STEPS, 3)
+        const v = i >= STEPS ? to : from + (to - from) * eased
+        flow.setData({ state: 'retry', score: v })
+        flow.emitState('retry', v)
+        if (i < STEPS) {
+          setTimeout(tick, STEP_MS)
+        } else {
+          flow.noteBest(to)
+        }
+      }
+      tick()
     },
 
     // ── ① 点麦 ────────────────────────────────────────────────
@@ -591,6 +691,12 @@ Component({
        *    现在流程就在宿主页面里 ⇒ **一个显式事件**比"反查上一页是谁"干净得多
        *    （旧办法还得按 route 分派，因为不同页的 load 参数不一样）。
        */
+      /**
+       * ⚠️ 先置上「等战绩回来」—— 宿主那次重拉落地后会触发观察者，
+       *    它据此决定要不要滚数字（见 observers 里的判据）。
+       *    ⚠️ 必须在 `settled` **之前**：事件是同步派发的，置晚了就错过那一次。
+       */
+      this.data.scratch.awaitRoll = true
       this.triggerEvent('settled', { articleId: this.data.articleId })
       this.restore()
     },

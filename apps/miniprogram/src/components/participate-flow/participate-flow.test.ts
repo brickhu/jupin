@@ -210,4 +210,23 @@ describe('参与流程 —— 没出分之前不许显示分数', () => {
       expect(ts.includes('goPublic('), host + ' 没走公开页通道（档案页是公开的）').toBe(true)
     }
   })
+
+  /**
+   * ⭐⭐ **战绩刷新时的数字滚动**（用户 2026-10-15 定：点更新、弹窗关掉之后，
+   *     卡片上那个战绩数字要有数字动画）。
+   *
+   * ⚠️ 触发条件必须**同时**满足两条，少一条就会出"假喜报"：
+   *    ① `awaitRoll` 只由 `onPanelConfirm` 置上（换页 / 普通广播都不该滚）；
+   *    ② 新的 bestScore **必须高于**上次那个（记录只增不减；没超越 ⇒ 值不变 ⇒ 不滚）。
+   */
+  it('⭐⭐ 只有"确认之后、战绩真的涨了"才滚数字', () => {
+    expect(SRC.includes('awaitRoll = true'), '没人置 awaitRoll ⇒ 永远不会滚').toBe(true)
+    expect(SRC.includes('awaitRoll && prev !== null && next > prev'), '滚动判据不完整 ⇒ 没破纪录也会涨').toBe(true)
+    /** ⚠️ 置位必须在 `settled` **之前**：事件同步派发，晚了就错过那一次 */
+    const i = SRC.indexOf('awaitRoll = true')
+    const j = SRC.indexOf("triggerEvent('settled'", i)
+    expect(j, 'awaitRoll 不是设置在 settled 之前那次').toBeGreaterThan(i)
+    /** 滚完要精确落在目标值上（不能停在 84.7） */
+    expect(SRC.includes('i >= STEPS ? to :'), '最后一帧没落在目标值上').toBe(true)
+  })
 })
