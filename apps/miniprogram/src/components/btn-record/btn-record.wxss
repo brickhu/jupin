@@ -44,18 +44,22 @@
   background: currentColor;
 }
 
-/* 实心圆：48（retry 的麦克风）· 32（recoded 的确认） */
-.br-c48,
-.br-c32 {
+/*
+ * 实心圆 48×48（retry 的麦克风）。
+ * ⚠️ 另外那两颗（↺ / ✓）**不在这里画** —— 它们是 「ui-button」：
+ *    ↺ = variant="glass"（半透明主色 + ink 图标）· ✓ = variant="fill"（实心 + 反色图标）。
+ *    自己画一遍就等于把 ui-button 的圆角/禁用态/按压反馈再实现一次（会漂）。
+ */
+.br-c48 {
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 9999rpx;
   background: var(--btn-bg, currentColor);
   color: var(--btn-fg, #ffffff);
+  width: 96rpx;   /* 稿 48×48 */
+  height: 96rpx;
 }
-.br-c48 { width: 96rpx; height: 96rpx; }   /* 稿 48×48 */
-.br-c32 { width: 64rpx; height: 64rpx; }   /* 稿 32×32 */
 
 /* 可点区域：⚠️ 图标本身小（14），但点击区要够 —— 用 min 尺寸兜住 */
 .br-hit {
@@ -67,9 +71,6 @@
 }
 .br-play { gap: 8rpx; padding: 0 16rpx; }   /* 稿 Frame 14：pad8 / gap4 */
 .br-arrow { gap: 8rpx; padding: 0 24rpx; }  /* 稿 Frame 15：pad12 / gap4 */
-
-/* ⚠️ checking 时 ↺ 禁用（稿里 opacity 0.2）—— 照稿 */
-.br-off { opacity: 0.2; }
 
 /* 字号：稿 14 / 16（700 只用在分数上） */
 .br-t14 { font-size: 28rpx; line-height: 1; }

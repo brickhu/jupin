@@ -88,4 +88,37 @@ describe('生成的图标样式（src/icons.wxss）', () => {
     expect(WXSS).not.toContain('data:font')
     expect(WXSS).not.toMatch(/content:\s*'\\[0-9a-f]{4}'/)
   })
+
+  /**
+   * ⭐⭐ 守的是**「名字 → 类名」这条解析链**（2026-10-15 补，别名机制的守卫）。
+   *
+   * ⚠️⚠️ 出事的样子：`iconClassOf` 按"冒号后面那一段"现算类名，而某个图标写了 `as` 别名
+   *    （`material-symbols:check` 的类名是 `ms-check`）⇒ 拼出 `ui-icon-check`，
+   *    而 wxss 里根本没有这个类 ⇒ **图标静默不画，只有一块空白**，控制台也不报错。
+   *
+   *    ⇒ 逐条把名单里每个名字解析一遍，断言它拼出来的类**在 wxss 里真的存在**。
+   *      这条比"类名列表逐字相等"更强：它走的是**运行时真正用的那个函数**。
+   */
+  it('⭐⭐ 名单里每个名字都能解析成一个 wxss 里真实存在的类（别名解析链）', async () => {
+    const mod = (await import('./lib/icon-names')) as {
+      ICON_NAMES: readonly string[]
+      iconClassOf: (n: string) => string
+    }
+    const missing: string[] = []
+    for (const name of mod.ICON_NAMES) {
+      const cls = mod.iconClassOf(name).replace(/^ui-icon-/, '')
+      if (!cls || !masks.has(cls)) missing.push(name + ' → ' + (cls || '(空)'))
+    }
+    expect(missing, '这些名字解析出来的类在 icons.wxss 里不存在 ⇒ 真机上图标不画').toEqual([])
+  })
+
+  it('⭐ 别名确实生效（material-symbols:check 不能解析成 mdi 的 check）', async () => {
+    const mod = (await import('./lib/icon-names')) as {
+      iconClassOf: (n: string) => string
+    }
+    expect(mod.iconClassOf('material-symbols:check')).toBe('ui-icon-ms-check')
+    expect(mod.iconClassOf('mdi:check')).toBe('ui-icon-check')
+    // 没写别名的照旧是"冒号后面那一段"
+    expect(mod.iconClassOf('mdi:chevron-right')).toBe('ui-icon-chevron-right')
+  })
 })
