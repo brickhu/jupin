@@ -95,6 +95,18 @@ export async function ensureDefaultRules(): Promise<void> {
         params: JSON.stringify({ threshold: TOP_RECORD_FLOOR }),
         rewardKind: 'energy',
         rewardAmount: 1,
+        /**
+         * ⚠️⚠️ **默认关**（用户 2026-10-15 定：「现在只奖励饼干，从来没说要奖励能量」）。
+         *
+         * 规则**留着**是为了"可配置"这条能力（`reward_rules` 是唯一配置源，运营想开就开），
+         * 但**产品现行的口径里没有它** —— 破全场纪录**不发能量**。
+         *
+         * ⚠️ 只在**这个默认值**上关是不够的：本函数用 `.ignore()`（**只插不更**），
+         *    已经有那一行的环境**不会被这里改到** ⇒ 存量环境靠迁移 0067 关。
+         *    ⇒ **两处必须同时改**（新环境看这里、老环境看迁移），少一处就会出现
+         *      "本机关了、线上还在发"这种最难查的分叉。
+         */
+        enabled: false,
       },
     ])
 }

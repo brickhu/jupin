@@ -463,6 +463,13 @@
       "when": 1792040470750,
       "tag": "0066_brave_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1792060000000,
+      "tag": "0067_quiet_record_reward",
+      "breakpoints": true
     }
   ]
 }
