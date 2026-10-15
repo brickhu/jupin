@@ -125,6 +125,12 @@ Component({
     /** 这一把录音的时长（面板头部显示成 00:23） */
     panelDurationMs: 0,
     /**
+     * ⭐⭐ **这一把的 AI 锐评**（prd §7.2b）—— 服务端在翻状态之前就写好了
+     *    （见 services/scoring.ts），所以面板弹出时它一定已经在了（有的话）。
+     * ⚠️ 空串 = 没生成（没配大模型 / 那次调用失败）⇒ 面板里那一格不渲染。
+     */
+    panelComment: '',
+    /**
      * ⭐ 词数 —— 录音面板的**静音自停**要用它。
      * ⚠️⚠️ 必须由**正文**兜底算出来：`autoStopAfter` 的第一条就是 `wordCount <= 0 ⇒ false`，
      *    而词表为空时它就是 0 ⇒ **自动结束静默失效**（真实事故：那条文章的 words 是 []）。
@@ -674,6 +680,8 @@ Component({
         previousBest?: number | null
         /** 这段录音多长（毫秒）—— 参与区那颗试听显示成 00:33 */
         durationMs?: number
+        /** ⭐ 这一把的 AI 锐评（prd §7.2b）—— 服务端在翻状态前就写好了；没配大模型就是 undefined */
+        aiComment?: string
       }
       const prevRaw = result.previousBest
       const hasPrev = typeof prevRaw === 'number' && prevRaw >= 0
@@ -704,6 +712,8 @@ Component({
         /** ⚠️ 没有 cookies 字段就传 -1（= 不给这个字段，整块不渲染），绝不补 0 */
         panelCookies: result.cookies ? result.cookies.earned : -1,
         panelDurationMs: this.data.scratch.pendingDurationMs || this.data.scratch.cache?.durationMs || 0,
+        /** ⭐ 这一把的锐评（拿不到就是空串 ⇒ 面板不渲染那一格） */
+        panelComment: result.aiComment ?? '',
       })
     },
 

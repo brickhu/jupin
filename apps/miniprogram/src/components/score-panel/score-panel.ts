@@ -31,6 +31,15 @@ import { renderWordColors } from '../../lib/word-colors'
  *    ⚠️ 尤其**不要拿引擎那四维**（accuracy/fluency/standard/integrity）顶替五维 ——
  *       总分不按它们等权算，摆在一起用户对不上（"我准确度 91，为什么总分 85"）。
  */
+/**
+ * ⚠️ **差值的写法**：整数不显示 `.0` —— 用户给的两张图上写的是「超越前高**5**分」，
+ *    而不是「5.0 分」。（分数本身一律走 `formatScore` 保留一位；唯独"差了多少"照图去尾零。）
+ */
+function deltaText(v: number): string {
+  const r = Math.round(v * 10) / 10
+  return Number.isInteger(r) ? String(r) : r.toFixed(1)
+}
+
 Component({
   options: { virtualHost: true },
 
@@ -91,22 +100,24 @@ Component({
          */
         deltaText: state === 'update' && hasPrev ? formatScore(score - prev) : '',
         /**
-         * 胶囊文案（照稿 `588:1791` / `588:1814` 逐字）：
-         *   · 更新：「更新战绩 : {前高} → {新分}」（⚠️ 冒号两边各一个空格）
-         *   · 保留：「保留战绩，{新分} → {前高}」（⚠️ 逗号；箭头方向仍然是"从新到前高"）
+         * 胶囊文案（**照用户 2026-10-15 给的两张图**，一份一份对过）：
+         *   · 更新：「更新战绩: {前高} → {新分}」
+         *   · 保留：「保留最佳战绩: {前高}」—— ⚠️ **只写前高**，不写本次分、不给箭头
+         *     （写出来只会让用户以为自己退步了；图上就是这么写的）
+         *   · 第一份（没有前高）：「更新战绩: {新分}」，下句「第一份战绩」
          */
         pillText:
           state === 'update'
             ? hasPrev
-              ? '更新战绩 : ' + formatScore(prev) + ' → ' + formatScore(score)
-              : '更新战绩 : ' + formatScore(score)
-            : '保留战绩，' + formatScore(score) + (hasPrev ? ' → ' + formatScore(prev) : ''),
+              ? '更新战绩: ' + formatScore(prev) + ' → ' + formatScore(score)
+              : '更新战绩: ' + formatScore(score)
+            : '保留最佳战绩: ' + formatScore(hasPrev ? prev : score),
         subText:
           state === 'update'
             ? hasPrev
-              ? '超越前高 ' + formatScore(score - prev) + ' 分' + this.cookieSuffix()
+              ? '超越前高' + deltaText(score - prev) + '分' + this.cookieSuffix()
               : '第一份战绩' + this.cookieSuffix()
-            : '本次未能超越',
+            : '这次发挥不如之前，继续加油',
         dims: renderParts(parts),
         hint: partHint(parts),
         wordViews: renderWordColors(this.data.text, this.data.words as never).map((w, i) => ({
@@ -128,7 +139,7 @@ Component({
     /** ⚠️ 饼干为 0 / 没有这个字段时**不画 「+0」** —— 屏幕上永远不出现"0 🍪"（prd §7.6） */
     cookieSuffix(): string {
       const c = Number(this.data.cookies)
-      return c > 0 ? '，🍪 +' + c : ''
+      return c > 0 ? '，🍪 + ' + c : ''
     },
     noop() {},
     /** 去结果页看完整明细（分项 / 逐词 / 榜单） */

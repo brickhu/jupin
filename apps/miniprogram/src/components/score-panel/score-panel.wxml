@@ -41,6 +41,13 @@
     </view>
 
     <!-- ④ 战绩胶囊（稿：实心 ink · 40 高 · 331 宽）—— ⭐ 它就是「确认」这一步 -->
+    <!--
+      ⭐⭐ **AI 锐评**（prd §7.2b；用户 2026-10-15 给的图上就画在这一格）。
+      ⚠️ 它点评的是**这一把录音**（成绩单上的批语），所以放在"这一把的分数与分项"下面。
+      ⚠️ 拿不到（没配大模型 / 那次调用失败）⇒ **整块不渲染**，不留空框。
+    -->
+    <text wx:if="{{aiComment}}" class="sp-comment">{{aiComment}}</text>
+
     <view class="sp-record" bindtap="onConfirm">
       <text class="sp-t14 sp-on-ink">{{pillText}}</text>
     </view>

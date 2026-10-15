@@ -81,6 +81,18 @@
   color: var(--tk-primary, #2b142c);
 }
 
+/*
+ * ⭐⭐ ③.5 AI 锐评（prd §7.2b；用户 2026-10-15 给的图上画在五维与按钮之间）
+ * ⚠️ 14px 左对齐、行高 1.6 —— 它是"一段话"，不是标签，所以不居中。
+ */
+.sp-comment {
+  display: block;
+  margin-top: 32rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+  color: var(--tk-primary, #2b142c);
+}
+
 /* ④ 战绩胶囊（稿 331×40 · 实心 ink · r36）—— ⭐ 它就是「确认」这一步 */
 .sp-record {
   margin-top: 42rpx;

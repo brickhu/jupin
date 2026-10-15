@@ -48,8 +48,36 @@ describe('出分面板的结构（Figma 588:1791 / 588:1814）', () => {
     expect(/\b(mr-|px-|pr-)/.test(m), '逐词没有 margin ⇒ 真机上会连成一串').toBe(true)
   })
 
-  it('⭐ 胶囊文案按稿逐字（更新用「 : A → B」· 保留用「，A → B」）', () => {
-    expect(TS.includes("'更新战绩 : '"), '更新的文案不是稿里的形状').toBe(true)
-    expect(TS.includes("'保留战绩，'"), '保留的文案不是稿里的形状').toBe(true)
+  /**
+   * ⭐⭐ 面板的**四句文案**（用户 2026-10-15 给了两张图，逐句对过）：
+   *
+   * | 状态 | 胶囊 | 下句 |
+   * |---|---|---|
+   * | 更新 | 「更新战绩: {前高} → {新分}」 | 「超越前高{差值}分，🍪 + N」 |
+   * | 保留 | 「**保留最佳战绩: {前高}**」（⚠️ 不写本次分、不给箭头） | 「这次发挥不如之前，继续加油」 |
+   *
+   * ⚠️ 保留那格**只说前高**是有意的：写出"76.5 → 95.3"等于提醒用户这把退步了，
+   *    而这一格要传达的是「你的最佳还在」。
+   * ⚠️ 涨了多少**去尾零**（图上写「超越前高5分」，不是「5.0 分」）；饼干 `+` 后有空格。
+   */
+  it('⭐⭐ 胶囊文案（图上的两句）', () => {
+    expect(TS.includes("'更新战绩: '"), '更新的胶囊不是图上的形状').toBe(true)
+    expect(TS.includes("'保留最佳战绩: '"), '保留的胶囊不是图上的形状').toBe(true)
+    expect(TS.includes("'保留战绩，'"), '旧文案又回来了（那是"从新到前高"的箭头版）').toBe(false)
+  })
+
+  it('⭐⭐ 下句文案（图上的两句）+ 差值去尾零', () => {
+    expect(TS.includes("'超越前高' + deltaText("), '更新的小字没走去尾零的差值').toBe(true)
+    expect(TS.includes("'这次发挥不如之前，继续加油'"), '保留的小字不是图上的话').toBe(true)
+    expect(TS.includes("'本次未能超越'"), '旧文案又回来了').toBe(false)
+    expect(/Number\.isInteger\(r\) \? String\(r\)/.test(TS), 'deltaText 没去尾零').toBe(true)
+  })
+
+  it('⭐⭐ 五维下面要有 AI 锐评那一格（图上画在那儿），且拿不到就不渲染', () => {
+    const wxml = readFileSync(new URL('./score-panel.wxml', import.meta.url), 'utf-8')
+    expect(wxml.includes('wx:if="{{aiComment}}"'), '锐评没按"没有就不渲染"处理').toBe(true)
+    expect(wxml.includes('{{aiComment}}'), '锐评没画出来').toBe(true)
+    const flow = readFileSync(new URL('../participate-flow/participate-flow.wxml', import.meta.url), 'utf-8')
+    expect(flow.includes('aiComment="{{panelComment}}"'), '流程没把它传进面板').toBe(true)
   })
 })
