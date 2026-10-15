@@ -34,13 +34,6 @@
 
 ### A. 需要你拍板（产品 / 外部）
 
-- [ ] **B94** **把 LLM 的默认模型改成 `deepseek-flash`**（用户 2026-10-15：「改成为 deepseek-flash 吧」）
-  ⚠️ 起因：查官方文档时发现默认值还写着 `deepseek-chat` —— **已不在模型清单里**；
-  `.env.local` 用的 `deepseek-v4-flash` 官方标注**已退役**（请求被 V4.1-Flash 接走、按 Flash 计费）。
-  ⚠️ 而这个错**是静默的**：模型名不对 ⇒ 调用被拒 ⇒ 锐评整块不渲染、**不报错**。
-  **做完的标志**：① 默认模型 = `deepseek-flash`；② **配置只有一处来源**
-  （`services/coach.ts` 的 `llmConfigOf`，两个调用方 scoring / summary 都不许自己拼）；
-  ③ `.env.local` 与 `.env.local.example` 同步；④ 守门盯着（含"不许再写回旧名字"）。
 - [ ] **A1** **点赞 / 评论**：`likes`、`reviews` 两张表 + `submissions.like_count` 全仓库没有一处读写 —— 建议：**删**（能量线都砍了，点赞既无入口也无出口）
 - [ ] **A2** 小程序**主体类型**：个人 / 个体户 / 企业 —— 做完的标志：定了走哪条虚拟支付开通流程（依据 payment-and-purchase.md §10 / §11.4）
 - [ ] **A3** 开通前自查：**对公提现账户**、支付管理员、**小程序简称**（iOS 必需）—— 做完的标志：逐项确认（payment-and-purchase.md §11.1）
@@ -804,6 +797,14 @@
      —— 撞号的后果是 `plan:sync` 把两条任务勾成同一条，所以改成 **B93**。
   ⚠️ 起因：这段文本**当时存了但谁也看不到**（显示它的 `pages/reading` 已删）——
      `submissions.ai_comment` / `ai_advice` 两个字段没有任何读取方。
+
+- [x] **B94** **把 LLM 的默认模型改成 `deepseek-flash`**（用户 2026-10-15：「改成为 deepseek-flash 吧」）
+  ⚠️ 起因：查官方文档时发现默认值还写着 `deepseek-chat` —— **已不在模型清单里**；
+  `.env.local` 用的 `deepseek-v4-flash` 官方标注**已退役**（请求被 V4.1-Flash 接走、按 Flash 计费）。
+  ⚠️ 而这个错**是静默的**：模型名不对 ⇒ 调用被拒 ⇒ 锐评整块不渲染、**不报错**。
+  **做完的标志**：① 默认模型 = `deepseek-flash`；② **配置只有一处来源**
+  （`services/coach.ts` 的 `llmConfigOf`，两个调用方 scoring / summary 都不许自己拼）；
+  ③ `.env.local` 与 `.env.local.example` 同步；④ 守门盯着（含"不许再写回旧名字"）。
 
 - [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
   `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
