@@ -33,6 +33,13 @@ interface Entry {
    */
   action?: string
   hint?: string
+  /**
+   * ⭐ **我在这一句上参与过没有**（服务端参与记录给的口径）。
+   * ⚠️⚠️ 它一直只活在 wxml 里（`entry.joined` 用在"已参与角标"），**TS 这边没声明** ——
+   *    WXML 不做类型检查 ⇒ 谁忘了传也**不会报错**，只是那一圈边框/角标悄悄不出。
+   *    2026-10-15 补上：它现在管两处（边框满色 + 角标）。
+   */
+  joined?: boolean
   theme?: ArticleTheme | null
 }
 

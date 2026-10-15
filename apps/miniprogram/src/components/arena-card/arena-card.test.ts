@@ -61,4 +61,34 @@ describe('句子卡的排版（Figma 539:860）', () => {
     expect(rule.includes('justify-content: space-between'), '三组没有贴两边').toBe(true)
     expect(rule.includes('padding: 0 16rpx'), '左右没内缩 ⇒ 圆会被胶囊圆角切掉').toBe(true)
   })
+
+  /**
+   * ⭐⭐ 守的是**"边框浓度表达读过没有"**（用户 2026-10-15 定）：
+   *   默认 **10%**、**参与过 ⇒ 100%**。
+   *
+   * ⚠️ 三个必须同时在的点（少一个就是"看起来改了、其实没生效"）：
+   *   ① wxss 有默认 10% 的 `color-mix`（且**前面有一条降级声明** —— 不认 color-mix 的引擎靠它）；
+   *   ② 有 `.ac-card.ac-joined { border-color: currentColor }`（100%）；
+   *   ③ wxml 真的按 `entry.joined` 加上那个类 —— 否则 ② 永远不会命中。
+   */
+  it('⭐⭐ 边框：默认 10%、参与过 100%（三处缺一不可）', () => {
+    const card = WXSS.slice(WXSS.indexOf('.ac-card'), WXSS.indexOf('.ac-lg'))
+    expect(card.includes('color-mix(in srgb, currentColor 10%, transparent)'), '默认不是 10%').toBe(true)
+    /**
+     * ⚠️⚠️ 降级声明必须是**紧邻的上一条、同一个属性名**（`border-color`）——
+     *    写成 `border` 简写不算：不认 color-mix 的引擎丢掉的是**那一条声明**，
+     *    没有同属性降级时那句样式会**静默消失**（一圈边框全没）。
+     *    `wxss-color-mix.test.ts` 也会拦（我第一版就是被它拦下的）。
+     */
+    expect(
+      /border-color: rgba\(128, 128, 128, 0\.1\);\s*\n\s*border-color: color-mix/.test(WXSS),
+      '降级声明不是"紧邻 + 同属性" ⇒ 老引擎上边框会整个消失',
+    ).toBe(true)
+    expect(/\n\.ac-card\.ac-joined \{\s*border-color: currentColor;/.test(WXSS), '参与过的满色边框没了').toBe(true)
+    expect(WXML.includes("entry.joined ? 'ac-joined' : ''"), 'wxml 没按 joined 加类 ⇒ 满色边框永远不出现').toBe(true)
+  })
+
+  it('⚠️ `joined` 必须在 Entry 里声明（wxml 一直在用它，TS 原来不知道）', () => {
+    expect(TS.includes('joined?: boolean'), 'Entry 没声明 joined ⇒ 宿主忘了传也不报错').toBe(true)
+  })
 })

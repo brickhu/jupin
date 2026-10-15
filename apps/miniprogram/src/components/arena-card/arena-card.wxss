@@ -12,12 +12,20 @@
   flex-direction: column;
   gap: 32rpx;
   /**
-   * ⚠️⚠️ **每张句子卡都有的一圈前景色边框**（用户 2026-09 定）。
-   *    用 currentColor = 根节点内联的 color: {{fg}} ⇒ 深色主题配浅边、浅色主题配深边，
-   *    不必为每套主题各写一条规则。
-   * ⚠️ 它是"卡片形状"的一部分，**不再承担"我读过没有"**（那个由右下角 .ac-check 表达）。
+   * ⭐⭐ **边框的浓度表达"我读过这一句没有"**（用户 2026-10-15 定）：
+   *   · 默认 **10%** —— 一圈淡淡的轮廓（卡片形状的一部分）；
+   *   · **参与过 ⇒ 100%** —— 前景色实边，列表里一眼扫得出来（见下面的 .ac-joined）。
+   * ⚠️ 用 「currentColor」 = 根节点内联的 「color: {{fg}}」 ⇒ 深色主题配浅边、浅色主题配深边，
+   *    不必为每套主题各写一条规则；而"淡到多少"用 color-mix **运行时**算
+   *    （每篇文章的主题色不同，构建期不知道那个颜色）。
+   * ⚠️⚠️ **紧挨着的前一条声明是降级**，而且**必须是同一个属性名**（「border-color」）——
+   *    写成 「border」 简写不算：「wxss-color-mix.test.ts」 会拦（我第一版就是这么写的）。
+   *    理由：不认 color-mix 的引擎丢掉的是**那一条声明**，不是整个简写里的颜色 ⇒ 没有同属性
+   *    降级时，那句样式会**静默消失**（一圈边框全没）。
    */
-  border: 2rpx solid currentColor;
+  border: 2rpx solid;
+  border-color: rgba(128, 128, 128, 0.1);
+  border-color: color-mix(in srgb, currentColor 10%, transparent);
   /* ⚠️ 角标要绝对定位到卡片右下角 ⇒ 根节点必须是定位上下文 */
   position: relative;
 }
@@ -52,6 +60,11 @@
   justify-content: center;
   font-size: 22rpx;
   line-height: 1;
+}
+
+/* ⭐ 参与过 ⇒ 边框满色（10% → 100%）—— 见 .ac-card 的说明 */
+.ac-card.ac-joined {
+  border-color: currentColor;
 }
 
 /* 层次：只调透明度，颜色永远是 currentColor。

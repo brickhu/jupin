@@ -9,7 +9,7 @@
   ⚠️ 这正是现在那颗 CTA 的写法（background:{{fg}};color:{{bg}}）—— 只是换成按钮的变量口径，
      所以搬过来**视觉不变**；而卡里所有 ui-button 都自动继承这两个值，不用逐个传。
 -->
-<view class="ac-card {{resolved === 'sm' ? 'ac-sm' : 'ac-lg'}}"
+<view class="ac-card {{resolved === 'sm' ? 'ac-sm' : 'ac-lg'}} {{entry.joined ? 'ac-joined' : ''}}"
       style="background:{{bg}};color:{{fg}};--btn-bg:{{fg}};--btn-fg:{{bg}}">
   <!-- 卡片头：左（播放 + 时长）· 右（人数 + 箭头）—— 父容器 justify-between -->
   <view wx:if="{{entry.header}}" class="flex items-center justify-between" bindtap="onOpen">
