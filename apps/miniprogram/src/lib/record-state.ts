@@ -84,16 +84,29 @@ export function recordStateOf(input: RecordStateInput): RecordState {
 /**
  * 「参与区」该显示的那个分数（`retry` / `scored` 用）。
  *
- * ⚠️ 两个态的分数**来源不同**，别合并：
+ * ⚠️ 两个态的分数**来源不同，绝不能合并**：
  *   · `retry`  = 服务端参与记录的**战绩**（已确认的最高分）
  *   · `scored` = **这一把**的分数（还没写进战绩）
- * ⇒ `scored` 时优先用 `pendingScore`，否则退回战绩（防它还没传过来时显示空白）。
+ *
+ * ⚠️⚠️ **`scored` 时拿不到这一把的分就返回 `null`，不许退回战绩**（2026-10-15 修的真实 bug）。
+ *
+ *    原来这里写的是 `pendingScore ?? bestScore`，理由是"别显示空白" ——
+ *    而它的实际后果是：点完能量确认、检测还在跑的那一刻，界面上**冒出一个分数，
+ *    那个分数还是历史最高**。用户的原话是：
+ *
+ *      「你能量扣除确认后，直接把历史最高分展示出来了 —— 应该是 loading 状态啊」
+ *
+ *    根因是两层错叠在一起：① `scored` 被过早判出来（见 participate-flow 的 restore）；
+ *    ② 这里又把战绩当成这一把的分**补了上去**。
+ *    ⇒ 只要有一层错，"一个不属于这一次的分数"就会被显示得像真的一样。
+ *    两处都要堵死：**宁可什么都不显示，也不显示一个错的分。**
  */
 export function displayScoreOf(
   state: RecordState,
   p: { bestScore: number | null; pendingScore: number | null },
 ): number | null {
-  if (state === 'scored') return p.pendingScore ?? p.bestScore
+  /** ⭐ `scored` 只认这一把的分；没有就是 null（调用方渲染成"不显示分数"） */
+  if (state === 'scored') return p.pendingScore
   if (state === 'retry') return p.bestScore
   return null
 }

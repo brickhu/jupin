@@ -95,8 +95,10 @@ describe('参与区显示哪个分数', () => {
     expect(displayScoreOf('scored', { bestScore: 92.5, pendingScore: 76.5 })).toBe(76.5)
   })
 
-  it('scored 但这一把的分还没传过来 ⇒ 退回战绩（不显示空白）', () => {
-    expect(displayScoreOf('scored', { bestScore: 92.5, pendingScore: null })).toBe(92.5)
+  it('⭐⭐ scored 但这一把的分还没到 ⇒ **null**（绝不拿战绩顶替）', () => {
+    // ⚠️⚠️ 这条是 2026-10-15 修的真实 bug：原来返回 92.5（战绩），
+    //    于是"检测还在跑"的那一刻界面上冒出一个**不属于这一把的分数**。
+    expect(displayScoreOf('scored', { bestScore: 92.5, pendingScore: null })).toBeNull()
   })
 
   it('retry 显示**战绩**', () => {
@@ -107,5 +109,38 @@ describe('参与区显示哪个分数', () => {
     for (const s of ['try', 'recoded', 'checking'] as const) {
       expect(displayScoreOf(s, { bestScore: 92.5, pendingScore: 99 }), s).toBeNull()
     }
+  })
+})
+
+describe('⭐ 提交之后那一刻（2026-10-15 修的真实 bug）', () => {
+  /**
+   * ⚠️⚠️ 用户原话：「你能量扣除确认后，直接把历史最高分展示出来了 —— 应该是 loading 状态」
+   *
+   * 这是一条**回归测试**：那一刻的事实是"只有 submissionId、result 还没有"，
+   * 而它必须落成 `checking`（转圈），**不是** `scored`（分数 + ›）。
+   * ⚠️ 当时还有第二层错叠着：`displayScoreOf('scored', …)` 在前一分未知时会**退回战绩**
+   *    ⇒ 于是一个"不属于这一把的分数"被显示得像真的一样。两层现在都堵死了。
+   */
+  it('只有 submissionId、还没有结果 ⇒ checking（转圈），且**不显示任何分数**', () => {
+    const input: RecordStateInput = {
+      /** ⚠️ 故意给一个历史战绩：它就是当时被错显示的 92.5 */
+      bestScore: 92.5,
+      hasPendingRecording: false,
+      pending: { submissionId: 'a', status: 'scoring', confirmed: false },
+    }
+    const state = recordStateOf(input)
+    expect(state).toBe('checking')
+    // 关键：这一态**必须**没有可显示的分数（有的话就会把 92.5 显出来）
+    expect(displayScoreOf(state, { bestScore: 92.5, pendingScore: null })).toBeNull()
+  })
+
+  it('出分那一刻 ⇒ scored，且显示的是**这一把**的分（不是 92.5）', () => {
+    const state = recordStateOf({
+      bestScore: 92.5,
+      hasPendingRecording: false,
+      pending: { submissionId: 'a', status: 'scored', confirmed: false },
+    })
+    expect(state).toBe('scored')
+    expect(displayScoreOf(state, { bestScore: 92.5, pendingScore: 76.5 })).toBe(76.5)
   })
 })

@@ -42,6 +42,12 @@ interface Scratch {
   cache: ParticipateCache | null
   /** 这一把的分数（`scored` 态显示它，还没写进战绩） */
   pendingScore: number | null
+  /** 本会话已经真正拿到结果的 submissionId（空 = 还没拿到） */
+  resultOf: string
+  /** 已经自动弹过面板的 submissionId */
+  popped: string
+  /** 这一轮轮询是「进页面补问」吗（= 不自动弹面板） */
+  silent: boolean
   pollTimer: ReturnType<typeof setInterval> | null
   pollCount: number
 }
@@ -102,6 +108,15 @@ Component({
     scratch: {
       cache: null,
       pendingScore: null,
+      /**
+       * ⭐ **本会话已经真正拿到结果**的那一把（submissionId）。
+       * ⚠️⚠️ 它是 `scored` 与 `checking` 的**唯一**分界 —— 缓存里只有 submissionId 时
+       *    **不许**假设已出分（那正是「点完能量就冒出历史最高分」的根因之一）。
+       */
+      resultOf: '',
+      /** 这一把的结果面板已经自动弹过了吗 —— 避免每次进页面都弹一次 */
+      popped: '',
+      silent: false,
       pollTimer: null,
       pollCount: 0,
     } as Scratch,
@@ -141,10 +156,28 @@ Component({
       const best = Number(this.data.bestScore)
       const bestScore = best >= 0 ? best : null
 
-      /** ⚠️ 缓存里没有 submissionId ⇒ 还没提交过 ⇒ pending 为 null（那一把不算"在路上"） */
+      /**
+       * ⚠️⚠️ **缓存里只有 submissionId 时，绝不假设「已出分」**（2026-10-15 修的真实 bug）。
+       *
+       *    原来这里写死 `status: 'scored'` ⇒ 点完能量确认、submissionId 刚落库那一刻，
+       *    状态机立刻判成 `scored` ⇒ 卡片显示「分数 + ›」，而那个分数还是**历史最高**
+       *    （见 displayScoreOf 的说明）。用户看到的是一把**还没跑完**的检测，
+       *    配上一个不属于它的分。
+       *
+       *    ⇒ 判据只能是「**本会话真的拿到结果了吗**」：
+       *       · 拿到了（`scratch.resultOf` 就是它）⇒ `scored`
+       *       · 没拿到 ⇒ `scoring` ⇒ 状态是 **`checking`（转圈）** —— 这才是提交后该有的样子
+       *    ⚠️ 于是「上次离开时还没结清的那一把」进来时也是 `checking`，
+       *       轮询一次之后自然落成 `scored` / `failed`（多一次请求，换的是**不撒谎**）。
+       */
+      const knownResult = this.data.scratch.resultOf
       const pending: PendingSubmission | null =
         cache && cache.submissionId
-          ? { submissionId: cache.submissionId, status: 'scored', confirmed: cache.confirmed }
+          ? {
+              submissionId: cache.submissionId,
+              status: knownResult === cache.submissionId ? 'scored' : 'scoring',
+              confirmed: cache.confirmed,
+            }
           : null
 
       const state = recordStateOf({
@@ -163,7 +196,11 @@ Component({
       this.triggerEvent('state', { articleId, state, score })
 
       /** 有在路上的提交 ⇒ 接着问（可能上次离开时还没出分） */
-      if (pending && !cache?.confirmed && this.data.state === 'checking') this.startPoll()
+      /**
+       * ⚠️ 这一次是「**进来补问**」（不是用户刚提交）⇒ `silent`：
+       *    把状态补对就够了，**不要**自动弹面板 —— 用户没在等它。
+       */
+      if (pending && !cache?.confirmed && this.data.state === 'checking') this.startPoll(true)
     },
 
     // ── ① 点麦 ────────────────────────────────────────────────
@@ -182,6 +219,8 @@ Component({
       if (articleId) clearParticipate(articleId)
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
+      this.data.scratch.resultOf = ''
+      this.data.scratch.popped = ''
       this.setData({ recorderVisible: true })
       this.restore()
     },
@@ -307,8 +346,17 @@ Component({
         const next: ParticipateCache = { ...cache, submissionId: res.submissionId, confirmed: res.confirmed }
         saveParticipate(articleId, next)
         this.data.scratch.cache = next
-        /** ⭐ 已有 result（幂等命中）⇒ 直接进 scored，不必轮询 */
-        if (res.status === 'scored' && res.result) this.applyResult(res)
+        /**
+         * ⚠️⚠️ **刚落库的这一把，结果是"未知"** ⇒ `resultOf` 必须清空，
+         *    否则 `restore()` 会以为已经拿到结果、把状态判成 `scored`（那正是"点完能量
+         *    就冒出分数"的直接原因）。
+         *    ⭐ 清空之后状态就是 **`checking`（转圈）** —— 提交后该有的样子。
+         */
+        this.data.scratch.resultOf = ''
+        this.data.scratch.popped = ''
+        /** ⭐ 已有 result（幂等命中，例如同一段音频重发）⇒ 直接进 scored，不必轮询 */
+        if (res.result) this.data.scratch.resultOf = res.submissionId
+        if (res.status === 'scored' && res.result) this.applyResult(res, true)
         this.restore()
         if (res.status !== 'scored') this.startPoll()
       } catch (err) {
@@ -316,7 +364,13 @@ Component({
       }
     },
 
-    startPoll() {
+    /**
+     * 开始轮询这一把的结果。
+     * @param silent `true` = **进页面补问**（用户没在等它）⇒ 出分时**不**自动弹面板。
+     *   ⚠️ 只有"用户刚点确认提交"那一次才允许自动弹 —— 否则每次进页面都会弹一遍。
+     */
+    startPoll(silent = false) {
+      this.data.scratch.silent = silent
       this.stopPoll()
       this.data.scratch.pollCount = 0
       this.data.scratch.pollTimer = setInterval(() => {
@@ -348,7 +402,8 @@ Component({
           this.showNotice(r.error || '检测失败，可以再试一次')
           return
         }
-        if (r.result) this.applyResult(r)
+        this.data.scratch.resultOf = r.submissionId
+        if (r.result) this.applyResult(r, !this.data.scratch.silent)
         this.restore()
       } catch {
         /** ⚠️ 一次问不到不算失败（网络抖一下很正常）—— 下一次接着问 */
@@ -359,7 +414,7 @@ Component({
      * ⭐ 出分：入口**立刻**变 `scored`（`restore()` 拼出来的），
      *    而面板**只有当这条流程还在这一页上时才弹**（prd：面板弹出与按钮状态**不耦合**）。
      */
-    applyResult(r: { result?: unknown; submissionId: string }) {
+    applyResult(r: { result?: unknown; submissionId: string }, pop = true) {
       const result = r.result as {
         score: number
         parts?: unknown
@@ -374,8 +429,16 @@ Component({
       const state: 'update' | 'keep' = !hasPrev || result.score > prev ? 'update' : 'keep'
 
       this.data.scratch.pendingScore = result.score
+      /**
+       * ⚠️ **面板弹不弹，与"入口变 scored"是两件事**（prd §7.2：这两者不耦合）。
+       *    `pop` 为 false 的情形只有一种：**进页面补问**（用户没在等它，弹出来会莫名其妙）。
+       *    ⚠️ 同一把**只自动弹一次**（`popped`）—— 否则每次轮询/每次进页面都弹一遍。
+       *    用户想再看：点卡片上的分数/›（`onOpenPanel`）。
+       */
+      const shouldPop = pop && this.data.scratch.popped !== r.submissionId
+      if (shouldPop) this.data.scratch.popped = r.submissionId
       this.setData({
-        panelVisible: true,
+        panelVisible: shouldPop,
         panelState: state,
         panelScore: result.score,
         panelPrev: prev,
@@ -417,6 +480,8 @@ Component({
       clearParticipate(this.data.articleId)
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
+      this.data.scratch.resultOf = ''
+      this.data.scratch.popped = ''
       this.setData({ panelVisible: false })
       /**
        * ⚠️ 战绩变了 ⇒ 让宿主重拉参与记录（它会回传新的 bestScore，restore 再拼一次状态）。
