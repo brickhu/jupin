@@ -636,6 +636,41 @@ Page({
    */
   async loadToday() {
     if (this.gone) return
+    /**
+     * ⭐⭐ **今日卡一天只定一次**（用户 2026-10-15：「在单次 app 打开的生命周期内，
+     *     以及单个自然日内应该是固定的」）。
+     *
+     * ⚠️⚠️ 原来这里**每次都问服务端**（首屏 / onShow / 下拉 / 重试都会走到），
+     *    而服务端对**匿名**用户是「初级档里**随机** + 按参与人数加权挑一条」
+     *    （见 lib/api/client.ts 的 fetchToday 与 services/recommend.ts）——
+     *    ⇒ 问一次换一句，卡片当然老变。
+     *    ⭐ 而 store 里**一直有按天缓存**（`cachedToday()`：服务端 `date` 与今天一致才给）
+     *      —— 这里从来没查过它。现在先查缓存：**有今天这一张就直接用、不再问**。
+     *    ⚠️ 登录之后不再重挑：这一句就是"今天这一句"，中途换掉比不个性化更糟
+     *      （要按难度档重挑是**明天**的事）。
+     */
+    /**
+     * ⚠️⚠️ **先把"这一次 app 打开期间"钉死**：`this.cards.today` 有值就直接用。
+     *    `cachedToday()` 的判据是「服务端 `date` == **本地**自然日」
+     *    （见 store 的说明），而服务端跑在容器里、多半是 **UTC** ——
+     *    于是每天有一段（CST 的 00:00–08:00）两边**对不上**，缓存判据失效 ⇒ 又去问
+     *    ⇒ 匿名用户又被随机换一句。会话内的这一层不依赖任何日期比较，稳。
+     */
+    if (this.cards?.today) {
+      this.setData({ todayLoading: false, todayError: '' })
+      this.render()
+      this.fillCardData()
+      return
+    }
+    const cached = me.cachedToday()
+    if (cached) {
+      this.cards = { today: cached.item, latest: this.cards?.latest ?? [] }
+      this.setData({ todayLoading: false, todayError: '' })
+      this.render()
+      /** ⚠️ 参与状态照常补（幂等、并发去重在 lib 里）—— 缓存只省掉"选哪一句"那次请求 */
+      this.fillCardData()
+      return
+    }
     this.setData({ todayError: '' })
     if (!this.cards?.today) this.setData({ todayLoading: true })
     try {
