@@ -79,6 +79,19 @@
       </view>
     </view>
 
+    <!--
+      ⭐⭐ ③b2 **AI 锐评**（prd §7.2b）。
+      ⚠️ 它是**被采纳那份成绩单上老师的批语**（超越前高那份才写进档案）——
+         针对的就是**那一次录音**，不是"我在这句上的整体表现"。
+      ⚠️ 与下面的 AI 总结**分开**：锐评是一句话的点评，总结是这段练习的画像。
+      ⚠️ 空串 = 没生成（没配大模型 / 那次调用失败 / 老数据）⇒ **整块不渲染**，不留空框。
+    -->
+    <view class="card p-4 mt-3" wx:if="{{view.remark}}">
+      <text class="text-26rpx font-semibold text-page-on">AI 锐评</text>
+      <text class="text-22rpx text-page-on_50 block mt-1">战绩那把的批语</text>
+      <text class="text-28rpx text-page-on leading-[44rpx] block mt-2">{{view.remark}}</text>
+    </view>
+
     <!-- ⭐⭐ ③c 五维明细（被采纳那一份的；稿里是五个色块，不是进度条） -->
     <view class="card p-4 mt-3" wx:if="{{view.parts.length > 0}}">
       <text class="text-26rpx font-semibold text-page-on">这次的五个分项</text>

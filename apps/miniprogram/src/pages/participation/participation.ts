@@ -56,6 +56,11 @@ interface ParticipationView {
   /** ⭐ 累计薄弱词汇 —— **结构化事实**（由 submissions 聚合），不是 AI 说的 */
   weak: { word: string; times: string; dp: string }[]
   /** ⭐ AI 总结（LLM 产物，逐轮更新）；没生成出来就是空串 */
+  /**
+   * ⭐⭐ **AI 锐评**（prd §7.2b）—— 被采纳那份成绩单上老师的批语；空串 = 没有。
+   * ⚠️ 与 `summary` 是两件事（一句话的点评 vs 这段练习的画像）。
+   */
+  remark: string
   summary: string
   /** ⭐ 总结的状态：pending 生成中 / failed 没生成出来（两者都要说清，别让空白自己解释） */
   summaryState: string
@@ -103,6 +108,14 @@ function toView(r: ParticipationRecord): ParticipationView {
       times: w.count + ' 次',
       dp: w.dp ?? '',
     })),
+    /**
+     * ⭐⭐ **AI 锐评**（prd §7.2b）—— 被采纳那份**成绩单上老师的批语**
+     *    （`ParticipationRecord.bestComment` 取 `best_submission_id` 那份的 `ai_comment`）。
+     * ⚠️ 空串 = 没有（没配密钥 / 模型失败 / 老数据）⇒ wxml 整块不渲染。
+     * ⚠️ 与 `summary` 是**两件事**：锐评是"针对那一次录音的一句话"，
+     *    总结是"这段练习的整体画像"（逐轮更新）。
+     */
+    remark: (r.bestComment ?? '').trim(),
     summary: (r.aiSummary ?? '').trim(),
     summaryState: r.summaryState ?? '',
   }
