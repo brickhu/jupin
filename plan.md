@@ -125,21 +125,6 @@
   ⇒ **做完的标志**：那几处读起来是"规则 + 为什么"，读不出"某个人的弯路"；
   ⚠️ 语义一个字都不许改，只改叙述方式。
 
-- [ ] **B84** **公开与分享收敛到"竞技档案"**（用户 2026-10-15 定）
-  「**语音一律公开**，隐藏起来就失去社交的意义了」；「**submission 不支持分享，成绩单的展示页直接干掉**」；
-  **唯一分享路径 = 分享我的竞技档案**。
-  ✅ **落地**：
-  · 去掉「是否公开」这个开关 —— 提交参数 / `submissions.is_public` / `visibility` 路由 /
-    端侧 `setSubmissionVisibility` 全删（迁移 0066 同时删掉 `likes` 表与 `submissions.like_count`：
-    点赞是"展示单次成绩"那条路上的东西，随展示页一起作废）；
-  · **删掉成绩单展示页**（`pages/challenge`，稿 `546:1227`）—— app.json 16 → 15 页；
-    "看某一次挑战"改指**这句子的竞技场**（`openArenaPage(articleId)`），出分面板的"看明细"同理；
-  · **分享我的战绩**：竞技场页新增一颗 `open-type="share"` 按钮（`data-kind="record"`），
-    路径 = `/pages/profile/profile?u=&pid=`（**我的竞技档案**，对方看到的是我在这句上的分数与那条录音）；
-    ⚠️ 没有我的记录时**不画**这颗按钮。
-  ⚠️ **剩下的**（属于"竞技档案页"本身，见 B87）：把 `weak_points` / `ai_summary` / 明细 / 录音画到
-  `pages/profile` 的参与详情上 —— 服务端已经在给这些字段了，界面上还没消费。
-
 - [ ] **B87** **竞技档案页把新数据画出来**（B84 的收尾）
   服务端已经在 `ParticipationRecord` 上给了：`audio`（被采纳那条录音）/ `scoreParts`（五维明细）/
   `weakPoints`（累计薄弱词汇，结构化事实）/ `aiSummary`（LLM 逐轮总结）/ `summaryState` / `pendingSubmissionId`。
@@ -708,6 +693,21 @@
   **接口**：`POST /api/user/submissions/{id}/claim` → **`/confirm`**
   （"claim"是**领饼干**的意思，而它现在做的事远不止领饼干 —— 名字与语义不符是下一次误解的种子）。
   做完的标志：接口 spec / shared 类型 / 端侧一处改完；两条路径各有测试。
+
+- [x] **B84** **公开与分享收敛到"竞技档案"**（用户 2026-10-15 定）
+  「**语音一律公开**，隐藏起来就失去社交的意义了」；「**submission 不支持分享，成绩单的展示页直接干掉**」；
+  **唯一分享路径 = 分享我的竞技档案**。
+  ✅ **落地**：
+  · 去掉「是否公开」这个开关 —— 提交参数 / `submissions.is_public` / `visibility` 路由 /
+    端侧 `setSubmissionVisibility` 全删（迁移 0066 同时删掉 `likes` 表与 `submissions.like_count`：
+    点赞是"展示单次成绩"那条路上的东西，随展示页一起作废）；
+  · **删掉成绩单展示页**（`pages/challenge`，稿 `546:1227`）—— app.json 16 → 15 页；
+    "看某一次挑战"改指**这句子的竞技场**（`openArenaPage(articleId)`），出分面板的"看明细"同理；
+  · **分享我的战绩**：竞技场页新增一颗 `open-type="share"` 按钮（`data-kind="record"`），
+    路径 = `/pages/profile/profile?u=&pid=`（**我的竞技档案**，对方看到的是我在这句上的分数与那条录音）；
+    ⚠️ 没有我的记录时**不画**这颗按钮。
+  ⚠️ **剩下的**（属于"竞技档案页"本身，见 B87）：把 `weak_points` / `ai_summary` / 明细 / 录音画到
+  `pages/profile` 的参与详情上 —— 服务端已经在给这些字段了，界面上还没消费。
 
 - [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
   `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
