@@ -250,7 +250,6 @@ Component({
        *    而且这段时间里他本来也不该再点。
        */
       this.setData({ finishing: true })
-      playDing()
       if (this.data.scratch.recordTimeout !== null) {
         clearTimeout(this.data.scratch.recordTimeout)
         this.data.scratch.recordTimeout = null
@@ -268,6 +267,17 @@ Component({
     // ── 录音回调 ───────────────────────────────────────────────
     /** ⭐ 录音落地 —— **交给宿主，然后关面板**（⚠️ 结束 ≠ 提交） */
     onDone(r: SpeechResult) {
+      /**
+       * ⭐⭐ **"叮"要在这里响，不能在上一步（说"停"）就响**。
+       *
+       * ⚠️⚠️ 说"停"只是**发出请求**，麦克风这时**还在收**（要等录音器把文件落完才真的关）——
+       *    在那之前响的任何声音都会被**原样录进用户这一段**的尾巴
+       *    （真机上一听就是"我读完了，结尾还带一声叮"）。
+       *    ⇒ 与开录前"先停掉所有声音再开麦"是同一条道理：**麦克风开着的时候不放任何声音**。
+       *
+       * ⚠️ 它仍然表达"**你按的那一下生效了**"——只是晚了几百毫秒（等文件落完）。
+       */
+      playDing()
       if (this.data.scratch.stopWatchdog !== null) {
         clearTimeout(this.data.scratch.stopWatchdog)
         this.data.scratch.stopWatchdog = null
