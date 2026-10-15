@@ -135,7 +135,7 @@
   <arena-card wx:elif="{{today}}" mode="featured" entry="{{today}}"
               playing="{{playingArticle === today.articleId}}"
               loading="{{loadingArticle === today.articleId}}"
-              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}"
+              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}" recordDurationMs="{{flowDuration}}"
               bind:open="onOpenDetail" bind:play="onPlayAudio"
               bind:mic="onCardMic" bind:redo="onCardRedo"
               bind:confirm="onCardConfirm" bind:panel="onCardPanel"

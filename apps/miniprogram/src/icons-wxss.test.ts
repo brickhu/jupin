@@ -30,16 +30,32 @@ function masksOf(wxss: string): Map<string, string[]> {
 const masks = masksOf(WXSS)
 const nameList = [...NAMES.matchAll(/^ {2}'([a-z0-9-]+:[a-z0-9-]+)',/gm)].map((m) => m[1] as string)
 
+/**
+ * ⚠️⚠️ **类名要用生成物里的 `ICON_CLASSES`，不能从 iconify 名现算**（2026-10-15 修）。
+ *
+ *    类名**不总是**"冒号后面那一段"：写了 `as` 别名的图标不是
+ *    （`material-symbols:check` 的类名是 `ms-check`，不是 `check` —— 后者已经被 `mdi:check` 占了）。
+ *    原来这里现算 ⇒ 与 wxss 里真实定义的类名对不上，测试红、而**真机上是图标静默不画**。
+ *    ⭐ `ICON_CLASSES` 与 `ICON_NAMES` **同序**（同一个 ICONS 数组生成）——
+ *      下面的 viewBox 那条就是靠这个同序关系拿到集合画布的。
+ */
+const classList = (() => {
+  const body = /export const ICON_CLASSES = \[([^\]]*)\] as const/.exec(NAMES)?.[1] ?? ''
+  return [...body.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1] as string)
+})()
+
 describe('生成的图标样式（src/icons.wxss）', () => {
   it('⭐ 名单里的每个图标都有一条 mask，且没有多余的', () => {
-    const want = nameList.map((n) => n.split(':').pop() as string).sort()
-    expect([...masks.keys()].sort()).toEqual(want)
+    expect(classList.length, 'ICON_CLASSES 没解析出来').toBe(nameList.length)
+    expect([...masks.keys()].sort()).toEqual([...classList].sort())
   })
 
   it('base64 能解回合法 SVG，且 viewBox 就是该集合自己的画布', () => {
     const bad: string[] = []
-    for (const name of nameList) {
-      const cls = name.split(':').pop() as string
+    /** ⚠️ 按**下标**配对：ICON_NAMES 与 ICON_CLASSES 同序（别名让两者不再是字符串关系） */
+    for (let i = 0; i < nameList.length; i++) {
+      const name = nameList[i] as string
+      const cls = classList[i] as string
       const set = name.split(':')[0] as string
       const grid = CACHE.grids[set]
       const uris = masks.get(cls) ?? []

@@ -36,7 +36,7 @@
               loading="{{loadingArticle === articleId}}"
               showFavorite="{{!favLoading}}" favorite="{{isFavorite}}"
               favoriteCount="{{favoriteCount}}"
-              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}"
+              showRecord="{{true}}" state="{{flowState}}" score="{{flowScore}}" recordDurationMs="{{flowDuration}}"
               bind:play="onPlayAudio" bind:favorite="onToggleFavorite"
               bind:mic="onCardMic" bind:redo="onCardRedo"
               bind:confirm="onCardConfirm" bind:panel="onCardPanel"

@@ -105,9 +105,11 @@
   </block>
 
   <view wx:if="{{showRecord && resolved === 'lg'}}" class="mt-4">
-    <btn-record state="{{state}}" score="{{score}}" durationMs="{{entry.durationMs}}"
-                audio="{{entry.recordAudio}}" playing="{{playingRecord}}" loading="{{loadingRecord}}"
-                fill="{{fg}}" ink="{{bg}}"
+    <!--
+      ⚠️ 只传**三个**入参（设计稿 539:871 里就这三样）：状态、分数、**我那段录音的时长**。
+         时长不是标准音的时长 —— 稿里那个 00:33 是"我刚才读了多久"。
+    -->
+    <btn-record state="{{state}}" score="{{score}}" durationMs="{{recordDurationMs}}"
                 bind:mic="onMic" bind:redo="onRedo" bind:confirm="onConfirm"
                 bind:panel="onScorePanel" bind:play="onPlayRecord" />
   </view>

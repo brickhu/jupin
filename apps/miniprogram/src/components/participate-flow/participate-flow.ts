@@ -48,6 +48,8 @@ interface Scratch {
   popped: string
   /** 这一轮轮询是「进页面补问」吗（= 不自动弹面板） */
   silent: boolean
+  /** 这一把录音的时长（服务端结果里给的，比本地缓存准） */
+  pendingDurationMs: number
   pollTimer: ReturnType<typeof setInterval> | null
   pollCount: number
 }
@@ -117,6 +119,7 @@ Component({
       /** 这一把的结果面板已经自动弹过了吗 —— 避免每次进页面都弹一次 */
       popped: '',
       silent: false,
+      pendingDurationMs: 0,
       pollTimer: null,
       pollCount: 0,
     } as Scratch,
@@ -192,8 +195,13 @@ Component({
       })
 
       this.setData({ state, score: score === null ? -1 : score })
-      /** ⭐ 宿主据此更新卡片（卡片不自己算状态） */
-      this.triggerEvent('state', { articleId, state, score })
+      /**
+       * ⭐ 宿主据此更新卡片（卡片不自己算状态）。
+       * ⚠️ 一起给**我那段录音的时长** —— 参与区那颗试听要显示成 00:33（设计稿 539:871）。
+       *    优先用"这把结果里的时长"（服务端记录的），否则用本地缓存里那段录音的。
+       */
+      const durationMs = this.data.scratch.pendingDurationMs || cache?.durationMs || 0
+      this.triggerEvent('state', { articleId, state, score, durationMs })
 
       /** 有在路上的提交 ⇒ 接着问（可能上次离开时还没出分） */
       /**
@@ -220,6 +228,7 @@ Component({
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
       this.data.scratch.resultOf = ''
+      this.data.scratch.pendingDurationMs = 0
       this.data.scratch.popped = ''
       this.setData({ recorderVisible: true })
       this.restore()
@@ -422,6 +431,8 @@ Component({
         words?: unknown[]
         cookies?: { earned?: number }
         previousBest?: number | null
+        /** 这段录音多长（毫秒）—— 参与区那颗试听显示成 00:33 */
+        durationMs?: number
       }
       const prevRaw = result.previousBest
       const hasPrev = typeof prevRaw === 'number' && prevRaw >= 0
@@ -429,6 +440,10 @@ Component({
       const state: 'update' | 'keep' = !hasPrev || result.score > prev ? 'update' : 'keep'
 
       this.data.scratch.pendingScore = result.score
+      /** ⭐ 服务端记的时长比本地那段准（它可能被转码过），有就用它 */
+      if (typeof result.durationMs === 'number' && result.durationMs > 0) {
+        this.data.scratch.pendingDurationMs = result.durationMs
+      }
       /**
        * ⚠️ **面板弹不弹，与"入口变 scored"是两件事**（prd §7.2：这两者不耦合）。
        *    `pop` 为 false 的情形只有一种：**进页面补问**（用户没在等它，弹出来会莫名其妙）。
@@ -481,6 +496,7 @@ Component({
       this.data.scratch.cache = null
       this.data.scratch.pendingScore = null
       this.data.scratch.resultOf = ''
+      this.data.scratch.pendingDurationMs = 0
       this.data.scratch.popped = ''
       this.setData({ panelVisible: false })
       /**

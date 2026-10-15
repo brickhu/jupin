@@ -55,11 +55,19 @@ const ICONS = [
   { name: 'mdi:clipboard-text-outline', use: '用户面板 我的挑战' },
   { name: 'mdi:fire', use: '用户面板菜单 连战记录' },
   { name: 'mdi:bell-outline', use: '用户面板 通知' },
-  { name: 'mdi:microphone', use: '朗读页 s1 · 点击录音并朗读（设计稿口径）' },
   { name: 'mdi:check', use: '金句卡 已参与角标（右下角圆形勾）' },
   // ⭐ 2026-10 加：句子卡的参与区（prd §7.2）
-  { name: 'mdi:waveform', use: '参与区 retry 态 · 战绩分左边的声波标记' },
-  { name: 'mdi:backup-restore', use: '参与区 recoded 态 · 重录（↺）' },
+  // ⭐⭐ 参与区（btn-record）按**设计稿字形原名**补齐（Figma 539:871，2026-10-15）。
+  //    ⚠️ 设计稿用的就是 Iconify 的 `material-symbols:*` 那一套 ⇒ **直接写原名**，
+  //    不要换成"形状差不多的 mdi"（笔画与尺寸跟设计稿对不上）。
+  //    ⚠️ 类名统一加 `ms-` 前缀：`material-symbols:check` 与 `mdi:check` 会撞类名
+  //       （撞名由 assertNoClash 拦下，`as` 是显式别名）。
+  { name: 'material-symbols:mic-outline', as: 'ms-mic', use: '参与区 try/retry · 麦克风 20×20' },
+  { name: 'material-symbols:undo', as: 'ms-undo', use: '参与区 recoded/checking/scored · 重录（↺）14×14' },
+  { name: 'material-symbols:play-arrow', as: 'ms-play', use: '参与区 三态共用 · 试听我的录音 14×14' },
+  { name: 'material-symbols:check', as: 'ms-check', use: '参与区 recoded · 确认提交 14×14' },
+  { name: 'material-symbols:progress-activity-sharp', as: 'ms-loading', use: '参与区 checking · 转圈 24×24' },
+  { name: 'material-symbols:arrow-forward-ios', as: 'ms-arrow', use: '参与区 scored · 进入（›）12×12' },
   { name: 'mdi:magnify', use: '标签页 搜索框左侧的放大镜' },
   { name: 'mdi:close', use: '标签页 清空搜索' },
   { name: 'mdi:tag-outline', use: '首页「看全部标签」入口' },
@@ -77,7 +85,15 @@ const ICONS = [
 const setOf = (name) => name.split(':')[0]
 const mdOf = (name) => name.split(':').slice(1).join(':')
 /** 类名 = 图标名（去掉集合前缀）。`.ui-icon-<cls>` */
-const clsOf = (name) => mdOf(name)
+/**
+ * 类名 = 图标短名（`mdi:check` → `check`）。
+ *
+ * ⚠️ 两个集合里**同名的图标会撞类名**（`mdi:check` 与 `material-symbols:check`）——
+ *    撞了由 `assertNoClash()` 拦下，那时给其中一个写 `as: 'xxx'` 显式起别名。
+ * ⭐ 本仓库的约定：**material-symbols 那套一律加 `ms-` 前缀**
+ *    （`as: 'ms-check'`）—— 一眼看得出它来自哪个集合，也顺手避开全部撞名。
+ */
+const clsOf = (icon) => icon.as ?? mdOf(icon.name)
 
 /**
  * 撞类名就报错：两个集合里同名的图标会生成同一个 `.ui-icon-x`，
@@ -86,7 +102,7 @@ const clsOf = (name) => mdOf(name)
 function assertNoClash() {
   const seen = new Map()
   for (const icon of ICONS) {
-    const cls = clsOf(icon.name)
+    const cls = clsOf(icon)
     if (seen.has(cls)) {
       throw new Error(
         `图标名撞了：${icon.name} 与 ${seen.get(cls)} 都叫 ${cls} —— ` +
@@ -220,6 +236,19 @@ function renderWxss(cache, glyphs) {
  */
 function renderNames(glyphs) {
   const rows = glyphs.map((g) => `  '${g.name}', // ${g.use}`).join('\n')
+  /**
+   * ⚠️⚠️ **别名也要写进生成物**（2026-10-15 补）：
+   *    原来 `iconClassOf` 是按"冒号后面那一段"现算类名的 ⇒ 只要某个图标写了 `as`，
+   *    运行时算出来的类名与 wxss 里定义的对不上 ⇒ **图标静默不画**（只有一块空白）。
+   *    ⇒ 生成一张显式的映射表，运行时只查表。
+   *    ⚠️ 同时导出同序的 `ICON_CLASSES`：`icons-wxss.test.ts` 拿它与 wxss 对账，
+   *      否则测试也会按"冒号后那一段"去比，同样对不上。
+   */
+  const aliasRows = glyphs
+    .filter((g) => g.as)
+    .map((g) => `  '${g.name}': '${g.cls}',`)
+    .join('\n')
+  const classRows = glyphs.map((g) => `'${g.cls}'`).join(', ')
   return `/* ⚠️ 自动生成，请勿手改 —— 重新生成：node tools/iconfont/build.mjs */
 /* 名单的源头是 tools/iconfont/build.mjs 的 ICONS：那边加一行，这里就有。 */
 
@@ -237,6 +266,18 @@ ${rows}
 
 export type IconName = (typeof ICON_NAMES)[number]
 
+/**
+ * ⚠️ 与 \`ICON_NAMES\` **同序**的类名后缀（生成物）。
+ * ⭐ 存在的理由：类名**不总是**"冒号后面那一段"—— 写了别名的图标不是。
+ *    测试拿它与 \`icons.wxss\` 里真实定义的类名逐一对账。
+ */
+export const ICON_CLASSES = [${classRows}] as const
+
+/** ⭐ 只有**写了别名**的图标才出现在这里；没写的就是冒号后面那一段 */
+const CLASS_SUFFIX: Readonly<Record<string, string>> = {
+${aliasRows}
+}
+
 const ICON_NAME_SET: ReadonlySet<string> = new Set<string>(ICON_NAMES)
 
 /** 这个名字在名单里吗？（不在的话画不出来 —— 只有一块空白，控制台会提醒） */
@@ -246,10 +287,13 @@ export function isIconName(name: string): boolean {
 
 /**
  * iconify 名 → CSS 类名：\`clarity:favorite-solid\` → \`${BASE_CLASS}-favorite-solid\`。
- * ⚠️ 类名就是"冒号后面那一段"（由生成器保证唯一，撞了会在构建时直接报错）。
+ * ⚠️ 默认是"冒号后面那一段"；**写了 \`as\` 别名的用它**（见 \`CLASS_SUFFIX\`）——
+ *    别名不是装饰：查不到就会拼出一个 wxss 里不存在的类名，**图标静默不画**。
  */
 export function iconClassOf(name: string): string {
-  const md = String(name ?? '').trim().split(':').pop() ?? ''
+  const n = String(name ?? '').trim()
+  // ⭐ 先查别名表，再退回"冒号后面那一段"
+  const md = CLASS_SUFFIX[n] ?? n.split(':').pop() ?? ''
   return md ? '${BASE_CLASS}-' + md : ''
 }
 `
@@ -260,7 +304,7 @@ export function iconClassOf(name: string): string {
 assertNoClash()
 const cache = await loadIconData()
 
-const glyphs = ICONS.map((icon) => ({ ...icon, cls: clsOf(icon.name) }))
+const glyphs = ICONS.map((icon) => ({ ...icon, cls: clsOf(icon) }))
 
 // 每次全量重写：ICONS 删掉某个图标时旧的 .svg 不该留在目录里
 rmSync(SVG_OUT, { recursive: true, force: true })

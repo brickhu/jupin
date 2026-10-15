@@ -78,6 +78,8 @@ Page({
     /** 参与区当前是哪一态 / 显示哪个分（participate-flow 回传） */
     flowState: 'try' as RecordState,
     flowScore: -1,
+    /** 我那段录音的时长（参与区试听显示 00:33 用） */
+    flowDuration: 0,
     participantCount: 0,
     /** 多少人收藏了这一句（`/api/stats/favorite-count`）—— 与参与人数同一排显示 */
     favoriteCount: 0,
@@ -466,8 +468,12 @@ Page({
   // ── ⭐⭐ 参与流程（prd §7.2）—— 与首页**同一份编排**（participate-flow），页面里没有录音代码 ──
 
   /** 流程回传状态 ⇒ 喂给卡片的参与区 */
-  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number }>) {
-    this.setData({ flowState: e.detail.state, flowScore: e.detail.score })
+  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number; durationMs: number }>) {
+    this.setData({
+      flowState: e.detail.state,
+      flowScore: e.detail.score,
+      flowDuration: e.detail.durationMs || 0,
+    })
   },
 
   /** 确认之后（战绩已更新）⇒ 重拉这一句的参与记录，卡片上的战绩跟着变 */

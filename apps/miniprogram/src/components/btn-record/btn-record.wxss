@@ -1,20 +1,87 @@
 /*
- * ⭐ 参与区（五态）—— 见 btn-record.ts 的说明。
- *
- * ⚠️ 只留「组合控件」那一条胶囊的样式；三态的按钮一律走 ui-button（它自己带尺寸/圆角）。
- * ⚠️ 边框用 currentColor（继承宿主的文字色）⇒ 任何主题下都跟卡片一致，不用传色值。
+ * ⭐ 参与区（五态）—— 尺寸逐条照抄 Figma 539:871（1px = 2rpx）。见 btn-record.wxml 的说明。
+ * ⚠️ 只写：currentColor、--btn-bg / --btn-fg（宿主声明）、以及稿子里的尺寸。
  */
-.br-pill {
+.br-fill,
+.br-line {
   display: flex;
   align-items: center;
-  height: 88rpx;
-  padding: 0 16rpx 0 12rpx;
-  border: 2rpx solid currentColor;
-  border-radius: 9999rpx;
+  justify-content: center;
+  height: 96rpx;          /* 稿 48 */
+  border-radius: 72rpx;   /* 稿 r36 = 48 高的一半 ⇒ 全圆 */
   box-sizing: border-box;
 }
-/* checking 的转圈 —— 与 ui-button 的 ub-spin 同一套做法（这里不是按钮） */
+
+/* ① try：实心 */
+.br-fill {
+  gap: 16rpx;             /* 稿 gap8 */
+  padding: 0 24rpx;       /* 稿 pad12 */
+  background: var(--btn-bg, currentColor);
+  color: var(--btn-fg, #ffffff);
+}
+
+/* ③④⑤ 描边胶囊 */
+.br-line {
+  gap: 16rpx;             /* 稿 gap8 */
+  padding: 0 16rpx;       /* 稿 pad8 */
+  border: 2rpx solid currentColor;   /* 稿 stroke 1px */
+}
+
+/* ② retry：一行，两端对齐 */
+.br-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 96rpx;
+}
+.br-score { display: flex; align-items: center; gap: 16rpx; }
+
+/* ⭐ 波形 = 5 根矩形（稿 Frame 26 18×24 · 2 宽 · gap2） */
+.br-wave { display: flex; align-items: center; gap: 4rpx; height: 48rpx; }
+.br-bar {
+  width: 4rpx;            /* 稿 2 */
+  border-radius: 2rpx;
+  background: currentColor;
+}
+
+/* 实心圆：48（retry 的麦克风）· 32（recoded 的确认） */
+.br-c48,
+.br-c32 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999rpx;
+  background: var(--btn-bg, currentColor);
+  color: var(--btn-fg, #ffffff);
+}
+.br-c48 { width: 96rpx; height: 96rpx; }   /* 稿 48×48 */
+.br-c32 { width: 64rpx; height: 64rpx; }   /* 稿 32×32 */
+
+/* 可点区域：⚠️ 图标本身小（14），但点击区要够 —— 用 min 尺寸兜住 */
+.br-hit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64rpx;       /* 稿里 ↺/✓ 的圆是 32 ⇒ 点击区不小于它 */
+  height: 64rpx;
+}
+.br-play { gap: 8rpx; padding: 0 16rpx; }   /* 稿 Frame 14：pad8 / gap4 */
+.br-arrow { gap: 8rpx; padding: 0 24rpx; }  /* 稿 Frame 15：pad12 / gap4 */
+
+/* ⚠️ checking 时 ↺ 禁用（稿里 opacity 0.2）—— 照稿 */
+.br-off { opacity: 0.2; }
+
+/* 字号：稿 14 / 16（700 只用在分数上） */
+.br-t14 { font-size: 28rpx; line-height: 1; }
+.br-t16 { font-size: 32rpx; font-weight: 700; line-height: 1; }
+.br-bold { font-weight: 700; }
+
+/* 图标尺寸 = 稿里的 px × 2 */
+.br-i12 { width: 24rpx; height: 24rpx; }
+.br-i14 { width: 28rpx; height: 28rpx; }
+.br-i20 { width: 40rpx; height: 40rpx; }
+.br-i24 { width: 48rpx; height: 48rpx; }
+.br-on { color: var(--btn-fg, #ffffff); }
+
 .br-spin { animation: br-spin 0.9s linear infinite; }
 @keyframes br-spin { to { transform: rotate(360deg); } }
-/* 「更弱一层」的前景色（箭头） */
-.br-faint { opacity: 0.5; }

@@ -279,6 +279,8 @@ Page({
     /** 参与区当前是哪一态 / 显示哪个分（由 participate-flow 的 state 事件回传） */
     flowState: 'try' as RecordState,
     flowScore: -1,
+    /** 我那段录音的时长（参与区试听显示 00:33 用） */
+    flowDuration: 0,
     /** ⭐ 最新上线：句库按上线时间倒序的最新几句（服务端给，端侧只剔掉今日重复的那句） */
     latest: [] as CardView[],
     /** 成长榜里没头像时用它（与 nav-bar / arena 榜同一张本地占位图） */
@@ -822,8 +824,12 @@ Page({
   // ── ⭐⭐ 参与流程（prd §7.2）—— 页面**一行录音/提交代码都没有**，全在 participate-flow 里 ──
 
   /** 流程回传状态 ⇒ 喂给卡片的参与区（卡片不自己算状态） */
-  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number }>) {
-    this.setData({ flowState: e.detail.state, flowScore: e.detail.score })
+  onFlowState(e: WechatMiniprogram.CustomEvent<{ state: RecordState; score: number; durationMs: number }>) {
+    this.setData({
+      flowState: e.detail.state,
+      flowScore: e.detail.score,
+      flowDuration: e.detail.durationMs || 0,
+    })
   },
 
   /** 确认之后（战绩已更新）⇒ 重拉参与记录，让卡片上的战绩跟着变 */

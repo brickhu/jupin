@@ -84,10 +84,12 @@ Component({
      * ⇒ 页面把状态算好、事件接好之后，再置 true（见 prd §7.2 的迁移顺序）。
      */
     showRecord: { type: Boolean, value: false },
-    /** 参与区里"我那一段录音"是不是正在播 */
-    playingRecord: { type: Boolean, value: false },
-    /** 正在取"我那一段录音"（还没出声） */
-    loadingRecord: { type: Boolean, value: false },
+    /**
+     * ⭐ **我那段录音的时长**（毫秒）—— 参与区那颗试听显示成 00:33。
+     * ⚠️ 与 `entry.durationMs`（**标准音**的时长）不是一回事，别混：
+     *    标准音的时长回答"这句话该怎么念"，这个回答"我刚才读了多久"。
+     */
+    recordDurationMs: { type: Number, value: 0 },
     entry: { type: Object },
     /** 这张卡的标准音是不是正在播 */
     playing: { type: Boolean, value: false },

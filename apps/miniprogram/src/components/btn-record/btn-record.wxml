@@ -1,54 +1,63 @@
 <!--
-  ⭐ 参与区（五态）—— 见 btn-record.ts 的说明。首页 lg 卡与详情页共用同一个组件。
-  ⚠️ 卡内按钮配色由宿主声明 --btn-bg / --btn-fg；这里一个颜色都不写。
-  ⚠️ 「try」 与 「retry」 的麦克风**位置刻意不同**（整颗胶囊 vs 右侧圆钮）——
-     那是设计稿的两种形态，不是同一个控件换文案。
+  ⭐ 参与区（五态）—— 结构逐层照抄 Figma 「539:871」（见 btn-record.ts 的对照表）。
+  ⚠️ 单位：1px = 2rpx（稿 48 高 ⇒ 96rpx；稿 2px 宽 ⇒ 4rpx）。
+  ⚠️ 配色由宿主声明 --btn-bg / --btn-fg；这里只写 currentColor 与这两个变量。
 -->
-<!-- ① try：没参与过 ⇒ 一颗实心胶囊 -->
-<view wx:if="{{state === 'try'}}">
-  <ui-button variant="fill" size="md" roundness="full" width="full"
-             icon="mdi:microphone" bind:press="onMic">点击录音，开始朗读</ui-button>
-</view>
 
-<!-- ② retry：参与过 ⇒ 左（声波 + 战绩）· 右（圆形麦克风） -->
-<view wx:elif="{{state === 'retry'}}" class="flex items-center justify-between">
-  <view class="flex items-center">
-    <ui-icon name="mdi:waveform" class="leading-[1] text-40rpx" />
-    <text class="text-44rpx font-semibold ml-2 leading-[1]">{{score}}</text>
-  </view>
-  <ui-button variant="fill" onlyIcon="{{true}}" size="md" roundness="full"
-             icon="mdi:microphone" bind:press="onMic" />
+<!-- ① try：实心胶囊（稿：322×48 / r36 / pad12 / gap8 · mic 20 · 文案 14/400） -->
+<view wx:if="{{state === 'try'}}" class="br-fill" bindtap="onMic">
+  <ui-icon name="ms-mic" class="br-i20" />
+  <text class="br-t14">点击录音，开始朗读</text>
 </view>
 
 <!--
-  ③④⑤ recoded / checking / scored：一颗描边胶囊
-  ⚠️ 它**不是** ui-button：里面是**多个独立可点区域**（试听 / 重录 / 确认 或 分数），
-     而 ui-button 根节点 catchtap 会把点击吞掉 —— 那样每个动作都点不动。
-     ⇒「一行多个独立动作」是**组合控件**，不是按钮。
+  ② retry：稿里**没有胶囊**，就是一行（322×48 / gap16 / 两端对齐）
+     ⚠️ 左端那 5 根矩形是**画出来的**（稿：Frame 26 18×24 · 每根 2 宽 · 高 8/16/24/16/8 · gap2）
+        —— 不是图标。用图标的话宽度、间距、笔画都对不上稿子。
+     ⚠️ 分数在稿里是 16/700（比另外两态的 14 大一档）。
 -->
-<view wx:else class="br-pill">
-  <!-- 试听我那一段（左端）—— 复用 audio-button，它自己把时长格式化成 00:33 -->
-  <audio-button size="sm" showDuration="{{true}}" durationMs="{{durationMs}}"
-                fill="{{fill}}" ink="{{ink}}"
-                state="{{loading ? 'loading' : (playing ? 'playing' : 'unplay')}}"
-                bind:play="onPlay" />
-  <view class="flex-1"></view>
+<view wx:elif="{{state === 'retry'}}" class="br-row">
+  <view class="br-score">
+    <view class="br-wave">
+      <view class="br-bar" style="height:16rpx"></view>
+      <view class="br-bar" style="height:32rpx"></view>
+      <view class="br-bar" style="height:48rpx"></view>
+      <view class="br-bar" style="height:32rpx"></view>
+      <view class="br-bar" style="height:16rpx"></view>
+    </view>
+    <text class="br-t16">{{score}}</text>
+  </view>
+  <view class="br-c48" bindtap="onMic">
+    <ui-icon name="ms-mic" class="br-i20 br-on" />
+  </view>
+</view>
 
-  <!-- ③ recoded：↺ 重录 ｜ ✓ 确认提交 -->
-  <block wx:if="{{state === 'recoded'}}">
-    <ui-button variant="ghost" onlyIcon="{{true}}" size="sm" roundness="full"
-               icon="mdi:backup-restore" bind:press="onRedo" />
-    <ui-button variant="fill" onlyIcon="{{true}}" size="sm" roundness="full"
-               icon="mdi:check" bind:press="onConfirm" />
-  </block>
+<!--
+  ③④⑤ recoded / checking / scored：描边胶囊（稿：1px currentColor / r36 / pad8 / gap8）
+     ⚠️ 它**不是** ui-button：里面是**三个独立可点区域**，而 ui-button 根节点 catchtap
+        会把点击吞掉 —— 那样每个动作都点不动（"一行多个独立动作"是组合控件，不是按钮）。
+-->
+<view wx:else class="br-line">
+  <!-- 左：↺ 重录。⚠️ checking 时禁用（稿里 opacity 0.2） -->
+  <view class="br-hit {{state === 'checking' ? 'br-off' : ''}}" catchtap="onRedo">
+    <ui-icon name="ms-undo" class="br-i14" />
+  </view>
 
-  <!-- ④ checking：转圈 —— ⚠️ 这里没有可点的东西，这一把已经在云端算了 -->
-  <ui-icon wx:elif="{{state === 'checking'}}" name="mdi:loading"
-           class="br-spin leading-[1] text-40rpx" />
+  <!-- 中：试听我那一段 + 时长（稿：22 圆无填充 · play 14 · 00:33 14/400 · gap4） -->
+  <view class="br-hit br-play" catchtap="onPlay">
+    <ui-icon name="ms-play" class="br-i14" />
+    <text class="br-t14">{{durationText}}</text>
+  </view>
 
-  <!-- ⑤ scored：这一把的分 + › —— 点它**再开一次出片面板**（可反复，直到确认） -->
-  <view wx:else class="flex items-center" catchtap="onPanel">
-    <text class="text-34rpx font-semibold leading-[1]">{{score}}</text>
-    <ui-icon name="mdi:chevron-right" class="leading-[1] text-32rpx ml-1 br-faint" />
+  <!-- 右：recoded = 实心圆 + 白勾（稿：32×32 / r40） -->
+  <view wx:if="{{state === 'recoded'}}" class="br-c32" catchtap="onConfirm">
+    <ui-icon name="ms-check" class="br-i14 br-on" />
+  </view>
+  <!-- checking = 转圈（稿：progress-activity-sharp 24） -->
+  <ui-icon wx:elif="{{state === 'checking'}}" name="ms-loading" class="br-i24 br-spin" />
+  <!-- scored = 分数 14/700 + › 12（稿：Frame 25 46×20 / gap4） -->
+  <view wx:else class="br-hit br-arrow" catchtap="onPanel">
+    <text class="br-t14 br-bold">{{score}}</text>
+    <ui-icon name="ms-arrow" class="br-i12" />
   </view>
 </view>

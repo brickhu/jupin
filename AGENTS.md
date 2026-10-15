@@ -36,6 +36,37 @@
 | [spec.md](spec.md) | 技术决策记录（已降级） | 为什么这样选型；不再承载表结构（指向 `schema.ts`） |
 | [docs/](docs/README.md) | 调研 · 实验 · 设计稿 · 归档 | 需要依据与背景时 |
 
+### ⭐⭐ 设计稿（Figma）**已经配好了** —— 别再回答"读不到"
+
+> ⚠️⚠️ 这一节是**为了一个反复犯的错**加的：多次被问"读一下设计稿"，我每次都答
+>    「Figma 要登录、是 SPA、读不到」，然后去要截图 —— 而**权限早就配好了**。
+>    配置只在 `docs/design/reading/SPEC.md` 里（那份文档后来还被标成"已废弃"），
+>    等于把它埋了。**先看这里，再去要图。**
+
+| 项 | 值 |
+|---|---|
+| file key | `nCFxH5FXIQFiaPKKdtudqO`（句拼 / jupin） |
+| token | `.env.local` 的 **`FIGMA_TOKEN`**（只读；`.env.*` 已 gitignore） |
+| 认证头 | `X-Figma-Token: $FIGMA_TOKEN` |
+
+⭐ **"读完整 DOM 结构" = 拉节点树**（不是截图、更不是普通 web fetch —— 那个只会拿到 SPA 空壳）：
+
+```bash
+TOKEN=$(grep '^FIGMA_TOKEN=' .env.local | cut -d= -f2)
+# ① 节点树：每层的名字/类型/尺寸/自动布局/填充/描边/圆角/字号字重/文案，全在里面
+curl -sS -H "X-Figma-Token: $TOKEN" \
+  "https://api.figma.com/v1/files/nCFxH5FXIQFiaPKKdtudqO/nodes?ids=<node-id>" -o /tmp/node.json
+# ② 出图（PNG，人眼看）—— ⚠️ 这个接口**会 429 限流**，失败就等一会儿再试
+curl -sS -H "X-Figma-Token: $TOKEN" \
+  "https://api.figma.com/v1/images/nCFxH5FXIQFiaPKKdtudqO?ids=<node-id>&format=png&scale=3" -o /tmp/img.json
+```
+
+⚠️ node-id 从设计稿链接里取：`...?node-id=539-871` ⇒ 请求里写成 **`539:871`**（连字符换成冒号）。
+⚠️ 节点树里的**颜色是固定色**（如 `#2b132c` 深紫），不是我们的主题变量 ——
+   组件落到卡片上时才由 `--btn-bg` / `--btn-fg` 覆盖（见 prd §7.2）。
+⚠️ 设计稿会有**笔误和不严谨**（例如 `state=scolled`、某态的图标与底色同色导致看不见、
+   某个状态漏画逐词高亮）—— **发现就指出来，别照抄**。
+
 **元规则：重复即错误。** 同一事实出现在第二个地方，即使当下一致，也已经是 bug 的种子；改一处必须删掉/改掉别处。
 所以本文件已删除一切复述业务规则 / 数据模型字段 / 产品行为的段落，只留指向代码或 prd.md 的指针。
 
