@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm'
 import { env } from '../env'
 import { db } from '../db'
 import { participations } from '../db/schema'
-import { callLlm, type LlmConfig } from './coach'
+import { callLlm, llmConfigOf, type LlmConfig } from './coach'
 import { loadArticleRefText } from './content'
 import { saveAiSummary } from './participations'
 import type { WeakPoint } from '@jushuo/shared'
@@ -42,12 +42,8 @@ export function summaryEnabled(): boolean {
 
 function configOf(): LlmConfig | null {
   if (!env.LLM_API_KEY) return null
-  return {
-    apiKey: env.LLM_API_KEY,
-    baseUrl: env.LLM_BASE_URL ?? 'https://api.deepseek.com',
-    model: env.LLM_MODEL ?? 'deepseek-chat',
-    timeoutMs: 15_000,
-  }
+  /** ⚠️ 配置只有一处来源（见 services/coach.ts）；这里只加自己的超时 */
+  return { ...llmConfigOf(env), timeoutMs: 15_000 }
 }
 
 function buildPrompt(input: {

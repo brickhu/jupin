@@ -10,7 +10,7 @@ import { getStorage } from '../storage'
 import { trackInvalid } from './submission'
 import { releaseChallengeEnergy } from './energy'
 import { settle } from './settle'
-import { generateCoachFeedback } from './coach'
+import { generateCoachFeedback, llmConfigOf } from './coach'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
 import { syncParticipation } from './participations'
@@ -248,11 +248,8 @@ export async function runScoring(submissionId: string): Promise<void> {
             longGapCount: gaps.longGapCount,
             gated: breakdown.gates.length > 0,
           },
-          {
-            apiKey: env.LLM_API_KEY ?? '',
-            baseUrl: env.LLM_BASE_URL ?? 'https://api.deepseek.com',
-            model: env.LLM_MODEL ?? 'deepseek-chat',
-          },
+          /** ⚠️ 配置只有一处来源（默认模型/基址见 services/coach.ts 的说明） */
+          llmConfigOf(env),
         )
       : null
     /**

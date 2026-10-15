@@ -221,6 +221,37 @@ export interface LlmConfig {
 }
 
 /**
+ * ⭐⭐ **默认的模型与基址**（全服务端**唯一一份**）。
+ *
+ * ⚠️⚠️ 模型名**必须**是官方模型清单里还在的那个（[Models & Pricing]）：
+ *    写错时我们的失败是**静默**的 —— 调用被拒 ⇒ 锐评整块不渲染、**不报错**，
+ *    看起来就像"这次没生成"，能查很久。
+ *    · `deepseek-flash` = DeepSeek-V4.1-Flash（**带 Vision**；也是最新一代的通用档 ✅）
+ *    · ⚠️ 老名字（`deepseek-chat`）已不在清单里；`deepseek-v4-flash` 官方标注**已退役**
+ *      （请求会被 V4.1-Flash 接走并按 Flash 计费），不要再写。
+ */
+export const LLM_BASE_URL_DEFAULT = 'https://api.deepseek.com'
+export const LLM_MODEL_DEFAULT = 'deepseek-flash'
+
+/**
+ * ⭐ **从环境变量拼出调用配置** —— 调用方（单次点评 / 逐轮总结）都用它。
+ *
+ * ⚠️ 为什么要有这个函数：原来两个调用方各自写 `?? 'deepseek-chat'`，
+ *    默认值、基址各写一遍 ⇒ 改模型名要记得改两处（漏一处就是静默不工作）。
+ */
+export function llmConfigOf(envLike: {
+  LLM_API_KEY?: string | undefined
+  LLM_BASE_URL?: string | undefined
+  LLM_MODEL?: string | undefined
+}): LlmConfig {
+  return {
+    apiKey: envLike.LLM_API_KEY ?? '',
+    baseUrl: envLike.LLM_BASE_URL ?? LLM_BASE_URL_DEFAULT,
+    model: envLike.LLM_MODEL ?? LLM_MODEL_DEFAULT,
+  }
+}
+
+/**
  * ⭐⭐ **模型通道**（OpenAI 兼容的 `/chat/completions`）—— 全服务端**只此一处**发请求。
  *
  * ⚠️ 谁要调模型都从这里走（现在两个调用方：`generateCoachFeedback` 的单次点评、
