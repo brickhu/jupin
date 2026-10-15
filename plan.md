@@ -163,23 +163,6 @@
   ⇒ **做完的标志**：① 上面那 9 处重复消失（`grep` 不到那串类名）；② 各页面 `bindtap` → `bind:press` 且行为不变；
   ③ `pnpm --filter @jushuo/miniprogram build` + `test` 绿；④ 真机过一遍受影响页面（空态/错误态的「重试」最容易看出来）。
 
-- [ ] **B91** **统一弹窗组件 `ui-dialog`**（用户 2026-10-15 定：「统一封装一个弹窗组件」，
-  DOM 结构参考 Figma `662:2476`）
-  ⚠️ 与 B57 同一族：`ui-button` 统一了按钮，这一条统一**浮层** —— 现状是四份各写各的
-  （`energy-tips` 居中放大 · `user-sheet` 贴底上滑 · `participate-flow` 的本地提示卡居中无动画 ·
-  `boot-overlay` 整页盖住），尺寸 / 遮罩浓度 / 出入场各抄一遍。
-  **对外只有四条属性**：`show`（受控开关，组件自己不关自己）·
-  `position`（`center` = 宽 364px 居中、**从中心放大**出现 / `bottom` = 100vw 贴底、**向上滑出**）·
-  `title`（空则不画那一行；**与 head 槽互斥** —— 配了 title 就忽略 head）·
-  `closable`（默认 true，**只决定点遮罩能不能关** —— 它就是 prd §7.2 那条「等待期点遮罩无效」）；
-  槽位 `head` / `main` / `foot`，间距 = `space.md`；基础样式 `bg-page` · `text-page-on` · `rounded-lg`；
-  最小 364×240（稿 1px = 2rpx ⇒ 728×480rpx）；关闭时抛 `hide`。
-  落地：`components/ui-dialog/`（纯逻辑 + 结构/契约守门单测）· `pages/ui-kit` 展示页。
-  **做完的标志**：`pnpm --filter @jushuo/miniprogram build` + `test` 绿；ui-kit 上五种形态肉眼过一遍。
-  ⚠️ 本次**不迁业务页**（上面那四个浮层都还在原位、行为不变）—— 迁移见 B92。
-  ⚠️ 稿子当天读不到（Figma REST 一直 429），面板 padding / 标题字号是**按仓库既有口径取的**，
-  等能读稿时按稿核一遍。
-
 - [ ] **B92** **把既有浮层迁到 `ui-dialog`**（B91 的下一步，等用户点头再动）
   ⚠️ **一次只迁一个**并真机复验：`energy-tips`（居中 + 两个按钮）·
   `participate-flow` 的本地提示卡 · `user-sheet`（贴底 + **抓手拖拽** —— 那套手势是它独有的，
@@ -782,6 +765,23 @@
   ⑤ **LLM 参与排序**（可选增强）：把「我的薄弱词 + 最近表现 + 候选句子」交给模型排序 ——
      ⚠️ 有成本/延迟/可解释性问题，建议**先做规则版**再谈它。
   做完的标志：每条各自可单独验收（推荐理由 `levelBasis` 能说清"为什么是这一句"）。
+
+- [x] **B91** **统一弹窗组件 `ui-dialog`**（用户 2026-10-15 定：「统一封装一个弹窗组件」，
+  DOM 结构参考 Figma `662:2476`）
+  ⚠️ 与 B57 同一族：`ui-button` 统一了按钮，这一条统一**浮层** —— 现状是四份各写各的
+  （`energy-tips` 居中放大 · `user-sheet` 贴底上滑 · `participate-flow` 的本地提示卡居中无动画 ·
+  `boot-overlay` 整页盖住），尺寸 / 遮罩浓度 / 出入场各抄一遍。
+  **对外只有四条属性**：`show`（受控开关，组件自己不关自己）·
+  `position`（`center` = 宽 364px 居中、**从中心放大**出现 / `bottom` = 100vw 贴底、**向上滑出**）·
+  `title`（空则不画那一行；**与 head 槽互斥** —— 配了 title 就忽略 head）·
+  `closable`（默认 true，**只决定点遮罩能不能关** —— 它就是 prd §7.2 那条「等待期点遮罩无效」）；
+  槽位 `head` / `main` / `foot`，间距 = `space.md`；基础样式 `bg-page` · `text-page-on` · `rounded-lg`；
+  最小 364×240（稿 1px = 2rpx ⇒ 728×480rpx）；关闭时抛 `hide`。
+  落地：`components/ui-dialog/`（纯逻辑 + 结构/契约守门单测）· `pages/ui-kit` 展示页。
+  **做完的标志**：`pnpm --filter @jushuo/miniprogram build` + `test` 绿；ui-kit 上五种形态肉眼过一遍。
+  ⚠️ 本次**不迁业务页**（上面那四个浮层都还在原位、行为不变）—— 迁移见 B92。
+  ⚠️ 稿子当天读不到（Figma REST 一直 429），面板 padding / 标题字号是**按仓库既有口径取的**，
+  等能读稿时按稿核一遍。
 
 - [x] **C7** **dev 重新部署**（2026-09-29 完成）：云托管 dev 最新版本是
   `jupin-072`（创建 2026-09-28 20:43，备注「本机手发：补上 CI #64 失败的 dev 部署」），
