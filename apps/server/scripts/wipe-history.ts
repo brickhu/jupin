@@ -53,10 +53,18 @@ async function count(table: string, where = ''): Promise<{ n: number; missing: b
 const targets: { label: string; table: string; where?: string; note: string }[] = [
   { label: '成绩历史', table: 'submissions', note: '全表删（含逐词、分项、AI 点评、录音引用）' },
   { label: '· 参与记录', table: 'participations', note: '外键指向 submissions 且由它派生，必须先删' },
-  { label: '· 点赞', table: 'likes', note: '外键指向 submissions，必须先删' },
+  /** ⚠️ `likes` 表已在迁移 0066 随"成绩单展示页"一起删掉 —— 这里不再列它
+   *  （列了也只是被 count() 当成"表不存在"，但那会让人以为还有点赞这个功能）。 */
   { label: '· AI 点评', table: 'reviews', note: '外键指向 submissions，必须先删' },
   { label: '奖励发放流水', table: 'reward_grants', note: '' },
   { label: '能量流水', table: 'energy_ledger', note: '' },
+  /**
+   * ⚠️⚠️ **饼干流水也必须清**：`users.cookies` 是**缓存**，真相在这张流水里
+   *    （见 db/schema.ts 的说明）。只把余额归零、流水留着 ⇒ 饼干页面显示一堆入账、
+   *    余额却是 0 —— 正是「两个数对不上」那一类，而且**不报错**。
+   *    ⚠️ 它原来就是漏的（本机那次清库也漏了），2026-10-15 补上。
+   */
+  { label: '饼干流水', table: 'cookie_ledger', note: '余额归零了，流水也必须清（否则对不上账）' },
 ]
 
 console.log('')
