@@ -71,7 +71,11 @@ describe('AI 锐评', () => {
   it('⭐⭐ 提示词必须：用上句子语境 + 点名具体词/音 + 禁止编排名', () => {
     expect(CODE.includes('translation'), '没把译文喂给模型 ⇒ 出不来"内味儿"那种话').toBe(true)
     expect(CODE.includes('tags')).toBe(true)
-    expect(CODE.includes('点名具体的词或音'), '没要求点名 ⇒ 会退化成"发音有待提高"').toBe(true)
+    expect(CODE.includes('必须具体到这一遍'), '没要求具体 ⇒ 会退化成"发音有待提高"').toBe(true)
+    /** ⭐ 用户 2026-10-15 的第三条示例：可以直接引用句子里的词（'NEVER GIVE UP'） */
+    expect(CODE.includes('NEVER GIVE UP'), '少了"引用句中的词"那条示例').toBe(true)
+    /** ⭐ 夸满了就不必硬找缺点（那条示例全是夸，没有硬伤） */
+    expect(CODE.includes('夸满了就不必硬找缺点'), '又在强求"必须找一个缺点"了').toBe(true)
     expect(CODE.includes('名次'), '没禁止名次断言 ⇒ 模型会编"全场MVP"（它看不到榜单）').toBe(true)
   })
 
