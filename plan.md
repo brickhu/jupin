@@ -138,11 +138,21 @@
   `node tools/wipe-history.mjs dev --yes` · `node tools/wipe-history.mjs prod --yes`
   ⚠️ 这两条是**不可逆**的，且我（agent）的权限到 commit 为止。
 
-- [ ] **B86** **清掉对象存储里的孤儿录音**
-  `wipe-history` 只清库 ⇒ 云上那些用户录音 mp3 成了**没人引用的孤儿文件**（白占存储、也留着用户的语音）。
-  ⇒ 需要一个按前缀批量删的对象存储清理（与 `wipe-history` 配成一对：**清库 + 清对象**）。
-  做完的标志：清完之后对象存储里除了标准音与在用的录音，没有残留。
-
+- [ ] **B86** **清对象存储里的孤儿录音**（用户 2026-10-15：「B86你先清除一下」）
+  **为什么**：`wipe-history` **只清库** ⇒ 库清了、盘上那些用户录音还在（没人引用，
+  白占存储，而且里面是用户的语音）。
+  **判据一条**：**盘上有、但库里没人引用**（引用来源两处：`submissions.audio_key` +
+  `participations.audio_key`）。⚠️ **只碰 `audio/` 前缀**（用户录音 = `audio/{句子}/{用户}/{attemptId}.{mp3,pcm}`）——
+  标准音在 `content/audio/` 下，卷进来就是**全站标准音被删** ⇒ 脚本里有**硬断言**，不靠"我记得"。
+  **工具**：`pnpm recordings:prune [--yes]`（`apps/server/scripts/prune-recordings.ts`，默认只看不改）。
+  ✅ **本机已清**：150 个孤儿 / 18.5 MB；复核 `audio/` 剩 0，`content/` 的 90 个标准音**一个没动**。
+  ⚠️⚠️ **云端清不了**（不是"没做"，是**做不到**）：云托管对象存储只有
+  `/tcb/uploadfile` · `/tcb/batchdownloadfile` · `/tcb/batchdeletefile` **三个接口，没有列举**；
+  而孤儿之所以是孤儿，正是"库里已经查不到它们的 key 了"（key 里带客户端生成的 attemptId，猜不出来）
+  ⇒ **没有枚举就无解**。脚本遇到 `STORAGE != local` 会**直接说清楚并退出**，不假装清过。
+  ⇒ 云端请在**控制台按前缀 `audio/` 删除**（或在开通「开放接口服务」后用 COS 的列举接口）。
+  **守门**：`prune-recordings.test.ts`（只删 audio/ 前缀 + 硬断言在 / 默认根与 storage/local.ts 同源 /
+  云端必须明说并退出 / `--yes` 必须被认）—— 4 条。
 
 - [ ] **B57** **把所有按钮统一到 `ui-button`**（用户 2026-10 定：「接下来所有按钮都统一用这个组件」）
   ⚠️ **现状**：`ui-button` 已是唯一实现（四个维度 + 两个对外变量 `--btn-bg`/`--btn-fg`），
