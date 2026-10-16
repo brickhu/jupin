@@ -65,7 +65,6 @@ Component({
   },
 
   data: {
-    entered: false,
     scoreText: '',
     /** 00:23 */
     durationText: '00:00',
@@ -129,19 +128,12 @@ Component({
     },
   },
 
-  lifetimes: {
-    attached() {
-      setTimeout(() => this.setData({ entered: true }), 16)
-    },
-  },
-
   methods: {
     /** ⚠️ 饼干为 0 / 没有这个字段时**不画 「+0」** —— 屏幕上永远不出现"0 🍪"（prd §7.6） */
     cookieSuffix(): string {
       const c = Number(this.data.cookies)
       return c > 0 ? '，🍪 + ' + c : ''
     },
-    noop() {},
     /** 去结果页看完整明细（分项 / 逐词 / 榜单） */
     onDetail() {
       this.triggerEvent('detail')

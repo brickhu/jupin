@@ -91,7 +91,13 @@ Component({
     entered: false,
     layerCls: 'ud-layer ud-layer-center',
     panelCls: 'ud-panel ud-panel-center',
-    /** 'title' | 'slot' —— head 那一行画谁（判据在 ui-dialog-variants.ts） */
+    /**
+     * **光板**：既不画 head 那一行、也不画 foot 那一行。
+     * ⚠️ 用于"只有一个 body"的面板（录音流程里那四个都是）——
+     *    空的 head/foot 会白占一行并多出一段 `gap`（见 ui-dialog-variants.ts 的 headMode）。
+     */
+    bare: { type: Boolean, value: false },
+    /** 'title' | 'slot' | 'none' —— head 那一行画谁（判据在 ui-dialog-variants.ts） */
     headMode: 'slot',
   },
 
@@ -128,7 +134,7 @@ Component({
       this.setData({
         layerCls: cls.layer,
         panelCls: cls.panel,
-        headMode: headMode(d.title),
+        headMode: headMode(d.title, d.bare),
       })
     },
 

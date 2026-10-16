@@ -37,7 +37,15 @@ export function normalizePosition(raw: unknown): DialogPosition {
  * ⚠️ 判据是 `trim()` 之后的 title，不是 title 本身：传了空格 / 回车等于没传 ——
  *    否则会画出一条什么都没有的空标题行，而调用方以为自己配了 title。
  */
-export function headMode(title: unknown): 'title' | 'slot' {
+/**
+ * head 那一行画谁。
+ * ⚠️ `bare` 是给"既没有标题、也没有脚"的调用方用的（录音流程里那四个面板都是这种）：
+ *    只靠 title 判断不出来 —— 没有 title 时会走 head 槽，而那个槽是空的
+ *    ⇒ **白占一行、还多一段 `gap`**（面板的 gap 是 32rpx，看得见）。
+ *    ⚠️ 空的 foot 同理 ⇒ 一个开关同时管两行。
+ */
+export function headMode(title: unknown, bare: unknown): 'title' | 'slot' | 'none' {
+  if (bare === true) return 'none'
   return String(title ?? '').trim() ? 'title' : 'slot'
 }
 

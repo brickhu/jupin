@@ -26,9 +26,9 @@
   ④ 本地提示（漏读粗筛不通过 / 录音失败 / 提交失败）——「面板提示」而不是 toast：
      它带一句"下一步该干什么"，要用户看清并回应。
 -->
-<view wx:if="{{noticeVisible}}" class="pf-layer" catchtouchmove="noop">
-  <view class="pf-mask"></view>
-  <view class="pf-card" catchtap="noop">
+<!-- ⚠️ 外框（遮罩 / 居中 / 出入场）由 ui-dialog 提供（B92）：这里只写"面板里有什么"。 -->
+<ui-dialog wx:if="{{noticeVisible}}" show="{{true}}" position="center" closable="{{false}}" bare>
+  <view class="pf-body">
     <text class="pf-text">{{notice}}</text>
     <view class="w-full mt-5">
       <ui-button variant="fill" color="primary" size="lg" width="full" bind:press="onNoticeClose">
@@ -36,4 +36,4 @@
       </ui-button>
     </view>
   </view>
-</view>
+</ui-dialog>

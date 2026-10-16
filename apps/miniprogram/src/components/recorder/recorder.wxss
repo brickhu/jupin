@@ -3,31 +3,16 @@
  * ⚠️ 稿里这块是**白底 + 红系**（红点 / 计时 / 描边 / 停止钮），不是深色底。
  * ⚠️ 宽度按稿子的**占比**给：稿 366 画在 390 宽的页里 ⇒ 704rpx（750 × 366/390）。
  */
-.rc-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.18s ease-out;
-}
-.rc-layer.rc-on { opacity: 1; }
-
-.rc-mask { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
-
-/* 稿：366×363 / 白 / r16 / 内容左右各留 23 */
-.rc-card {
-  position: relative;
-  width: 704rpx;
-  min-height: 726rpx;
-  padding: 46rpx;
-  border-radius: 32rpx;
-  background: #ffffff;
+/*
+ * ⚠️ **外框（遮罩 / 居中 / 出入场 / 卡片本色与圆角）一律由 ui-dialog 提供** ——
+ *    本文件只写「录音面板里怎么排」，外加**高度**：
+ *    稿里卡片是 726rpx，而这里只负责「面板里面」，所以要减掉 ui-dialog 面板自己的上下 padding
+ *    （--tk-space-lg = 48rpx × 2）⇒ 630rpx。⚠️ 那个 token 改了，这个数也要跟着改。
+ */
+.rc-body {
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
+  min-height: 630rpx;
 }
 
 /* 句子（稿 20px/400 · ink = 我们的 primary） */

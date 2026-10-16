@@ -35,7 +35,7 @@
     <view wx:if="{{headMode === 'title'}}" class="ud-head">
       <text class="ud-title">{{title}}</text>
     </view>
-    <view wx:else class="ud-head">
+    <view wx:elif="{{headMode === 'slot'}}" class="ud-head">
       <slot name="head" />
     </view>
 
@@ -51,7 +51,8 @@
       <slot />
     </view>
 
-    <view class="ud-foot">
+    <!-- ⚠️ bare 时连 foot 也不画：空的一行会白占一段 gap（同 head） -->
+    <view wx:if="{{!bare}}" class="ud-foot">
       <slot name="foot" />
     </view>
   </view>

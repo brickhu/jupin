@@ -31,20 +31,7 @@ Component({
     balance: { type: Number, value: 0 },
   },
 
-  data: {
-    entered: false,
-  },
-
-  lifetimes: {
-    attached() {
-      // ⚠️ 下一帧再置 entered：遮罩与卡片的入场过渡才看得见（同 eval-dialog 的做法）
-      setTimeout(() => this.setData({ entered: true }), 16)
-    },
-  },
-
   methods: {
-    /** 遮罩本身不响应点击（同 eval-dialog）：能量还没扣，但误触关掉会让用户以为白花一次 */
-    noop() {},
     /** 取消 ⇒ 面板关掉，入口**停在 recoded**（录音还在、状态不变，见 prd §7.2） */
     onCancel() {
       this.triggerEvent('cancel')

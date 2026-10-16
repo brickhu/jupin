@@ -78,19 +78,47 @@ describe('ui-dialog 位置解析', () => {
 
 describe('ui-dialog 的 head 行 —— title 与 head 槽互斥', () => {
   it('title 非空才取 title；空格 / 回车等于没配', () => {
-    expect(headMode('确认删除')).toBe('title')
+    expect(headMode('确认删除', false)).toBe('title')
     for (const empty of ['', '   ', '\n', undefined, null]) {
-      expect(headMode(empty), JSON.stringify(empty)).toBe('slot')
+      expect(headMode(empty, false), JSON.stringify(empty)).toBe('slot')
     }
   })
 
-  it('⭐ WXML 里 head 槽**只出现在 wx:else 那一支**（配了 title 就不许渲染它）', () => {
-    const parts = WXML.split('wx:else')
-    expect(parts.length, 'head 行的 wx:if / wx:else 二选一不见了').toBe(2)
-    const [titleBranch, slotBranch] = parts as [string, string]
-    expect(titleBranch).toContain('{{title}}')
-    expect(titleBranch).not.toMatch(/slot\s+name="head"/)
-    expect(slotBranch).toMatch(/slot\s+name="head"/)
+  /**
+   * ⭐ `bare` 一票否决：既不画 head、也不画 foot（B92 给录音流程那四个面板加的）。
+   * ⚠️ 为什么要这个开关：空的 head/foot 仍然是一个 flex 子项 ⇒ 面板的 gap（32rpx）照加，
+   *    屏幕上就是**白多出一段**（四个面板都是"只有一个 body"，全部命中）。
+   */
+  it('⭐ bare 一票否决（连 title 都不画）', () => {
+    expect(headMode('确认删除', true)).toBe('none')
+    expect(headMode('', true)).toBe('none')
+  })
+
+  /**
+   * ⭐ head 那一行是**三支**：title / head 槽 / **不画**（`bare`）。
+   * ⚠️ 第三支是 B92 加的：录音流程里那四个面板既没标题也不用 head 槽，
+   *    而**空的 head 会白占一行、还多出一段 gap**（面板的 gap 是 32rpx，看得见）。
+   */
+  it('⭐ head 那一行：title 支不画槽、槽支画一次、第三支（bare）整个不画', () => {
+    /** ① title 支里有 {{title}}、且**没有** head 槽 */
+    const iTitle = WXML.indexOf("wx:if=\"{{headMode === 'title'}}\"")
+    const iSlot = WXML.indexOf("wx:elif=\"{{headMode === 'slot'}}\"")
+    const iMain = WXML.indexOf('class="ud-main"')
+    expect(iTitle, 'title 支不见了').toBeGreaterThan(-1)
+    expect(iSlot, 'head 槽支不见了（应该只由 headMode==="slot" 触发）').toBeGreaterThan(-1)
+    expect(iTitle).toBeLessThan(iSlot)
+    expect(WXML.slice(iTitle, iSlot)).toContain('{{title}}')
+    expect(WXML.slice(iTitle, iSlot), 'title 支里也在画 head 槽 ⇒ 两条会同时出现').not.toMatch(/slot\s+name="head"/)
+    expect(WXML.slice(iSlot, iMain), '槽支里没有 head 槽').toMatch(/slot\s+name="head"/)
+    /**
+     * ② `none`（bare）不是第三支渲染、而是**两支都不匹配 ⇒ 什么都不画** ——
+     *    判据是 head 槽在整份模板里**只出现一次**（没有别处也在画它）。
+     */
+    expect((WXML.match(/slot\s+name="head"/g) ?? []).length, 'head 槽被画了不止一处').toBe(1)
+  })
+
+  it('⚠️ bare 时 foot 也不画（空的一行同样会白占一段 gap）', () => {
+    expect(WXML.includes('wx:if="{{!bare}}"'), 'foot 那一行没跟着 bare 走').toBe(true)
   })
 
   it('三个槽位名齐（head / main / foot）', () => {

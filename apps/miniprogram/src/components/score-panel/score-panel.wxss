@@ -3,41 +3,14 @@
  * ⚠️ 它落在**白/浅色**浮层上，用页面默认色（不是卡片主题色）：
  *    ink = primary（稿 #2b132c = 我们的 primary）· 分数 = success（稿 #20b99a = 我们的 success）。
  */
-.sp-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sp-mask {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  transition: opacity 0.18s ease-out;
-}
-.sp-mask.sp-on { opacity: 1; }
-
-/* 稿：366×340 / 白 / r24 / 内容左右各 23 */
-.sp-card {
-  position: relative;
-  width: 704rpx;
-  max-height: 84vh;
-  overflow-y: auto;
-  padding: 40rpx 46rpx 18rpx;
-  border-radius: 48rpx;
-  background: #ffffff;
+/*
+ * ⚠️ **外框（遮罩 / 居中 / 出入场 / 卡片本色与圆角）一律由 ui-dialog 提供** ——
+ *    本文件只写「面板里怎么排」。它与 .wxss 里的其它规则一起，只描述里面。
+ */
+.sp-body {
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  opacity: 0;
-  transform: scale(0.94);
-  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
 }
-.sp-card.sp-on { opacity: 1; transform: scale(1); }
-
 /* ① 头部：左 波形+时长 · 右 分数 */
 .sp-head { display: flex; align-items: center; justify-content: space-between; }
 .sp-lhs { display: flex; align-items: center; gap: 16rpx; }

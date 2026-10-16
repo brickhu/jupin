@@ -118,7 +118,6 @@ Component({
     /** 定稿窗口：说了停、还在等回调 ⇒ 按钮 disabled */
     finishing: false,
     /** 面板入场过渡 */
-    entered: false,
     /**
      * ⚠️⚠️ **每帧都在变的内部状态** —— 放进 data 只是为了有个**类型明确的家**，
      *    实际一律**直接改字段、不调 setData**（每 170ms 一次 setData 会卡）。
@@ -169,7 +168,7 @@ Component({
       if (this.data.beep) playBeep()
 
       this.reset()
-      this.setData({ entered: true, finishing: false, waveOn: false, elapsedText: '00:00' })
+      this.setData({ finishing: false, waveOn: false, elapsedText: '00:00' })
 
       const session = createSpeechSession({
         /** ⭐ 每来一帧：画波形 + 累计静音（一次解码两处用） */
@@ -215,7 +214,7 @@ Component({
       this.data.scratch.stopSent = false
       this.data.scratch.waveCtx = null
       this.data.scratch.waveCanvas = null
-      this.setData({ entered: false })
+      this.setData({ waveOn: false })
     },
 
     reset() {

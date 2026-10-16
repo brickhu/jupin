@@ -1,1 +1,1 @@
-{"component":true,"styleIsolation":"apply-shared","usingComponents":{"ui-icon":"/components/ui-icon/ui-icon","ui-button":"/components/ui-button/ui-button"}}
+{"component":true,"styleIsolation":"apply-shared","usingComponents":{"ui-icon":"/components/ui-icon/ui-icon","ui-button":"/components/ui-button/ui-button","ui-dialog":"/components/ui-dialog/ui-dialog"}}

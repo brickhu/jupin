@@ -67,8 +67,17 @@ describe('录音与提示音的顺序（麦克风开着时不放声音）', () =
    * ⭐ 录音面板的**结构与尺寸**（稿 `583:1727`）—— 这里是白底 + 红系，
    *   纵向：句子 → 红点+「录音中，请朗读」→ 胶囊[计时 ｜ 波形 ｜ 停止]。
    */
-  it('⭐ 白底面板 + 红色胶囊 + 胶囊贴底（稿的结构）', () => {
-    expect(WXSS.includes('background: #ffffff'), '面板不是白底（稿是白的）').toBe(true)
+  /**
+   * ⚠️⚠️ 面板的**底色 / 圆角 / 内距**自 B92 起由 `ui-dialog` 统一提供
+   *    （它的面板类是 bg-page + text-page-on + rounded-lg）—— 所以这里不再断言"白底"，
+   *    改为断言"**外框确实交给了 ui-dialog**"（否则这四段又会各自长回来）。
+   *    ⚠️ 这是一次**看得见的改动**：原来四个面板各写死 #ffffff / r48 / pad 46，
+   *       现在统一走组件那套 token。
+   */
+  it('⭐⭐ 外框交给 ui-dialog（底色/圆角/内距不再各写一份）+ 红色胶囊 + 胶囊贴底', () => {
+    expect(WXML.includes('<ui-dialog'), '录音面板没有用 ui-dialog 包外框').toBe(true)
+    expect(WXSS.includes('background: #ffffff'), '外框样式又长回来了（那份该由 ui-dialog 提供）').toBe(false)
+    expect(WXSS.includes('.rc-body'), '少了面板内的排版容器').toBe(true)
     const pill = /\.rc-pill\s*\{([^}]*)\}/.exec(WXSS)?.[1] ?? ''
     expect(pill, '找不到 .rc-pill').not.toBe('')
     expect(pill.includes('height: 96rpx'), '胶囊不是稿里的 48（96rpx）').toBe(true)

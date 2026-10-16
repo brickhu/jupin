@@ -3,11 +3,16 @@
   纵向：**句子 → 红点+「录音中，请朗读」 → 胶囊[ 00:00 ｜ 波形 ｜ ■ ]**
   ⚠️ 稿里胶囊**贴在面板底部**（句子与它之间是空白）⇒ 这里用 margin-top:auto 顶下去。
   ⚠️ 打开即录，没有二次确认；结束两条路（读完静音自停 / 点那颗红钮）。
--->
-<view class="rc-layer {{entered ? 'rc-on' : ''}}" wx:if="{{visible}}">
-  <view class="rc-mask"></view>
 
-  <view class="rc-card">
+  ⚠️⚠️ **外框（遮罩 / 居中 / 出入场）由 「ui-dialog」 提供**（B92）。
+  · show 跟 visible 走 —— 打开即录的开关**没有变**（录音生命周期仍由本组件的 observer 管）；
+  · closable 恒 false：录音中误触遮罩就停录，是最不该发生的事；
+  · bare（无标题、无脚）。
+  ⚠️ 高度仍由内层 rc-body 的 min-height 撑住（稿里句子与胶囊之间是一大片空白，
+     靠 margin-top:auto 把胶囊顶到底 —— 那个 auto 需要一个有高度的 flex 容器）。
+-->
+<ui-dialog show="{{visible}}" position="center" closable="{{false}}" bare>
+  <view class="rc-body">
     <!-- ① 句子（稿 20px/400） -->
     <text class="rc-sentence">{{sentence}}</text>
 
@@ -56,4 +61,4 @@
     -->
     <text class="rc-hint">{{finishing ? '正在处理你的录音，请稍等' : '读完会自动结束，也可以点右边的按钮结束'}}</text>
   </view>
-</view>
+</ui-dialog>

@@ -2,41 +2,15 @@
  * ⭐ 能量扣除面板 —— 尺寸照 Figma 612:2044（1px = 2rpx）。见 energy-tips.wxml 的说明。
  * ⚠️ 它落在**白/浅色**浮层上，用页面默认色（不是卡片主题色）。
  */
-.et-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.et-mask {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  transition: opacity 0.18s ease-out;
-}
-.et-mask.et-on { opacity: 1; }
-
-/* 稿：366 宽 / r24 / pad 30 18 22 */
-.et-card {
-  position: relative;
-  width: 732rpx;
-  padding: 60rpx 36rpx 44rpx;
-  border-radius: 48rpx;
-  background: #ffffff;
+/*
+ * ⚠️ **外框（遮罩 / 居中 / 出入场 / 卡片本色与圆角）一律由 ui-dialog 提供** ——
+ *    本文件只写「面板里怎么排」。它与 .wxss 里的其它规则一起，只描述里面。
+ */
+.et-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-sizing: border-box;
-  opacity: 0;
-  transform: scale(0.94);
-  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
 }
-.et-card.et-on { opacity: 1; transform: scale(1); }
-
 /* ⚠️ 稿里文案在**大字上面**、且居中；它比卡片窄 ⇒ 居中要自己给（不是 flex 的默认行为） */
 .et-ink { color: var(--tk-page-on, #111111); text-align: center; }
 .et-sub { color: var(--tk-page-on_65, rgba(17, 17, 17, 0.65)); }

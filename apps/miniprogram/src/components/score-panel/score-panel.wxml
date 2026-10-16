@@ -3,11 +3,14 @@
   纵向：**波形+时长 ····· 分数** → **句子** → **五个分项色块** → **战绩胶囊** → **下句**
   ⚠️⚠️ 五个分项在稿里是**五个色块**（上标签 12px / 下分数 14px），**不是进度条**。
   ⚠️ 两态共用这一切，只有三处不同：胶囊文案 / 下句 / 分数值。
--->
-<view class="sp-layer">
-  <view class="sp-mask {{entered ? 'sp-on' : ''}}" catchtouchmove="noop"></view>
 
-  <view class="sp-card {{entered ? 'sp-on' : ''}}" catchtap="noop" catchtouchmove="noop">
+  ⚠️⚠️ **外框（遮罩 / 居中 / 出入场）由 「ui-dialog」 提供**（B92）：这里只排"面板里有什么"。
+  · show 恒 true（在不在由宿主的 wx:if 决定）；
+  · closable 恒 false（这是**模态**：必须选「更新」或「保留」，点遮罩不能把它关掉）；
+  · bare（无标题、无脚）。
+-->
+<ui-dialog show="{{true}}" position="center" closable="{{false}}" bare>
+  <view class="sp-body">
     <!-- ① 头部：左 = 波形 + 时长（12px）· 右 = 这一把的分（稿 20px/400 绿） -->
     <view class="sp-head">
       <view class="sp-lhs">
@@ -55,4 +58,4 @@
     <!-- ⑤ 下句（稿 14px · 居中） -->
     <text class="sp-sub">{{subText}}</text>
   </view>
-</view>
+</ui-dialog>
