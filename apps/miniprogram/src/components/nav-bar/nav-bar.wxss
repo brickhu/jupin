@@ -17,10 +17,12 @@
   left: 0;
   right: 0;
   z-index: 100;
-  /* ⚠️ 默认**透明**：页面底色（#f7f7f8）本身就是设计的一部分，
+  /* ⚠️ 默认**透明**：页面底色（--tk-page）本身就是设计的一部分，
      还没滚动时就压一条白带，会凭空多出一条没人要的分界线。
      ⚠️ 用 rgba(255,255,255,0) 而不是 transparent：后者是 rgba(0,0,0,0)，
-     过渡到白色时中间会灰一下。
+     过渡到实心底时中间会灰一下。
+     ⚠️ 这个 0 透明值**刻意不接 token**：它要的是"同一个颜色的 0 透明"，
+        CSS 里没法把 token 拆成 0 透明；它本身不可见，只在过渡里起作用。
      ⚠️ content-box：height 只算内容区，状态栏那一段靠 padding-top 撑出来 */
   box-sizing: content-box;
   background-color: rgba(255, 255, 255, 0);
@@ -35,8 +37,9 @@
  *    「相交」的判定在页面那边（scrollTop >= navSolidFrom()），见 methods.applyScrollTop。
  */
 .nv-root-solid {
-  background-color: #ffffff;
-  border-bottom-color: #f0f0f0;
+  /* ⭐ 底色与底边走 token（页面底色 / 分隔线）—— 深色下自动反向 */
+  background-color: var(--tk-page, #ffffff);
+  border-bottom-color: var(--tk-line, #f0f0f0);
 }
 
 .nv-row {
@@ -59,7 +62,7 @@
   text-align: center;
   font-size: 32rpx;
   font-weight: 600;
-  color: #111;
+  color: var(--tk-page-on, #131311);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -70,7 +73,7 @@
   width: 60rpx;
   height: 60rpx;
   border-radius: 50%;
-  background: #eeecfd;
+  background: var(--tk-accent-soft, rgba(239, 114, 3, 0.08));
   overflow: hidden;
 }
 
@@ -82,8 +85,8 @@
 .nv-spinner {
   width: 32rpx;
   height: 32rpx;
-  border: 4rpx solid #e5e5ea;
-  border-top-color: #4f46e5;
+  border: 4rpx solid var(--tk-surface-strong, #e2e2e2);
+  border-top-color: var(--tk-accent, #ef7203);
   border-radius: 50%;
   animation: nv-spin 0.7s linear infinite;
 }
@@ -103,8 +106,9 @@
   height: 60rpx;
   padding: 0 24rpx;
   border-radius: 999rpx;
-  background: #4f46e5;
-  color: #ffffff;
+  /* ⚠️ 强调色走 accent（#4f46e5 是标了废弃的 brand）；它上面的字走 accent.on */
+  background: var(--tk-accent, #ef7203);
+  color: var(--tk-accent-on, #ffffff);
   font-size: 24rpx;
   font-weight: 500;
 }
@@ -114,12 +118,14 @@
 .nv-glyph {
   font-size: 38rpx;
   line-height: 1;
-  color: #333;
+  color: var(--tk-page-on, #131311);
+  opacity: 0.8;
 }
 
 .nv-glyph-back {
   font-size: 42rpx;
-  color: #666;
+  color: var(--tk-page-on, #131311);
+  opacity: 0.6;
 }
 
 .nv-hover {
