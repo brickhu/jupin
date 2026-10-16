@@ -1,8 +1,24 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const SCORING = readFileSync(new URL('./scoring.ts', import.meta.url), 'utf-8')
-const XFYUN = readFileSync(new URL('../engines/xfyun.ts', import.meta.url), 'utf-8')
+/**
+ * ⚠️⚠️ **读源码前先剥注释**：守门查的都是"源码文本里有没有某个写法"，
+ *    而解释这条规则的注释里**正好会提到那些关键字** —— 不剥的话，
+ *    indexOf 会命中注释、再往后 400 字里当然找不到实现（真实踩过：
+ *    `is_rejected` 第一次出现在 audioFrames 上面那段注释里，于是这条守门
+ *    一直在报"判无效抛了普通 Error"，而实现其实是好的）。
+ */
+const strip = (src: string) =>
+  src
+    .split('\n')
+    .filter((l) => {
+      const t = l.trim()
+      return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*')
+    })
+    .join('\n')
+
+const SCORING = strip(readFileSync(new URL('./scoring.ts', import.meta.url), 'utf-8'))
+const XFYUN = strip(readFileSync(new URL('../engines/xfyun.ts', import.meta.url), 'utf-8'))
 
 /**
  * ⭐⭐ 守的是「**成功调用即计费**」这条分界（用户 2026-10-15 定）。
