@@ -76,6 +76,33 @@
 
 ### B. 工程
 
+- [ ] **B96** **讯飞喂帧不再按「实时节奏」**（用户 2026-10-16：「调用讯飞和 LLM 效率非常慢」）
+  **现状**：`engines/xfyun.ts` 每 40ms 发 1280 字节（正好 40ms 音频）—— 上传耗时被钉成
+  **音频多长就传多久**。本机实测（8.46s 音频）：生产节奏 **9.00s** vs 一次灌完 **1.13s**，
+  两者返回的 XML **逐字节相同**（`diff` 0 行；另一条 6.56s 的样本 `total_score` 与长度也一致）。
+  ⚠️⚠️ 它还顺带制造了一个**必然失败**：`TIMEOUT_MS` 只有 30 秒，而录音上限是 60 秒
+  （`recorder.ts` 的 `duration: 60_000`）⇒ **任何超过约 29.5 秒的录音永远打不出分**：
+  超时 → 判 `infra` → **整行删掉** → 端侧轮询拿到 404 却继续问到 `POLL_MAX`（80 × 1.5s = **2 分钟**）
+  ⇒ 这正是「要等 1-2 分钟」的形状（见 B88）。
+  **做**：① 帧不再按 40ms 发（保留 `aus` 语义：首帧 1 / 中间 2 / 末帧 4）；
+  ② 超时改成**闲置超时**（收到任何一帧就重置）—— 30 秒是"多久没动静"，不是"总共能跑多久"。
+  **做完的标志**：`apps/server/src/engines/xfyun.test.ts` 钉住帧切分与首/中/末 `aus`；
+  本机实测同一份 8.46s 音频的 ISE 段落到 1 秒级，且返回与改前**逐字节相同**。
+  ⚠️ 上线前建议拿 20–50 次真实调用做回归（逐字节比 XML，重点看讯飞那 11 类行为异常检测）——
+  这是**付费**调用，成本要算进去。
+- [ ] **B97** **AI 锐评移出打分的关键路径**（同 B96 的一次诊断）
+  **现状**：`services/scoring.ts` 先 `await generateCoachFeedback(...)`，**之后**才把状态写成
+  `scored` ⇒ 用户多等一次模型调用。本机实测锐评 **1.3–4.4 秒**（`callLlm` 的超时上限是 12 秒），
+  而且它的方差正好解释了库里那 5 条记录里「音频之外耗时」在 2.2–7.3 秒之间乱跳。
+  对照：`confirm.ts` 的 AI 总结是 `void refreshParticipationSummary(...)`（不 await）—— 正确形状。
+  **做**：① 分数先落库并翻 `scored`（`ai_comment` 留空）；② 锐评在同进程里 `void` 生成 →
+  二次 `UPDATE` 补 `ai_comment` / `ai_tag`（失败只 warn，绝不影响成绩）；
+  ③ 轮询响应加 `aiCommentPending`（只在"刚出分 + 没锐评 + 配了模型"时为真）；
+  ④ 端侧拿到 `scored` 后**再多问几轮**（上限 ~12 秒）把锐评补进面板 ——
+  ⚠️ 补的那几轮**不许**动面板可见性（否则会把用户正看着的面板关掉）。
+  **做完的标志**：本机实测「提交 → 看见分数」不含锐评耗时；锐评在随后的轮询里出现在面板上；
+  `pnpm check` 绿（`SubmitResponse` 两端 schema/类型双向比对不许漂移）。
+
 - [ ] **B1** **清掉旧额度时代的残留**：`MyStats` / `isMember`（types/api.ts:617）、`nextFreeAt`（miniprogram app.ts:15）、`QuotaExhaustedError`（types/api.ts:875）—— 门禁早已是能量（`ENERGY_EXHAUSTED`），这些是死字段
 - [ ] **B2** 客户端还在处理已退役的 `QUOTA_EXHAUSTED`（reading.ts / lib/api/client.ts）—— 改成 `ENERGY_EXHAUSTED`，否则额度用完时用户看不到可行动提示
 - [ ] **B3** `join.test.ts` 里的假响应字段（isMember / dailyLimit / usedToday / freezeCount）—— 同 B1

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBusinessParams, parseIseXml } from './xfyun'
+import { audioFrames, buildBusinessParams, parseIseXml } from './xfyun'
 
 /**
  * ⚠️⚠️ 这份 fixture 的**结构是从真实返回里逐字抄下来的**（apps/server/scripts/dump-ise-xml.ts
@@ -174,5 +174,33 @@ describe('buildBusinessParams —— 每个参数都对应一次踩过的坑', (
   it('category 原样透传', () => {
     expect(params.category).toBe('read_sentence')
     expect(params.ent).toBe('en_vip')
+  })
+})
+
+describe('audioFrames —— 切帧规则（⭐ 不按实时节奏，见 xfyun.ts 的实测）', () => {
+  const APP_ID = 'test-app'
+  const pcm = new Uint8Array(3200) // 100ms @16k/16bit/mono
+  for (let i = 0; i < pcm.length; i++) pcm[i] = i % 256
+
+  it('首帧 aus=1、中间帧 aus=2 —— 末帧的 aus=4 由结束帧带（不在这里）', () => {
+    const frames = audioFrames(pcm, APP_ID)
+    expect(frames.map((f) => (f.business as { aus: number }).aus)).toEqual([1, 2, 2])
+  })
+
+  it('每帧不超过 1280 字节，且拼回来就是原音频（一字节不差）', () => {
+    const frames = audioFrames(pcm, APP_ID)
+    const parts = frames.map((f) => Buffer.from((f.data as { data: string }).data, 'base64'))
+    for (const p of parts) expect(p.byteLength).toBeLessThanOrEqual(1280)
+    expect(Buffer.concat(parts).equals(Buffer.from(pcm))).toBe(true)
+  })
+
+  it('帧里带的 app_id / status 与讯飞要求一致', () => {
+    const [first] = audioFrames(pcm, APP_ID)
+    expect((first!.common as { app_id: string }).app_id).toBe(APP_ID)
+    expect((first!.data as { status: number }).status).toBe(1)
+  })
+
+  it('空音频不造帧（调用方只发结束帧，由讯飞回 is_rejected）', () => {
+    expect(audioFrames(new Uint8Array(0), APP_ID)).toEqual([])
   })
 })

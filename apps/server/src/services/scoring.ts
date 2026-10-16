@@ -11,6 +11,7 @@ import { trackInvalid } from './submission'
 import { releaseChallengeEnergy } from './energy'
 import { settle } from './settle'
 import { generateCoachFeedback, llmConfigOf } from './coach'
+import type { CoachFacts } from './coach'
 import { loadArticleRefText } from './content'
 import { getMyBest } from './leaderboard'
 import { syncParticipation } from './participations'
@@ -115,6 +116,12 @@ function startHeartbeat(submissionId: string): () => void {
  */
 export async function runScoring(submissionId: string): Promise<void> {
   const stop = startHeartbeat(submissionId)
+  /**
+   * ⭐ 分段计时 —— 这条链路是用户能感觉到的"慢"的唯一来源，而它的各段（读音频 /
+   *    归一化 / 讯飞 / 落库）差着数量级，靠猜必然猜错（见本文件头的耗时说明）。
+   *    一行为一次打分，日志里直接能读出是谁在花时间。
+   */
+  const mark = { start: Date.now(), audioRead: 0, normalized: 0, engineDone: 0 }
   try {
     const [row] = await db.select().from(submissions).where(eq(submissions.id, submissionId)).limit(1)
     // 已被别的请求打完 / 判失败 —— 什么都不做
@@ -146,6 +153,7 @@ export async function runScoring(submissionId: string): Promise<void> {
       }
     }
     if (!audio) return fail(submissionId, `读取音频失败: ${readError}`, 'infra')
+    mark.audioRead = Date.now()
 
     // ---- 归一化 + 评测 ----
     let audioBytes = audio.byteLength
@@ -173,9 +181,11 @@ export async function runScoring(submissionId: string): Promise<void> {
       //    WebM 8.8 秒才 143KB，解码成 PCM 是 282KB —— 只改一个就会让时长与字节数互相矛盾。
       audioBytes = normalized.pcm.byteLength
       audioDurationMs = Math.round((normalized.pcm.byteLength / PCM_BYTES_PER_SEC) * 1000)
+      mark.normalized = Date.now()
 
       const refText = await loadArticleRefText(article.id)
       result = await getEngine().score({ refText, audio: normalized.pcm })
+      mark.engineDone = Date.now()
     } catch (err) {
       /**
        * ⭐⭐ **计费分界就在这里**（用户 2026-10-15 定：「成功调用了讯飞检测 ⇒
@@ -218,40 +228,18 @@ export async function runScoring(submissionId: string): Promise<void> {
     }
 
     /**
-     * ⭐ **AI 锐评**（prd §7.2b）：出 40–70 字、针对**这一份成绩单**的点评。
+     * ⭐ **AI 锐评不在关键路径上**（prd §7.2b · 用户 2026-10-16 的口径：分数先出）。
      *
-     * ⚠️ 放在**翻状态之前**：客户端轮询到 scored 就停了，
-     *    点评若在这之后才写库，用户在结果页上永远看不到它。
-     * ⚠️ 失败/没配密钥 → 两个字段都是 null，结果页整块不渲染；
-     *    绝不能因为一个锦上添花的点评让这条成绩变成 failed。
+     * ⚠️⚠️ 原来这里是 `const coach = await generateCoachFeedback(...)`，**在翻 `scored` 之前** ——
+     *    于是用户必须多等一次模型调用（本机实测 1.3–4.4 秒，超时上限 12 秒），
+     *    而它只是锦上添花的批语。现在：**先把分数落库并翻状态**，
+     *    紧接着 `void attachCoachRemark(...)` 在后台生成、**二次 UPDATE 补写**
+     *    （形状与 confirm.ts 的 AI 总结一致 —— 那里也是 `void` + `.catch()`）。
+     *
+     * ⚠️ 代价（明确接受）：容器若在写完分数的瞬间被回收，这次就没有批语 ——
+     *    和"模型调用失败"是同一种结果（`ai_comment` 为 null，端侧整块不渲染）。
      */
-    const coach = breakdown
-      ? await generateCoachFeedback(
-          {
-            score,
-            parts: breakdown,
-            refText: await loadArticleRefText(article.id),
-            /**
-             * ⭐ **句子语境**（2026-10-15 加）：锐评要"有内味儿"就得知道这句在说什么，
-             *    否则模型只能干巴巴复述分数与错误（"发音准确 82 分"）。
-             */
-            translation: article.translation,
-            tags: article.tags ?? [],
-            weakWords: [...words]
-              .sort((a, b) => a.score - b.score)
-              .slice(0, 3)
-              .map((w) => ({ word: w.word, score: w.score, dp: w.dp })),
-            badPhones: words.flatMap((w) => w.badPhones ?? []),
-            ...(result.syllableErrorRate === undefined
-              ? {}
-              : { syllableErrorRate: result.syllableErrorRate }),
-            longGapCount: gaps.longGapCount,
-            gated: breakdown.gates.length > 0,
-          },
-          /** ⚠️ 配置只有一处来源（默认模型/基址见 services/coach.ts 的说明） */
-          llmConfigOf(env),
-        )
-      : null
+
     /**
      * ⚠️⚠️ 这里曾经写一个 submissions.is_conquered 标记，并用它数出
      *    「这个用户在这条句子上是不是第一次拿到分」，再据此累加 articles 上的
@@ -293,15 +281,16 @@ void previousBest
         audioDurationMs,
         wordScores: result.words ? JSON.stringify(result.words) : null,
         dimensions: result.dimensions ? JSON.stringify(result.dimensions) : null,
-        // AI 教练的两样输出（拿不到就是 null，见上面那段说明）
         /**
          * ⭐⭐ **AI 锐评**（prd §7.2b）—— 40–70 字、有观点有画面的那一条。
+         * ⚠️ 这里是**先留空**：分数一落库就翻 scored（用户立刻能看到分），
+         *    锐评由下面的 `attachCoachRemark` 写好之后二次 UPDATE 补进来。
          * ⚠️ 只有这一个字段：原来的 `ai_advice`（2-3 句练法）已删 ——
          *    讯飞自己的反馈报告已经很全面（用户 2026-10-15），我们再说一遍是同一件事两处。
          */
-        aiComment: coach?.comment ?? null,
-        /** ⭐ 海报标签（≤4 字）—— 分享卡用；缺了不影响锐评 */
-        aiTag: coach?.tag || null,
+        aiComment: null,
+        /** ⭐ 海报标签（≤6 字）—— 分享卡用；缺了不影响锐评 */
+        aiTag: null,
         // 分项明细 —— 结果页要靠它解释「这分是怎么来的」（见 schema 里的说明）
         scoreParts: breakdown ? JSON.stringify(breakdown) : null,
         scoredAt: new Date(),
@@ -310,6 +299,51 @@ void previousBest
     if ((header as unknown as { affectedRows?: number })?.affectedRows !== 1) {
       console.warn(`[scoring] 结果未写入（状态已变）id=${submissionId}`)
       return
+    }
+
+    /**
+     * ⭐ **分段耗时**（唯一一处"这次为什么慢"的证据）—— 讯飞那一段是花钱的，
+     *   所以它单独一格；读音频/归一化在云上是两趟网 + 一个 ffmpeg。
+     * ⚠️ 这一行**必须在翻 scored 之后**：它就是"用户等到分数"的那一刻。
+     */
+    console.log(
+      '[scoring] 耗时 id=' + submissionId +
+        ' 读音频=' + (mark.audioRead - mark.start) + 'ms' +
+        ' 归一化=' + (mark.normalized - mark.audioRead) + 'ms' +
+        ' 讯飞=' + (mark.engineDone - mark.normalized) + 'ms' +
+        ' 落库=' + (Date.now() - mark.engineDone) + 'ms' +
+        '（锐评不计入：已移出关键路径）',
+    )
+
+    /**
+     * ⭐⭐ **AI 锐评现在才生成** —— 不 await（见上面那段说明）。
+     *
+     * ⚠️ 用 `void` + 自带 catch：它跑在后台，抛出去就是 unhandledRejection，会把容器带崩；
+     *    而"没有批语"是这里唯一允许的失败形态。
+     */
+    if (breakdown) {
+      const facts = {
+        score,
+        parts: breakdown,
+        refText: await loadArticleRefText(article.id),
+        /**
+         * ⭐ **句子语境**（2026-10-15 加）：锐评要"有内味儿"就得知道这句在说什么，
+         *    否则模型只能干巴巴复述分数与错误（"发音准确 82 分"）。
+         */
+        translation: article.translation,
+        tags: article.tags ?? [],
+        weakWords: [...words]
+          .sort((a, b) => a.score - b.score)
+          .slice(0, 3)
+          .map((w) => ({ word: w.word, score: w.score, dp: w.dp })),
+        badPhones: words.flatMap((w) => w.badPhones ?? []),
+        ...(result.syllableErrorRate === undefined
+          ? {}
+          : { syllableErrorRate: result.syllableErrorRate }),
+        longGapCount: gaps.longGapCount,
+        gated: breakdown.gates.length > 0,
+      }
+      void attachCoachRemark(submissionId, facts)
     }
 
     /**
@@ -537,6 +571,35 @@ export async function markScoringFailed(submissionId: string, reason: string): P
       await db.update(users).set({ invalidCount: count, invalidDate: day }).where(eq(users.id, u.id))
       if (blocked) console.warn(`[scoring] 当日无效提交超限 user=${u.id}`)
     }
+  }
+}
+
+/**
+ * ⭐ 把 **AI 锐评**补写进那一行（prd §7.2b）。
+ *
+ * ⚠️⚠️ 前提是**分数已经落库、状态已经是 `scored`** —— 这个函数的全部意义就是
+ *    "让用户先拿到分，批语晚几秒到"（见 runScoring 里那段说明）。
+ *    ⇒ 它**永远不抛**：失败只是"这次没有批语"（端侧整块不渲染），
+ *      绝不能让它把一条已经成立的成绩搞成 failed。
+ * ⚠️ 二次 UPDATE 只碰这两列 —— 别在这里顺手改分数/状态。
+ */
+async function attachCoachRemark(submissionId: string, facts: CoachFacts): Promise<void> {
+  try {
+    const coach = await generateCoachFeedback(
+      facts,
+      /** ⚠️ 配置只有一处来源（默认模型/基址见 services/coach.ts 的说明） */
+      llmConfigOf(env),
+    )
+    if (!coach) return
+    await db
+      .update(submissions)
+      .set({ aiComment: coach.comment, aiTag: coach.tag || null })
+      .where(eq(submissions.id, submissionId))
+    console.log('[scoring] 锐评已补上 id=' + submissionId + '（' + coach.comment.length + ' 字）')
+  } catch (err) {
+    console.warn(
+      '[scoring] 锐评没补上（成绩不受影响）id=' + submissionId + '：' + (err as Error).message,
+    )
   }
 }
 

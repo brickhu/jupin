@@ -3,11 +3,22 @@ import type { ScoreDimensions, ScoreParts, StreakDelta, SubmitResponse, WordScor
 
 import { db } from '../db'
 import { articles, submissions } from '../db/schema'
+import { env } from '../env'
 import { loadArticleRefText } from './content'
 import { getBestExcluding, getLeaderboardAround, getRank } from './leaderboard'
 import { attemptNoOf } from './submission'
 import type { SubmissionStatusResponse } from '@jushuo/shared'
 import { cookieAwardViewOf } from './cookies'
+import { coachEnabled } from './coach'
+
+/**
+ * ⭐ 「锐评还在写」的判定窗口。
+ *
+ * ⚠️ 判据是**时间窗**而不是一个状态列：锐评是"分数落库之后紧接着"在同一个进程里生成的
+ *    （见 services/scoring.ts 的 attachCoachRemark），除了时间没有别的信号。
+ *    窗口内没等到就当作"这次没有批语"—— 端侧也只是多问几轮就停，不会一直挂着。
+ */
+const AI_COMMENT_WINDOW_MS = 120_000
 
 /**
  * ⭐ 把一行提交翻译成客户端要的**结果包** —— 全站只有这一处。
@@ -134,6 +145,15 @@ export async function describe(
     words: row.wordScores ? (JSON.parse(row.wordScores) as WordScore[]) : undefined,
     // ⭐ AI **锐评**（拿不到就是 undefined —— 没配大模型 / 那次调用失败；端侧整块不渲染）
     ...(row.aiComment ? { aiComment: row.aiComment } : {}),
+    /**
+     * ⭐⭐ **锐评还在写**（prd §7.2b：分数先出、批语随后补）。
+     *
+     * ⚠️ 端侧据此在拿到 `scored` 之后**再多问几轮**（`participate-flow` 的 COMMENT_WAIT_MAX），
+     *    把批语补进正开着的结果面板 —— 否则用户这一屏永远看不到它（要退出再进才有）。
+     * ⚠️ 判据只有"刚出分 + 还没有批语 + 这条路是开着的"：没有状态列可读
+     *    （见 AI_COMMENT_WINDOW_MS 的说明）；窗口外一律当作"这次没有批语"。
+     */
+    ...(aiCommentPending(row) ? { aiCommentPending: true } : {}),
     // ⭐ 分项明细 —— 结果屏的「评分详情」显示它，而不是引擎那四维
     ...(row.scoreParts ? { parts: JSON.parse(row.scoreParts) as ScoreParts } : {}),
     // ⚠️ 维度也必须从库里读回来，否则轮询取到的结果里四维会不见
@@ -141,4 +161,20 @@ export async function describe(
     streak: row.streakDelta ? (JSON.parse(row.streakDelta) as StreakDelta) : undefined,
   }
   return { submissionId, status: 'scored', confirmed, result }
+}
+
+/**
+ * ⭐ 这次打分的**批语还在写吗**（见 AI_COMMENT_WINDOW_MS）。
+ * ⚠️ 三个条件缺一不可：刚出分 · 还没有批语 · 锐评这条路是开着的。
+ *    少了最后一条，没配 `LLM_API_KEY` 的环境会让端侧每次都白问几轮。
+ */
+function aiCommentPending(row: {
+  status: string
+  aiComment: string | null
+  scoredAt: Date | null
+}): boolean {
+  if (row.status !== 'scored' || row.aiComment !== null) return false
+  if (!coachEnabled(env)) return false
+  if (row.scoredAt === null) return false
+  return Date.now() - row.scoredAt.getTime() < AI_COMMENT_WINDOW_MS
 }

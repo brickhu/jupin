@@ -338,6 +338,17 @@ export function llmConfigOf(envLike: {
 }
 
 /**
+ * ⭐ **这条模型链路开着吗** —— 判据只有 `LLM_API_KEY`（与 `callLlm` 读的是同一个键）。
+ *
+ * ⚠️ 为什么要有它：调用方需要区分"**这次没有批语**"与"**批语还在写**"。
+ *    没有这个判据，端侧在没有模型的环境里也会白问几轮（见 submission-view.ts 的
+ *    `aiCommentPending`）；而拿别的东西当判据（比如模型名）就是第二份真相。
+ */
+export function coachEnabled(envLike: { LLM_API_KEY?: string | undefined }): boolean {
+  return !!envLike.LLM_API_KEY
+}
+
+/**
  * ⭐⭐ **模型通道**（OpenAI 兼容的 `/chat/completions`）—— 全服务端**只此一处**发请求。
  *
  * ⚠️ 谁要调模型都从这里走（现在两个调用方：`generateCoachFeedback` 的单次点评、

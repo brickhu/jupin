@@ -44,7 +44,8 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  /* ⭐ 面板底色走 page token（不写死白）—— 深色下自动反向，写死就永远是白的 */
+  background: var(--tk-page, #ffffff);
   border-radius: 32rpx 32rpx 0 0;
   padding: 0 32rpx;
   /* 全面屏底部那条横条，别让最后一行压在它上面 */
@@ -62,7 +63,7 @@
   width: 72rpx;
   height: 8rpx;
   border-radius: 8rpx;
-  background: #e5e5e5;
+  background: var(--tk-surface-strong, #e2e2e2);
   margin: 16rpx auto 0;
   padding: 12rpx 0;
   background-clip: content-box;
@@ -85,8 +86,9 @@
   flex-shrink: 0;
   padding: 8rpx 20rpx;
   border-radius: 999rpx;
-  background: #f3f2ff;
-  color: #4f46e5;
+  /* ⚠️ 强调色一律走 accent（写死的靛蓝属于已废弃的 brand，见 uno.config 的说明） */
+  background: var(--tk-accent-soft, rgba(239, 114, 3, 0.08));
+  color: var(--tk-accent, #ef7203);
   font-size: 22rpx;
 }
 
@@ -94,7 +96,7 @@
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
-  background: #eeecfd;
+  background: var(--tk-accent-soft, rgba(239, 114, 3, 0.08));
   flex-shrink: 0;
 }
 
@@ -108,7 +110,7 @@
   display: block;
   font-size: 34rpx;
   font-weight: 600;
-  color: #111;
+  color: var(--tk-page-on, #131311);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -125,13 +127,16 @@
 
 .us-sub {
   font-size: 24rpx;
-  color: #999;
+  /* ⚠️ "淡一点的正文"用 page.on 加透明度（没有单独的 muted token，见 uno.config 的废弃说明） */
+  color: var(--tk-page-on, #131311);
+  opacity: 0.6;
 }
 
 /* ⚠️ 分隔符给一点左右间距 —— 贴着数字会看成"数字的一部分"（比如 20| 🍪）。 */
 .us-sub-sep {
   font-size: 22rpx;
-  color: #ddd;
+  color: var(--tk-page-on, #131311);
+  opacity: 0.35;
   margin: 0 14rpx;
 }
 
@@ -147,14 +152,14 @@
       已按产品要求整体去掉：拉开面板是来找入口的，不是来读等级表的。 */
 .us-menu {
   margin-top: 8rpx;
-  border-top: 1rpx solid #f0f0f0;
+  border-top: 1rpx solid var(--tk-line, #f0f0f0);
 }
 
 .us-menu-item {
   display: flex;
   align-items: center;
   padding: 26rpx 0;
-  border-bottom: 1rpx solid #f0f0f0;
+  border-bottom: 1rpx solid var(--tk-line, #f0f0f0);
 }
 
 .us-menu-hover {
@@ -170,12 +175,13 @@
 .us-menu-label {
   flex: 1;
   font-size: 28rpx;
-  color: #111;
+  color: var(--tk-page-on, #131311);
 }
 
 /* 右箭头：让「这一行可以点」这件事不用猜 */
 .us-menu-arrow {
   flex-shrink: 0;
   font-size: 32rpx;
-  color: #c8c8cd;
+  color: var(--tk-page-on, #131311);
+  opacity: 0.4;
 }

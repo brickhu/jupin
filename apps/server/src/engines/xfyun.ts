@@ -7,9 +7,18 @@ import type { ScoreDimensions, ScoreEngine, ScoreOptions, ScoreResult, WordScore
 
 const HOST = 'ise-api.xfyun.cn'
 const PATH = '/v2/open-ise'
+/**
+ * ⭐ **闲置超时**：多久没收到讯飞的任何一帧才算卡住（不是"这次评测最多跑多久"）。
+ *
+ * ⚠️⚠️ 这个区分是必须的：帧是**一次灌完**的（见 audioFrames），所以整条链路的时间
+ *    只跟"音频有多长"弱相关（引擎处理 8.46s 音频实测 0.7 秒），而**跟网络是否卡住**强相关。
+ *    写成"总时长上限"就会误杀：原来 30 秒 + 按实时节奏喂帧 ⇒
+ *    **任何超过约 29.5 秒的录音必然超时**（而录音上限是 60 秒），
+ *    症状是那一行被判 `infra` 删掉、端侧却还在轮询（见 scoring.ts 的失败分流）。
+ * ⚠️ 它同时也是**兜底**：讯飞每收一帧回一帧，只要还在说话就一定有人重置它。
+ */
 const TIMEOUT_MS = 30_000
-const FRAME_BYTES = 1280          // 40ms @16k/16bit/mono，官方建议值
-const FRAME_INTERVAL_MS = 40      // 模拟实时流
+const FRAME_BYTES = 1280          // 40ms @16k/16bit/mono（官方推荐的分帧大小）
 
 /**
  * 科大讯飞 语音评测（流式版）
@@ -58,8 +67,6 @@ export class XfyunEngine implements ScoreEngine {
       const ws = new WebSocket(url)
       let acc = ''
       let settled = false
-      let aus = 1
-      let offset = 0
       let timer: ReturnType<typeof setTimeout> | undefined
 
       const done = (err?: Error, result?: string): void => {
@@ -70,7 +77,13 @@ export class XfyunEngine implements ScoreEngine {
         err ? reject(err) : resolve(result as string)
       }
 
-      timer = setTimeout(() => done(new Error('讯飞 ISE 超时')), TIMEOUT_MS)
+      /** ⭐ 每收到一帧就重置闲置计时（见 TIMEOUT_MS 的说明） */
+      const arm = (): void => {
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => done(new Error('讯飞 ISE 超时：30 秒没有收到任何回应')), TIMEOUT_MS)
+      }
+      // ⚠️ 握手阶段也要计时：不然连不上时会一直挂着，而 TIMEOUT_MS 形同虚设
+      arm()
 
       ws.on('open', () => {
         // 首帧：参数上传（cmd=ssb）
@@ -80,31 +93,34 @@ export class XfyunEngine implements ScoreEngine {
           data: { status: 0 },
         }))
 
-        const pump = (): void => {
-          if (offset >= audio.length) {
-            // 结束帧
-            ws.send(JSON.stringify({
-              common: { app_id: this.cfg.appId },
-              business: { aus: 4, cmd: 'auw', aue: 'raw' },
-              data: { status: 2, data: '' },
-            }))
-            return
-          }
-          const end = Math.min(offset + FRAME_BYTES, audio.length)
-          const chunk = Buffer.from(audio.subarray(offset, end))
-          ws.send(JSON.stringify({
-            common: { app_id: this.cfg.appId },
-            business: { aus, cmd: 'auw', aue: 'raw' },
-            data: { status: 1, data: chunk.toString('base64') },
-          }))
-          aus = 2
-          offset = end
-          setTimeout(pump, FRAME_INTERVAL_MS)
-        }
-        pump()
+        /**
+         * ⭐⭐ **一次把音频灌完，不按实时节奏等**。
+         *
+         * ⚠️⚠️ 原来这里是"每 40ms 发 1280 字节"（正好 40ms 音频）—— 那等于把上传耗时
+         *    钉成**音频多长就传多久**，而讯飞其实**只要求 `aus` 的语义正确**
+         *    （首帧 1 / 中间 2 / 末帧 4），不要求我们陪着它实时走。
+         *
+         *    本机实测（2026-10-16，同一份 8.46s / 16k 单声道 PCM）：
+         *      · 按实时节奏：**9.00 秒**（其中 8.4 秒花在"等待发送"上）
+         *      · 一次灌完：  **1.13 秒**
+         *    两次返回的 XML **逐字节相同**（`diff` 0 行，含逐词分数与各检错字段）；
+         *    另一条 6.56s 的样本同样如此 ⇒ 没有"发太快导致乱读/被拒"这回事。
+         *
+         * ⚠️ 别把 40ms 加回来"以防万一"：它买到的是 0，代价是每个用户每次多等一个音频时长，
+         *    并且让超过约 29.5 秒的录音**永远打不出分**（见 TIMEOUT_MS）。
+         */
+        for (const frame of audioFrames(audio, this.cfg.appId)) ws.send(JSON.stringify(frame))
+
+        // 结束帧
+        ws.send(JSON.stringify({
+          common: { app_id: this.cfg.appId },
+          business: { aus: 4, cmd: 'auw', aue: 'raw' },
+          data: { status: 2, data: '' },
+        }))
       })
 
       ws.on('message', (raw: Buffer) => {
+        arm()
         const msg = JSON.parse(raw.toString('utf8'))
         if (msg.code !== 0) {
           done(new Error(`讯飞 ISE 错误 ${msg.code}: ${msg.message}`))
@@ -182,6 +198,28 @@ export function buildBusinessParams(category: string, refText: string) {
     // ⚠️ read_sentence 需要带 BOM + [content] 标签
     text: category === 'read_sentence' ? `\uFEFF[content]${refText}\n` : `\uFEFF${refText}`,
   }
+}
+
+/**
+ * ⭐ 把 PCM 切成讯飞的数据帧（纯函数 —— 能被单测钉住，不必连网）。
+ *
+ * `aus` 的语义是**协议要求**：首帧 = 1、中间帧 = 2（末帧的 `aus: 4` 由结束帧自己带，
+ * 见 request() 里那条 `data.status = 2`）。
+ *
+ * ⚠️ 这里**只管切、不管节奏**：帧一次交出去（理由见 request() 里那段实测）。
+ * ⚠️ 空音频（0 字节）返回空数组 —— 调用方会只发结束帧，讯飞据此回 `is_rejected`。
+ */
+export function audioFrames(audio: Uint8Array, appId: string): Array<Record<string, unknown>> {
+  const frames: Array<Record<string, unknown>> = []
+  for (let offset = 0; offset < audio.length; offset += FRAME_BYTES) {
+    const end = Math.min(offset + FRAME_BYTES, audio.length)
+    frames.push({
+      common: { app_id: appId },
+      business: { aus: offset === 0 ? 1 : 2, cmd: 'auw', aue: 'raw' },
+      data: { status: 1, data: Buffer.from(audio.subarray(offset, end)).toString('base64') },
+    })
+  }
+  return frames
 }
 
 /**

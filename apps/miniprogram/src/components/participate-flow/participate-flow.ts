@@ -54,6 +54,12 @@ interface Scratch {
   pollTimer: ReturnType<typeof setInterval> | null
   pollCount: number
   /**
+   * ⭐ **为「等批语」额外问了几轮**（见 COMMENT_WAIT_MAX）。
+   * ⚠️ 与 `pollCount` 分开计：出分那一次已经用掉一次轮询了，
+   *    而"分数还没出来"与"分数出来了、批语还在写"是两件事。
+   */
+  commentWaits: number
+  /**
    * ⭐ 战绩**刚被刷新**、正等着新的 bestScore 回来做数字滚动（见 rollScore）。
    * ⚠️ 它只由 `onPanelConfirm` 置上 —— 别的路径（换页、普通广播）不该触发滚动。
    */
@@ -87,6 +93,16 @@ const ROLL_FRAME_MS = 16
 const POLL_MS = 1500
 /** 最多问这么多次（之后不再自动问；用户可以手动重试，状态仍在，见 prd） */
 const POLL_MAX = 80
+/**
+ * ⭐⭐ **出分之后，为等那条 AI 批语再问几轮**（prd §7.2b：分数先出、批语随后补）。
+ *
+ * ⚠️ 为什么要有这个数：服务端出分**不等**模型了（`services/scoring.ts` 现在先翻 `scored`，
+ *    批语由其后的 `attachCoachRemark` 补写）⇒ 拿到的第一份结果里**常常还没有批语**。
+ *    不问的话，用户在这一屏上永远看不到它（要退出再进、靠"进页面补问"才有）。
+ * ⚠️ 8 轮 × 1.5 秒 ≈ 12 秒：比模型自己的超时（12 秒）只多一点点 ——
+ *    等不到就是这次没有批语，不再赖着轮询（服务端给 `aiCommentPending` 才问）。
+ */
+const COMMENT_WAIT_MAX = 8
 /** 录音短于这个时长直接判"没读"（绝对下限；再和标准音比一次） */
 const MIN_RECORD_MS = 1500
 
@@ -125,9 +141,10 @@ Component({
     /** 这一把录音的时长（面板头部显示成 00:23） */
     panelDurationMs: 0,
     /**
-     * ⭐⭐ **这一把的 AI 锐评**（prd §7.2b）—— 服务端在翻状态之前就写好了
-     *    （见 services/scoring.ts），所以面板弹出时它一定已经在了（有的话）。
-     * ⚠️ 空串 = 没生成（没配大模型 / 那次调用失败）⇒ 面板里那一格不渲染。
+     * ⭐⭐ **这一把的 AI 锐评**（prd §7.2b）。
+     * ⚠️ 服务端**不等**它：出分那一刻它常常还没写好（见 services/scoring.ts 的
+     *    `attachCoachRemark`）⇒ 面板先弹、批语随后由轮询补进来（`patchPanelComment`）。
+     * ⚠️ 空串 = 这次没有批语（没配大模型 / 那次调用失败）⇒ 面板里那一格不渲染。
      */
     panelComment: '',
     /**
@@ -159,6 +176,7 @@ Component({
       pendingDurationMs: 0,
       pollTimer: null,
       pollCount: 0,
+      commentWaits: 0,
       awaitRoll: false,
       prevBest: null,
       rollToken: 0,
@@ -629,6 +647,7 @@ Component({
       this.data.scratch.silent = silent
       this.stopPoll()
       this.data.scratch.pollCount = 0
+      this.data.scratch.commentWaits = 0
       this.data.scratch.pollTimer = setInterval(() => {
         void this.pollOnce()
       }, POLL_MS)
@@ -648,9 +667,9 @@ Component({
       try {
         const r = await fetchSubmissionStatus(cache.submissionId)
         if (r.status === 'scoring') return
-        this.stopPoll()
         if (r.status === 'failed') {
           /** ⚠️ 失败不占状态：清掉 submissionId 之后回到 recoded（录音还在，可以再试） */
+          this.stopPoll()
           const next: ParticipateCache = { ...cache, submissionId: '' }
           saveParticipate(this.data.articleId, next)
           this.data.scratch.cache = next
@@ -658,12 +677,46 @@ Component({
           this.showNotice(r.error || '检测失败，可以再试一次')
           return
         }
+        /**
+         * ⭐⭐ **分数与批语是分两趟到的**（prd §7.2b：分数先出、批语随后补）——
+         *    服务端翻 `scored` 时不等模型，所以这一趟里 `aiComment` **通常还没有**。
+         *    ⇒ 不能一拿到 `scored` 就 `stopPoll`，否则用户在这一屏上永远看不到批语
+         *      （要退出再进、靠"进页面补问"才有）。
+         */
+        const result = r.result as { aiComment?: string; aiCommentPending?: boolean } | undefined
+        const first = this.data.scratch.resultOf !== r.submissionId
         this.data.scratch.resultOf = r.submissionId
-        if (r.result) this.applyResult(r, !this.data.scratch.silent)
+        if (r.result) {
+          /** 第一趟：整包落进面板（该弹就弹）；后续几趟：**只补批语那一格** */
+          if (first) this.applyResult(r, !this.data.scratch.silent)
+          else if (result?.aiComment) this.patchPanelComment(result.aiComment)
+        }
         this.restore()
+        /** ⭐ 服务端说"批语还在写" ⇒ 再问几轮（上限 COMMENT_WAIT_MAX）；否则到此为止 */
+        if (
+          result?.aiCommentPending &&
+          !result.aiComment &&
+          this.data.scratch.commentWaits < COMMENT_WAIT_MAX
+        ) {
+          this.data.scratch.commentWaits += 1
+          return
+        }
+        this.stopPoll()
       } catch {
         /** ⚠️ 一次问不到不算失败（网络抖一下很正常）—— 下一次接着问 */
       }
+    },
+
+    /**
+     * ⭐ **迟到的批语补进面板**（prd §7.2b：分数先出、批语随后补）。
+     *
+     * ⚠️⚠️ 只动 `panelComment` 这一格：**绝不许动 `panelVisible`** ——
+     *    `applyResult` 里那个字段是按"这一趟该不该弹面板"算出来的，
+     *    补批语时再算一次会把**用户正看着的面板关掉**。
+     */
+    patchPanelComment(comment: string) {
+      if (!comment) return
+      this.setData({ panelComment: comment })
     },
 
     /**
@@ -680,7 +733,7 @@ Component({
         previousBest?: number | null
         /** 这段录音多长（毫秒）—— 参与区那颗试听显示成 00:33 */
         durationMs?: number
-        /** ⭐ 这一把的 AI 锐评（prd §7.2b）—— 服务端在翻状态前就写好了；没配大模型就是 undefined */
+        /** ⭐ 这一把的 AI 锐评（prd §7.2b）—— 出分那一刻常常还没有，由轮询补（见 pollOnce） */
         aiComment?: string
       }
       const prevRaw = result.previousBest

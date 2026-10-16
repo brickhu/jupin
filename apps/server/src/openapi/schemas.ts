@@ -540,6 +540,8 @@ export const SubmitResponseSchema = z
   .object({
     score: z.number(),
     aiComment: z.string().optional(),
+    /** ⭐ 批语还在写（分数先出、批语随后补）—— 端侧据此多问几轮，见 shared 的 SubmitResponse */
+    aiCommentPending: z.boolean().optional(),
     parts: ScorePartsSchema.optional(),
     text: z.string().optional(),
     durationMs: z.number().optional(),

@@ -143,6 +143,16 @@ export interface SubmitResponse {
    */
   aiComment?: string
   /**
+   * ⭐⭐ **批语还在写**（prd §7.2b：分数先出、批语随后补）。
+   *
+   * ⚠️ 它是给轮询用的信号，不是给界面看的：端侧拿到 `scored` 之后若看到它，
+   *    就**再多问几轮**（`participate-flow` 的 COMMENT_WAIT_MAX），
+   *    把迟到的 `aiComment` 补进正开着的结果面板。
+   * ⚠️ 为真时**不代表一定有批语**（模型可能失败/超时）—— 问满几轮就放弃，
+   *    界面照旧"没有就不渲染那一格"。
+   */
+  aiCommentPending?: boolean
+  /**
    * ⭐ **我们自己那套打分的分项明细** —— 结果页的「评分详情」显示的就是它。
    *
    * ⚠️ 不要拿引擎那四维（accuracy/fluency/standard/integrity）当详情：
